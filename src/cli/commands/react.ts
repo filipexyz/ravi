@@ -20,15 +20,13 @@ const reactSendReturnSchema = z.object({
     accountId: z.string(),
     chatId: z.string(),
   }),
-  event: z
-    .object({
-      channel: z.string(),
-      accountId: z.string(),
-      chatId: z.string(),
-      messageId: z.string(),
-      emoji: z.string(),
-    })
-    .passthrough(),
+  event: z.object({
+    channel: z.string(),
+    accountId: z.string(),
+    chatId: z.string(),
+    messageId: z.string(),
+    emoji: z.string(),
+  }),
 });
 
 @Group({

@@ -10,15 +10,13 @@ import { looseObjectSchema } from "../return-schemas.js";
 import { loadEvalTaskSpec } from "../../eval/spec.js";
 import { runEvalTask } from "../../eval/runner.js";
 
-const evalRunReturnSchema = z
-  .object({
-    runId: z.string(),
-    outputDir: z.string(),
-    session: looseObjectSchema,
-    execution: looseObjectSchema,
-    grade: looseObjectSchema,
-  })
-  .passthrough();
+const evalRunReturnSchema = z.object({
+  runId: z.string(),
+  outputDir: z.string(),
+  session: looseObjectSchema,
+  execution: looseObjectSchema,
+  grade: looseObjectSchema,
+});
 
 @Group({
   name: "eval",

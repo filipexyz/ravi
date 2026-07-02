@@ -81,7 +81,7 @@ const appSummarySchema = z.object({
 });
 
 const appDetailSchema = appSummarySchema.extend({
-  manifest: z.unknown().nullable(),
+  manifest: jsonValueSchema.nullable(),
 });
 
 const paginationSchema = z.object({
@@ -208,7 +208,7 @@ const appsRunReturnSchema = z.object({
   mutating: z.boolean(),
   status: z.enum(["completed", "failed"]),
   durationMs: z.number(),
-  result: z.unknown().optional(),
+  result: jsonValueSchema.optional(),
   error: z.string().optional(),
   command: z.string().optional(),
   handler: z.string().optional(),

@@ -36,11 +36,48 @@ export const AdaptersListInputSchema = {
 
 /** JSON Schema for the return shape of `adapters.list`. */
 export const AdaptersListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "adapters": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "adapterId": {
             "type": "string"
@@ -49,7 +86,7 @@ export const AdaptersListReturnSchema = {
             "type": "string"
           },
           "bind": {
-            "additionalProperties": {},
+            "additionalProperties": false,
             "properties": {
               "agentId": {
                 "anyOf": [
@@ -84,7 +121,9 @@ export const AdaptersListReturnSchema = {
                   }
                 ]
               },
-              "contextKey": {},
+              "contextKey": {
+                "type": "string"
+              },
               "sessionKey": {
                 "type": "string"
               },
@@ -121,15 +160,23 @@ export const AdaptersListReturnSchema = {
             "type": "string"
           },
           "health": {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           "lastCommand": {
             "anyOf": [
               {
-                "additionalProperties": {},
-                "properties": {},
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
                 "type": "object"
               },
               {
@@ -140,8 +187,12 @@ export const AdaptersListReturnSchema = {
           "lastEvent": {
             "anyOf": [
               {
-                "additionalProperties": {},
-                "properties": {},
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
                 "type": "object"
               },
               {
@@ -152,8 +203,12 @@ export const AdaptersListReturnSchema = {
           "lastProtocolError": {
             "anyOf": [
               {
-                "additionalProperties": {},
-                "properties": {},
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
                 "type": "object"
               },
               {
@@ -208,7 +263,7 @@ export const AdaptersListReturnSchema = {
     },
     "items": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "adapterId": {
             "type": "string"
@@ -217,7 +272,7 @@ export const AdaptersListReturnSchema = {
             "type": "string"
           },
           "bind": {
-            "additionalProperties": {},
+            "additionalProperties": false,
             "properties": {
               "agentId": {
                 "anyOf": [
@@ -252,7 +307,9 @@ export const AdaptersListReturnSchema = {
                   }
                 ]
               },
-              "contextKey": {},
+              "contextKey": {
+                "type": "string"
+              },
               "sessionKey": {
                 "type": "string"
               },
@@ -289,15 +346,23 @@ export const AdaptersListReturnSchema = {
             "type": "string"
           },
           "health": {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           "lastCommand": {
             "anyOf": [
               {
-                "additionalProperties": {},
-                "properties": {},
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
                 "type": "object"
               },
               {
@@ -308,8 +373,12 @@ export const AdaptersListReturnSchema = {
           "lastEvent": {
             "anyOf": [
               {
-                "additionalProperties": {},
-                "properties": {},
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
                 "type": "object"
               },
               {
@@ -320,8 +389,12 @@ export const AdaptersListReturnSchema = {
           "lastProtocolError": {
             "anyOf": [
               {
-                "additionalProperties": {},
-                "properties": {},
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
                 "type": "object"
               },
               {
@@ -372,7 +445,7 @@ export const AdaptersListReturnSchema = {
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -449,7 +522,44 @@ export const AdaptersShowInputSchema = {
 
 /** JSON Schema for the return shape of `adapters.show`. */
 export const AdaptersShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "adapterId": {
       "type": "string"
@@ -458,7 +568,7 @@ export const AdaptersShowReturnSchema = {
       "type": "string"
     },
     "bind": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "agentId": {
           "anyOf": [
@@ -493,7 +603,9 @@ export const AdaptersShowReturnSchema = {
             }
           ]
         },
-        "contextKey": {},
+        "contextKey": {
+          "type": "string"
+        },
         "sessionKey": {
           "type": "string"
         },
@@ -530,15 +642,23 @@ export const AdaptersShowReturnSchema = {
       "type": "string"
     },
     "health": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "lastCommand": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -549,8 +669,12 @@ export const AdaptersShowReturnSchema = {
     "lastEvent": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -561,8 +685,12 @@ export const AdaptersShowReturnSchema = {
     "lastProtocolError": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -645,28 +773,77 @@ export const AgentsCreateInputSchema = {
 
 /** JSON Schema for the return shape of `agents.create`. */
 export const AgentsCreateReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "action": {
       "const": "create",
       "type": "string"
     },
     "agent": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "changed": {
       "type": "boolean"
     },
     "permissions": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "runtimeTarget": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -701,7 +878,7 @@ export const AgentsDebounceInputSchema = {
 
 /** JSON Schema for the return shape of `agents.debounce`. */
 export const AgentsDebounceReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "action": {
       "type": "string"
@@ -759,9 +936,46 @@ export const AgentsDebugInputSchema = {
 
 /** JSON Schema for the return shape of `agents.debug`. */
 export const AgentsDebugReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "anyOf": [
     {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "agentId": {
           "type": "string"
@@ -784,20 +998,30 @@ export const AgentsDebugReturnSchema = {
       "type": "object"
     },
     {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "entries": {
-          "items": {},
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
           "type": "array"
         },
         "session": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "transcript": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         }
       },
@@ -828,7 +1052,44 @@ export const AgentsDeleteInputSchema = {
 
 /** JSON Schema for the return shape of `agents.delete`. */
 export const AgentsDeleteReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "action": {
       "const": "delete",
@@ -838,8 +1099,12 @@ export const AgentsDeleteReturnSchema = {
       "type": "string"
     },
     "before": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "changed": {
@@ -876,12 +1141,53 @@ export const AgentsListInputSchema = {
 
 /** JSON Schema for the return shape of `agents.list`. */
 export const AgentsListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "agents": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -890,20 +1196,28 @@ export const AgentsListReturnSchema = {
       "type": "string"
     },
     "filters": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -1250,7 +1564,44 @@ export const AgentsResetInputSchema = {
 
 /** JSON Schema for the return shape of `agents.reset`. */
 export const AgentsResetReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "action": {
       "const": "reset",
@@ -1276,15 +1627,23 @@ export const AgentsResetReturnSchema = {
     },
     "resetSessions": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "session": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "target": {
@@ -1317,17 +1676,62 @@ export const AgentsSessionInputSchema = {
 
 /** JSON Schema for the return shape of `agents.session`. */
 export const AgentsSessionReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "agent": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "sessions": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -1371,15 +1775,56 @@ export const AgentsSetInputSchema = {
 
 /** JSON Schema for the return shape of `agents.set`. */
 export const AgentsSetReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "action": {
       "const": "set",
       "type": "string"
     },
     "agent": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "agentId": {
@@ -1391,7 +1836,9 @@ export const AgentsSetReturnSchema = {
     "key": {
       "type": "string"
     },
-    "value": {}
+    "value": {
+      "$ref": "#/$defs/__schema0"
+    }
   },
   "required": [
     "action",
@@ -1420,11 +1867,52 @@ export const AgentsShowInputSchema = {
 
 /** JSON Schema for the return shape of `agents.show`. */
 export const AgentsShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "agent": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "permissionsCommand": {
@@ -1459,7 +1947,7 @@ export const AgentsSpecModeInputSchema = {
 
 /** JSON Schema for the return shape of `agents.spec-mode`. */
 export const AgentsSpecModeReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "action": {
       "type": "string"
@@ -1499,7 +1987,44 @@ export const AgentsSyncInstructionsInputSchema = {
 
 /** JSON Schema for the return shape of `agents.sync-instructions`. */
 export const AgentsSyncInstructionsReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "alreadyCanonical": {
       "type": "number"
@@ -1518,8 +2043,12 @@ export const AgentsSyncInstructionsReturnSchema = {
     },
     "results": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -1716,6 +2245,39 @@ export const AppsGuideInputSchema = {
 
 /** JSON Schema for the return shape of `apps.guide`. */
 export const AppsGuideReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "app": {
@@ -1750,7 +2312,9 @@ export const AppsGuideReturnSchema = {
             },
             "manifest": {
               "anyOf": [
-                {},
+                {
+                  "$ref": "#/$defs/__schema0"
+                },
                 {
                   "type": "null"
                 }
@@ -3169,6 +3733,39 @@ export const AppsPromptsInputSchema = {
 
 /** JSON Schema for the return shape of `apps.prompts`. */
 export const AppsPromptsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "app": {
@@ -3203,7 +3800,9 @@ export const AppsPromptsReturnSchema = {
             },
             "manifest": {
               "anyOf": [
-                {},
+                {
+                  "$ref": "#/$defs/__schema0"
+                },
                 {
                   "type": "null"
                 }
@@ -3783,7 +4382,9 @@ export const AppsRunReturnSchema = {
       ],
       "type": "object"
     },
-    "result": {},
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    },
     "status": {
       "enum": [
         "completed",
@@ -4030,6 +4631,39 @@ export const AppsShowInputSchema = {
 
 /** JSON Schema for the return shape of `apps.show`. */
 export const AppsShowReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "app": {
@@ -4062,7 +4696,9 @@ export const AppsShowReturnSchema = {
         },
         "manifest": {
           "anyOf": [
-            {},
+            {
+              "$ref": "#/$defs/__schema0"
+            },
             {
               "type": "null"
             }
@@ -4354,7 +4990,7 @@ export const ArtifactsArchiveInputSchema = {
 
 /** JSON Schema for the return shape of `artifacts.archive`. */
 export const ArtifactsArchiveReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "success": {
       "const": true,
@@ -4402,7 +5038,7 @@ export const ArtifactsAttachInputSchema = {
 
 /** JSON Schema for the return shape of `artifacts.attach`. */
 export const ArtifactsAttachReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "success": {
       "const": true,
@@ -4548,16 +5184,61 @@ export const ArtifactsCreateInputSchema = {
 
 /** JSON Schema for the return shape of `artifacts.create`. */
 export const ArtifactsCreateReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "artifact": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "package": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "success": {
@@ -4565,8 +5246,12 @@ export const ArtifactsCreateReturnSchema = {
       "type": "boolean"
     },
     "version": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -4615,16 +5300,61 @@ export const ArtifactsEventInputSchema = {
 
 /** JSON Schema for the return shape of `artifacts.event`. */
 export const ArtifactsEventReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "artifact": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "event": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "success": {
@@ -4656,15 +5386,56 @@ export const ArtifactsEventsInputSchema = {
 
 /** JSON Schema for the return shape of `artifacts.events`. */
 export const ArtifactsEventsReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "artifactId": {
       "type": "string"
     },
     "events": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -4735,28 +5506,73 @@ export const ArtifactsListInputSchema = {
 
 /** JSON Schema for the return shape of `artifacts.list`. */
 export const ArtifactsListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "anyOf": [
     {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "artifacts": {
           "items": {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           "type": "array"
         },
         "items": {
           "items": {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           "type": "array"
         },
         "pagination": {
-          "additionalProperties": {},
+          "additionalProperties": false,
           "properties": {
             "hasMore": {
               "type": "boolean"
@@ -4818,15 +5634,19 @@ export const ArtifactsListReturnSchema = {
       "type": "object"
     },
     {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "generatedAt": {
           "type": "number"
         },
         "items": {
           "items": {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           "type": "array"
@@ -4836,7 +5656,7 @@ export const ArtifactsListReturnSchema = {
           "type": "boolean"
         },
         "pagination": {
-          "additionalProperties": {},
+          "additionalProperties": false,
           "properties": {
             "hasMore": {
               "type": "boolean"
@@ -4886,13 +5706,21 @@ export const ArtifactsListReturnSchema = {
           "type": "object"
         },
         "query": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "stats": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         }
       },
@@ -5247,19 +6075,66 @@ export const ArtifactsReleaseActivateInputSchema = {
 
 /** JSON Schema for the return shape of `artifacts.release.activate`. */
 export const ArtifactsReleaseActivateReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "localSync": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
-    "release": {},
+    "release": {
+      "$ref": "#/$defs/__schema0"
+    },
     "routes": {
-      "items": {},
+      "items": {
+        "$ref": "#/$defs/__schema0"
+      },
       "type": "array"
     },
-    "site": {},
+    "site": {
+      "$ref": "#/$defs/__schema0"
+    },
     "url": {
       "anyOf": [
         {
@@ -5305,21 +6180,70 @@ export const ArtifactsRestoreInputSchema = {
 
 /** JSON Schema for the return shape of `artifacts.restore`. */
 export const ArtifactsRestoreReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "artifact": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "restoreVersion": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "restoredFrom": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "success": {
@@ -5353,33 +6277,86 @@ export const ArtifactsShowInputSchema = {
 
 /** JSON Schema for the return shape of `artifacts.show`. */
 export const ArtifactsShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "artifact": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "events": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "links": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "versions": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -5435,15 +6412,56 @@ export const ArtifactsSnapshotInputSchema = {
 
 /** JSON Schema for the return shape of `artifacts.snapshot`. */
 export const ArtifactsSnapshotReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "success": {
       "const": true,
       "type": "boolean"
     },
     "version": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -5567,7 +6585,7 @@ export const ArtifactsUpdateInputSchema = {
 
 /** JSON Schema for the return shape of `artifacts.update`. */
 export const ArtifactsUpdateReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "success": {
       "const": true,
@@ -5601,14 +6619,55 @@ export const ArtifactsVersionInputSchema = {
 
 /** JSON Schema for the return shape of `artifacts.version`. */
 export const ArtifactsVersionReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "artifactId": {
       "type": "string"
     },
     "version": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -5636,7 +6695,44 @@ export const ArtifactsVersionsInputSchema = {
 
 /** JSON Schema for the return shape of `artifacts.versions`. */
 export const ArtifactsVersionsReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "artifactId": {
       "type": "string"
@@ -5646,8 +6742,12 @@ export const ArtifactsVersionsReturnSchema = {
     },
     "versions": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -5726,10 +6826,47 @@ export const AudioGenerateInputSchema = {
 
 /** JSON Schema for the return shape of `audio.generate`. */
 export const AudioGenerateReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "audio": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "filePath": {
           "type": "string"
@@ -5753,12 +6890,16 @@ export const AudioGenerateReturnSchema = {
       "type": "object"
     },
     "options": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "sent": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "accountId": {
           "type": "string"
@@ -12401,8 +13542,49 @@ export const ChatsBackfillProviderTimestampsInputSchema = {
 
 /** JSON Schema for the return shape of `chats.backfill-provider-timestamps`. */
 export const ChatsBackfillProviderTimestampsReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -12452,8 +13634,49 @@ export const ChatsListInputSchema = {
 
 /** JSON Schema for the return shape of `chats.list`. */
 export const ChatsListReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -12503,8 +13726,49 @@ export const ChatsListsAddInputSchema = {
 
 /** JSON Schema for the return shape of `chats.lists.add`. */
 export const ChatsListsAddReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -12541,8 +13805,49 @@ export const ChatsListsCreateInputSchema = {
 
 /** JSON Schema for the return shape of `chats.lists.create`. */
 export const ChatsListsCreateReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -12596,8 +13901,49 @@ export const ChatsListsDeltaInputSchema = {
 
 /** JSON Schema for the return shape of `chats.lists.delta`. */
 export const ChatsListsDeltaReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -12627,8 +13973,49 @@ export const ChatsListsListInputSchema = {
 
 /** JSON Schema for the return shape of `chats.lists.list`. */
 export const ChatsListsListReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -12682,8 +14069,49 @@ export const ChatsListsMarkReadInputSchema = {
 
 /** JSON Schema for the return shape of `chats.lists.mark-read`. */
 export const ChatsListsMarkReadReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -12724,8 +14152,49 @@ export const ChatsListsMembersInputSchema = {
 
 /** JSON Schema for the return shape of `chats.lists.members`. */
 export const ChatsListsMembersReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -13029,8 +14498,49 @@ export const ChatsListsRemoveInputSchema = {
 
 /** JSON Schema for the return shape of `chats.lists.remove`. */
 export const ChatsListsRemoveReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -13079,8 +14589,49 @@ export const ChatsReadInputSchema = {
 
 /** JSON Schema for the return shape of `chats.read`. */
 export const ChatsReadReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -14161,16 +15712,57 @@ export const CommandsListInputSchema = {
 
 /** JSON Schema for the return shape of `commands.list`. */
 export const CommandsListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "agent": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "commands": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "argumentHint": {
             "anyOf": [
@@ -14183,7 +15775,9 @@ export const CommandsListReturnSchema = {
             ]
           },
           "arguments": {
-            "items": {},
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
             "type": "array"
           },
           "description": {
@@ -14204,7 +15798,7 @@ export const CommandsListReturnSchema = {
           },
           "issues": {
             "items": {
-              "additionalProperties": {},
+              "additionalProperties": false,
               "properties": {
                 "code": {
                   "type": "string"
@@ -14318,7 +15912,7 @@ export const CommandsListReturnSchema = {
     },
     "issues": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "code": {
             "type": "string"
@@ -14374,19 +15968,27 @@ export const CommandsListReturnSchema = {
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "locations": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -14479,15 +16081,56 @@ export const CommandsRunInputSchema = {
 
 /** JSON Schema for the return shape of `commands.run`. */
 export const CommandsRunReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "agent": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "command": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "argumentHint": {
           "anyOf": [
@@ -14500,7 +16143,9 @@ export const CommandsRunReturnSchema = {
           ]
         },
         "arguments": {
-          "items": {},
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
           "type": "array"
         },
         "description": {
@@ -14521,7 +16166,7 @@ export const CommandsRunReturnSchema = {
         },
         "issues": {
           "items": {
-            "additionalProperties": {},
+            "additionalProperties": false,
             "properties": {
               "code": {
                 "type": "string"
@@ -14632,12 +16277,18 @@ export const CommandsRunReturnSchema = {
       "type": "object"
     },
     "metadata": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "positionalArguments": {
-      "items": {},
+      "items": {
+        "$ref": "#/$defs/__schema0"
+      },
       "type": "array"
     },
     "prompt": {
@@ -14675,15 +16326,56 @@ export const CommandsShowInputSchema = {
 
 /** JSON Schema for the return shape of `commands.show`. */
 export const CommandsShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "agent": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "command": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "argumentHint": {
           "anyOf": [
@@ -14696,7 +16388,9 @@ export const CommandsShowReturnSchema = {
           ]
         },
         "arguments": {
-          "items": {},
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
           "type": "array"
         },
         "description": {
@@ -14717,7 +16411,7 @@ export const CommandsShowReturnSchema = {
         },
         "issues": {
           "items": {
-            "additionalProperties": {},
+            "additionalProperties": false,
             "properties": {
               "code": {
                 "type": "string"
@@ -14849,11 +16543,52 @@ export const CommandsValidateInputSchema = {
 
 /** JSON Schema for the return shape of `commands.validate`. */
 export const CommandsValidateReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "agent": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "effectiveTotal": {
@@ -14861,7 +16596,7 @@ export const CommandsValidateReturnSchema = {
     },
     "errors": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "code": {
             "type": "string"
@@ -14923,7 +16658,7 @@ export const CommandsValidateReturnSchema = {
     },
     "warnings": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "code": {
             "type": "string"
@@ -15264,8 +16999,49 @@ export const ContactsActivityInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.activity`. */
 export const ContactsActivityReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15298,8 +17074,49 @@ export const ContactsAddInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.add`. */
 export const ContactsAddReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15320,8 +17137,49 @@ export const ContactsAllowInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.allow`. */
 export const ContactsAllowReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15350,8 +17208,49 @@ export const ContactsApproveInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.approve`. */
 export const ContactsApproveReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15397,8 +17296,49 @@ export const ContactsBackfillInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.backfill`. */
 export const ContactsBackfillReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15419,8 +17359,49 @@ export const ContactsBlockInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.block`. */
 export const ContactsBlockReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15441,8 +17422,49 @@ export const ContactsCheckInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.check`. */
 export const ContactsCheckReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15455,8 +17477,49 @@ export const ContactsDuplicatesInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.duplicates`. */
 export const ContactsDuplicatesReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15481,8 +17544,49 @@ export const ContactsFindInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.find`. */
 export const ContactsFindReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15503,8 +17607,49 @@ export const ContactsGetInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.get`. */
 export const ContactsGetReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15525,8 +17670,49 @@ export const ContactsInfoInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.info`. */
 export const ContactsInfoReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15563,8 +17749,49 @@ export const ContactsLinkInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.link`. */
 export const ContactsLinkReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15590,8 +17817,49 @@ export const ContactsListInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.list`. */
 export const ContactsListReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15617,8 +17885,49 @@ export const ContactsMergeInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.merge`. */
 export const ContactsMergeReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15647,8 +17956,49 @@ export const ContactsMessagesInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.messages`. */
 export const ContactsMessagesReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15681,8 +18031,49 @@ export const ContactsMetadataListInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.metadata.list`. */
 export const ContactsMetadataListReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15716,8 +18107,49 @@ export const ContactsMetadataRemoveInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.metadata.remove`. */
 export const ContactsMetadataRemoveReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15756,8 +18188,49 @@ export const ContactsMetadataSetInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.metadata.set`. */
 export const ContactsMetadataSetReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15791,8 +18264,49 @@ export const ContactsNoteInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.note`. */
 export const ContactsNoteReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15810,8 +18324,49 @@ export const ContactsPendingInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.pending`. */
 export const ContactsPendingReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15840,8 +18395,49 @@ export const ContactsProfileInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.profile`. */
 export const ContactsProfileReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15862,8 +18458,49 @@ export const ContactsRemoveInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.remove`. */
 export const ContactsRemoveReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15892,8 +18529,49 @@ export const ContactsSessionsInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.sessions`. */
 export const ContactsSessionsReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15924,8 +18602,49 @@ export const ContactsSetInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.set`. */
 export const ContactsSetReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15951,8 +18670,49 @@ export const ContactsTagInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.tag`. */
 export const ContactsTagReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15989,8 +18749,49 @@ export const ContactsTimelineInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.timeline`. */
 export const ContactsTimelineReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -16023,8 +18824,49 @@ export const ContactsUnlinkInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.unlink`. */
 export const ContactsUnlinkReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -16050,8 +18892,49 @@ export const ContactsUntagInputSchema = {
 
 /** JSON Schema for the return shape of `contacts.untag`. */
 export const ContactsUntagReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -20210,7 +23093,7 @@ export const CostsAgentsReturnSchema = {
   "properties": {
     "agents": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "agentId": {
             "type": "string"
@@ -20745,7 +23628,7 @@ export const CostsTopSessionsReturnSchema = {
     },
     "sessions": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "agentId": {
             "type": "string"
@@ -20862,11 +23745,52 @@ export const CrmAccountInputSchema = {
 
 /** JSON Schema for the return shape of `crm.account`. */
 export const CrmAccountReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "crm": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "target": {
@@ -20913,7 +23837,7 @@ export const CrmAccountCreateInputSchema = {
 
 /** JSON Schema for the return shape of `crm.account.create`. */
 export const CrmAccountCreateReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -20959,7 +23883,7 @@ export const CrmAccountLinkContactInputSchema = {
 
 /** JSON Schema for the return shape of `crm.account.link-contact`. */
 export const CrmAccountLinkContactReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -20992,11 +23916,52 @@ export const CrmAccountShowInputSchema = {
 
 /** JSON Schema for the return shape of `crm.account.show`. */
 export const CrmAccountShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "crm": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "target": {
@@ -21028,20 +23993,65 @@ export const CrmBoardInputSchema = {
 
 /** JSON Schema for the return shape of `crm.board`. */
 export const CrmBoardReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "opportunities": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "stages": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -21074,11 +24084,52 @@ export const CrmContactInputSchema = {
 
 /** JSON Schema for the return shape of `crm.contact`. */
 export const CrmContactReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "crm": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "target": {
@@ -21123,7 +24174,7 @@ export const CrmContactSetInputSchema = {
 
 /** JSON Schema for the return shape of `crm.contact.set`. */
 export const CrmContactSetReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -21156,11 +24207,52 @@ export const CrmContactShowInputSchema = {
 
 /** JSON Schema for the return shape of `crm.contact.show`. */
 export const CrmContactShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "crm": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "target": {
@@ -21200,18 +24292,59 @@ export const CrmContactsInputSchema = {
 
 /** JSON Schema for the return shape of `crm.contacts`. */
 export const CrmContactsReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -21289,7 +24422,7 @@ export const CrmFactConfirmInputSchema = {
 
 /** JSON Schema for the return shape of `crm.fact.confirm`. */
 export const CrmFactConfirmReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -21351,18 +24484,59 @@ export const CrmFactListInputSchema = {
 
 /** JSON Schema for the return shape of `crm.fact.list`. */
 export const CrmFactListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -21479,7 +24653,7 @@ export const CrmFactProposeInputSchema = {
 
 /** JSON Schema for the return shape of `crm.fact.propose`. */
 export const CrmFactProposeReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -21512,7 +24686,7 @@ export const CrmFactRejectInputSchema = {
 
 /** JSON Schema for the return shape of `crm.fact.reject`. */
 export const CrmFactRejectReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -21578,18 +24752,59 @@ export const CrmNextInputSchema = {
 
 /** JSON Schema for the return shape of `crm.next`. */
 export const CrmNextReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -21667,11 +24882,52 @@ export const CrmOpportunityInputSchema = {
 
 /** JSON Schema for the return shape of `crm.opportunity`. */
 export const CrmOpportunityReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "opportunity": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "target": {
@@ -21702,12 +24958,53 @@ export const CrmOpportunityContactsInputSchema = {
 
 /** JSON Schema for the return shape of `crm.opportunity.contacts`. */
 export const CrmOpportunityContactsReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "contacts": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -21772,7 +25069,7 @@ export const CrmOpportunityCreateInputSchema = {
 
 /** JSON Schema for the return shape of `crm.opportunity.create`. */
 export const CrmOpportunityCreateReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -21822,7 +25119,7 @@ export const CrmOpportunityLinkContactInputSchema = {
 
 /** JSON Schema for the return shape of `crm.opportunity.link-contact`. */
 export const CrmOpportunityLinkContactReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -21864,7 +25161,7 @@ export const CrmOpportunityMoveInputSchema = {
 
 /** JSON Schema for the return shape of `crm.opportunity.move`. */
 export const CrmOpportunityMoveReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -21897,11 +25194,52 @@ export const CrmOpportunityShowInputSchema = {
 
 /** JSON Schema for the return shape of `crm.opportunity.show`. */
 export const CrmOpportunityShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "opportunity": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "target": {
@@ -22027,7 +25365,7 @@ export const CrmPipelineCreateInputSchema = {
 
 /** JSON Schema for the return shape of `crm.pipeline.create`. */
 export const CrmPipelineCreateReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -22069,18 +25407,59 @@ export const CrmPipelineListInputSchema = {
 
 /** JSON Schema for the return shape of `crm.pipeline.list`. */
 export const CrmPipelineListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -22582,7 +25961,7 @@ export const CrmPipelineSetInputSchema = {
 
 /** JSON Schema for the return shape of `crm.pipeline.set`. */
 export const CrmPipelineSetReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -22619,8 +25998,49 @@ export const CrmPipelineShowInputSchema = {
 
 /** JSON Schema for the return shape of `crm.pipeline.show`. */
 export const CrmPipelineShowReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -22674,7 +26094,7 @@ export const CrmPipelineStageAddInputSchema = {
 
 /** JSON Schema for the return shape of `crm.pipeline.stage.add`. */
 export const CrmPipelineStageAddReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -22712,7 +26132,7 @@ export const CrmPipelineStageArchiveInputSchema = {
 
 /** JSON Schema for the return shape of `crm.pipeline.stage.archive`. */
 export const CrmPipelineStageArchiveReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -22757,18 +26177,59 @@ export const CrmPipelineStageListInputSchema = {
 
 /** JSON Schema for the return shape of `crm.pipeline.stage.list`. */
 export const CrmPipelineStageListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -22861,7 +26322,7 @@ export const CrmPipelineStageSetInputSchema = {
 
 /** JSON Schema for the return shape of `crm.pipeline.stage.set`. */
 export const CrmPipelineStageSetReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -22899,8 +26360,49 @@ export const CrmPipelineStageShowInputSchema = {
 
 /** JSON Schema for the return shape of `crm.pipeline.stage.show`. */
 export const CrmPipelineStageShowReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -22955,7 +26457,7 @@ export const CrmPipelineStageTopicAddInputSchema = {
 
 /** JSON Schema for the return shape of `crm.pipeline.stage.topic.add`. */
 export const CrmPipelineStageTopicAddReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -22998,7 +26500,7 @@ export const CrmPipelineStageTopicArchiveInputSchema = {
 
 /** JSON Schema for the return shape of `crm.pipeline.stage.topic.archive`. */
 export const CrmPipelineStageTopicArchiveReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -23051,7 +26553,7 @@ export const CrmPipelineStageTopicSetInputSchema = {
 
 /** JSON Schema for the return shape of `crm.pipeline.stage.topic.set`. */
 export const CrmPipelineStageTopicSetReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -23101,18 +26603,59 @@ export const CrmPipelineStageTopicsInputSchema = {
 
 /** JSON Schema for the return shape of `crm.pipeline.stage.topics`. */
 export const CrmPipelineStageTopicsReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -23336,7 +26879,7 @@ export const CrmTaskCancelInputSchema = {
 
 /** JSON Schema for the return shape of `crm.task.cancel`. */
 export const CrmTaskCancelReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -23421,7 +26964,7 @@ export const CrmTaskCreateInputSchema = {
 
 /** JSON Schema for the return shape of `crm.task.create`. */
 export const CrmTaskCreateReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -23454,7 +26997,7 @@ export const CrmTaskDoneInputSchema = {
 
 /** JSON Schema for the return shape of `crm.task.done`. */
 export const CrmTaskDoneReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -23524,18 +27067,59 @@ export const CrmTaskListInputSchema = {
 
 /** JSON Schema for the return shape of `crm.task.list`. */
 export const CrmTaskListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -23613,14 +27197,55 @@ export const CrmTaskShowInputSchema = {
 
 /** JSON Schema for the return shape of `crm.task.show`. */
 export const CrmTaskShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "target": {
       "type": "string"
     },
     "task": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -23656,7 +27281,7 @@ export const CrmTaskSnoozeInputSchema = {
 
 /** JSON Schema for the return shape of `crm.task.snooze`. */
 export const CrmTaskSnoozeReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -23749,7 +27374,44 @@ export const CronAddInputSchema = {
 
 /** JSON Schema for the return shape of `cron.add`. */
 export const CronAddReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -23757,8 +27419,12 @@ export const CronAddReturnSchema = {
     "job": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -23770,7 +27436,7 @@ export const CronAddReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string"
@@ -23808,7 +27474,44 @@ export const CronDisableInputSchema = {
 
 /** JSON Schema for the return shape of `cron.disable`. */
 export const CronDisableReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -23816,8 +27519,12 @@ export const CronDisableReturnSchema = {
     "job": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -23829,7 +27536,7 @@ export const CronDisableReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string"
@@ -23867,7 +27574,44 @@ export const CronEnableInputSchema = {
 
 /** JSON Schema for the return shape of `cron.enable`. */
 export const CronEnableReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -23875,8 +27619,12 @@ export const CronEnableReturnSchema = {
     "job": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -23888,7 +27636,7 @@ export const CronEnableReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string"
@@ -23939,26 +27687,71 @@ export const CronListInputSchema = {
 
 /** JSON Schema for the return shape of `cron.list`. */
 export const CronListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "jobs": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -24037,7 +27830,44 @@ export const CronRmInputSchema = {
 
 /** JSON Schema for the return shape of `cron.rm`. */
 export const CronRmReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -24045,8 +27875,12 @@ export const CronRmReturnSchema = {
     "job": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -24058,7 +27892,7 @@ export const CronRmReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string"
@@ -24096,7 +27930,44 @@ export const CronRunInputSchema = {
 
 /** JSON Schema for the return shape of `cron.run`. */
 export const CronRunReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -24104,8 +27975,12 @@ export const CronRunReturnSchema = {
     "job": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -24117,7 +27992,7 @@ export const CronRunReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string"
@@ -24165,7 +28040,44 @@ export const CronSetInputSchema = {
 
 /** JSON Schema for the return shape of `cron.set`. */
 export const CronSetReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -24173,8 +28085,12 @@ export const CronSetReturnSchema = {
     "job": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -24186,7 +28102,7 @@ export const CronSetReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string"
@@ -24224,11 +28140,52 @@ export const CronShowInputSchema = {
 
 /** JSON Schema for the return shape of `cron.show`. */
 export const CronShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "job": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -24247,7 +28204,7 @@ export const DaemonEnvInputSchema = {
 
 /** JSON Schema for the return shape of `daemon.env`. */
 export const DaemonEnvReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "action": {
       "const": "env",
@@ -24303,7 +28260,7 @@ export const DaemonInitAdminKeyInputSchema = {
 
 /** JSON Schema for the return shape of `daemon.init-admin-key`. */
 export const DaemonInitAdminKeyReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "action": {
       "const": "init-admin-key",
@@ -24329,7 +28286,7 @@ export const DaemonInstallInputSchema = {
 
 /** JSON Schema for the return shape of `daemon.install`. */
 export const DaemonInstallReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "action": {
       "type": "string"
@@ -24372,7 +28329,7 @@ export const DaemonLogsInputSchema = {
 
 /** JSON Schema for the return shape of `daemon.logs`. */
 export const DaemonLogsReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "action": {
       "type": "string"
@@ -24402,7 +28359,7 @@ export const DaemonRestartInputSchema = {
 
 /** JSON Schema for the return shape of `daemon.restart`. */
 export const DaemonRestartReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "action": {
       "type": "string"
@@ -24427,7 +28384,7 @@ export const DaemonStartInputSchema = {
 
 /** JSON Schema for the return shape of `daemon.start`. */
 export const DaemonStartReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "action": {
       "type": "string"
@@ -24452,11 +28409,52 @@ export const DaemonStatusInputSchema = {
 
 /** JSON Schema for the return shape of `daemon.status`. */
 export const DaemonStatusReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "infrastructure": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "pm2Available": {
@@ -24467,15 +28465,23 @@ export const DaemonStatusReturnSchema = {
     },
     "processes": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "ravi": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -24498,7 +28504,7 @@ export const DaemonStopInputSchema = {
 
 /** JSON Schema for the return shape of `daemon.stop`. */
 export const DaemonStopReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "action": {
       "type": "string"
@@ -24523,7 +28529,7 @@ export const DaemonUninstallInputSchema = {
 
 /** JSON Schema for the return shape of `daemon.uninstall`. */
 export const DaemonUninstallReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "action": {
       "type": "string"
@@ -24548,7 +28554,44 @@ export const DevinAuthCheckInputSchema = {
 
 /** JSON Schema for the return shape of `devin.auth.check`. */
 export const DevinAuthCheckReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "baseUrl": {
       "type": "string"
@@ -24560,8 +28603,12 @@ export const DevinAuthCheckReturnSchema = {
       "type": "boolean"
     },
     "self": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -24590,11 +28637,52 @@ export const DevinSessionsArchiveInputSchema = {
 
 /** JSON Schema for the return shape of `devin.sessions.archive`. */
 export const DevinSessionsArchiveReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "session": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "status": {
@@ -24630,12 +28718,53 @@ export const DevinSessionsAttachmentsInputSchema = {
 
 /** JSON Schema for the return shape of `devin.sessions.attachments`. */
 export const DevinSessionsAttachmentsReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "attachments": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -24764,7 +28893,44 @@ export const DevinSessionsCreateInputSchema = {
 
 /** JSON Schema for the return shape of `devin.sessions.create`. */
 export const DevinSessionsCreateReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "maxAcuLimit": {
       "anyOf": [
@@ -24780,8 +28946,12 @@ export const DevinSessionsCreateReturnSchema = {
       "type": "string"
     },
     "session": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "status": {
@@ -24819,23 +28989,72 @@ export const DevinSessionsInsightsInputSchema = {
 
 /** JSON Schema for the return shape of `devin.sessions.insights`. */
 export const DevinSessionsInsightsReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "insights": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "session": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "summary": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -24882,21 +29101,62 @@ export const DevinSessionsListInputSchema = {
 
 /** JSON Schema for the return shape of `devin.sessions.list`. */
 export const DevinSessionsListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "hasNextPage": {
       "type": "boolean"
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -24947,8 +29207,12 @@ export const DevinSessionsListReturnSchema = {
     },
     "sessions": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -24991,15 +29255,56 @@ export const DevinSessionsMessagesInputSchema = {
 
 /** JSON Schema for the return shape of `devin.sessions.messages`. */
 export const DevinSessionsMessagesReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "devinId": {
       "type": "string"
     },
     "messages": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -25042,11 +29347,52 @@ export const DevinSessionsSendInputSchema = {
 
 /** JSON Schema for the return shape of `devin.sessions.send`. */
 export const DevinSessionsSendReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "session": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "status": {
@@ -25082,11 +29428,52 @@ export const DevinSessionsShowInputSchema = {
 
 /** JSON Schema for the return shape of `devin.sessions.show`. */
 export const DevinSessionsShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "session": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -25121,7 +29508,44 @@ export const DevinSessionsSyncInputSchema = {
 
 /** JSON Schema for the return shape of `devin.sessions.sync`. */
 export const DevinSessionsSyncReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "artifacts": {
       "items": {
@@ -25135,8 +29559,12 @@ export const DevinSessionsSyncReturnSchema = {
     "insights": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -25148,8 +29576,12 @@ export const DevinSessionsSyncReturnSchema = {
       "type": "number"
     },
     "session": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -25184,14 +29616,55 @@ export const DevinSessionsTerminateInputSchema = {
 
 /** JSON Schema for the return shape of `devin.sessions.terminate`. */
 export const DevinSessionsTerminateReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "archive": {
       "type": "boolean"
     },
     "session": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "status": {
@@ -25228,16 +29701,61 @@ export const EvalRunInputSchema = {
 
 /** JSON Schema for the return shape of `eval.run`. */
 export const EvalRunReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "execution": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "grade": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "outputDir": {
@@ -25247,8 +29765,12 @@ export const EvalRunReturnSchema = {
       "type": "string"
     },
     "session": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -25573,7 +30095,7 @@ export const HeartbeatDisableReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "agent": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "cwd": {
           "type": "string"
@@ -25625,7 +30147,7 @@ export const HeartbeatDisableReturnSchema = {
       "type": "number"
     },
     "heartbeat": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "accountId": {
           "anyOf": [
@@ -25716,7 +30238,7 @@ export const HeartbeatDisableReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string"
@@ -25727,7 +30249,22 @@ export const HeartbeatDisableReturnSchema = {
       ],
       "type": "object"
     },
-    "value": {}
+    "value": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
   },
   "required": [
     "agent",
@@ -25765,7 +30302,7 @@ export const HeartbeatEnableReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "agent": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "cwd": {
           "type": "string"
@@ -25817,7 +30354,7 @@ export const HeartbeatEnableReturnSchema = {
       "type": "number"
     },
     "heartbeat": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "accountId": {
           "anyOf": [
@@ -25908,7 +30445,7 @@ export const HeartbeatEnableReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string"
@@ -25919,7 +30456,22 @@ export const HeartbeatEnableReturnSchema = {
       ],
       "type": "object"
     },
-    "value": {}
+    "value": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
   },
   "required": [
     "agent",
@@ -25963,7 +30515,7 @@ export const HeartbeatSetReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "agent": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "cwd": {
           "type": "string"
@@ -26015,7 +30567,7 @@ export const HeartbeatSetReturnSchema = {
       "type": "number"
     },
     "heartbeat": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "accountId": {
           "anyOf": [
@@ -26106,7 +30658,7 @@ export const HeartbeatSetReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string"
@@ -26117,7 +30669,22 @@ export const HeartbeatSetReturnSchema = {
       ],
       "type": "object"
     },
-    "value": {}
+    "value": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
   },
   "required": [
     "agent",
@@ -26151,7 +30718,7 @@ export const HeartbeatShowReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "agent": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "cwd": {
           "type": "string"
@@ -26200,7 +30767,7 @@ export const HeartbeatShowReturnSchema = {
       "type": "object"
     },
     "heartbeat": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "accountId": {
           "anyOf": [
@@ -26310,7 +30877,7 @@ export const HeartbeatStatusReturnSchema = {
         "additionalProperties": false,
         "properties": {
           "agent": {
-            "additionalProperties": {},
+            "additionalProperties": false,
             "properties": {
               "cwd": {
                 "type": "string"
@@ -26359,7 +30926,7 @@ export const HeartbeatStatusReturnSchema = {
             "type": "object"
           },
           "heartbeat": {
-            "additionalProperties": {},
+            "additionalProperties": false,
             "properties": {
               "accountId": {
                 "anyOf": [
@@ -26482,7 +31049,7 @@ export const HeartbeatTriggerInputSchema = {
 
 /** JSON Schema for the return shape of `heartbeat.trigger`. */
 export const HeartbeatTriggerReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -26500,7 +31067,7 @@ export const HeartbeatTriggerReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string"
@@ -26606,21 +31173,62 @@ export const HooksCreateInputSchema = {
 
 /** JSON Schema for the return shape of `hooks.create`. */
 export const HooksCreateReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
     },
     "hook": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "status": {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string"
@@ -26658,21 +31266,62 @@ export const HooksDisableInputSchema = {
 
 /** JSON Schema for the return shape of `hooks.disable`. */
 export const HooksDisableReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
     },
     "hook": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "status": {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string"
@@ -26710,21 +31359,62 @@ export const HooksEnableInputSchema = {
 
 /** JSON Schema for the return shape of `hooks.enable`. */
 export const HooksEnableReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
     },
     "hook": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "status": {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string"
@@ -26767,26 +31457,71 @@ export const HooksListInputSchema = {
 
 /** JSON Schema for the return shape of `hooks.list`. */
 export const HooksListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "hooks": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -26865,21 +31600,62 @@ export const HooksRmInputSchema = {
 
 /** JSON Schema for the return shape of `hooks.rm`. */
 export const HooksRmReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
     },
     "hook": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "status": {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string"
@@ -26917,11 +31693,52 @@ export const HooksShowInputSchema = {
 
 /** JSON Schema for the return shape of `hooks.show`. */
 export const HooksShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "hook": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -26948,8 +31765,49 @@ export const HooksTestInputSchema = {
 
 /** JSON Schema for the return shape of `hooks.test`. */
 export const HooksTestReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -27038,7 +31896,44 @@ export const ImageAtlasSplitInputSchema = {
 
 /** JSON Schema for the return shape of `image.atlas.split`. */
 export const ImageAtlasSplitReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "artifactId": {
       "type": "string"
@@ -27048,8 +31943,12 @@ export const ImageAtlasSplitReturnSchema = {
     },
     "crops": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -27072,8 +31971,12 @@ export const ImageAtlasSplitReturnSchema = {
     },
     "sent": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -27181,9 +32084,46 @@ export const ImageGenerateInputSchema = {
 
 /** JSON Schema for the return shape of `image.generate`. */
 export const ImageGenerateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "anyOf": [
     {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "artifactId": {
           "type": "string"
@@ -27195,8 +32135,12 @@ export const ImageGenerateReturnSchema = {
           "type": "boolean"
         },
         "delivery": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "events": {
@@ -27228,11 +32172,11 @@ export const ImageGenerateReturnSchema = {
       "type": "object"
     },
     {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "images": {
           "items": {
-            "additionalProperties": {},
+            "additionalProperties": false,
             "properties": {
               "artifactId": {
                 "type": "string"
@@ -27270,13 +32214,17 @@ export const ImageGenerateReturnSchema = {
           "type": "array"
         },
         "options": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "sent": {
           "items": {
-            "additionalProperties": {},
+            "additionalProperties": false,
             "properties": {
               "accountId": {
                 "type": "string"
@@ -27354,11 +32302,52 @@ export const InboxArchiveInputSchema = {
 
 /** JSON Schema for the return shape of `inbox.archive`. */
 export const InboxArchiveReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "item": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -27377,7 +32366,7 @@ export const InboxDisableInputSchema = {
 
 /** JSON Schema for the return shape of `inbox.disable`. */
 export const InboxDisableReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changed": {
       "type": "boolean"
@@ -27410,11 +32399,52 @@ export const InboxDoneInputSchema = {
 
 /** JSON Schema for the return shape of `inbox.done`. */
 export const InboxDoneReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "item": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -27433,7 +32463,7 @@ export const InboxEnableInputSchema = {
 
 /** JSON Schema for the return shape of `inbox.enable`. */
 export const InboxEnableReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changed": {
       "type": "boolean"
@@ -27463,12 +32493,53 @@ export const InboxItemsInputSchema = {
 
 /** JSON Schema for the return shape of `inbox.items`. */
 export const InboxItemsReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -27514,12 +32585,53 @@ export const InboxListInputSchema = {
 
 /** JSON Schema for the return shape of `inbox.list`. */
 export const InboxListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -27549,15 +32661,56 @@ export const InboxPollInputSchema = {
 
 /** JSON Schema for the return shape of `inbox.poll`. */
 export const InboxPollReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "ok": {
       "const": true,
       "type": "boolean"
     },
     "snapshot": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -27585,19 +32738,64 @@ export const InboxReadInputSchema = {
 
 /** JSON Schema for the return shape of `inbox.read`. */
 export const InboxReadReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "events": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "item": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -27625,7 +32823,7 @@ export const InboxReplayInputSchema = {
 
 /** JSON Schema for the return shape of `inbox.replay`. */
 export const InboxReplayReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "itemId": {
       "type": "string"
@@ -27675,11 +32873,52 @@ export const InboxSnoozeInputSchema = {
 
 /** JSON Schema for the return shape of `inbox.snooze`. */
 export const InboxSnoozeReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "item": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -27698,12 +32937,53 @@ export const InboxSourcesInputSchema = {
 
 /** JSON Schema for the return shape of `inbox.sources`. */
 export const InboxSourcesReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "sources": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -27724,8 +33004,49 @@ export const InboxStatusInputSchema = {
 
 /** JSON Schema for the return shape of `inbox.status`. */
 export const InboxStatusReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -27805,16 +33126,61 @@ export const InsightsCreateInputSchema = {
 
 /** JSON Schema for the return shape of `insights.create`. */
 export const InsightsCreateReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "comment": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "insight": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "success": {
@@ -27895,31 +33261,76 @@ export const InsightsListInputSchema = {
 
 /** JSON Schema for the return shape of `insights.list`. */
 export const InsightsListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "anyOf": [
     {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "count": {
           "type": "number"
         },
         "insights": {
           "items": {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           "type": "array"
         },
         "items": {
           "items": {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           "type": "array"
         },
         "pagination": {
-          "additionalProperties": {},
+          "additionalProperties": false,
           "properties": {
             "hasMore": {
               "type": "boolean"
@@ -27969,8 +33380,12 @@ export const InsightsListReturnSchema = {
           "type": "object"
         },
         "query": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "total": {
@@ -27988,15 +33403,19 @@ export const InsightsListReturnSchema = {
       "type": "object"
     },
     {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "generatedAt": {
           "type": "number"
         },
         "items": {
           "items": {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           "type": "array"
@@ -28006,13 +33425,21 @@ export const InsightsListReturnSchema = {
           "type": "boolean"
         },
         "query": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "stats": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         }
       },
@@ -28050,22 +33477,67 @@ export const InsightsSearchInputSchema = {
 
 /** JSON Schema for the return shape of `insights.search`. */
 export const InsightsSearchReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "count": {
       "type": "number"
     },
     "insights": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "query": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -28094,11 +33566,52 @@ export const InsightsShowInputSchema = {
 
 /** JSON Schema for the return shape of `insights.show`. */
 export const InsightsShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "insight": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "tags": {
@@ -28152,8 +33665,49 @@ export const InstancesCreateInputSchema = {
 
 /** JSON Schema for the return shape of `instances.create`. */
 export const InstancesCreateReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -28174,8 +33728,49 @@ export const InstancesDeleteInputSchema = {
 
 /** JSON Schema for the return shape of `instances.delete`. */
 export const InstancesDeleteReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -28188,8 +33783,49 @@ export const InstancesDeletedInputSchema = {
 
 /** JSON Schema for the return shape of `instances.deleted`. */
 export const InstancesDeletedReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -28210,8 +33846,49 @@ export const InstancesDisableInputSchema = {
 
 /** JSON Schema for the return shape of `instances.disable`. */
 export const InstancesDisableReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -28232,8 +33909,49 @@ export const InstancesDisconnectInputSchema = {
 
 /** JSON Schema for the return shape of `instances.disconnect`. */
 export const InstancesDisconnectReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -28254,8 +33972,49 @@ export const InstancesEnableInputSchema = {
 
 /** JSON Schema for the return shape of `instances.enable`. */
 export const InstancesEnableReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -28281,8 +34040,49 @@ export const InstancesGetInputSchema = {
 
 /** JSON Schema for the return shape of `instances.get`. */
 export const InstancesGetReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -28308,8 +34108,49 @@ export const InstancesListInputSchema = {
 
 /** JSON Schema for the return shape of `instances.list`. */
 export const InstancesListReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -28339,8 +34180,49 @@ export const InstancesPendingApproveInputSchema = {
 
 /** JSON Schema for the return shape of `instances.pending.approve`. */
 export const InstancesPendingApproveReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -28369,8 +34251,49 @@ export const InstancesPendingListInputSchema = {
 
 /** JSON Schema for the return shape of `instances.pending.list`. */
 export const InstancesPendingListReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -28396,8 +34319,49 @@ export const InstancesPendingRejectInputSchema = {
 
 /** JSON Schema for the return shape of `instances.pending.reject`. */
 export const InstancesPendingRejectReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -28418,8 +34382,49 @@ export const InstancesRestoreInputSchema = {
 
 /** JSON Schema for the return shape of `instances.restore`. */
 export const InstancesRestoreReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -28474,8 +34479,49 @@ export const InstancesRoutesAddInputSchema = {
 
 /** JSON Schema for the return shape of `instances.routes.add`. */
 export const InstancesRoutesAddReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -28493,8 +34539,49 @@ export const InstancesRoutesDeletedInputSchema = {
 
 /** JSON Schema for the return shape of `instances.routes.deleted`. */
 export const InstancesRoutesDeletedReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -28527,8 +34614,49 @@ export const InstancesRoutesListInputSchema = {
 
 /** JSON Schema for the return shape of `instances.routes.list`. */
 export const InstancesRoutesListReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -28558,8 +34686,49 @@ export const InstancesRoutesRemoveInputSchema = {
 
 /** JSON Schema for the return shape of `instances.routes.remove`. */
 export const InstancesRoutesRemoveReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -28589,8 +34758,49 @@ export const InstancesRoutesRestoreInputSchema = {
 
 /** JSON Schema for the return shape of `instances.routes.restore`. */
 export const InstancesRoutesRestoreReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -28630,8 +34840,49 @@ export const InstancesRoutesSetInputSchema = {
 
 /** JSON Schema for the return shape of `instances.routes.set`. */
 export const InstancesRoutesSetReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -28657,8 +34908,49 @@ export const InstancesRoutesShowInputSchema = {
 
 /** JSON Schema for the return shape of `instances.routes.show`. */
 export const InstancesRoutesShowReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -28689,8 +34981,49 @@ export const InstancesSetInputSchema = {
 
 /** JSON Schema for the return shape of `instances.set`. */
 export const InstancesSetReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -28711,8 +35044,49 @@ export const InstancesShowInputSchema = {
 
 /** JSON Schema for the return shape of `instances.show`. */
 export const InstancesShowReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -28733,8 +35107,49 @@ export const InstancesStatusInputSchema = {
 
 /** JSON Schema for the return shape of `instances.status`. */
 export const InstancesStatusReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -28763,8 +35178,49 @@ export const InstancesTargetInputSchema = {
 
 /** JSON Schema for the return shape of `instances.target`. */
 export const InstancesTargetReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -36518,15 +42974,56 @@ export const MediaSendInputSchema = {
 
 /** JSON Schema for the return shape of `media.send`. */
 export const MediaSendReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "delivery": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "media": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "caption": {
           "type": "string"
@@ -36561,7 +43058,7 @@ export const MediaSendReturnSchema = {
       "type": "boolean"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "accountId": {
           "type": "string"
@@ -37642,26 +44139,71 @@ export const ObserversListInputSchema = {
 
 /** JSON Schema for the return shape of `observers.list`. */
 export const ObserversListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "bindings": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -37748,7 +44290,7 @@ export const ObserversProfilesInitInputSchema = {
 
 /** JSON Schema for the return shape of `observers.profiles.init`. */
 export const ObserversProfilesInitReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "profileDir": {
       "type": "string"
@@ -37786,18 +44328,59 @@ export const ObserversProfilesListInputSchema = {
 
 /** JSON Schema for the return shape of `observers.profiles.list`. */
 export const ObserversProfilesListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -37848,8 +44431,12 @@ export const ObserversProfilesListReturnSchema = {
     },
     "profiles": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -37888,7 +44475,44 @@ export const ObserversProfilesPreviewInputSchema = {
 
 /** JSON Schema for the return shape of `observers.profiles.preview`. */
 export const ObserversProfilesPreviewReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "eventMarkdown": {
       "type": "string"
@@ -37897,8 +44521,12 @@ export const ObserversProfilesPreviewReturnSchema = {
       "type": "string"
     },
     "profile": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "prompt": {
@@ -37931,14 +44559,55 @@ export const ObserversProfilesShowInputSchema = {
 
 /** JSON Schema for the return shape of `observers.profiles.show`. */
 export const ObserversProfilesShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "body": {
       "type": "string"
     },
     "profile": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -37963,12 +44632,53 @@ export const ObserversProfilesValidateInputSchema = {
 
 /** JSON Schema for the return shape of `observers.profiles.validate`. */
 export const ObserversProfilesValidateReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "errors": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -37978,8 +44688,12 @@ export const ObserversProfilesValidateReturnSchema = {
     },
     "profiles": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -38010,35 +44724,88 @@ export const ObserversRefreshInputSchema = {
 
 /** JSON Schema for the return shape of `observers.refresh`. */
 export const ObserversRefreshReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "bindings": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "created": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "skipped": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "source": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "total": {
@@ -38072,11 +44839,52 @@ export const ObserversRulesDisableInputSchema = {
 
 /** JSON Schema for the return shape of `observers.rules.disable`. */
 export const ObserversRulesDisableReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "rule": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "success": {
@@ -38108,11 +44916,52 @@ export const ObserversRulesEnableInputSchema = {
 
 /** JSON Schema for the return shape of `observers.rules.enable`. */
 export const ObserversRulesEnableReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "rule": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "success": {
@@ -38144,27 +44993,76 @@ export const ObserversRulesExplainInputSchema = {
 
 /** JSON Schema for the return shape of `observers.rules.explain`. */
 export const ObserversRulesExplainReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "bindings": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "rules": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "source": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -38194,18 +45092,59 @@ export const ObserversRulesListInputSchema = {
 
 /** JSON Schema for the return shape of `observers.rules.list`. */
 export const ObserversRulesListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -38256,8 +45195,12 @@ export const ObserversRulesListReturnSchema = {
     },
     "rules": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -38292,9 +45235,48 @@ export const ObserversRulesRmInputSchema = {
 
 /** JSON Schema for the return shape of `observers.rules.rm`. */
 export const ObserversRulesRmReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
-    "deleted": {},
+    "deleted": {
+      "$ref": "#/$defs/__schema0"
+    },
     "success": {
       "const": true,
       "type": "boolean"
@@ -38409,11 +45391,52 @@ export const ObserversRulesSetInputSchema = {
 
 /** JSON Schema for the return shape of `observers.rules.set`. */
 export const ObserversRulesSetReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "rule": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "success": {
@@ -38445,11 +45468,52 @@ export const ObserversRulesShowInputSchema = {
 
 /** JSON Schema for the return shape of `observers.rules.show`. */
 export const ObserversRulesShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "rule": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -38468,12 +45532,53 @@ export const ObserversRulesValidateInputSchema = {
 
 /** JSON Schema for the return shape of `observers.rules.validate`. */
 export const ObserversRulesValidateReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "errors": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -38506,11 +45611,52 @@ export const ObserversShowInputSchema = {
 
 /** JSON Schema for the return shape of `observers.show`. */
 export const ObserversShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "binding": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -40617,8 +47763,49 @@ export const ProjectsCreateInputSchema = {
 
 /** JSON Schema for the return shape of `projects.create`. */
 export const ProjectsCreateReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -40636,12 +47823,53 @@ export const ProjectsFixturesSeedInputSchema = {
 
 /** JSON Schema for the return shape of `projects.fixtures.seed`. */
 export const ProjectsFixturesSeedReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "fixtures": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -40727,17 +47955,62 @@ export const ProjectsInitInputSchema = {
 
 /** JSON Schema for the return shape of `projects.init`. */
 export const ProjectsInitReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "details": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "workflows": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -40793,8 +48066,49 @@ export const ProjectsLinkInputSchema = {
 
 /** JSON Schema for the return shape of `projects.link`. */
 export const ProjectsLinkReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -40824,23 +48138,68 @@ export const ProjectsListInputSchema = {
 
 /** JSON Schema for the return shape of `projects.list`. */
 export const ProjectsListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "filters": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -40891,8 +48250,12 @@ export const ProjectsListReturnSchema = {
     },
     "projects": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -40929,17 +48292,62 @@ export const ProjectsNextInputSchema = {
 
 /** JSON Schema for the return shape of `projects.next`. */
 export const ProjectsNextReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "filters": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "projects": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -40994,8 +48402,49 @@ export const ProjectsResourcesAddInputSchema = {
 
 /** JSON Schema for the return shape of `projects.resources.add`. */
 export const ProjectsResourcesAddReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -41052,12 +48501,53 @@ export const ProjectsResourcesImportInputSchema = {
 
 /** JSON Schema for the return shape of `projects.resources.import`. */
 export const ProjectsResourcesImportReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "resources": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -41102,18 +48592,59 @@ export const ProjectsResourcesListInputSchema = {
 
 /** JSON Schema for the return shape of `projects.resources.list`. */
 export const ProjectsResourcesListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -41164,8 +48695,12 @@ export const ProjectsResourcesListReturnSchema = {
     },
     "resources": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -41205,8 +48740,49 @@ export const ProjectsResourcesShowInputSchema = {
 
 /** JSON Schema for the return shape of `projects.resources.show`. */
 export const ProjectsResourcesShowReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -41227,8 +48803,49 @@ export const ProjectsShowInputSchema = {
 
 /** JSON Schema for the return shape of `projects.show`. */
 export const ProjectsShowReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -41249,8 +48866,49 @@ export const ProjectsStatusInputSchema = {
 
 /** JSON Schema for the return shape of `projects.status`. */
 export const ProjectsStatusReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -41297,21 +48955,70 @@ export const ProjectsTasksAttachInputSchema = {
 
 /** JSON Schema for the return shape of `projects.tasks.attach`. */
 export const ProjectsTasksAttachReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "defaults": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "details": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "workflow": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -41378,21 +49085,70 @@ export const ProjectsTasksCreateInputSchema = {
 
 /** JSON Schema for the return shape of `projects.tasks.create`. */
 export const ProjectsTasksCreateReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "defaults": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "details": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "workflow": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -41434,21 +49190,70 @@ export const ProjectsTasksDispatchInputSchema = {
 
 /** JSON Schema for the return shape of `projects.tasks.dispatch`. */
 export const ProjectsTasksDispatchReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "defaults": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "details": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "workflow": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -41513,8 +49318,49 @@ export const ProjectsUpdateInputSchema = {
 
 /** JSON Schema for the return shape of `projects.update`. */
 export const ProjectsUpdateReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -41544,16 +49390,61 @@ export const ProjectsWorkflowsAttachInputSchema = {
 
 /** JSON Schema for the return shape of `projects.workflows.attach`. */
 export const ProjectsWorkflowsAttachReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "details": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "workflow": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -41594,16 +49485,61 @@ export const ProjectsWorkflowsStartInputSchema = {
 
 /** JSON Schema for the return shape of `projects.workflows.start`. */
 export const ProjectsWorkflowsStartReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "details": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "workflow": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -41634,7 +49570,7 @@ export const ProxCallsCancelInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.cancel`. */
 export const ProxCallsCancelReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "message": {
       "type": "string"
@@ -41670,12 +49606,53 @@ export const ProxCallsEventsInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.events`. */
 export const ProxCallsEventsReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "events": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -41754,16 +49731,59 @@ export const ProxCallsProfilesConfigureInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.profiles.configure`. */
 export const ProxCallsProfilesConfigureReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "profile": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "provider_sync": {
       "anyOf": [
-        {},
+        {
+          "$ref": "#/$defs/__schema0"
+        },
         {
           "type": "null"
         }
@@ -41799,18 +49819,59 @@ export const ProxCallsProfilesListInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.profiles.list`. */
 export const ProxCallsProfilesListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -41887,8 +49948,49 @@ export const ProxCallsProfilesShowInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.profiles.show`. */
 export const ProxCallsProfilesShowReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -41937,7 +50039,44 @@ export const ProxCallsRequestInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.request`. */
 export const ProxCallsRequestReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "block_reason": {
       "anyOf": [
@@ -41963,8 +50102,12 @@ export const ProxCallsRequestReturnSchema = {
       "type": "string"
     },
     "request": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -41991,14 +50134,55 @@ export const ProxCallsRulesInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.rules`. */
 export const ProxCallsRulesReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "anyOf": [
     {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "message": {
           "type": "string"
@@ -42032,18 +50216,63 @@ export const ProxCallsShowInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.show`. */
 export const ProxCallsShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "request": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "result": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -42053,8 +50282,12 @@ export const ProxCallsShowReturnSchema = {
     },
     "runs": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -42100,8 +50333,49 @@ export const ProxCallsToolsBindInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.tools.bind`. */
 export const ProxCallsToolsBindReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -42129,8 +50403,49 @@ export const ProxCallsToolsConfigureInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.tools.configure`. */
 export const ProxCallsToolsConfigureReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -42174,8 +50489,49 @@ export const ProxCallsToolsCreateInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.tools.create`. */
 export const ProxCallsToolsCreateReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -42205,18 +50561,59 @@ export const ProxCallsToolsListInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.tools.list`. */
 export const ProxCallsToolsListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -42305,7 +50702,7 @@ export const ProxCallsToolsRunInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.tools.run`. */
 export const ProxCallsToolsRunReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "ok": {
       "type": "boolean"
@@ -42333,15 +50730,56 @@ export const ProxCallsToolsRunsInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.tools.runs`. */
 export const ProxCallsToolsRunsReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "request_id": {
       "type": "string"
     },
     "tool_runs": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -42374,8 +50812,49 @@ export const ProxCallsToolsShowInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.tools.show`. */
 export const ProxCallsToolsShowReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -42399,7 +50878,7 @@ export const ProxCallsToolsUnbindInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.tools.unbind`. */
 export const ProxCallsToolsUnbindReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "success": {
       "const": true,
@@ -42436,7 +50915,7 @@ export const ProxCallsTranscriptInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.transcript`. */
 export const ProxCallsTranscriptReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "outcome": {
       "type": "string"
@@ -42490,8 +50969,49 @@ export const ProxCallsVoiceAgentsBindToolInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.voice-agents.bind-tool`. */
 export const ProxCallsVoiceAgentsBindToolReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -42527,8 +51047,49 @@ export const ProxCallsVoiceAgentsConfigureInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.voice-agents.configure`. */
 export const ProxCallsVoiceAgentsConfigureReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -42564,8 +51125,49 @@ export const ProxCallsVoiceAgentsCreateInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.voice-agents.create`. */
 export const ProxCallsVoiceAgentsCreateReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -42591,18 +51193,59 @@ export const ProxCallsVoiceAgentsListInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.voice-agents.list`. */
 export const ProxCallsVoiceAgentsListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -42679,8 +51322,49 @@ export const ProxCallsVoiceAgentsShowInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.voice-agents.show`. */
 export const ProxCallsVoiceAgentsShowReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -42708,14 +51392,55 @@ export const ProxCallsVoiceAgentsSyncInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.voice-agents.sync`. */
 export const ProxCallsVoiceAgentsSyncReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "dry_run": {
       "type": "boolean"
     },
     "intended_changes": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "provider": {
@@ -42768,7 +51493,7 @@ export const ProxCallsVoiceAgentsUnbindToolInputSchema = {
 
 /** JSON Schema for the return shape of `prox.calls.voice-agents.unbind-tool`. */
 export const ProxCallsVoiceAgentsUnbindToolReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "success": {
       "const": true,
@@ -42810,7 +51535,7 @@ export const ReactSendReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "event": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "accountId": {
           "type": "string"
@@ -42918,7 +51643,44 @@ export const RoutesExplainInputSchema = {
 
 /** JSON Schema for the return shape of `routes.explain`. */
 export const RoutesExplainReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "channel": {
       "anyOf": [
@@ -42933,8 +51695,12 @@ export const RoutesExplainReturnSchema = {
     "configuredRoute": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -42948,8 +51714,12 @@ export const RoutesExplainReturnSchema = {
     "liveEffect": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -42968,8 +51738,12 @@ export const RoutesExplainReturnSchema = {
       ]
     },
     "target": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -43010,11 +51784,52 @@ export const RoutesListInputSchema = {
 
 /** JSON Schema for the return shape of `routes.list`. */
 export const RoutesListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "filter": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "instance": {
@@ -43029,14 +51844,18 @@ export const RoutesListReturnSchema = {
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -43087,8 +51906,12 @@ export const RoutesListReturnSchema = {
     },
     "routes": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -43130,7 +51953,44 @@ export const RoutesShowInputSchema = {
 
 /** JSON Schema for the return shape of `routes.show`. */
 export const RoutesShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "instance": {
       "type": "string"
@@ -43139,8 +51999,12 @@ export const RoutesShowReturnSchema = {
       "type": "string"
     },
     "route": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -43183,19 +52047,64 @@ export const RulesImportInputSchema = {
 
 /** JSON Schema for the return shape of `rules.import`. */
 export const RulesImportReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "candidates": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "counts": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "cwd": {
@@ -43212,8 +52121,12 @@ export const RulesImportReturnSchema = {
     },
     "sources": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -43258,6 +52171,43 @@ export const RulesSourcesInputSchema = {
 
 /** JSON Schema for the return shape of `rules.sources`. */
 export const RulesSourcesReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "counts": {
@@ -43296,8 +52246,12 @@ export const RulesSourcesReturnSchema = {
     },
     "sources": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -43379,11 +52333,52 @@ export const RuntimeCredentialsAddInputSchema = {
 
 /** JSON Schema for the return shape of `runtime.credentials.add`. */
 export const RuntimeCredentialsAddReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "credential": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -43439,16 +52434,61 @@ export const RuntimeCredentialsClassifyInputSchema = {
 
 /** JSON Schema for the return shape of `runtime.credentials.classify`. */
 export const RuntimeCredentialsClassifyReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "pressure": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "signal": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -43476,11 +52516,52 @@ export const RuntimeCredentialsDisableInputSchema = {
 
 /** JSON Schema for the return shape of `runtime.credentials.disable`. */
 export const RuntimeCredentialsDisableReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "credential": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -43507,11 +52588,52 @@ export const RuntimeCredentialsEnableInputSchema = {
 
 /** JSON Schema for the return shape of `runtime.credentials.enable`. */
 export const RuntimeCredentialsEnableReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "credential": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -43551,11 +52673,52 @@ export const RuntimeCredentialsImportInputSchema = {
 
 /** JSON Schema for the return shape of `runtime.credentials.import`. */
 export const RuntimeCredentialsImportReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "credential": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -43599,18 +52762,59 @@ export const RuntimeCredentialsListInputSchema = {
 
 /** JSON Schema for the return shape of `runtime.credentials.list`. */
 export const RuntimeCredentialsListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "credentials": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -43661,8 +52865,12 @@ export const RuntimeCredentialsListReturnSchema = {
     },
     "providerHealth": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -43718,12 +52926,53 @@ export const RuntimeCredentialsRefreshInputSchema = {
 
 /** JSON Schema for the return shape of `runtime.credentials.refresh`. */
 export const RuntimeCredentialsRefreshReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "refreshed": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -43752,18 +53001,63 @@ export const RuntimeCredentialsResetHealthInputSchema = {
 
 /** JSON Schema for the return shape of `runtime.credentials.reset-health`. */
 export const RuntimeCredentialsResetHealthReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "credential": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "health": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -43809,20 +53103,65 @@ export const RuntimeCredentialsSelectInputSchema = {
 
 /** JSON Schema for the return shape of `runtime.credentials.select`. */
 export const RuntimeCredentialsSelectReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "candidates": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "rejected": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -43830,8 +53169,12 @@ export const RuntimeCredentialsSelectReturnSchema = {
     "selected": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -43862,18 +53205,63 @@ export const RuntimeCredentialsStatusInputSchema = {
 
 /** JSON Schema for the return shape of `runtime.credentials.status`. */
 export const RuntimeCredentialsStatusReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "credential": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "health": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -44245,9 +53633,48 @@ export const SelfChatInputSchema = {
 
 /** JSON Schema for the return shape of `self.chat`. */
 export const SelfChatReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
-    "data": {},
+    "data": {
+      "$ref": "#/$defs/__schema0"
+    },
     "reason": {
       "type": "string"
     },
@@ -44285,12 +53712,51 @@ export const SelfContextInputSchema = {
 
 /** JSON Schema for the return shape of `self.context`. */
 export const SelfContextReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "actor": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
-        "data": {},
+        "data": {
+          "$ref": "#/$defs/__schema0"
+        },
         "reason": {
           "type": "string"
         },
@@ -44310,9 +53776,11 @@ export const SelfContextReturnSchema = {
       "type": "object"
     },
     "chat": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
-        "data": {},
+        "data": {
+          "$ref": "#/$defs/__schema0"
+        },
         "reason": {
           "type": "string"
         },
@@ -44336,8 +53804,12 @@ export const SelfContextReturnSchema = {
     },
     "explain": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -44346,14 +53818,20 @@ export const SelfContextReturnSchema = {
       "type": "number"
     },
     "identity": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "knowledge": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
-        "data": {},
+        "data": {
+          "$ref": "#/$defs/__schema0"
+        },
         "reason": {
           "type": "string"
         },
@@ -44382,9 +53860,11 @@ export const SelfContextReturnSchema = {
       "type": "array"
     },
     "permissions": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
-        "data": {},
+        "data": {
+          "$ref": "#/$defs/__schema0"
+        },
         "reason": {
           "type": "string"
         },
@@ -44404,9 +53884,11 @@ export const SelfContextReturnSchema = {
       "type": "object"
     },
     "recent": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
-        "data": {},
+        "data": {
+          "$ref": "#/$defs/__schema0"
+        },
         "reason": {
           "type": "string"
         },
@@ -44426,9 +53908,11 @@ export const SelfContextReturnSchema = {
       "type": "object"
     },
     "route": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
-        "data": {},
+        "data": {
+          "$ref": "#/$defs/__schema0"
+        },
         "reason": {
           "type": "string"
         },
@@ -44448,9 +53932,11 @@ export const SelfContextReturnSchema = {
       "type": "object"
     },
     "session": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
-        "data": {},
+        "data": {
+          "$ref": "#/$defs/__schema0"
+        },
         "reason": {
           "type": "string"
         },
@@ -44497,12 +53983,53 @@ export const SelfExplainInputSchema = {
 
 /** JSON Schema for the return shape of `self.explain`. */
 export const SelfExplainReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "explain": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -44534,9 +54061,48 @@ export const SelfKnowledgeInputSchema = {
 
 /** JSON Schema for the return shape of `self.knowledge`. */
 export const SelfKnowledgeReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
-    "data": {},
+    "data": {
+      "$ref": "#/$defs/__schema0"
+    },
     "reason": {
       "type": "string"
     },
@@ -44565,9 +54131,48 @@ export const SelfPermissionsInputSchema = {
 
 /** JSON Schema for the return shape of `self.permissions`. */
 export const SelfPermissionsReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
-    "data": {},
+    "data": {
+      "$ref": "#/$defs/__schema0"
+    },
     "reason": {
       "type": "string"
     },
@@ -44601,9 +54206,48 @@ export const SelfRecentInputSchema = {
 
 /** JSON Schema for the return shape of `self.recent`. */
 export const SelfRecentReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
-    "data": {},
+    "data": {
+      "$ref": "#/$defs/__schema0"
+    },
     "reason": {
       "type": "string"
     },
@@ -44632,9 +54276,48 @@ export const SelfRouteInputSchema = {
 
 /** JSON Schema for the return shape of `self.route`. */
 export const SelfRouteReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
-    "data": {},
+    "data": {
+      "$ref": "#/$defs/__schema0"
+    },
     "reason": {
       "type": "string"
     },
@@ -44663,12 +54346,51 @@ export const SelfWhoamiInputSchema = {
 
 /** JSON Schema for the return shape of `self.whoami`. */
 export const SelfWhoamiReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "actor": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
-        "data": {},
+        "data": {
+          "$ref": "#/$defs/__schema0"
+        },
         "reason": {
           "type": "string"
         },
@@ -44688,9 +54410,11 @@ export const SelfWhoamiReturnSchema = {
       "type": "object"
     },
     "chat": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
-        "data": {},
+        "data": {
+          "$ref": "#/$defs/__schema0"
+        },
         "reason": {
           "type": "string"
         },
@@ -44713,8 +54437,12 @@ export const SelfWhoamiReturnSchema = {
       "type": "number"
     },
     "identity": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "nextReads": {
@@ -44724,9 +54452,11 @@ export const SelfWhoamiReturnSchema = {
       "type": "array"
     },
     "route": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
-        "data": {},
+        "data": {
+          "$ref": "#/$defs/__schema0"
+        },
         "reason": {
           "type": "string"
         },
@@ -44746,9 +54476,11 @@ export const SelfWhoamiReturnSchema = {
       "type": "object"
     },
     "session": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
-        "data": {},
+        "data": {
+          "$ref": "#/$defs/__schema0"
+        },
         "reason": {
           "type": "string"
         },
@@ -44798,8 +54530,49 @@ export const SessionsActionsInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.actions`. */
 export const SessionsActionsReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -44849,8 +54622,49 @@ export const SessionsAnswerInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.answer`. */
 export const SessionsAnswerReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -44900,8 +54714,49 @@ export const SessionsAskInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.ask`. */
 export const SessionsAskReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -44930,8 +54785,49 @@ export const SessionsAttachInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.attach`. */
 export const SessionsAttachReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -44952,8 +54848,49 @@ export const SessionsDeleteInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.delete`. */
 export const SessionsDeleteReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -44978,8 +54915,49 @@ export const SessionsDeleteMessageInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.delete-message`. */
 export const SessionsDeleteMessageReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -45004,8 +54982,49 @@ export const SessionsDetachInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.detach`. */
 export const SessionsDetachReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -45038,8 +55057,49 @@ export const SessionsEditMessageInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.edit-message`. */
 export const SessionsEditMessageReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -45085,8 +55145,49 @@ export const SessionsExecuteInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.execute`. */
 export const SessionsExecuteReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -45111,8 +55212,49 @@ export const SessionsExtendInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.extend`. */
 export const SessionsExtendReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -45188,8 +55330,49 @@ export const SessionsFollowupsAddInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.followups.add`. */
 export const SessionsFollowupsAddReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -45214,8 +55397,49 @@ export const SessionsFollowupsInspectInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.followups.inspect`. */
 export const SessionsFollowupsInspectReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -45245,18 +55469,59 @@ export const SessionsFollowupsListInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.followups.list`. */
 export const SessionsFollowupsListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -45334,8 +55599,49 @@ export const SessionsFollowupsPauseInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.followups.pause`. */
 export const SessionsFollowupsPauseReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -45356,8 +55662,49 @@ export const SessionsFollowupsResumeInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.followups.resume`. */
 export const SessionsFollowupsResumeReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -45379,8 +55726,49 @@ export const SessionsFollowupsRetryInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.followups.retry`. */
 export const SessionsFollowupsRetryReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -45401,8 +55789,49 @@ export const SessionsFollowupsRunInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.followups.run`. */
 export const SessionsFollowupsRunReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -45432,18 +55861,59 @@ export const SessionsFollowupsRunsInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.followups.runs`. */
 export const SessionsFollowupsRunsReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -45525,8 +55995,49 @@ export const SessionsFollowupsSnoozeInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.followups.snooze`. */
 export const SessionsFollowupsSnoozeReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -45858,8 +56369,49 @@ export const SessionsGoalInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.goal`. */
 export const SessionsGoalReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -45880,8 +56432,49 @@ export const SessionsInfoInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.info`. */
 export const SessionsInfoReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -45927,8 +56520,49 @@ export const SessionsInformInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.inform`. */
 export const SessionsInformReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -45949,8 +56583,49 @@ export const SessionsKeepInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.keep`. */
 export const SessionsKeepReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -45988,18 +56663,59 @@ export const SessionsListInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.list`. */
 export const SessionsListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -46081,8 +56797,49 @@ export const SessionsMuteInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.mute`. */
 export const SessionsMuteReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -46116,8 +56873,49 @@ export const SessionsPruneInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.prune`. */
 export const SessionsPruneReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -46147,8 +56945,49 @@ export const SessionsReadInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.read`. */
 export const SessionsReadReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -46174,8 +57013,49 @@ export const SessionsRenameInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.rename`. */
 export const SessionsRenameReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -46196,8 +57076,49 @@ export const SessionsResetInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.reset`. */
 export const SessionsResetReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -46235,9 +57156,48 @@ export const SessionsRuntimeFollowUpInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.runtime.follow-up`. */
 export const SessionsRuntimeFollowUpReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
-    "data": {},
+    "data": {
+      "$ref": "#/$defs/__schema0"
+    },
     "error": {
       "type": "string"
     },
@@ -46283,9 +57243,48 @@ export const SessionsRuntimeForkInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.runtime.fork`. */
 export const SessionsRuntimeForkReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
-    "data": {},
+    "data": {
+      "$ref": "#/$defs/__schema0"
+    },
     "error": {
       "type": "string"
     },
@@ -46327,9 +57326,48 @@ export const SessionsRuntimeInterruptInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.runtime.interrupt`. */
 export const SessionsRuntimeInterruptReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
-    "data": {},
+    "data": {
+      "$ref": "#/$defs/__schema0"
+    },
     "error": {
       "type": "string"
     },
@@ -46383,9 +57421,48 @@ export const SessionsRuntimeListInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.runtime.list`. */
 export const SessionsRuntimeListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
-    "data": {},
+    "data": {
+      "$ref": "#/$defs/__schema0"
+    },
     "error": {
       "type": "string"
     },
@@ -46427,9 +57504,48 @@ export const SessionsRuntimeReadInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.runtime.read`. */
 export const SessionsRuntimeReadReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
-    "data": {},
+    "data": {
+      "$ref": "#/$defs/__schema0"
+    },
     "error": {
       "type": "string"
     },
@@ -46471,9 +57587,48 @@ export const SessionsRuntimeRollbackInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.runtime.rollback`. */
 export const SessionsRuntimeRollbackReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
-    "data": {},
+    "data": {
+      "$ref": "#/$defs/__schema0"
+    },
     "error": {
       "type": "string"
     },
@@ -46524,9 +57679,48 @@ export const SessionsRuntimeSteerInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.runtime.steer`. */
 export const SessionsRuntimeSteerReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
-    "data": {},
+    "data": {
+      "$ref": "#/$defs/__schema0"
+    },
     "error": {
       "type": "string"
     },
@@ -46616,8 +57810,49 @@ export const SessionsSendInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.send`. */
 export const SessionsSendReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -46643,8 +57878,49 @@ export const SessionsSetDisplayInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.set-display`. */
 export const SessionsSetDisplayReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -46670,8 +57946,49 @@ export const SessionsSetModelInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.set-model`. */
 export const SessionsSetModelReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -46697,8 +58014,49 @@ export const SessionsSetThinkingInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.set-thinking`. */
 export const SessionsSetThinkingReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -46724,8 +58082,49 @@ export const SessionsSetTtlInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.set-ttl`. */
 export const SessionsSetTtlReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -46746,8 +58145,49 @@ export const SessionsSubscriptionsInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.subscriptions`. */
 export const SessionsSubscriptionsReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -46820,8 +58260,49 @@ export const SessionsTraceInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.trace`. */
 export const SessionsTraceReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -46846,8 +58327,49 @@ export const SessionsUnmuteInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.unmute`. */
 export const SessionsUnmuteReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -46868,8 +58390,49 @@ export const SessionsVisibilityInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.visibility`. */
 export const SessionsVisibilityReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -46967,7 +58530,7 @@ export const SettingsDeleteReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string"
@@ -47412,7 +58975,7 @@ export const SettingsListReturnSchema = {
       "type": "object"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -47576,7 +59139,7 @@ export const SettingsSetReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string"
@@ -47614,10 +59177,47 @@ export const SkillGatesDisableInputSchema = {
 
 /** JSON Schema for the return shape of `skill-gates.disable`. */
 export const SkillGatesDisableReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "rule": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "command": {
           "anyOf": [
@@ -47652,8 +59252,12 @@ export const SkillGatesDisableReturnSchema = {
         "configured": {
           "anyOf": [
             {
-              "additionalProperties": {},
-              "properties": {},
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
               "type": "object"
             },
             {
@@ -47667,8 +59271,12 @@ export const SkillGatesDisableReturnSchema = {
         "defaultRule": {
           "anyOf": [
             {
-              "additionalProperties": {},
-              "properties": {},
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
               "type": "object"
             },
             {
@@ -47788,10 +59396,47 @@ export const SkillGatesEnableInputSchema = {
 
 /** JSON Schema for the return shape of `skill-gates.enable`. */
 export const SkillGatesEnableReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "rule": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "command": {
           "anyOf": [
@@ -47826,8 +59471,12 @@ export const SkillGatesEnableReturnSchema = {
         "configured": {
           "anyOf": [
             {
-              "additionalProperties": {},
-              "properties": {},
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
               "type": "object"
             },
             {
@@ -47841,8 +59490,12 @@ export const SkillGatesEnableReturnSchema = {
         "defaultRule": {
           "anyOf": [
             {
-              "additionalProperties": {},
-              "properties": {},
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
               "type": "object"
             },
             {
@@ -47967,19 +59620,60 @@ export const SkillGatesListInputSchema = {
 
 /** JSON Schema for the return shape of `skill-gates.list`. */
 export const SkillGatesListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "configuredTotal": {
       "type": "number"
     },
     "filters": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "items": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "command": {
             "anyOf": [
@@ -48014,8 +59708,12 @@ export const SkillGatesListReturnSchema = {
           "configured": {
             "anyOf": [
               {
-                "additionalProperties": {},
-                "properties": {},
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
                 "type": "object"
               },
               {
@@ -48029,8 +59727,12 @@ export const SkillGatesListReturnSchema = {
           "defaultRule": {
             "anyOf": [
               {
-                "additionalProperties": {},
-                "properties": {},
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
                 "type": "object"
               },
               {
@@ -48124,7 +59826,7 @@ export const SkillGatesListReturnSchema = {
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -48172,7 +59874,7 @@ export const SkillGatesListReturnSchema = {
     },
     "rules": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "command": {
             "anyOf": [
@@ -48207,8 +59909,12 @@ export const SkillGatesListReturnSchema = {
           "configured": {
             "anyOf": [
               {
-                "additionalProperties": {},
-                "properties": {},
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
                 "type": "object"
               },
               {
@@ -48222,8 +59928,12 @@ export const SkillGatesListReturnSchema = {
           "defaultRule": {
             "anyOf": [
               {
-                "additionalProperties": {},
-                "properties": {},
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
                 "type": "object"
               },
               {
@@ -48381,7 +60091,44 @@ export const SkillGatesRmInputSchema = {
 
 /** JSON Schema for the return shape of `skill-gates.rm`. */
 export const SkillGatesRmReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "action": {
       "type": "string"
@@ -48390,7 +60137,7 @@ export const SkillGatesRmReturnSchema = {
       "type": "boolean"
     },
     "rule": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "command": {
           "anyOf": [
@@ -48425,8 +60172,12 @@ export const SkillGatesRmReturnSchema = {
         "configured": {
           "anyOf": [
             {
-              "additionalProperties": {},
-              "properties": {},
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
               "type": "object"
             },
             {
@@ -48440,8 +60191,12 @@ export const SkillGatesRmReturnSchema = {
         "defaultRule": {
           "anyOf": [
             {
-              "additionalProperties": {},
-              "properties": {},
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
               "type": "object"
             },
             {
@@ -48598,10 +60353,47 @@ export const SkillGatesSetInputSchema = {
 
 /** JSON Schema for the return shape of `skill-gates.set`. */
 export const SkillGatesSetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "rule": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "command": {
           "anyOf": [
@@ -48636,8 +60428,12 @@ export const SkillGatesSetReturnSchema = {
         "configured": {
           "anyOf": [
             {
-              "additionalProperties": {},
-              "properties": {},
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
               "type": "object"
             },
             {
@@ -48651,8 +60447,12 @@ export const SkillGatesSetReturnSchema = {
         "defaultRule": {
           "anyOf": [
             {
-              "additionalProperties": {},
-              "properties": {},
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
               "type": "object"
             },
             {
@@ -48772,10 +60572,47 @@ export const SkillGatesShowInputSchema = {
 
 /** JSON Schema for the return shape of `skill-gates.show`. */
 export const SkillGatesShowReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "rule": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "command": {
           "anyOf": [
@@ -48810,8 +60647,12 @@ export const SkillGatesShowReturnSchema = {
         "configured": {
           "anyOf": [
             {
-              "additionalProperties": {},
-              "properties": {},
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
               "type": "object"
             },
             {
@@ -48825,8 +60666,12 @@ export const SkillGatesShowReturnSchema = {
         "defaultRule": {
           "anyOf": [
             {
-              "additionalProperties": {},
-              "properties": {},
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
               "type": "object"
             },
             {
@@ -48962,7 +60807,7 @@ export const SkillsInstallInputSchema = {
 
 /** JSON Schema for the return shape of `skills.install`. */
 export const SkillsInstallReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "codexSynced": {
       "items": {
@@ -48972,7 +60817,7 @@ export const SkillsInstallReturnSchema = {
     },
     "installed": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "description": {
             "anyOf": [
@@ -49070,18 +60915,59 @@ export const SkillsListInputSchema = {
 
 /** JSON Schema for the return shape of `skills.list`. */
 export const SkillsListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -49132,7 +61018,7 @@ export const SkillsListReturnSchema = {
     },
     "skills": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "description": {
             "anyOf": [
@@ -49221,10 +61107,10 @@ export const SkillsShowInputSchema = {
 
 /** JSON Schema for the return shape of `skills.show`. */
 export const SkillsShowReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "skill": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "content": {
           "type": "string"
@@ -49289,7 +61175,7 @@ export const SkillsSyncInputSchema = {
 
 /** JSON Schema for the return shape of `skills.sync`. */
 export const SkillsSyncReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "codexSynced": {
       "items": {
@@ -49335,11 +61221,52 @@ export const SpecsGetInputSchema = {
 
 /** JSON Schema for the return shape of `specs.get`. */
 export const SpecsGetReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "context": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -49375,18 +61302,59 @@ export const SpecsListInputSchema = {
 
 /** JSON Schema for the return shape of `specs.list`. */
 export const SpecsListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -49437,8 +61405,12 @@ export const SpecsListReturnSchema = {
     },
     "specs": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -49485,7 +61457,44 @@ export const SpecsNewInputSchema = {
 
 /** JSON Schema for the return shape of `specs.new`. */
 export const SpecsNewReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "createdFiles": {
       "items": {
@@ -49495,15 +61504,23 @@ export const SpecsNewReturnSchema = {
     },
     "missingAncestors": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "spec": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "status": {
@@ -49529,7 +61546,7 @@ export const SpecsSyncInputSchema = {
 
 /** JSON Schema for the return shape of `specs.sync`. */
 export const SpecsSyncReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "rootPath": {
       "type": "string"
@@ -49600,13 +61617,50 @@ export const StickersAddInputSchema = {
 
 /** JSON Schema for the return shape of `stickers.add`. */
 export const StickersAddReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "action": {
       "type": "string"
     },
     "sticker": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "agents": {
           "items": {
@@ -49653,8 +61707,12 @@ export const StickersAddReturnSchema = {
           "type": "string"
         },
         "media": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "updatedAt": {
@@ -49712,11 +61770,48 @@ export const StickersListInputSchema = {
 
 /** JSON Schema for the return shape of `stickers.list`. */
 export const StickersListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "agents": {
             "items": {
@@ -49763,8 +61858,12 @@ export const StickersListReturnSchema = {
             "type": "string"
           },
           "media": {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           "updatedAt": {
@@ -49795,7 +61894,7 @@ export const StickersListReturnSchema = {
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -49843,7 +61942,7 @@ export const StickersListReturnSchema = {
     },
     "stickers": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "agents": {
             "items": {
@@ -49890,8 +61989,12 @@ export const StickersListReturnSchema = {
             "type": "string"
           },
           "media": {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           "updatedAt": {
@@ -50005,11 +62108,52 @@ export const StickersSendInputSchema = {
 
 /** JSON Schema for the return shape of `stickers.send`. */
 export const StickersSendReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "event": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "sticker": {
@@ -50084,10 +62228,47 @@ export const StickersShowInputSchema = {
 
 /** JSON Schema for the return shape of `stickers.show`. */
 export const StickersShowReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "sticker": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "agents": {
           "items": {
@@ -50134,8 +62315,12 @@ export const StickersShowReturnSchema = {
           "type": "string"
         },
         "media": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "updatedAt": {
@@ -51068,15 +63253,56 @@ export const TagRulesEvaluateInputSchema = {
 
 /** JSON Schema for the return shape of `tag-rules.evaluate`. */
 export const TagRulesEvaluateReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "apply": {
       "type": "boolean"
     },
     "outcomes": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -51085,14 +63311,22 @@ export const TagRulesEvaluateReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "traces": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -51122,29 +63356,82 @@ export const TagRulesExplainInputSchema = {
 
 /** JSON Schema for the return shape of `tag-rules.explain`. */
 export const TagRulesExplainReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "loaded": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "outcomes": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "rules": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "target": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -51175,18 +63462,59 @@ export const TagRulesListInputSchema = {
 
 /** JSON Schema for the return shape of `tag-rules.list`. */
 export const TagRulesListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "errors": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "limit": {
           "type": "number"
@@ -51210,8 +63538,12 @@ export const TagRulesListReturnSchema = {
     },
     "rules": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -51242,11 +63574,52 @@ export const TagRulesShowInputSchema = {
 
 /** JSON Schema for the return shape of `tag-rules.show`. */
 export const TagRulesShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "rule": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "source": {
@@ -51277,15 +63650,56 @@ export const TagRulesTickInputSchema = {
 
 /** JSON Schema for the return shape of `tag-rules.tick`. */
 export const TagRulesTickReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "appliedActions": {
       "type": "number"
     },
     "contacts": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -51295,8 +63709,12 @@ export const TagRulesTickReturnSchema = {
     },
     "loadErrors": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -51328,12 +63746,53 @@ export const TagRulesValidateInputSchema = {
 
 /** JSON Schema for the return shape of `tag-rules.validate`. */
 export const TagRulesValidateReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "errors": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -51490,19 +63949,64 @@ export const TagsAttachInputSchema = {
 
 /** JSON Schema for the return shape of `tags.attach`. */
 export const TagsAttachReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "behaviorConsumers": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "binding": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "changedCount": {
@@ -51512,13 +64016,21 @@ export const TagsAttachReturnSchema = {
       "type": "string"
     },
     "tag": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "target": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -51568,19 +64080,64 @@ export const TagsCreateInputSchema = {
 
 /** JSON Schema for the return shape of `tags.create`. */
 export const TagsCreateReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "behaviorConsumers": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "binding": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "changedCount": {
@@ -51590,13 +64147,21 @@ export const TagsCreateReturnSchema = {
       "type": "string"
     },
     "tag": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "target": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -51737,7 +64302,44 @@ export const TagsDetachInputSchema = {
 
 /** JSON Schema for the return shape of `tags.detach`. */
 export const TagsDetachReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -51747,8 +64349,12 @@ export const TagsDetachReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -51798,23 +64404,68 @@ export const TagsListInputSchema = {
 
 /** JSON Schema for the return shape of `tags.list`. */
 export const TagsListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "filters": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "page": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "count": {
           "type": "number"
@@ -51865,8 +64516,12 @@ export const TagsListReturnSchema = {
     },
     "tags": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -52031,39 +64686,92 @@ export const TagsSearchInputSchema = {
 
 /** JSON Schema for the return shape of `tags.search`. */
 export const TagsSearchReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "behaviorConsumers": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "bindings": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "filters": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "page": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "count": {
           "type": "number"
@@ -52154,19 +64862,64 @@ export const TagsSetInputSchema = {
 
 /** JSON Schema for the return shape of `tags.set`. */
 export const TagsSetReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "behaviorConsumers": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "binding": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "changedCount": {
@@ -52176,13 +64929,21 @@ export const TagsSetReturnSchema = {
       "type": "string"
     },
     "tag": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "target": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -52211,27 +64972,76 @@ export const TagsShowInputSchema = {
 
 /** JSON Schema for the return shape of `tags.show`. */
 export const TagsShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "behaviorConsumers": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "bindings": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "tag": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -52264,16 +65074,61 @@ export const TasksArchiveInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.archive`. */
 export const TasksArchiveReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "event": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "task": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -52376,11 +65231,52 @@ export const TasksAutomationsAddInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.automations.add`. */
 export const TasksAutomationsAddReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "automation": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "changedCount": {
@@ -52390,7 +65286,7 @@ export const TasksAutomationsAddReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "id": {
           "type": "string"
@@ -52432,11 +65328,52 @@ export const TasksAutomationsDisableInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.automations.disable`. */
 export const TasksAutomationsDisableReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "automation": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "changedCount": {
@@ -52446,7 +65383,7 @@ export const TasksAutomationsDisableReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "id": {
           "type": "string"
@@ -52488,11 +65425,52 @@ export const TasksAutomationsEnableInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.automations.enable`. */
 export const TasksAutomationsEnableReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "automation": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "changedCount": {
@@ -52502,7 +65480,7 @@ export const TasksAutomationsEnableReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "id": {
           "type": "string"
@@ -52549,31 +65527,80 @@ export const TasksAutomationsListInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.automations.list`. */
 export const TasksAutomationsListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "automations": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "filters": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -52653,11 +65680,52 @@ export const TasksAutomationsRmInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.automations.rm`. */
 export const TasksAutomationsRmReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "automation": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "changedCount": {
@@ -52667,7 +65735,7 @@ export const TasksAutomationsRmReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "id": {
           "type": "string"
@@ -52709,17 +65777,62 @@ export const TasksAutomationsShowInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.automations.show`. */
 export const TasksAutomationsShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "automation": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "runs": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -52753,16 +65866,61 @@ export const TasksBlockInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.block`. */
 export const TasksBlockReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "event": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "task": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -52795,21 +65953,70 @@ export const TasksCommentInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.comment`. */
 export const TasksCommentReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "comment": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "event": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "task": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -52924,34 +66131,87 @@ export const TasksCreateInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.create`. */
 export const TasksCreateReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "dependencies": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "dependents": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "event": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "launchPlan": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -52970,26 +66230,42 @@ export const TasksCreateReturnSchema = {
       ]
     },
     "readiness": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "relatedEvents": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "task": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "taskProfile": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -53029,16 +66305,61 @@ export const TasksDepsAddInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.deps.add`. */
 export const TasksDepsAddReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "event": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "task": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -53074,28 +66395,77 @@ export const TasksDepsLsInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.deps.ls`. */
 export const TasksDepsLsReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "dependencies": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "dependents": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -53103,8 +66473,12 @@ export const TasksDepsLsReturnSchema = {
     "launchPlan": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -53113,7 +66487,7 @@ export const TasksDepsLsReturnSchema = {
       ]
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -53163,8 +66537,12 @@ export const TasksDepsLsReturnSchema = {
       "type": "object"
     },
     "readiness": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "taskId": {
@@ -53209,16 +66587,61 @@ export const TasksDepsRmInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.deps.rm`. */
 export const TasksDepsRmReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "event": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "task": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -53282,24 +66705,73 @@ export const TasksDispatchInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.dispatch`. */
 export const TasksDispatchReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "event": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "mode": {
       "type": "string"
     },
     "readiness": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "task": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -53332,16 +66804,61 @@ export const TasksDoneInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.done`. */
 export const TasksDoneReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "event": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "task": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -53373,16 +66890,61 @@ export const TasksFailInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.fail`. */
 export const TasksFailReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "event": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "task": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -53483,20 +67045,65 @@ export const TasksListInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.list`. */
 export const TasksListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "archiveMode": {
       "type": "string"
     },
     "filters": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -53512,14 +67119,22 @@ export const TasksListReturnSchema = {
       ]
     },
     "page": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "tasks": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -53566,7 +67181,7 @@ export const TasksProfilesInitInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.profiles.init`. */
 export const TasksProfilesInitReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "manifestPath": {
       "type": "string"
@@ -53604,18 +67219,59 @@ export const TasksProfilesListInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.profiles.list`. */
 export const TasksProfilesListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -53666,8 +67322,12 @@ export const TasksProfilesListReturnSchema = {
     },
     "profiles": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -53737,16 +67397,61 @@ export const TasksProfilesPreviewInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.profiles.preview`. */
 export const TasksProfilesPreviewReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "profile": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "rendered": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -53774,8 +67479,49 @@ export const TasksProfilesShowInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.profiles.show`. */
 export const TasksProfilesShowReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -53793,12 +67539,53 @@ export const TasksProfilesValidateInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.profiles.validate`. */
 export const TasksProfilesValidateReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "results": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -53839,16 +67626,61 @@ export const TasksReportInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.report`. */
 export const TasksReportReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "event": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "task": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -53880,36 +67712,89 @@ export const TasksShowInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.show`. */
 export const TasksShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "comments": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "dependencies": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "dependents": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "events": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -53927,8 +67812,12 @@ export const TasksShowReturnSchema = {
     "launchPlan": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -53937,13 +67826,21 @@ export const TasksShowReturnSchema = {
       ]
     },
     "readiness": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "task": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -53977,16 +67874,61 @@ export const TasksUnarchiveInputSchema = {
 
 /** JSON Schema for the return shape of `tasks.unarchive`. */
 export const TasksUnarchiveReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "event": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "task": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -54018,19 +67960,64 @@ export const ThreadsBriefInputSchema = {
 
 /** JSON Schema for the return shape of `threads.brief`. */
 export const ThreadsBriefReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "action": {
       "type": "string"
     },
     "brief": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "thread": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -54067,14 +68054,55 @@ export const ThreadsCloseInputSchema = {
 
 /** JSON Schema for the return shape of `threads.close`. */
 export const ThreadsCloseReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "action": {
       "type": "string"
     },
     "thread": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -54115,19 +68143,64 @@ export const ThreadsCommentInputSchema = {
 
 /** JSON Schema for the return shape of `threads.comment`. */
 export const ThreadsCommentReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "action": {
       "type": "string"
     },
     "entry": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "thread": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -54180,14 +68253,55 @@ export const ThreadsCreateInputSchema = {
 
 /** JSON Schema for the return shape of `threads.create`. */
 export const ThreadsCreateReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "action": {
       "type": "string"
     },
     "thread": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -54227,22 +68341,67 @@ export const ThreadsEntriesInputSchema = {
 
 /** JSON Schema for the return shape of `threads.entries`. */
 export const ThreadsEntriesReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "action": {
       "type": "string"
     },
     "entries": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "thread": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -54292,19 +68451,64 @@ export const ThreadsLinkInputSchema = {
 
 /** JSON Schema for the return shape of `threads.link`. */
 export const ThreadsLinkReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "action": {
       "type": "string"
     },
     "link": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "thread": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -54350,7 +68554,44 @@ export const ThreadsListInputSchema = {
 
 /** JSON Schema for the return shape of `threads.list`. */
 export const ThreadsListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "action": {
       "const": "list",
@@ -54358,14 +68599,18 @@ export const ThreadsListReturnSchema = {
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -54453,19 +68698,64 @@ export const ThreadsNoteInputSchema = {
 
 /** JSON Schema for the return shape of `threads.note`. */
 export const ThreadsNoteReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "action": {
       "type": "string"
     },
     "entry": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "thread": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -54502,30 +68792,79 @@ export const ThreadsShowInputSchema = {
 
 /** JSON Schema for the return shape of `threads.show`. */
 export const ThreadsShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "action": {
       "type": "string"
     },
     "entries": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "links": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "thread": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -54783,19 +69122,60 @@ export const ToolsListInputSchema = {
 
 /** JSON Schema for the return shape of `tools.list`. */
 export const ToolsListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "groups": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "name": {
             "type": "string"
           },
           "tools": {
             "items": {
-              "additionalProperties": {},
-              "properties": {},
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
               "type": "object"
             },
             "type": "array"
@@ -54811,14 +69191,18 @@ export const ToolsListReturnSchema = {
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -54869,8 +69253,12 @@ export const ToolsListReturnSchema = {
     },
     "tools": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -54898,12 +69286,53 @@ export const ToolsManifestInputSchema = {
 
 /** JSON Schema for the return shape of `tools.manifest`. */
 export const ToolsManifestReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "tools": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -54928,11 +69357,52 @@ export const ToolsSchemaInputSchema = {
 
 /** JSON Schema for the return shape of `tools.schema`. */
 export const ToolsSchemaReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "schema": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -55047,11 +69517,52 @@ export const ToolsShowInputSchema = {
 
 /** JSON Schema for the return shape of `tools.show`. */
 export const ToolsShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "tool": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -55372,7 +69883,7 @@ export const TranscribeFileReturnSchema = {
       "type": "boolean"
     },
     "transcription": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "chunks": {
           "type": "number"
@@ -55388,7 +69899,22 @@ export const TranscribeFileReturnSchema = {
         },
         "segments": {
           "items": {
-            "additionalProperties": {},
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "propertyNames": {
               "type": "string"
             },
@@ -55464,7 +69990,44 @@ export const TriggersAddInputSchema = {
 
 /** JSON Schema for the return shape of `triggers.add`. */
 export const TriggersAddReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -55473,7 +70036,7 @@ export const TriggersAddReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string"
@@ -55487,8 +70050,12 @@ export const TriggersAddReturnSchema = {
     "trigger": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -55523,7 +70090,44 @@ export const TriggersDisableInputSchema = {
 
 /** JSON Schema for the return shape of `triggers.disable`. */
 export const TriggersDisableReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -55532,7 +70136,7 @@ export const TriggersDisableReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string"
@@ -55546,8 +70150,12 @@ export const TriggersDisableReturnSchema = {
     "trigger": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -55582,7 +70190,44 @@ export const TriggersEnableInputSchema = {
 
 /** JSON Schema for the return shape of `triggers.enable`. */
 export const TriggersEnableReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -55591,7 +70236,7 @@ export const TriggersEnableReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string"
@@ -55605,8 +70250,12 @@ export const TriggersEnableReturnSchema = {
     "trigger": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -55646,18 +70295,59 @@ export const TriggersListInputSchema = {
 
 /** JSON Schema for the return shape of `triggers.list`. */
 export const TriggersListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -55711,8 +70401,12 @@ export const TriggersListReturnSchema = {
     },
     "triggers": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -55744,7 +70438,44 @@ export const TriggersRmInputSchema = {
 
 /** JSON Schema for the return shape of `triggers.rm`. */
 export const TriggersRmReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -55753,7 +70484,7 @@ export const TriggersRmReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string"
@@ -55767,8 +70498,12 @@ export const TriggersRmReturnSchema = {
     "trigger": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -55813,7 +70548,44 @@ export const TriggersSetInputSchema = {
 
 /** JSON Schema for the return shape of `triggers.set`. */
 export const TriggersSetReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -55822,7 +70594,7 @@ export const TriggersSetReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string"
@@ -55836,8 +70608,12 @@ export const TriggersSetReturnSchema = {
     "trigger": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -55872,11 +70648,52 @@ export const TriggersShowInputSchema = {
 
 /** JSON Schema for the return shape of `triggers.show`. */
 export const TriggersShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "trigger": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -55903,7 +70720,44 @@ export const TriggersTestInputSchema = {
 
 /** JSON Schema for the return shape of `triggers.test`. */
 export const TriggersTestReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -55912,7 +70766,7 @@ export const TriggersTestReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "type": {
           "type": "string"
@@ -55926,8 +70780,12 @@ export const TriggersTestReturnSchema = {
     "trigger": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -55954,12 +70812,53 @@ export const TriggersTopicsInputSchema = {
 
 /** JSON Schema for the return shape of `triggers.topics`. */
 export const TriggersTopicsReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "topics": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -56004,16 +70903,61 @@ export const VideoAnalyzeInputSchema = {
 
 /** JSON Schema for the return shape of `video.analyze`. */
 export const VideoAnalyzeReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "artifact": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "options": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "success": {
@@ -56021,12 +70965,16 @@ export const VideoAnalyzeReturnSchema = {
       "type": "boolean"
     },
     "video": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "chapters": {
           "items": {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           "type": "array"
@@ -56109,20 +71057,65 @@ export const WatchConnectorsInputSchema = {
 
 /** JSON Schema for the return shape of `watch.connectors`. */
 export const WatchConnectorsReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "connectors": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -56185,24 +71178,73 @@ export const WatchCreateInputSchema = {
 
 /** JSON Schema for the return shape of `watch.create`. */
 export const WatchCreateReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "capabilities": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "next": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "status": {
       "type": "string"
     },
     "watch": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -56232,14 +71274,55 @@ export const WatchDisableInputSchema = {
 
 /** JSON Schema for the return shape of `watch.disable`. */
 export const WatchDisableReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "status": {
       "type": "string"
     },
     "watch": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -56267,14 +71350,55 @@ export const WatchEnableInputSchema = {
 
 /** JSON Schema for the return shape of `watch.enable`. */
 export const WatchEnableReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "status": {
       "type": "string"
     },
     "watch": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -56302,7 +71426,7 @@ export const WatchEventsInputSchema = {
 
 /** JSON Schema for the return shape of `watch.events`. */
 export const WatchEventsReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "eventTypes": {
       "items": {
@@ -56354,18 +71478,59 @@ export const WatchListInputSchema = {
 
 /** JSON Schema for the return shape of `watch.list`. */
 export const WatchListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -56419,8 +71584,12 @@ export const WatchListReturnSchema = {
     },
     "watches": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -56452,7 +71621,7 @@ export const WatchRmInputSchema = {
 
 /** JSON Schema for the return shape of `watch.rm`. */
 export const WatchRmReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "deleted": {
       "type": "boolean"
@@ -56485,11 +71654,52 @@ export const WatchShowInputSchema = {
 
 /** JSON Schema for the return shape of `watch.show`. */
 export const WatchShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "watch": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -56540,19 +71750,64 @@ export const WatchTriggerInputSchema = {
 
 /** JSON Schema for the return shape of `watch.trigger`. */
 export const WatchTriggerReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "status": {
       "type": "string"
     },
     "trigger": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "watch": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -56590,8 +71845,49 @@ export const WhatsappDmAckInputSchema = {
 
 /** JSON Schema for the return shape of `whatsapp.dm.ack`. */
 export const WhatsappDmAckReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -56625,8 +71921,49 @@ export const WhatsappDmReadInputSchema = {
 
 /** JSON Schema for the return shape of `whatsapp.dm.read`. */
 export const WhatsappDmReadReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -56656,8 +71993,49 @@ export const WhatsappDmSendInputSchema = {
 
 /** JSON Schema for the return shape of `whatsapp.dm.send`. */
 export const WhatsappDmSendReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -56687,8 +72065,49 @@ export const WhatsappGroupAddInputSchema = {
 
 /** JSON Schema for the return shape of `whatsapp.group.add`. */
 export const WhatsappGroupAddReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -56755,8 +72174,49 @@ export const WhatsappGroupCreateInputSchema = {
 
 /** JSON Schema for the return shape of `whatsapp.group.create`. */
 export const WhatsappGroupCreateReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -56786,8 +72246,49 @@ export const WhatsappGroupDemoteInputSchema = {
 
 /** JSON Schema for the return shape of `whatsapp.group.demote`. */
 export const WhatsappGroupDemoteReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -56817,8 +72318,49 @@ export const WhatsappGroupDescriptionInputSchema = {
 
 /** JSON Schema for the return shape of `whatsapp.group.description`. */
 export const WhatsappGroupDescriptionReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -56843,8 +72385,49 @@ export const WhatsappGroupInfoInputSchema = {
 
 /** JSON Schema for the return shape of `whatsapp.group.info`. */
 export const WhatsappGroupInfoReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -56869,8 +72452,49 @@ export const WhatsappGroupInviteInputSchema = {
 
 /** JSON Schema for the return shape of `whatsapp.group.invite`. */
 export const WhatsappGroupInviteReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -56895,8 +72519,49 @@ export const WhatsappGroupJoinInputSchema = {
 
 /** JSON Schema for the return shape of `whatsapp.group.join`. */
 export const WhatsappGroupJoinReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -56921,8 +72586,49 @@ export const WhatsappGroupLeaveInputSchema = {
 
 /** JSON Schema for the return shape of `whatsapp.group.leave`. */
 export const WhatsappGroupLeaveReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -56948,8 +72654,49 @@ export const WhatsappGroupListInputSchema = {
 
 /** JSON Schema for the return shape of `whatsapp.group.list`. */
 export const WhatsappGroupListReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -56979,8 +72726,49 @@ export const WhatsappGroupPromoteInputSchema = {
 
 /** JSON Schema for the return shape of `whatsapp.group.promote`. */
 export const WhatsappGroupPromoteReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -57010,8 +72798,49 @@ export const WhatsappGroupRemoveInputSchema = {
 
 /** JSON Schema for the return shape of `whatsapp.group.remove`. */
 export const WhatsappGroupRemoveReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -57041,8 +72870,49 @@ export const WhatsappGroupRenameInputSchema = {
 
 /** JSON Schema for the return shape of `whatsapp.group.rename`. */
 export const WhatsappGroupRenameReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -57067,8 +72937,49 @@ export const WhatsappGroupRevokeInviteInputSchema = {
 
 /** JSON Schema for the return shape of `whatsapp.group.revoke-invite`. */
 export const WhatsappGroupRevokeInviteReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -57105,8 +73016,49 @@ export const WhatsappGroupSendInputSchema = {
 
 /** JSON Schema for the return shape of `whatsapp.group.send`. */
 export const WhatsappGroupSendReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -57136,8 +73088,49 @@ export const WhatsappGroupSettingsInputSchema = {
 
 /** JSON Schema for the return shape of `whatsapp.group.settings`. */
 export const WhatsappGroupSettingsReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -58282,11 +74275,52 @@ export const WorkflowsRunsArchiveNodeInputSchema = {
 
 /** JSON Schema for the return shape of `workflows.runs.archive-node`. */
 export const WorkflowsRunsArchiveNodeReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "details": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -58318,11 +74352,52 @@ export const WorkflowsRunsCancelInputSchema = {
 
 /** JSON Schema for the return shape of `workflows.runs.cancel`. */
 export const WorkflowsRunsCancelReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "details": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -58350,18 +74425,59 @@ export const WorkflowsRunsListInputSchema = {
 
 /** JSON Schema for the return shape of `workflows.runs.list`. */
 export const WorkflowsRunsListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -58412,8 +74528,12 @@ export const WorkflowsRunsListReturnSchema = {
     },
     "runs": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -58453,11 +74573,52 @@ export const WorkflowsRunsReleaseInputSchema = {
 
 /** JSON Schema for the return shape of `workflows.runs.release`. */
 export const WorkflowsRunsReleaseReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "details": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -58484,8 +74645,49 @@ export const WorkflowsRunsShowInputSchema = {
 
 /** JSON Schema for the return shape of `workflows.runs.show`. */
 export const WorkflowsRunsShowReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -58511,11 +74713,52 @@ export const WorkflowsRunsSkipInputSchema = {
 
 /** JSON Schema for the return shape of `workflows.runs.skip`. */
 export const WorkflowsRunsSkipReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "details": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -58546,8 +74789,49 @@ export const WorkflowsRunsStartInputSchema = {
 
 /** JSON Schema for the return shape of `workflows.runs.start`. */
 export const WorkflowsRunsStartReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -58578,11 +74862,52 @@ export const WorkflowsRunsTaskAttachInputSchema = {
 
 /** JSON Schema for the return shape of `workflows.runs.task-attach`. */
 export const WorkflowsRunsTaskAttachReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "details": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     }
   },
@@ -58639,18 +74964,63 @@ export const WorkflowsRunsTaskCreateInputSchema = {
 
 /** JSON Schema for the return shape of `workflows.runs.task-create`. */
 export const WorkflowsRunsTaskCreateReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "task": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
       "type": "object"
     },
     "workflow": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         {
@@ -58691,8 +75061,49 @@ export const WorkflowsSpecsCreateInputSchema = {
 
 /** JSON Schema for the return shape of `workflows.specs.create`. */
 export const WorkflowsSpecsCreateReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -58714,18 +75125,59 @@ export const WorkflowsSpecsListInputSchema = {
 
 /** JSON Schema for the return shape of `workflows.specs.list`. */
 export const WorkflowsSpecsListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -58776,8 +75228,12 @@ export const WorkflowsSpecsListReturnSchema = {
     },
     "specs": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "type": "array"
@@ -58812,7 +75268,48 @@ export const WorkflowsSpecsShowInputSchema = {
 
 /** JSON Schema for the return shape of `workflows.specs.show`. */
 export const WorkflowsSpecsShowReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/$defs/__schema0"
+  },
+  "propertyNames": {
+    "type": "string"
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;

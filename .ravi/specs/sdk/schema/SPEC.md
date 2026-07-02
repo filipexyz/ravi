@@ -55,9 +55,9 @@ By default, every command is JSON-safe end-to-end:
 3. Wire: `application/json` charset utf-8.
 4. SDK type: `Promise<DerivedType>` from `z.toJSONSchema(returns)`.
 
-Commands without `@Returns` remain valid SDK operations, but clients MUST treat
-their return payload as unknown or generic JSON. That fallback is compatibility
-behavior, not the target typed SDK experience.
+All SDK-facing public commands MUST declare a concrete `@Returns(zod)` schema.
+Weak return schemas (unknown, passthrough, empty objects) are prohibited by
+default validation. See `sdk/schema/returns-coverage` for the full policy.
 
 ## Escape hatch — `@Returns.binary()`
 

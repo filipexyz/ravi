@@ -77,12 +77,10 @@ const costsAgentsReturnSchema = z.object({
   limit: z.number(),
   totalAgents: z.number(),
   agents: z.array(
-    costSummaryReturnSchema
-      .extend({
-        agentId: z.string(),
-        models: z.array(z.string()),
-      })
-      .passthrough(),
+    costSummaryReturnSchema.extend({
+      agentId: z.string(),
+      models: z.array(z.string()),
+    }),
   ),
 });
 
@@ -90,14 +88,12 @@ const costsTopSessionsReturnSchema = z.object({
   window: costWindowReturnSchema,
   limit: z.number(),
   sessions: z.array(
-    costSummaryReturnSchema
-      .extend({
-        sessionKey: z.string(),
-        sessionName: z.string().nullable(),
-        name: z.string(),
-        agentId: z.string(),
-      })
-      .passthrough(),
+    costSummaryReturnSchema.extend({
+      sessionKey: z.string(),
+      sessionName: z.string().nullable(),
+      name: z.string(),
+      agentId: z.string(),
+    }),
   ),
 });
 

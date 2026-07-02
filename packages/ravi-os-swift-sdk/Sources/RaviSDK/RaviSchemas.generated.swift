@@ -32,11 +32,48 @@ public enum RaviSchemas {
 
   public static let AdaptersListReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "additionalProperties": false,
     "properties": {
       "adapters": {
         "items": {
-          "additionalProperties": {},
+          "additionalProperties": false,
           "properties": {
             "adapterId": {
               "type": "string"
@@ -45,7 +82,7 @@ public enum RaviSchemas {
               "type": "string"
             },
             "bind": {
-              "additionalProperties": {},
+              "additionalProperties": false,
               "properties": {
                 "agentId": {
                   "anyOf": [
@@ -80,7 +117,9 @@ public enum RaviSchemas {
                     }
                   ]
                 },
-                "contextKey": {},
+                "contextKey": {
+                  "type": "string"
+                },
                 "sessionKey": {
                   "type": "string"
                 },
@@ -117,15 +156,23 @@ public enum RaviSchemas {
               "type": "string"
             },
             "health": {
-              "additionalProperties": {},
-              "properties": {},
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
               "type": "object"
             },
             "lastCommand": {
               "anyOf": [
                 {
-                  "additionalProperties": {},
-                  "properties": {},
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
                   "type": "object"
                 },
                 {
@@ -136,8 +183,12 @@ public enum RaviSchemas {
             "lastEvent": {
               "anyOf": [
                 {
-                  "additionalProperties": {},
-                  "properties": {},
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
                   "type": "object"
                 },
                 {
@@ -148,8 +199,12 @@ public enum RaviSchemas {
             "lastProtocolError": {
               "anyOf": [
                 {
-                  "additionalProperties": {},
-                  "properties": {},
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
                   "type": "object"
                 },
                 {
@@ -204,7 +259,7 @@ public enum RaviSchemas {
       },
       "items": {
         "items": {
-          "additionalProperties": {},
+          "additionalProperties": false,
           "properties": {
             "adapterId": {
               "type": "string"
@@ -213,7 +268,7 @@ public enum RaviSchemas {
               "type": "string"
             },
             "bind": {
-              "additionalProperties": {},
+              "additionalProperties": false,
               "properties": {
                 "agentId": {
                   "anyOf": [
@@ -248,7 +303,9 @@ public enum RaviSchemas {
                     }
                   ]
                 },
-                "contextKey": {},
+                "contextKey": {
+                  "type": "string"
+                },
                 "sessionKey": {
                   "type": "string"
                 },
@@ -285,15 +342,23 @@ public enum RaviSchemas {
               "type": "string"
             },
             "health": {
-              "additionalProperties": {},
-              "properties": {},
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
               "type": "object"
             },
             "lastCommand": {
               "anyOf": [
                 {
-                  "additionalProperties": {},
-                  "properties": {},
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
                   "type": "object"
                 },
                 {
@@ -304,8 +369,12 @@ public enum RaviSchemas {
             "lastEvent": {
               "anyOf": [
                 {
-                  "additionalProperties": {},
-                  "properties": {},
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
                   "type": "object"
                 },
                 {
@@ -316,8 +385,12 @@ public enum RaviSchemas {
             "lastProtocolError": {
               "anyOf": [
                 {
-                  "additionalProperties": {},
-                  "properties": {},
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
                   "type": "object"
                 },
                 {
@@ -368,7 +441,7 @@ public enum RaviSchemas {
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -447,7 +520,44 @@ public enum RaviSchemas {
 
   public static let AdaptersShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "adapterId": {
         "type": "string"
@@ -456,7 +566,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "bind": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "agentId": {
             "anyOf": [
@@ -491,7 +601,9 @@ public enum RaviSchemas {
               }
             ]
           },
-          "contextKey": {},
+          "contextKey": {
+            "type": "string"
+          },
           "sessionKey": {
             "type": "string"
           },
@@ -528,15 +640,23 @@ public enum RaviSchemas {
         "type": "string"
       },
       "health": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "lastCommand": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -547,8 +667,12 @@ public enum RaviSchemas {
       "lastEvent": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -559,8 +683,12 @@ public enum RaviSchemas {
       "lastProtocolError": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -645,28 +773,77 @@ public enum RaviSchemas {
 
   public static let AgentsCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "action": {
         "const": "create",
         "type": "string"
       },
       "agent": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "changed": {
         "type": "boolean"
       },
       "permissions": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "runtimeTarget": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -703,7 +880,7 @@ public enum RaviSchemas {
 
   public static let AgentsDebounceReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "action": {
         "type": "string"
@@ -763,9 +940,46 @@ public enum RaviSchemas {
 
   public static let AgentsDebugReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "anyOf": [
       {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "agentId": {
             "type": "string"
@@ -788,20 +1002,30 @@ public enum RaviSchemas {
         "type": "object"
       },
       {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "entries": {
-            "items": {},
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
             "type": "array"
           },
           "session": {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           "transcript": {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           }
         },
@@ -834,7 +1058,44 @@ public enum RaviSchemas {
 
   public static let AgentsDeleteReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "action": {
         "const": "delete",
@@ -844,8 +1105,12 @@ public enum RaviSchemas {
         "type": "string"
       },
       "before": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "changed": {
@@ -884,12 +1149,53 @@ public enum RaviSchemas {
 
   public static let AgentsListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "agents": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -898,20 +1204,28 @@ public enum RaviSchemas {
         "type": "string"
       },
       "filters": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -1262,7 +1576,44 @@ public enum RaviSchemas {
 
   public static let AgentsResetReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "action": {
         "const": "reset",
@@ -1288,15 +1639,23 @@ public enum RaviSchemas {
       },
       "resetSessions": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "session": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "target": {
@@ -1331,17 +1690,62 @@ public enum RaviSchemas {
 
   public static let AgentsSessionReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "agent": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "sessions": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -1387,15 +1791,56 @@ public enum RaviSchemas {
 
   public static let AgentsSetReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "action": {
         "const": "set",
         "type": "string"
       },
       "agent": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "agentId": {
@@ -1407,7 +1852,9 @@ public enum RaviSchemas {
       "key": {
         "type": "string"
       },
-      "value": {}
+      "value": {
+        "$ref": "#/$defs/__schema0"
+      }
     },
     "required": [
       "action",
@@ -1438,11 +1885,52 @@ public enum RaviSchemas {
 
   public static let AgentsShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "agent": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "permissionsCommand": {
@@ -1479,7 +1967,7 @@ public enum RaviSchemas {
 
   public static let AgentsSpecModeReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "action": {
         "type": "string"
@@ -1521,7 +2009,44 @@ public enum RaviSchemas {
 
   public static let AgentsSyncInstructionsReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "alreadyCanonical": {
         "type": "number"
@@ -1540,8 +2065,12 @@ public enum RaviSchemas {
       },
       "results": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -1744,6 +2273,39 @@ public enum RaviSchemas {
 
   public static let AppsGuideReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "additionalProperties": false,
     "properties": {
       "app": {
@@ -1778,7 +2340,9 @@ public enum RaviSchemas {
               },
               "manifest": {
                 "anyOf": [
-                  {},
+                  {
+                    "$ref": "#/$defs/__schema0"
+                  },
                   {
                     "type": "null"
                   }
@@ -3203,6 +3767,39 @@ public enum RaviSchemas {
 
   public static let AppsPromptsReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "additionalProperties": false,
     "properties": {
       "app": {
@@ -3237,7 +3834,9 @@ public enum RaviSchemas {
               },
               "manifest": {
                 "anyOf": [
-                  {},
+                  {
+                    "$ref": "#/$defs/__schema0"
+                  },
                   {
                     "type": "null"
                   }
@@ -3819,7 +4418,9 @@ public enum RaviSchemas {
         ],
         "type": "object"
       },
-      "result": {},
+      "result": {
+        "$ref": "#/$defs/__schema0"
+      },
       "status": {
         "enum": [
           "completed",
@@ -4070,6 +4671,39 @@ public enum RaviSchemas {
 
   public static let AppsShowReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "additionalProperties": false,
     "properties": {
       "app": {
@@ -4102,7 +4736,9 @@ public enum RaviSchemas {
           },
           "manifest": {
             "anyOf": [
-              {},
+              {
+                "$ref": "#/$defs/__schema0"
+              },
               {
                 "type": "null"
               }
@@ -4396,7 +5032,7 @@ public enum RaviSchemas {
 
   public static let ArtifactsArchiveReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "success": {
         "const": true,
@@ -4446,7 +5082,7 @@ public enum RaviSchemas {
 
   public static let ArtifactsAttachReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "success": {
         "const": true,
@@ -4595,16 +5231,61 @@ public enum RaviSchemas {
 
   public static let ArtifactsCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "artifact": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "package": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "success": {
@@ -4612,8 +5293,12 @@ public enum RaviSchemas {
         "type": "boolean"
       },
       "version": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -4664,16 +5349,61 @@ public enum RaviSchemas {
 
   public static let ArtifactsEventReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "artifact": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "event": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "success": {
@@ -4707,15 +5437,56 @@ public enum RaviSchemas {
 
   public static let ArtifactsEventsReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "artifactId": {
         "type": "string"
       },
       "events": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -4788,28 +5559,73 @@ public enum RaviSchemas {
 
   public static let ArtifactsListReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "anyOf": [
       {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "artifacts": {
             "items": {
-              "additionalProperties": {},
-              "properties": {},
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
               "type": "object"
             },
             "type": "array"
           },
           "items": {
             "items": {
-              "additionalProperties": {},
-              "properties": {},
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
               "type": "object"
             },
             "type": "array"
           },
           "pagination": {
-            "additionalProperties": {},
+            "additionalProperties": false,
             "properties": {
               "hasMore": {
                 "type": "boolean"
@@ -4871,15 +5687,19 @@ public enum RaviSchemas {
         "type": "object"
       },
       {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "generatedAt": {
             "type": "number"
           },
           "items": {
             "items": {
-              "additionalProperties": {},
-              "properties": {},
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
               "type": "object"
             },
             "type": "array"
@@ -4889,7 +5709,7 @@ public enum RaviSchemas {
             "type": "boolean"
           },
           "pagination": {
-            "additionalProperties": {},
+            "additionalProperties": false,
             "properties": {
               "hasMore": {
                 "type": "boolean"
@@ -4939,13 +5759,21 @@ public enum RaviSchemas {
             "type": "object"
           },
           "query": {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           "stats": {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           }
         },
@@ -5304,19 +6132,66 @@ public enum RaviSchemas {
 
   public static let ArtifactsReleaseActivateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "localSync": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
-      "release": {},
+      "release": {
+        "$ref": "#/$defs/__schema0"
+      },
       "routes": {
-        "items": {},
+        "items": {
+          "$ref": "#/$defs/__schema0"
+        },
         "type": "array"
       },
-      "site": {},
+      "site": {
+        "$ref": "#/$defs/__schema0"
+      },
       "url": {
         "anyOf": [
           {
@@ -5364,21 +6239,70 @@ public enum RaviSchemas {
 
   public static let ArtifactsRestoreReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "artifact": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "restoreVersion": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "restoredFrom": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "success": {
@@ -5414,33 +6338,86 @@ public enum RaviSchemas {
 
   public static let ArtifactsShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "artifact": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "events": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "links": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "versions": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -5498,15 +6475,56 @@ public enum RaviSchemas {
 
   public static let ArtifactsSnapshotReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "success": {
         "const": true,
         "type": "boolean"
       },
       "version": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -5632,7 +6650,7 @@ public enum RaviSchemas {
 
   public static let ArtifactsUpdateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "success": {
         "const": true,
@@ -5668,14 +6686,55 @@ public enum RaviSchemas {
 
   public static let ArtifactsVersionReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "artifactId": {
         "type": "string"
       },
       "version": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -5705,7 +6764,44 @@ public enum RaviSchemas {
 
   public static let ArtifactsVersionsReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "artifactId": {
         "type": "string"
@@ -5715,8 +6811,12 @@ public enum RaviSchemas {
       },
       "versions": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -5798,10 +6898,47 @@ public enum RaviSchemas {
 
   public static let AudioGenerateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "audio": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "filePath": {
             "type": "string"
@@ -5825,12 +6962,16 @@ public enum RaviSchemas {
         "type": "object"
       },
       "options": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "sent": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "accountId": {
             "type": "string"
@@ -12511,8 +13652,49 @@ public enum RaviSchemas {
 
   public static let ChatsBackfillProviderTimestampsReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -12564,8 +13746,49 @@ public enum RaviSchemas {
 
   public static let ChatsListReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -12617,8 +13840,49 @@ public enum RaviSchemas {
 
   public static let ChatsListsAddReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -12657,8 +13921,49 @@ public enum RaviSchemas {
 
   public static let ChatsListsCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -12714,8 +14019,49 @@ public enum RaviSchemas {
 
   public static let ChatsListsDeltaReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -12747,8 +14093,49 @@ public enum RaviSchemas {
 
   public static let ChatsListsListReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -12804,8 +14191,49 @@ public enum RaviSchemas {
 
   public static let ChatsListsMarkReadReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -12848,8 +14276,49 @@ public enum RaviSchemas {
 
   public static let ChatsListsMembersReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -13157,8 +14626,49 @@ public enum RaviSchemas {
 
   public static let ChatsListsRemoveReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -13209,8 +14719,49 @@ public enum RaviSchemas {
 
   public static let ChatsReadReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -14305,16 +15856,57 @@ public enum RaviSchemas {
 
   public static let CommandsListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "agent": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "commands": {
         "items": {
-          "additionalProperties": {},
+          "additionalProperties": false,
           "properties": {
             "argumentHint": {
               "anyOf": [
@@ -14327,7 +15919,9 @@ public enum RaviSchemas {
               ]
             },
             "arguments": {
-              "items": {},
+              "items": {
+                "$ref": "#/$defs/__schema0"
+              },
               "type": "array"
             },
             "description": {
@@ -14348,7 +15942,7 @@ public enum RaviSchemas {
             },
             "issues": {
               "items": {
-                "additionalProperties": {},
+                "additionalProperties": false,
                 "properties": {
                   "code": {
                     "type": "string"
@@ -14462,7 +16056,7 @@ public enum RaviSchemas {
       },
       "issues": {
         "items": {
-          "additionalProperties": {},
+          "additionalProperties": false,
           "properties": {
             "code": {
               "type": "string"
@@ -14518,19 +16112,27 @@ public enum RaviSchemas {
       },
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "locations": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -14625,15 +16227,56 @@ public enum RaviSchemas {
 
   public static let CommandsRunReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "agent": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "command": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "argumentHint": {
             "anyOf": [
@@ -14646,7 +16289,9 @@ public enum RaviSchemas {
             ]
           },
           "arguments": {
-            "items": {},
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
             "type": "array"
           },
           "description": {
@@ -14667,7 +16312,7 @@ public enum RaviSchemas {
           },
           "issues": {
             "items": {
-              "additionalProperties": {},
+              "additionalProperties": false,
               "properties": {
                 "code": {
                   "type": "string"
@@ -14778,12 +16423,18 @@ public enum RaviSchemas {
         "type": "object"
       },
       "metadata": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "positionalArguments": {
-        "items": {},
+        "items": {
+          "$ref": "#/$defs/__schema0"
+        },
         "type": "array"
       },
       "prompt": {
@@ -14823,15 +16474,56 @@ public enum RaviSchemas {
 
   public static let CommandsShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "agent": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "command": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "argumentHint": {
             "anyOf": [
@@ -14844,7 +16536,9 @@ public enum RaviSchemas {
             ]
           },
           "arguments": {
-            "items": {},
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
             "type": "array"
           },
           "description": {
@@ -14865,7 +16559,7 @@ public enum RaviSchemas {
           },
           "issues": {
             "items": {
-              "additionalProperties": {},
+              "additionalProperties": false,
               "properties": {
                 "code": {
                   "type": "string"
@@ -14999,11 +16693,52 @@ public enum RaviSchemas {
 
   public static let CommandsValidateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "agent": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "effectiveTotal": {
@@ -15011,7 +16746,7 @@ public enum RaviSchemas {
       },
       "errors": {
         "items": {
-          "additionalProperties": {},
+          "additionalProperties": false,
           "properties": {
             "code": {
               "type": "string"
@@ -15073,7 +16808,7 @@ public enum RaviSchemas {
       },
       "warnings": {
         "items": {
-          "additionalProperties": {},
+          "additionalProperties": false,
           "properties": {
             "code": {
               "type": "string"
@@ -15422,8 +17157,49 @@ public enum RaviSchemas {
 
   public static let ContactsActivityReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -15458,8 +17234,49 @@ public enum RaviSchemas {
 
   public static let ContactsAddReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -15482,8 +17299,49 @@ public enum RaviSchemas {
 
   public static let ContactsAllowReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -15514,8 +17372,49 @@ public enum RaviSchemas {
 
   public static let ContactsApproveReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -15563,8 +17462,49 @@ public enum RaviSchemas {
 
   public static let ContactsBackfillReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -15587,8 +17527,49 @@ public enum RaviSchemas {
 
   public static let ContactsBlockReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -15611,8 +17592,49 @@ public enum RaviSchemas {
 
   public static let ContactsCheckReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -15627,8 +17649,49 @@ public enum RaviSchemas {
 
   public static let ContactsDuplicatesReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -15655,8 +17718,49 @@ public enum RaviSchemas {
 
   public static let ContactsFindReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -15679,8 +17783,49 @@ public enum RaviSchemas {
 
   public static let ContactsGetReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -15703,8 +17848,49 @@ public enum RaviSchemas {
 
   public static let ContactsInfoReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -15743,8 +17929,49 @@ public enum RaviSchemas {
 
   public static let ContactsLinkReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -15772,8 +17999,49 @@ public enum RaviSchemas {
 
   public static let ContactsListReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -15801,8 +18069,49 @@ public enum RaviSchemas {
 
   public static let ContactsMergeReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -15833,8 +18142,49 @@ public enum RaviSchemas {
 
   public static let ContactsMessagesReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -15869,8 +18219,49 @@ public enum RaviSchemas {
 
   public static let ContactsMetadataListReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -15906,8 +18297,49 @@ public enum RaviSchemas {
 
   public static let ContactsMetadataRemoveReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -15948,8 +18380,49 @@ public enum RaviSchemas {
 
   public static let ContactsMetadataSetReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -15985,8 +18458,49 @@ public enum RaviSchemas {
 
   public static let ContactsNoteReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -16006,8 +18520,49 @@ public enum RaviSchemas {
 
   public static let ContactsPendingReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -16038,8 +18593,49 @@ public enum RaviSchemas {
 
   public static let ContactsProfileReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -16062,8 +18658,49 @@ public enum RaviSchemas {
 
   public static let ContactsRemoveReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -16094,8 +18731,49 @@ public enum RaviSchemas {
 
   public static let ContactsSessionsReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -16128,8 +18806,49 @@ public enum RaviSchemas {
 
   public static let ContactsSetReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -16157,8 +18876,49 @@ public enum RaviSchemas {
 
   public static let ContactsTagReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -16197,8 +18957,49 @@ public enum RaviSchemas {
 
   public static let ContactsTimelineReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -16233,8 +19034,49 @@ public enum RaviSchemas {
 
   public static let ContactsUnlinkReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -16262,8 +19104,49 @@ public enum RaviSchemas {
 
   public static let ContactsUntagReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -20460,7 +23343,7 @@ public enum RaviSchemas {
     "properties": {
       "agents": {
         "items": {
-          "additionalProperties": {},
+          "additionalProperties": false,
           "properties": {
             "agentId": {
               "type": "string"
@@ -21003,7 +23886,7 @@ public enum RaviSchemas {
       },
       "sessions": {
         "items": {
-          "additionalProperties": {},
+          "additionalProperties": false,
           "properties": {
             "agentId": {
               "type": "string"
@@ -21122,11 +24005,52 @@ public enum RaviSchemas {
 
   public static let CrmAccountReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "crm": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "target": {
@@ -21175,7 +24099,7 @@ public enum RaviSchemas {
 
   public static let CrmAccountCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -21223,7 +24147,7 @@ public enum RaviSchemas {
 
   public static let CrmAccountLinkContactReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -21258,11 +24182,52 @@ public enum RaviSchemas {
 
   public static let CrmAccountShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "crm": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "target": {
@@ -21296,20 +24261,65 @@ public enum RaviSchemas {
 
   public static let CrmBoardReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "opportunities": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "stages": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -21344,11 +24354,52 @@ public enum RaviSchemas {
 
   public static let CrmContactReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "crm": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "target": {
@@ -21395,7 +24446,7 @@ public enum RaviSchemas {
 
   public static let CrmContactSetReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -21430,11 +24481,52 @@ public enum RaviSchemas {
 
   public static let CrmContactShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "crm": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "target": {
@@ -21476,18 +24568,59 @@ public enum RaviSchemas {
 
   public static let CrmContactsReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -21567,7 +24700,7 @@ public enum RaviSchemas {
 
   public static let CrmFactConfirmReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -21631,18 +24764,59 @@ public enum RaviSchemas {
 
   public static let CrmFactListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -21761,7 +24935,7 @@ public enum RaviSchemas {
 
   public static let CrmFactProposeReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -21796,7 +24970,7 @@ public enum RaviSchemas {
 
   public static let CrmFactRejectReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -21864,18 +25038,59 @@ public enum RaviSchemas {
 
   public static let CrmNextReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -21955,11 +25170,52 @@ public enum RaviSchemas {
 
   public static let CrmOpportunityReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "opportunity": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "target": {
@@ -21992,12 +25248,53 @@ public enum RaviSchemas {
 
   public static let CrmOpportunityContactsReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "contacts": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -22064,7 +25361,7 @@ public enum RaviSchemas {
 
   public static let CrmOpportunityCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -22116,7 +25413,7 @@ public enum RaviSchemas {
 
   public static let CrmOpportunityLinkContactReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -22160,7 +25457,7 @@ public enum RaviSchemas {
 
   public static let CrmOpportunityMoveReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -22195,11 +25492,52 @@ public enum RaviSchemas {
 
   public static let CrmOpportunityShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "opportunity": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "target": {
@@ -22327,7 +25665,7 @@ public enum RaviSchemas {
 
   public static let CrmPipelineCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -22371,18 +25709,59 @@ public enum RaviSchemas {
 
   public static let CrmPipelineListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -22892,7 +26271,7 @@ public enum RaviSchemas {
 
   public static let CrmPipelineSetReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -22931,8 +26310,49 @@ public enum RaviSchemas {
 
   public static let CrmPipelineShowReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -22988,7 +26408,7 @@ public enum RaviSchemas {
 
   public static let CrmPipelineStageAddReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -23028,7 +26448,7 @@ public enum RaviSchemas {
 
   public static let CrmPipelineStageArchiveReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -23075,18 +26495,59 @@ public enum RaviSchemas {
 
   public static let CrmPipelineStageListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -23181,7 +26642,7 @@ public enum RaviSchemas {
 
   public static let CrmPipelineStageSetReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -23221,8 +26682,49 @@ public enum RaviSchemas {
 
   public static let CrmPipelineStageShowReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -23279,7 +26781,7 @@ public enum RaviSchemas {
 
   public static let CrmPipelineStageTopicAddReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -23324,7 +26826,7 @@ public enum RaviSchemas {
 
   public static let CrmPipelineStageTopicArchiveReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -23379,7 +26881,7 @@ public enum RaviSchemas {
 
   public static let CrmPipelineStageTopicSetReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -23431,18 +26933,59 @@ public enum RaviSchemas {
 
   public static let CrmPipelineStageTopicsReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -23670,7 +27213,7 @@ public enum RaviSchemas {
 
   public static let CrmTaskCancelReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -23757,7 +27300,7 @@ public enum RaviSchemas {
 
   public static let CrmTaskCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -23792,7 +27335,7 @@ public enum RaviSchemas {
 
   public static let CrmTaskDoneReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -23864,18 +27407,59 @@ public enum RaviSchemas {
 
   public static let CrmTaskListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -23955,14 +27539,55 @@ public enum RaviSchemas {
 
   public static let CrmTaskShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "target": {
         "type": "string"
       },
       "task": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -24000,7 +27625,7 @@ public enum RaviSchemas {
 
   public static let CrmTaskSnoozeReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -24095,7 +27720,44 @@ public enum RaviSchemas {
 
   public static let CronAddReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -24103,8 +27765,12 @@ public enum RaviSchemas {
       "job": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -24116,7 +27782,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string"
@@ -24156,7 +27822,44 @@ public enum RaviSchemas {
 
   public static let CronDisableReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -24164,8 +27867,12 @@ public enum RaviSchemas {
       "job": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -24177,7 +27884,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string"
@@ -24217,7 +27924,44 @@ public enum RaviSchemas {
 
   public static let CronEnableReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -24225,8 +27969,12 @@ public enum RaviSchemas {
       "job": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -24238,7 +27986,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string"
@@ -24291,26 +28039,71 @@ public enum RaviSchemas {
 
   public static let CronListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "jobs": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -24391,7 +28184,44 @@ public enum RaviSchemas {
 
   public static let CronRmReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -24399,8 +28229,12 @@ public enum RaviSchemas {
       "job": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -24412,7 +28246,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string"
@@ -24452,7 +28286,44 @@ public enum RaviSchemas {
 
   public static let CronRunReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -24460,8 +28331,12 @@ public enum RaviSchemas {
       "job": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -24473,7 +28348,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string"
@@ -24523,7 +28398,44 @@ public enum RaviSchemas {
 
   public static let CronSetReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -24531,8 +28443,12 @@ public enum RaviSchemas {
       "job": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -24544,7 +28460,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string"
@@ -24584,11 +28500,52 @@ public enum RaviSchemas {
 
   public static let CronShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "job": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -24609,7 +28566,7 @@ public enum RaviSchemas {
 
   public static let DaemonEnvReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "action": {
         "const": "env",
@@ -24667,7 +28624,7 @@ public enum RaviSchemas {
 
   public static let DaemonInitAdminKeyReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "action": {
         "const": "init-admin-key",
@@ -24695,7 +28652,7 @@ public enum RaviSchemas {
 
   public static let DaemonInstallReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "action": {
         "type": "string"
@@ -24740,7 +28697,7 @@ public enum RaviSchemas {
 
   public static let DaemonLogsReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "action": {
         "type": "string"
@@ -24772,7 +28729,7 @@ public enum RaviSchemas {
 
   public static let DaemonRestartReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "action": {
         "type": "string"
@@ -24799,7 +28756,7 @@ public enum RaviSchemas {
 
   public static let DaemonStartReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "action": {
         "type": "string"
@@ -24826,11 +28783,52 @@ public enum RaviSchemas {
 
   public static let DaemonStatusReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "infrastructure": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "pm2Available": {
@@ -24841,15 +28839,23 @@ public enum RaviSchemas {
       },
       "processes": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "ravi": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -24874,7 +28880,7 @@ public enum RaviSchemas {
 
   public static let DaemonStopReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "action": {
         "type": "string"
@@ -24901,7 +28907,7 @@ public enum RaviSchemas {
 
   public static let DaemonUninstallReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "action": {
         "type": "string"
@@ -24928,7 +28934,44 @@ public enum RaviSchemas {
 
   public static let DevinAuthCheckReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "baseUrl": {
         "type": "string"
@@ -24940,8 +28983,12 @@ public enum RaviSchemas {
         "type": "boolean"
       },
       "self": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -24972,11 +29019,52 @@ public enum RaviSchemas {
 
   public static let DevinSessionsArchiveReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "session": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "status": {
@@ -25014,12 +29102,53 @@ public enum RaviSchemas {
 
   public static let DevinSessionsAttachmentsReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "attachments": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -25150,7 +29279,44 @@ public enum RaviSchemas {
 
   public static let DevinSessionsCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "maxAcuLimit": {
         "anyOf": [
@@ -25166,8 +29332,12 @@ public enum RaviSchemas {
         "type": "string"
       },
       "session": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "status": {
@@ -25207,23 +29377,72 @@ public enum RaviSchemas {
 
   public static let DevinSessionsInsightsReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "insights": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "session": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "summary": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -25272,21 +29491,62 @@ public enum RaviSchemas {
 
   public static let DevinSessionsListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "hasNextPage": {
         "type": "boolean"
       },
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -25337,8 +29597,12 @@ public enum RaviSchemas {
       },
       "sessions": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -25383,15 +29647,56 @@ public enum RaviSchemas {
 
   public static let DevinSessionsMessagesReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "devinId": {
         "type": "string"
       },
       "messages": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -25436,11 +29741,52 @@ public enum RaviSchemas {
 
   public static let DevinSessionsSendReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "session": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "status": {
@@ -25478,11 +29824,52 @@ public enum RaviSchemas {
 
   public static let DevinSessionsShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "session": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -25519,7 +29906,44 @@ public enum RaviSchemas {
 
   public static let DevinSessionsSyncReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "artifacts": {
         "items": {
@@ -25533,8 +29957,12 @@ public enum RaviSchemas {
       "insights": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -25546,8 +29974,12 @@ public enum RaviSchemas {
         "type": "number"
       },
       "session": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -25584,14 +30016,55 @@ public enum RaviSchemas {
 
   public static let DevinSessionsTerminateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "archive": {
         "type": "boolean"
       },
       "session": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "status": {
@@ -25630,16 +30103,61 @@ public enum RaviSchemas {
 
   public static let EvalRunReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "execution": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "grade": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "outputDir": {
@@ -25649,8 +30167,12 @@ public enum RaviSchemas {
         "type": "string"
       },
       "session": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -25983,7 +30505,7 @@ public enum RaviSchemas {
     "additionalProperties": false,
     "properties": {
       "agent": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "cwd": {
             "type": "string"
@@ -26035,7 +30557,7 @@ public enum RaviSchemas {
         "type": "number"
       },
       "heartbeat": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "accountId": {
             "anyOf": [
@@ -26126,7 +30648,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string"
@@ -26137,7 +30659,22 @@ public enum RaviSchemas {
         ],
         "type": "object"
       },
-      "value": {}
+      "value": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
     },
     "required": [
       "agent",
@@ -26177,7 +30714,7 @@ public enum RaviSchemas {
     "additionalProperties": false,
     "properties": {
       "agent": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "cwd": {
             "type": "string"
@@ -26229,7 +30766,7 @@ public enum RaviSchemas {
         "type": "number"
       },
       "heartbeat": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "accountId": {
             "anyOf": [
@@ -26320,7 +30857,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string"
@@ -26331,7 +30868,22 @@ public enum RaviSchemas {
         ],
         "type": "object"
       },
-      "value": {}
+      "value": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
     },
     "required": [
       "agent",
@@ -26377,7 +30929,7 @@ public enum RaviSchemas {
     "additionalProperties": false,
     "properties": {
       "agent": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "cwd": {
             "type": "string"
@@ -26429,7 +30981,7 @@ public enum RaviSchemas {
         "type": "number"
       },
       "heartbeat": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "accountId": {
             "anyOf": [
@@ -26520,7 +31072,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string"
@@ -26531,7 +31083,22 @@ public enum RaviSchemas {
         ],
         "type": "object"
       },
-      "value": {}
+      "value": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
     },
     "required": [
       "agent",
@@ -26567,7 +31134,7 @@ public enum RaviSchemas {
     "additionalProperties": false,
     "properties": {
       "agent": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "cwd": {
             "type": "string"
@@ -26616,7 +31183,7 @@ public enum RaviSchemas {
         "type": "object"
       },
       "heartbeat": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "accountId": {
             "anyOf": [
@@ -26728,7 +31295,7 @@ public enum RaviSchemas {
           "additionalProperties": false,
           "properties": {
             "agent": {
-              "additionalProperties": {},
+              "additionalProperties": false,
               "properties": {
                 "cwd": {
                   "type": "string"
@@ -26777,7 +31344,7 @@ public enum RaviSchemas {
               "type": "object"
             },
             "heartbeat": {
-              "additionalProperties": {},
+              "additionalProperties": false,
               "properties": {
                 "accountId": {
                   "anyOf": [
@@ -26902,7 +31469,7 @@ public enum RaviSchemas {
 
   public static let HeartbeatTriggerReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -26920,7 +31487,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string"
@@ -27028,21 +31595,62 @@ public enum RaviSchemas {
 
   public static let HooksCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
       },
       "hook": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "status": {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string"
@@ -27082,21 +31690,62 @@ public enum RaviSchemas {
 
   public static let HooksDisableReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
       },
       "hook": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "status": {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string"
@@ -27136,21 +31785,62 @@ public enum RaviSchemas {
 
   public static let HooksEnableReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
       },
       "hook": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "status": {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string"
@@ -27195,26 +31885,71 @@ public enum RaviSchemas {
 
   public static let HooksListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "hooks": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -27295,21 +32030,62 @@ public enum RaviSchemas {
 
   public static let HooksRmReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
       },
       "hook": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "status": {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string"
@@ -27349,11 +32125,52 @@ public enum RaviSchemas {
 
   public static let HooksShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "hook": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -27382,8 +32199,49 @@ public enum RaviSchemas {
 
   public static let HooksTestReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -27474,7 +32332,44 @@ public enum RaviSchemas {
 
   public static let ImageAtlasSplitReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "artifactId": {
         "type": "string"
@@ -27484,8 +32379,12 @@ public enum RaviSchemas {
       },
       "crops": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -27508,8 +32407,12 @@ public enum RaviSchemas {
       },
       "sent": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -27619,9 +32522,46 @@ public enum RaviSchemas {
 
   public static let ImageGenerateReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "anyOf": [
       {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "artifactId": {
             "type": "string"
@@ -27633,8 +32573,12 @@ public enum RaviSchemas {
             "type": "boolean"
           },
           "delivery": {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           "events": {
@@ -27666,11 +32610,11 @@ public enum RaviSchemas {
         "type": "object"
       },
       {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "images": {
             "items": {
-              "additionalProperties": {},
+              "additionalProperties": false,
               "properties": {
                 "artifactId": {
                   "type": "string"
@@ -27708,13 +32652,17 @@ public enum RaviSchemas {
             "type": "array"
           },
           "options": {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           "sent": {
             "items": {
-              "additionalProperties": {},
+              "additionalProperties": false,
               "properties": {
                 "accountId": {
                   "type": "string"
@@ -27794,11 +32742,52 @@ public enum RaviSchemas {
 
   public static let InboxArchiveReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "item": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -27819,7 +32808,7 @@ public enum RaviSchemas {
 
   public static let InboxDisableReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changed": {
         "type": "boolean"
@@ -27854,11 +32843,52 @@ public enum RaviSchemas {
 
   public static let InboxDoneReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "item": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -27879,7 +32909,7 @@ public enum RaviSchemas {
 
   public static let InboxEnableReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "changed": {
         "type": "boolean"
@@ -27911,12 +32941,53 @@ public enum RaviSchemas {
 
   public static let InboxItemsReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -27964,12 +33035,53 @@ public enum RaviSchemas {
 
   public static let InboxListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -28001,15 +33113,56 @@ public enum RaviSchemas {
 
   public static let InboxPollReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "ok": {
         "const": true,
         "type": "boolean"
       },
       "snapshot": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -28039,19 +33192,64 @@ public enum RaviSchemas {
 
   public static let InboxReadReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "events": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "item": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -28081,7 +33279,7 @@ public enum RaviSchemas {
 
   public static let InboxReplayReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "itemId": {
         "type": "string"
@@ -28133,11 +33331,52 @@ public enum RaviSchemas {
 
   public static let InboxSnoozeReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "item": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -28158,12 +33397,53 @@ public enum RaviSchemas {
 
   public static let InboxSourcesReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "sources": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -28186,8 +33466,49 @@ public enum RaviSchemas {
 
   public static let InboxStatusReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -28269,16 +33590,61 @@ public enum RaviSchemas {
 
   public static let InsightsCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "comment": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "insight": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "success": {
@@ -28361,31 +33727,76 @@ public enum RaviSchemas {
 
   public static let InsightsListReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "anyOf": [
       {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "count": {
             "type": "number"
           },
           "insights": {
             "items": {
-              "additionalProperties": {},
-              "properties": {},
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
               "type": "object"
             },
             "type": "array"
           },
           "items": {
             "items": {
-              "additionalProperties": {},
-              "properties": {},
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
               "type": "object"
             },
             "type": "array"
           },
           "pagination": {
-            "additionalProperties": {},
+            "additionalProperties": false,
             "properties": {
               "hasMore": {
                 "type": "boolean"
@@ -28435,8 +33846,12 @@ public enum RaviSchemas {
             "type": "object"
           },
           "query": {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           "total": {
@@ -28454,15 +33869,19 @@ public enum RaviSchemas {
         "type": "object"
       },
       {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "generatedAt": {
             "type": "number"
           },
           "items": {
             "items": {
-              "additionalProperties": {},
-              "properties": {},
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
               "type": "object"
             },
             "type": "array"
@@ -28472,13 +33891,21 @@ public enum RaviSchemas {
             "type": "boolean"
           },
           "query": {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           "stats": {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           }
         },
@@ -28518,22 +33945,67 @@ public enum RaviSchemas {
 
   public static let InsightsSearchReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "count": {
         "type": "number"
       },
       "insights": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "query": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -28564,11 +34036,52 @@ public enum RaviSchemas {
 
   public static let InsightsShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "insight": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "tags": {
@@ -28624,8 +34137,49 @@ public enum RaviSchemas {
 
   public static let InstancesCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -28648,8 +34202,49 @@ public enum RaviSchemas {
 
   public static let InstancesDeleteReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -28664,8 +34259,49 @@ public enum RaviSchemas {
 
   public static let InstancesDeletedReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -28688,8 +34324,49 @@ public enum RaviSchemas {
 
   public static let InstancesDisableReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -28712,8 +34389,49 @@ public enum RaviSchemas {
 
   public static let InstancesDisconnectReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -28736,8 +34454,49 @@ public enum RaviSchemas {
 
   public static let InstancesEnableReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -28765,8 +34524,49 @@ public enum RaviSchemas {
 
   public static let InstancesGetReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -28794,8 +34594,49 @@ public enum RaviSchemas {
 
   public static let InstancesListReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -28827,8 +34668,49 @@ public enum RaviSchemas {
 
   public static let InstancesPendingApproveReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -28859,8 +34741,49 @@ public enum RaviSchemas {
 
   public static let InstancesPendingListReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -28888,8 +34811,49 @@ public enum RaviSchemas {
 
   public static let InstancesPendingRejectReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -28912,8 +34876,49 @@ public enum RaviSchemas {
 
   public static let InstancesRestoreReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -28970,8 +34975,49 @@ public enum RaviSchemas {
 
   public static let InstancesRoutesAddReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -28991,8 +35037,49 @@ public enum RaviSchemas {
 
   public static let InstancesRoutesDeletedReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -29027,8 +35114,49 @@ public enum RaviSchemas {
 
   public static let InstancesRoutesListReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -29060,8 +35188,49 @@ public enum RaviSchemas {
 
   public static let InstancesRoutesRemoveReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -29093,8 +35262,49 @@ public enum RaviSchemas {
 
   public static let InstancesRoutesRestoreReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -29136,8 +35346,49 @@ public enum RaviSchemas {
 
   public static let InstancesRoutesSetReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -29165,8 +35416,49 @@ public enum RaviSchemas {
 
   public static let InstancesRoutesShowReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -29199,8 +35491,49 @@ public enum RaviSchemas {
 
   public static let InstancesSetReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -29223,8 +35556,49 @@ public enum RaviSchemas {
 
   public static let InstancesShowReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -29247,8 +35621,49 @@ public enum RaviSchemas {
 
   public static let InstancesStatusReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -29279,8 +35694,49 @@ public enum RaviSchemas {
 
   public static let InstancesTargetReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -37094,15 +43550,56 @@ public enum RaviSchemas {
 
   public static let MediaSendReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "additionalProperties": false,
     "properties": {
       "delivery": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "media": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "caption": {
             "type": "string"
@@ -37137,7 +43634,7 @@ public enum RaviSchemas {
         "type": "boolean"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "accountId": {
             "type": "string"
@@ -38238,26 +44735,71 @@ public enum RaviSchemas {
 
   public static let ObserversListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "bindings": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -38346,7 +44888,7 @@ public enum RaviSchemas {
 
   public static let ObserversProfilesInitReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "profileDir": {
         "type": "string"
@@ -38386,18 +44928,59 @@ public enum RaviSchemas {
 
   public static let ObserversProfilesListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -38448,8 +45031,12 @@ public enum RaviSchemas {
       },
       "profiles": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -38490,7 +45077,44 @@ public enum RaviSchemas {
 
   public static let ObserversProfilesPreviewReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "eventMarkdown": {
         "type": "string"
@@ -38499,8 +45123,12 @@ public enum RaviSchemas {
         "type": "string"
       },
       "profile": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "prompt": {
@@ -38535,14 +45163,55 @@ public enum RaviSchemas {
 
   public static let ObserversProfilesShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "body": {
         "type": "string"
       },
       "profile": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -38569,12 +45238,53 @@ public enum RaviSchemas {
 
   public static let ObserversProfilesValidateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "errors": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -38584,8 +45294,12 @@ public enum RaviSchemas {
       },
       "profiles": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -38618,35 +45332,88 @@ public enum RaviSchemas {
 
   public static let ObserversRefreshReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "bindings": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "created": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "skipped": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "source": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "total": {
@@ -38682,11 +45449,52 @@ public enum RaviSchemas {
 
   public static let ObserversRulesDisableReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "rule": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "success": {
@@ -38720,11 +45528,52 @@ public enum RaviSchemas {
 
   public static let ObserversRulesEnableReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "rule": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "success": {
@@ -38758,27 +45607,76 @@ public enum RaviSchemas {
 
   public static let ObserversRulesExplainReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "bindings": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "rules": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "source": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -38810,18 +45708,59 @@ public enum RaviSchemas {
 
   public static let ObserversRulesListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -38872,8 +45811,12 @@ public enum RaviSchemas {
       },
       "rules": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -38910,9 +45853,48 @@ public enum RaviSchemas {
 
   public static let ObserversRulesRmReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
-      "deleted": {},
+      "deleted": {
+        "$ref": "#/$defs/__schema0"
+      },
       "success": {
         "const": true,
         "type": "boolean"
@@ -39029,11 +46011,52 @@ public enum RaviSchemas {
 
   public static let ObserversRulesSetReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "rule": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "success": {
@@ -39067,11 +46090,52 @@ public enum RaviSchemas {
 
   public static let ObserversRulesShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "rule": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -39092,12 +46156,53 @@ public enum RaviSchemas {
 
   public static let ObserversRulesValidateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "errors": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -39132,11 +46237,52 @@ public enum RaviSchemas {
 
   public static let ObserversShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "binding": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -41269,8 +48415,49 @@ public enum RaviSchemas {
 
   public static let ProjectsCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -41290,12 +48477,53 @@ public enum RaviSchemas {
 
   public static let ProjectsFixturesSeedReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "fixtures": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -41383,17 +48611,62 @@ public enum RaviSchemas {
 
   public static let ProjectsInitReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "details": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "workflows": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -41451,8 +48724,49 @@ public enum RaviSchemas {
 
   public static let ProjectsLinkReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -41484,23 +48798,68 @@ public enum RaviSchemas {
 
   public static let ProjectsListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "filters": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -41551,8 +48910,12 @@ public enum RaviSchemas {
       },
       "projects": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -41591,17 +48954,62 @@ public enum RaviSchemas {
 
   public static let ProjectsNextReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "filters": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "projects": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -41658,8 +49066,49 @@ public enum RaviSchemas {
 
   public static let ProjectsResourcesAddReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -41718,12 +49167,53 @@ public enum RaviSchemas {
 
   public static let ProjectsResourcesImportReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "resources": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -41770,18 +49260,59 @@ public enum RaviSchemas {
 
   public static let ProjectsResourcesListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -41832,8 +49363,12 @@ public enum RaviSchemas {
       },
       "resources": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -41875,8 +49410,49 @@ public enum RaviSchemas {
 
   public static let ProjectsResourcesShowReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -41899,8 +49475,49 @@ public enum RaviSchemas {
 
   public static let ProjectsShowReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -41923,8 +49540,49 @@ public enum RaviSchemas {
 
   public static let ProjectsStatusReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -41973,21 +49631,70 @@ public enum RaviSchemas {
 
   public static let ProjectsTasksAttachReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "defaults": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "details": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "workflow": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -42056,21 +49763,70 @@ public enum RaviSchemas {
 
   public static let ProjectsTasksCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "defaults": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "details": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "workflow": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -42114,21 +49870,70 @@ public enum RaviSchemas {
 
   public static let ProjectsTasksDispatchReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "defaults": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "details": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "workflow": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -42195,8 +50000,49 @@ public enum RaviSchemas {
 
   public static let ProjectsUpdateReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -42228,16 +50074,61 @@ public enum RaviSchemas {
 
   public static let ProjectsWorkflowsAttachReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "details": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "workflow": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -42280,16 +50171,61 @@ public enum RaviSchemas {
 
   public static let ProjectsWorkflowsStartReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "details": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "workflow": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -42322,7 +50258,7 @@ public enum RaviSchemas {
 
   public static let ProxCallsCancelReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "message": {
         "type": "string"
@@ -42360,12 +50296,53 @@ public enum RaviSchemas {
 
   public static let ProxCallsEventsReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "events": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -42446,16 +50423,59 @@ public enum RaviSchemas {
 
   public static let ProxCallsProfilesConfigureReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "profile": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "provider_sync": {
         "anyOf": [
-          {},
+          {
+            "$ref": "#/$defs/__schema0"
+          },
           {
             "type": "null"
           }
@@ -42493,18 +50513,59 @@ public enum RaviSchemas {
 
   public static let ProxCallsProfilesListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -42583,8 +50644,49 @@ public enum RaviSchemas {
 
   public static let ProxCallsProfilesShowReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -42635,7 +50737,44 @@ public enum RaviSchemas {
 
   public static let ProxCallsRequestReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "block_reason": {
         "anyOf": [
@@ -42661,8 +50800,12 @@ public enum RaviSchemas {
         "type": "string"
       },
       "request": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -42691,14 +50834,55 @@ public enum RaviSchemas {
 
   public static let ProxCallsRulesReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "anyOf": [
       {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "message": {
             "type": "string"
@@ -42734,18 +50918,63 @@ public enum RaviSchemas {
 
   public static let ProxCallsShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "request": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "result": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -42755,8 +50984,12 @@ public enum RaviSchemas {
       },
       "runs": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -42804,8 +51037,49 @@ public enum RaviSchemas {
 
   public static let ProxCallsToolsBindReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -42835,8 +51109,49 @@ public enum RaviSchemas {
 
   public static let ProxCallsToolsConfigureReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -42882,8 +51197,49 @@ public enum RaviSchemas {
 
   public static let ProxCallsToolsCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -42915,18 +51271,59 @@ public enum RaviSchemas {
 
   public static let ProxCallsToolsListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -43017,7 +51414,7 @@ public enum RaviSchemas {
 
   public static let ProxCallsToolsRunReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "ok": {
         "type": "boolean"
@@ -43047,15 +51444,56 @@ public enum RaviSchemas {
 
   public static let ProxCallsToolsRunsReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "request_id": {
         "type": "string"
       },
       "tool_runs": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -43090,8 +51528,49 @@ public enum RaviSchemas {
 
   public static let ProxCallsToolsShowReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -43117,7 +51596,7 @@ public enum RaviSchemas {
 
   public static let ProxCallsToolsUnbindReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "success": {
         "const": true,
@@ -43156,7 +51635,7 @@ public enum RaviSchemas {
 
   public static let ProxCallsTranscriptReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "outcome": {
         "type": "string"
@@ -43212,8 +51691,49 @@ public enum RaviSchemas {
 
   public static let ProxCallsVoiceAgentsBindToolReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -43251,8 +51771,49 @@ public enum RaviSchemas {
 
   public static let ProxCallsVoiceAgentsConfigureReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -43290,8 +51851,49 @@ public enum RaviSchemas {
 
   public static let ProxCallsVoiceAgentsCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -43319,18 +51921,59 @@ public enum RaviSchemas {
 
   public static let ProxCallsVoiceAgentsListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -43409,8 +52052,49 @@ public enum RaviSchemas {
 
   public static let ProxCallsVoiceAgentsShowReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -43440,14 +52124,55 @@ public enum RaviSchemas {
 
   public static let ProxCallsVoiceAgentsSyncReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "dry_run": {
         "type": "boolean"
       },
       "intended_changes": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "provider": {
@@ -43502,7 +52227,7 @@ public enum RaviSchemas {
 
   public static let ProxCallsVoiceAgentsUnbindToolReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "success": {
         "const": true,
@@ -43546,7 +52271,7 @@ public enum RaviSchemas {
     "additionalProperties": false,
     "properties": {
       "event": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "accountId": {
             "type": "string"
@@ -43656,7 +52381,44 @@ public enum RaviSchemas {
 
   public static let RoutesExplainReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "channel": {
         "anyOf": [
@@ -43671,8 +52433,12 @@ public enum RaviSchemas {
       "configuredRoute": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -43686,8 +52452,12 @@ public enum RaviSchemas {
       "liveEffect": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -43706,8 +52476,12 @@ public enum RaviSchemas {
         ]
       },
       "target": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -43750,11 +52524,52 @@ public enum RaviSchemas {
 
   public static let RoutesListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "filter": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "instance": {
@@ -43769,14 +52584,18 @@ public enum RaviSchemas {
       },
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -43827,8 +52646,12 @@ public enum RaviSchemas {
       },
       "routes": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -43872,7 +52695,44 @@ public enum RaviSchemas {
 
   public static let RoutesShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "instance": {
         "type": "string"
@@ -43881,8 +52741,12 @@ public enum RaviSchemas {
         "type": "string"
       },
       "route": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -43927,19 +52791,64 @@ public enum RaviSchemas {
 
   public static let RulesImportReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "candidates": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "counts": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "cwd": {
@@ -43956,8 +52865,12 @@ public enum RaviSchemas {
       },
       "sources": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -44004,6 +52917,43 @@ public enum RaviSchemas {
 
   public static let RulesSourcesReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "additionalProperties": false,
     "properties": {
       "counts": {
@@ -44042,8 +52992,12 @@ public enum RaviSchemas {
       },
       "sources": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -44127,11 +53081,52 @@ public enum RaviSchemas {
 
   public static let RuntimeCredentialsAddReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "credential": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -44189,16 +53184,61 @@ public enum RaviSchemas {
 
   public static let RuntimeCredentialsClassifyReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "pressure": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "signal": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -44228,11 +53268,52 @@ public enum RaviSchemas {
 
   public static let RuntimeCredentialsDisableReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "credential": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -44261,11 +53342,52 @@ public enum RaviSchemas {
 
   public static let RuntimeCredentialsEnableReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "credential": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -44307,11 +53429,52 @@ public enum RaviSchemas {
 
   public static let RuntimeCredentialsImportReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "credential": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -44357,18 +53520,59 @@ public enum RaviSchemas {
 
   public static let RuntimeCredentialsListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "credentials": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -44419,8 +53623,12 @@ public enum RaviSchemas {
       },
       "providerHealth": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -44478,12 +53686,53 @@ public enum RaviSchemas {
 
   public static let RuntimeCredentialsRefreshReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "refreshed": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -44514,18 +53763,63 @@ public enum RaviSchemas {
 
   public static let RuntimeCredentialsResetHealthReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "credential": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "health": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -44573,20 +53867,65 @@ public enum RaviSchemas {
 
   public static let RuntimeCredentialsSelectReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "candidates": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "rejected": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -44594,8 +53933,12 @@ public enum RaviSchemas {
       "selected": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -44628,18 +53971,63 @@ public enum RaviSchemas {
 
   public static let RuntimeCredentialsStatusReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "credential": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "health": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -45025,9 +54413,48 @@ public enum RaviSchemas {
 
   public static let SelfChatReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
-      "data": {},
+      "data": {
+        "$ref": "#/$defs/__schema0"
+      },
       "reason": {
         "type": "string"
       },
@@ -45067,12 +54494,51 @@ public enum RaviSchemas {
 
   public static let SelfContextReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "actor": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
-          "data": {},
+          "data": {
+            "$ref": "#/$defs/__schema0"
+          },
           "reason": {
             "type": "string"
           },
@@ -45092,9 +54558,11 @@ public enum RaviSchemas {
         "type": "object"
       },
       "chat": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
-          "data": {},
+          "data": {
+            "$ref": "#/$defs/__schema0"
+          },
           "reason": {
             "type": "string"
           },
@@ -45118,8 +54586,12 @@ public enum RaviSchemas {
       },
       "explain": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -45128,14 +54600,20 @@ public enum RaviSchemas {
         "type": "number"
       },
       "identity": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "knowledge": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
-          "data": {},
+          "data": {
+            "$ref": "#/$defs/__schema0"
+          },
           "reason": {
             "type": "string"
           },
@@ -45164,9 +54642,11 @@ public enum RaviSchemas {
         "type": "array"
       },
       "permissions": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
-          "data": {},
+          "data": {
+            "$ref": "#/$defs/__schema0"
+          },
           "reason": {
             "type": "string"
           },
@@ -45186,9 +54666,11 @@ public enum RaviSchemas {
         "type": "object"
       },
       "recent": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
-          "data": {},
+          "data": {
+            "$ref": "#/$defs/__schema0"
+          },
           "reason": {
             "type": "string"
           },
@@ -45208,9 +54690,11 @@ public enum RaviSchemas {
         "type": "object"
       },
       "route": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
-          "data": {},
+          "data": {
+            "$ref": "#/$defs/__schema0"
+          },
           "reason": {
             "type": "string"
           },
@@ -45230,9 +54714,11 @@ public enum RaviSchemas {
         "type": "object"
       },
       "session": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
-          "data": {},
+          "data": {
+            "$ref": "#/$defs/__schema0"
+          },
           "reason": {
             "type": "string"
           },
@@ -45281,12 +54767,53 @@ public enum RaviSchemas {
 
   public static let SelfExplainReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "explain": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -45320,9 +54847,48 @@ public enum RaviSchemas {
 
   public static let SelfKnowledgeReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
-      "data": {},
+      "data": {
+        "$ref": "#/$defs/__schema0"
+      },
       "reason": {
         "type": "string"
       },
@@ -45353,9 +54919,48 @@ public enum RaviSchemas {
 
   public static let SelfPermissionsReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
-      "data": {},
+      "data": {
+        "$ref": "#/$defs/__schema0"
+      },
       "reason": {
         "type": "string"
       },
@@ -45391,9 +54996,48 @@ public enum RaviSchemas {
 
   public static let SelfRecentReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
-      "data": {},
+      "data": {
+        "$ref": "#/$defs/__schema0"
+      },
       "reason": {
         "type": "string"
       },
@@ -45424,9 +55068,48 @@ public enum RaviSchemas {
 
   public static let SelfRouteReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
-      "data": {},
+      "data": {
+        "$ref": "#/$defs/__schema0"
+      },
       "reason": {
         "type": "string"
       },
@@ -45457,12 +55140,51 @@ public enum RaviSchemas {
 
   public static let SelfWhoamiReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "actor": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
-          "data": {},
+          "data": {
+            "$ref": "#/$defs/__schema0"
+          },
           "reason": {
             "type": "string"
           },
@@ -45482,9 +55204,11 @@ public enum RaviSchemas {
         "type": "object"
       },
       "chat": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
-          "data": {},
+          "data": {
+            "$ref": "#/$defs/__schema0"
+          },
           "reason": {
             "type": "string"
           },
@@ -45507,8 +55231,12 @@ public enum RaviSchemas {
         "type": "number"
       },
       "identity": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "nextReads": {
@@ -45518,9 +55246,11 @@ public enum RaviSchemas {
         "type": "array"
       },
       "route": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
-          "data": {},
+          "data": {
+            "$ref": "#/$defs/__schema0"
+          },
           "reason": {
             "type": "string"
           },
@@ -45540,9 +55270,11 @@ public enum RaviSchemas {
         "type": "object"
       },
       "session": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
-          "data": {},
+          "data": {
+            "$ref": "#/$defs/__schema0"
+          },
           "reason": {
             "type": "string"
           },
@@ -45594,8 +55326,49 @@ public enum RaviSchemas {
 
   public static let SessionsActionsReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -45647,8 +55420,49 @@ public enum RaviSchemas {
 
   public static let SessionsAnswerReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -45700,8 +55514,49 @@ public enum RaviSchemas {
 
   public static let SessionsAskReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -45732,8 +55587,49 @@ public enum RaviSchemas {
 
   public static let SessionsAttachReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -45756,8 +55652,49 @@ public enum RaviSchemas {
 
   public static let SessionsDeleteReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -45784,8 +55721,49 @@ public enum RaviSchemas {
 
   public static let SessionsDeleteMessageReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -45812,8 +55790,49 @@ public enum RaviSchemas {
 
   public static let SessionsDetachReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -45848,8 +55867,49 @@ public enum RaviSchemas {
 
   public static let SessionsEditMessageReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -45897,8 +55957,49 @@ public enum RaviSchemas {
 
   public static let SessionsExecuteReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -45925,8 +56026,49 @@ public enum RaviSchemas {
 
   public static let SessionsExtendReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -46004,8 +56146,49 @@ public enum RaviSchemas {
 
   public static let SessionsFollowupsAddReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -46032,8 +56215,49 @@ public enum RaviSchemas {
 
   public static let SessionsFollowupsInspectReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -46065,18 +56289,59 @@ public enum RaviSchemas {
 
   public static let SessionsFollowupsListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -46156,8 +56421,49 @@ public enum RaviSchemas {
 
   public static let SessionsFollowupsPauseReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -46180,8 +56486,49 @@ public enum RaviSchemas {
 
   public static let SessionsFollowupsResumeReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -46205,8 +56552,49 @@ public enum RaviSchemas {
 
   public static let SessionsFollowupsRetryReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -46229,8 +56617,49 @@ public enum RaviSchemas {
 
   public static let SessionsFollowupsRunReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -46262,18 +56691,59 @@ public enum RaviSchemas {
 
   public static let SessionsFollowupsRunsReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -46357,8 +56827,49 @@ public enum RaviSchemas {
 
   public static let SessionsFollowupsSnoozeReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -46694,8 +57205,49 @@ public enum RaviSchemas {
 
   public static let SessionsGoalReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -46718,8 +57270,49 @@ public enum RaviSchemas {
 
   public static let SessionsInfoReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -46767,8 +57360,49 @@ public enum RaviSchemas {
 
   public static let SessionsInformReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -46791,8 +57425,49 @@ public enum RaviSchemas {
 
   public static let SessionsKeepReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -46832,18 +57507,59 @@ public enum RaviSchemas {
 
   public static let SessionsListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -46927,8 +57643,49 @@ public enum RaviSchemas {
 
   public static let SessionsMuteReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -46964,8 +57721,49 @@ public enum RaviSchemas {
 
   public static let SessionsPruneReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -46997,8 +57795,49 @@ public enum RaviSchemas {
 
   public static let SessionsReadReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -47026,8 +57865,49 @@ public enum RaviSchemas {
 
   public static let SessionsRenameReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -47050,8 +57930,49 @@ public enum RaviSchemas {
 
   public static let SessionsResetReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -47091,9 +58012,48 @@ public enum RaviSchemas {
 
   public static let SessionsRuntimeFollowUpReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
-      "data": {},
+      "data": {
+        "$ref": "#/$defs/__schema0"
+      },
       "error": {
         "type": "string"
       },
@@ -47141,9 +58101,48 @@ public enum RaviSchemas {
 
   public static let SessionsRuntimeForkReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
-      "data": {},
+      "data": {
+        "$ref": "#/$defs/__schema0"
+      },
       "error": {
         "type": "string"
       },
@@ -47187,9 +58186,48 @@ public enum RaviSchemas {
 
   public static let SessionsRuntimeInterruptReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
-      "data": {},
+      "data": {
+        "$ref": "#/$defs/__schema0"
+      },
       "error": {
         "type": "string"
       },
@@ -47245,9 +58283,48 @@ public enum RaviSchemas {
 
   public static let SessionsRuntimeListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
-      "data": {},
+      "data": {
+        "$ref": "#/$defs/__schema0"
+      },
       "error": {
         "type": "string"
       },
@@ -47291,9 +58368,48 @@ public enum RaviSchemas {
 
   public static let SessionsRuntimeReadReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
-      "data": {},
+      "data": {
+        "$ref": "#/$defs/__schema0"
+      },
       "error": {
         "type": "string"
       },
@@ -47337,9 +58453,48 @@ public enum RaviSchemas {
 
   public static let SessionsRuntimeRollbackReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
-      "data": {},
+      "data": {
+        "$ref": "#/$defs/__schema0"
+      },
       "error": {
         "type": "string"
       },
@@ -47392,9 +58547,48 @@ public enum RaviSchemas {
 
   public static let SessionsRuntimeSteerReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
-      "data": {},
+      "data": {
+        "$ref": "#/$defs/__schema0"
+      },
       "error": {
         "type": "string"
       },
@@ -47486,8 +58680,49 @@ public enum RaviSchemas {
 
   public static let SessionsSendReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -47515,8 +58750,49 @@ public enum RaviSchemas {
 
   public static let SessionsSetDisplayReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -47544,8 +58820,49 @@ public enum RaviSchemas {
 
   public static let SessionsSetModelReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -47573,8 +58890,49 @@ public enum RaviSchemas {
 
   public static let SessionsSetThinkingReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -47602,8 +58960,49 @@ public enum RaviSchemas {
 
   public static let SessionsSetTtlReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -47626,8 +59025,49 @@ public enum RaviSchemas {
 
   public static let SessionsSubscriptionsReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -47702,8 +59142,49 @@ public enum RaviSchemas {
 
   public static let SessionsTraceReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -47730,8 +59211,49 @@ public enum RaviSchemas {
 
   public static let SessionsUnmuteReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -47754,8 +59276,49 @@ public enum RaviSchemas {
 
   public static let SessionsVisibilityReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -47855,7 +59418,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string"
@@ -48304,7 +59867,7 @@ public enum RaviSchemas {
         "type": "object"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -48470,7 +60033,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string"
@@ -48510,10 +60073,47 @@ public enum RaviSchemas {
 
   public static let SkillGatesDisableReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "additionalProperties": false,
     "properties": {
       "rule": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "command": {
             "anyOf": [
@@ -48548,8 +60148,12 @@ public enum RaviSchemas {
           "configured": {
             "anyOf": [
               {
-                "additionalProperties": {},
-                "properties": {},
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
                 "type": "object"
               },
               {
@@ -48563,8 +60167,12 @@ public enum RaviSchemas {
           "defaultRule": {
             "anyOf": [
               {
-                "additionalProperties": {},
-                "properties": {},
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
                 "type": "object"
               },
               {
@@ -48686,10 +60294,47 @@ public enum RaviSchemas {
 
   public static let SkillGatesEnableReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "additionalProperties": false,
     "properties": {
       "rule": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "command": {
             "anyOf": [
@@ -48724,8 +60369,12 @@ public enum RaviSchemas {
           "configured": {
             "anyOf": [
               {
-                "additionalProperties": {},
-                "properties": {},
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
                 "type": "object"
               },
               {
@@ -48739,8 +60388,12 @@ public enum RaviSchemas {
           "defaultRule": {
             "anyOf": [
               {
-                "additionalProperties": {},
-                "properties": {},
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
                 "type": "object"
               },
               {
@@ -48867,19 +60520,60 @@ public enum RaviSchemas {
 
   public static let SkillGatesListReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "additionalProperties": false,
     "properties": {
       "configuredTotal": {
         "type": "number"
       },
       "filters": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "items": {
         "items": {
-          "additionalProperties": {},
+          "additionalProperties": false,
           "properties": {
             "command": {
               "anyOf": [
@@ -48914,8 +60608,12 @@ public enum RaviSchemas {
             "configured": {
               "anyOf": [
                 {
-                  "additionalProperties": {},
-                  "properties": {},
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
                   "type": "object"
                 },
                 {
@@ -48929,8 +60627,12 @@ public enum RaviSchemas {
             "defaultRule": {
               "anyOf": [
                 {
-                  "additionalProperties": {},
-                  "properties": {},
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
                   "type": "object"
                 },
                 {
@@ -49024,7 +60726,7 @@ public enum RaviSchemas {
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -49072,7 +60774,7 @@ public enum RaviSchemas {
       },
       "rules": {
         "items": {
-          "additionalProperties": {},
+          "additionalProperties": false,
           "properties": {
             "command": {
               "anyOf": [
@@ -49107,8 +60809,12 @@ public enum RaviSchemas {
             "configured": {
               "anyOf": [
                 {
-                  "additionalProperties": {},
-                  "properties": {},
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
                   "type": "object"
                 },
                 {
@@ -49122,8 +60828,12 @@ public enum RaviSchemas {
             "defaultRule": {
               "anyOf": [
                 {
-                  "additionalProperties": {},
-                  "properties": {},
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
                   "type": "object"
                 },
                 {
@@ -49285,7 +60995,44 @@ public enum RaviSchemas {
 
   public static let SkillGatesRmReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "action": {
         "type": "string"
@@ -49294,7 +61041,7 @@ public enum RaviSchemas {
         "type": "boolean"
       },
       "rule": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "command": {
             "anyOf": [
@@ -49329,8 +61076,12 @@ public enum RaviSchemas {
           "configured": {
             "anyOf": [
               {
-                "additionalProperties": {},
-                "properties": {},
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
                 "type": "object"
               },
               {
@@ -49344,8 +61095,12 @@ public enum RaviSchemas {
           "defaultRule": {
             "anyOf": [
               {
-                "additionalProperties": {},
-                "properties": {},
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
                 "type": "object"
               },
               {
@@ -49504,10 +61259,47 @@ public enum RaviSchemas {
 
   public static let SkillGatesSetReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "additionalProperties": false,
     "properties": {
       "rule": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "command": {
             "anyOf": [
@@ -49542,8 +61334,12 @@ public enum RaviSchemas {
           "configured": {
             "anyOf": [
               {
-                "additionalProperties": {},
-                "properties": {},
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
                 "type": "object"
               },
               {
@@ -49557,8 +61353,12 @@ public enum RaviSchemas {
           "defaultRule": {
             "anyOf": [
               {
-                "additionalProperties": {},
-                "properties": {},
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
                 "type": "object"
               },
               {
@@ -49680,10 +61480,47 @@ public enum RaviSchemas {
 
   public static let SkillGatesShowReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "additionalProperties": false,
     "properties": {
       "rule": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "command": {
             "anyOf": [
@@ -49718,8 +61555,12 @@ public enum RaviSchemas {
           "configured": {
             "anyOf": [
               {
-                "additionalProperties": {},
-                "properties": {},
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
                 "type": "object"
               },
               {
@@ -49733,8 +61574,12 @@ public enum RaviSchemas {
           "defaultRule": {
             "anyOf": [
               {
-                "additionalProperties": {},
-                "properties": {},
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
                 "type": "object"
               },
               {
@@ -49872,7 +61717,7 @@ public enum RaviSchemas {
 
   public static let SkillsInstallReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "codexSynced": {
         "items": {
@@ -49882,7 +61727,7 @@ public enum RaviSchemas {
       },
       "installed": {
         "items": {
-          "additionalProperties": {},
+          "additionalProperties": false,
           "properties": {
             "description": {
               "anyOf": [
@@ -49982,18 +61827,59 @@ public enum RaviSchemas {
 
   public static let SkillsListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -50044,7 +61930,7 @@ public enum RaviSchemas {
       },
       "skills": {
         "items": {
-          "additionalProperties": {},
+          "additionalProperties": false,
           "properties": {
             "description": {
               "anyOf": [
@@ -50135,10 +62021,10 @@ public enum RaviSchemas {
 
   public static let SkillsShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "skill": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "content": {
             "type": "string"
@@ -50205,7 +62091,7 @@ public enum RaviSchemas {
 
   public static let SkillsSyncReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "codexSynced": {
         "items": {
@@ -50253,11 +62139,52 @@ public enum RaviSchemas {
 
   public static let SpecsGetReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "context": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -50295,18 +62222,59 @@ public enum RaviSchemas {
 
   public static let SpecsListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -50357,8 +62325,12 @@ public enum RaviSchemas {
       },
       "specs": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -50407,7 +62379,44 @@ public enum RaviSchemas {
 
   public static let SpecsNewReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "createdFiles": {
         "items": {
@@ -50417,15 +62426,23 @@ public enum RaviSchemas {
       },
       "missingAncestors": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "spec": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "status": {
@@ -50453,7 +62470,7 @@ public enum RaviSchemas {
 
   public static let SpecsSyncReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "rootPath": {
         "type": "string"
@@ -50526,13 +62543,50 @@ public enum RaviSchemas {
 
   public static let StickersAddReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "additionalProperties": false,
     "properties": {
       "action": {
         "type": "string"
       },
       "sticker": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "agents": {
             "items": {
@@ -50579,8 +62633,12 @@ public enum RaviSchemas {
             "type": "string"
           },
           "media": {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           "updatedAt": {
@@ -50640,11 +62698,48 @@ public enum RaviSchemas {
 
   public static let StickersListReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
+          "additionalProperties": false,
           "properties": {
             "agents": {
               "items": {
@@ -50691,8 +62786,12 @@ public enum RaviSchemas {
               "type": "string"
             },
             "media": {
-              "additionalProperties": {},
-              "properties": {},
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
               "type": "object"
             },
             "updatedAt": {
@@ -50723,7 +62822,7 @@ public enum RaviSchemas {
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -50771,7 +62870,7 @@ public enum RaviSchemas {
       },
       "stickers": {
         "items": {
-          "additionalProperties": {},
+          "additionalProperties": false,
           "properties": {
             "agents": {
               "items": {
@@ -50818,8 +62917,12 @@ public enum RaviSchemas {
               "type": "string"
             },
             "media": {
-              "additionalProperties": {},
-              "properties": {},
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
               "type": "object"
             },
             "updatedAt": {
@@ -50937,11 +63040,52 @@ public enum RaviSchemas {
 
   public static let StickersSendReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "additionalProperties": false,
     "properties": {
       "event": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "sticker": {
@@ -51018,10 +63162,47 @@ public enum RaviSchemas {
 
   public static let StickersShowReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "additionalProperties": false,
     "properties": {
       "sticker": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "agents": {
             "items": {
@@ -51068,8 +63249,12 @@ public enum RaviSchemas {
             "type": "string"
           },
           "media": {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           "updatedAt": {
@@ -52014,15 +64199,56 @@ public enum RaviSchemas {
 
   public static let TagRulesEvaluateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "apply": {
         "type": "boolean"
       },
       "outcomes": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -52031,14 +64257,22 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "traces": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -52070,29 +64304,82 @@ public enum RaviSchemas {
 
   public static let TagRulesExplainReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "loaded": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "outcomes": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "rules": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "target": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -52125,18 +64412,59 @@ public enum RaviSchemas {
 
   public static let TagRulesListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "errors": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "limit": {
             "type": "number"
@@ -52160,8 +64488,12 @@ public enum RaviSchemas {
       },
       "rules": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -52194,11 +64526,52 @@ public enum RaviSchemas {
 
   public static let TagRulesShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "rule": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "source": {
@@ -52231,15 +64604,56 @@ public enum RaviSchemas {
 
   public static let TagRulesTickReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "appliedActions": {
         "type": "number"
       },
       "contacts": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -52249,8 +64663,12 @@ public enum RaviSchemas {
       },
       "loadErrors": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -52284,12 +64702,53 @@ public enum RaviSchemas {
 
   public static let TagRulesValidateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "errors": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -52448,19 +64907,64 @@ public enum RaviSchemas {
 
   public static let TagsAttachReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "behaviorConsumers": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "binding": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "changedCount": {
@@ -52470,13 +64974,21 @@ public enum RaviSchemas {
         "type": "string"
       },
       "tag": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "target": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -52528,19 +65040,64 @@ public enum RaviSchemas {
 
   public static let TagsCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "behaviorConsumers": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "binding": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "changedCount": {
@@ -52550,13 +65107,21 @@ public enum RaviSchemas {
         "type": "string"
       },
       "tag": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "target": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -52699,7 +65264,44 @@ public enum RaviSchemas {
 
   public static let TagsDetachReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -52709,8 +65311,12 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -52762,23 +65368,68 @@ public enum RaviSchemas {
 
   public static let TagsListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "filters": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "page": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "count": {
             "type": "number"
@@ -52829,8 +65480,12 @@ public enum RaviSchemas {
       },
       "tags": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -52997,39 +65652,92 @@ public enum RaviSchemas {
 
   public static let TagsSearchReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "behaviorConsumers": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "bindings": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "filters": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "page": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "count": {
             "type": "number"
@@ -53122,19 +65830,64 @@ public enum RaviSchemas {
 
   public static let TagsSetReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "behaviorConsumers": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "binding": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "changedCount": {
@@ -53144,13 +65897,21 @@ public enum RaviSchemas {
         "type": "string"
       },
       "tag": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "target": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -53181,27 +65942,76 @@ public enum RaviSchemas {
 
   public static let TagsShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "behaviorConsumers": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "bindings": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "tag": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -53236,16 +66046,61 @@ public enum RaviSchemas {
 
   public static let TasksArchiveReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "event": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "task": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -53350,11 +66205,52 @@ public enum RaviSchemas {
 
   public static let TasksAutomationsAddReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "automation": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "changedCount": {
@@ -53364,7 +66260,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "id": {
             "type": "string"
@@ -53408,11 +66304,52 @@ public enum RaviSchemas {
 
   public static let TasksAutomationsDisableReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "automation": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "changedCount": {
@@ -53422,7 +66359,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "id": {
             "type": "string"
@@ -53466,11 +66403,52 @@ public enum RaviSchemas {
 
   public static let TasksAutomationsEnableReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "automation": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "changedCount": {
@@ -53480,7 +66458,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "id": {
             "type": "string"
@@ -53529,31 +66507,80 @@ public enum RaviSchemas {
 
   public static let TasksAutomationsListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "automations": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "filters": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -53635,11 +66662,52 @@ public enum RaviSchemas {
 
   public static let TasksAutomationsRmReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "automation": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "changedCount": {
@@ -53649,7 +66717,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "id": {
             "type": "string"
@@ -53693,17 +66761,62 @@ public enum RaviSchemas {
 
   public static let TasksAutomationsShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "automation": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "runs": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -53739,16 +66852,61 @@ public enum RaviSchemas {
 
   public static let TasksBlockReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "event": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "task": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -53783,21 +66941,70 @@ public enum RaviSchemas {
 
   public static let TasksCommentReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "comment": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "event": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "task": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -53914,34 +67121,87 @@ public enum RaviSchemas {
 
   public static let TasksCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "dependencies": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "dependents": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "event": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "launchPlan": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -53960,26 +67220,42 @@ public enum RaviSchemas {
         ]
       },
       "readiness": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "relatedEvents": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "task": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "taskProfile": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -54021,16 +67297,61 @@ public enum RaviSchemas {
 
   public static let TasksDepsAddReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "event": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "task": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -54068,28 +67389,77 @@ public enum RaviSchemas {
 
   public static let TasksDepsLsReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "dependencies": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "dependents": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -54097,8 +67467,12 @@ public enum RaviSchemas {
       "launchPlan": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -54107,7 +67481,7 @@ public enum RaviSchemas {
         ]
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -54157,8 +67531,12 @@ public enum RaviSchemas {
         "type": "object"
       },
       "readiness": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "taskId": {
@@ -54205,16 +67583,61 @@ public enum RaviSchemas {
 
   public static let TasksDepsRmReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "event": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "task": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -54280,24 +67703,73 @@ public enum RaviSchemas {
 
   public static let TasksDispatchReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "event": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "mode": {
         "type": "string"
       },
       "readiness": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "task": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -54332,16 +67804,61 @@ public enum RaviSchemas {
 
   public static let TasksDoneReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "event": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "task": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -54375,16 +67892,61 @@ public enum RaviSchemas {
 
   public static let TasksFailReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "event": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "task": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -54487,20 +68049,65 @@ public enum RaviSchemas {
 
   public static let TasksListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "archiveMode": {
         "type": "string"
       },
       "filters": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -54516,14 +68123,22 @@ public enum RaviSchemas {
         ]
       },
       "page": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "tasks": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -54572,7 +68187,7 @@ public enum RaviSchemas {
 
   public static let TasksProfilesInitReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "manifestPath": {
         "type": "string"
@@ -54612,18 +68227,59 @@ public enum RaviSchemas {
 
   public static let TasksProfilesListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -54674,8 +68330,12 @@ public enum RaviSchemas {
       },
       "profiles": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -54747,16 +68407,61 @@ public enum RaviSchemas {
 
   public static let TasksProfilesPreviewReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "profile": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "rendered": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -54786,8 +68491,49 @@ public enum RaviSchemas {
 
   public static let TasksProfilesShowReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -54807,12 +68553,53 @@ public enum RaviSchemas {
 
   public static let TasksProfilesValidateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "results": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -54855,16 +68642,61 @@ public enum RaviSchemas {
 
   public static let TasksReportReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "event": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "task": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -54898,36 +68730,89 @@ public enum RaviSchemas {
 
   public static let TasksShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "comments": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "dependencies": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "dependents": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "events": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -54945,8 +68830,12 @@ public enum RaviSchemas {
       "launchPlan": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -54955,13 +68844,21 @@ public enum RaviSchemas {
         ]
       },
       "readiness": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "task": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -54997,16 +68894,61 @@ public enum RaviSchemas {
 
   public static let TasksUnarchiveReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "event": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "task": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -55040,19 +68982,64 @@ public enum RaviSchemas {
 
   public static let ThreadsBriefReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "action": {
         "type": "string"
       },
       "brief": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "thread": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -55091,14 +69078,55 @@ public enum RaviSchemas {
 
   public static let ThreadsCloseReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "action": {
         "type": "string"
       },
       "thread": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -55141,19 +69169,64 @@ public enum RaviSchemas {
 
   public static let ThreadsCommentReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "action": {
         "type": "string"
       },
       "entry": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "thread": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -55208,14 +69281,55 @@ public enum RaviSchemas {
 
   public static let ThreadsCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "action": {
         "type": "string"
       },
       "thread": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -55257,22 +69371,67 @@ public enum RaviSchemas {
 
   public static let ThreadsEntriesReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "action": {
         "type": "string"
       },
       "entries": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "thread": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -55324,19 +69483,64 @@ public enum RaviSchemas {
 
   public static let ThreadsLinkReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "action": {
         "type": "string"
       },
       "link": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "thread": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -55384,7 +69588,44 @@ public enum RaviSchemas {
 
   public static let ThreadsListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "action": {
         "const": "list",
@@ -55392,14 +69633,18 @@ public enum RaviSchemas {
       },
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -55489,19 +69734,64 @@ public enum RaviSchemas {
 
   public static let ThreadsNoteReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "action": {
         "type": "string"
       },
       "entry": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "thread": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -55540,30 +69830,79 @@ public enum RaviSchemas {
 
   public static let ThreadsShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "action": {
         "type": "string"
       },
       "entries": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "links": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "thread": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -55825,19 +70164,60 @@ public enum RaviSchemas {
 
   public static let ToolsListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "groups": {
         "items": {
-          "additionalProperties": {},
+          "additionalProperties": false,
           "properties": {
             "name": {
               "type": "string"
             },
             "tools": {
               "items": {
-                "additionalProperties": {},
-                "properties": {},
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
                 "type": "object"
               },
               "type": "array"
@@ -55853,14 +70233,18 @@ public enum RaviSchemas {
       },
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -55911,8 +70295,12 @@ public enum RaviSchemas {
       },
       "tools": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -55942,12 +70330,53 @@ public enum RaviSchemas {
 
   public static let ToolsManifestReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "tools": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -55974,11 +70403,52 @@ public enum RaviSchemas {
 
   public static let ToolsSchemaReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "schema": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -56097,11 +70567,52 @@ public enum RaviSchemas {
 
   public static let ToolsShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "tool": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -56426,7 +70937,7 @@ public enum RaviSchemas {
         "type": "boolean"
       },
       "transcription": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "chunks": {
             "type": "number"
@@ -56442,7 +70953,22 @@ public enum RaviSchemas {
           },
           "segments": {
             "items": {
-              "additionalProperties": {},
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "propertyNames": {
                 "type": "string"
               },
@@ -56520,7 +71046,44 @@ public enum RaviSchemas {
 
   public static let TriggersAddReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -56529,7 +71092,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string"
@@ -56543,8 +71106,12 @@ public enum RaviSchemas {
       "trigger": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -56581,7 +71148,44 @@ public enum RaviSchemas {
 
   public static let TriggersDisableReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -56590,7 +71194,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string"
@@ -56604,8 +71208,12 @@ public enum RaviSchemas {
       "trigger": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -56642,7 +71250,44 @@ public enum RaviSchemas {
 
   public static let TriggersEnableReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -56651,7 +71296,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string"
@@ -56665,8 +71310,12 @@ public enum RaviSchemas {
       "trigger": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -56708,18 +71357,59 @@ public enum RaviSchemas {
 
   public static let TriggersListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -56773,8 +71463,12 @@ public enum RaviSchemas {
       },
       "triggers": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -56808,7 +71502,44 @@ public enum RaviSchemas {
 
   public static let TriggersRmReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -56817,7 +71548,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string"
@@ -56831,8 +71562,12 @@ public enum RaviSchemas {
       "trigger": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -56879,7 +71614,44 @@ public enum RaviSchemas {
 
   public static let TriggersSetReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -56888,7 +71660,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string"
@@ -56902,8 +71674,12 @@ public enum RaviSchemas {
       "trigger": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -56940,11 +71716,52 @@ public enum RaviSchemas {
 
   public static let TriggersShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "trigger": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -56973,7 +71790,44 @@ public enum RaviSchemas {
 
   public static let TriggersTestReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "changedCount": {
         "type": "number"
@@ -56982,7 +71836,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "type": {
             "type": "string"
@@ -56996,8 +71850,12 @@ public enum RaviSchemas {
       "trigger": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -57026,12 +71884,53 @@ public enum RaviSchemas {
 
   public static let TriggersTopicsReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "topics": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -57078,16 +71977,61 @@ public enum RaviSchemas {
 
   public static let VideoAnalyzeReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "artifact": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "options": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "success": {
@@ -57095,12 +72039,16 @@ public enum RaviSchemas {
         "type": "boolean"
       },
       "video": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "chapters": {
             "items": {
-              "additionalProperties": {},
-              "properties": {},
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
               "type": "object"
             },
             "type": "array"
@@ -57185,20 +72133,65 @@ public enum RaviSchemas {
 
   public static let WatchConnectorsReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "connectors": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -57263,24 +72256,73 @@ public enum RaviSchemas {
 
   public static let WatchCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "capabilities": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "next": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "status": {
         "type": "string"
       },
       "watch": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -57312,14 +72354,55 @@ public enum RaviSchemas {
 
   public static let WatchDisableReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "status": {
         "type": "string"
       },
       "watch": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -57349,14 +72432,55 @@ public enum RaviSchemas {
 
   public static let WatchEnableReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "status": {
         "type": "string"
       },
       "watch": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -57386,7 +72510,7 @@ public enum RaviSchemas {
 
   public static let WatchEventsReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "eventTypes": {
         "items": {
@@ -57440,18 +72564,59 @@ public enum RaviSchemas {
 
   public static let WatchListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -57505,8 +72670,12 @@ public enum RaviSchemas {
       },
       "watches": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -57540,7 +72709,7 @@ public enum RaviSchemas {
 
   public static let WatchRmReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "additionalProperties": false,
     "properties": {
       "deleted": {
         "type": "boolean"
@@ -57575,11 +72744,52 @@ public enum RaviSchemas {
 
   public static let WatchShowReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "watch": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -57632,19 +72842,64 @@ public enum RaviSchemas {
 
   public static let WatchTriggerReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "status": {
         "type": "string"
       },
       "trigger": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "watch": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -57684,8 +72939,49 @@ public enum RaviSchemas {
 
   public static let WhatsappDmAckReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -57721,8 +73017,49 @@ public enum RaviSchemas {
 
   public static let WhatsappDmReadReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -57754,8 +73091,49 @@ public enum RaviSchemas {
 
   public static let WhatsappDmSendReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -57787,8 +73165,49 @@ public enum RaviSchemas {
 
   public static let WhatsappGroupAddReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -57857,8 +73276,49 @@ public enum RaviSchemas {
 
   public static let WhatsappGroupCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -57890,8 +73350,49 @@ public enum RaviSchemas {
 
   public static let WhatsappGroupDemoteReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -57923,8 +73424,49 @@ public enum RaviSchemas {
 
   public static let WhatsappGroupDescriptionReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -57951,8 +73493,49 @@ public enum RaviSchemas {
 
   public static let WhatsappGroupInfoReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -57979,8 +73562,49 @@ public enum RaviSchemas {
 
   public static let WhatsappGroupInviteReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -58007,8 +73631,49 @@ public enum RaviSchemas {
 
   public static let WhatsappGroupJoinReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -58035,8 +73700,49 @@ public enum RaviSchemas {
 
   public static let WhatsappGroupLeaveReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -58064,8 +73770,49 @@ public enum RaviSchemas {
 
   public static let WhatsappGroupListReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -58097,8 +73844,49 @@ public enum RaviSchemas {
 
   public static let WhatsappGroupPromoteReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -58130,8 +73918,49 @@ public enum RaviSchemas {
 
   public static let WhatsappGroupRemoveReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -58163,8 +73992,49 @@ public enum RaviSchemas {
 
   public static let WhatsappGroupRenameReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -58191,8 +74061,49 @@ public enum RaviSchemas {
 
   public static let WhatsappGroupRevokeInviteReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -58231,8 +74142,49 @@ public enum RaviSchemas {
 
   public static let WhatsappGroupSendReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -58264,8 +74216,49 @@ public enum RaviSchemas {
 
   public static let WhatsappGroupSettingsReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -59420,11 +75413,52 @@ public enum RaviSchemas {
 
   public static let WorkflowsRunsArchiveNodeReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "details": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -59458,11 +75492,52 @@ public enum RaviSchemas {
 
   public static let WorkflowsRunsCancelReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "details": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -59492,18 +75567,59 @@ public enum RaviSchemas {
 
   public static let WorkflowsRunsListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -59554,8 +75670,12 @@ public enum RaviSchemas {
       },
       "runs": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -59597,11 +75717,52 @@ public enum RaviSchemas {
 
   public static let WorkflowsRunsReleaseReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "details": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -59630,8 +75791,49 @@ public enum RaviSchemas {
 
   public static let WorkflowsRunsShowReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -59659,11 +75861,52 @@ public enum RaviSchemas {
 
   public static let WorkflowsRunsSkipReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "details": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -59696,8 +75939,49 @@ public enum RaviSchemas {
 
   public static let WorkflowsRunsStartReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -59730,11 +76014,52 @@ public enum RaviSchemas {
 
   public static let WorkflowsRunsTaskAttachReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "details": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       }
     },
@@ -59793,18 +76118,63 @@ public enum RaviSchemas {
 
   public static let WorkflowsRunsTaskCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "task": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
         "type": "object"
       },
       "workflow": {
         "anyOf": [
           {
-            "additionalProperties": {},
-            "properties": {},
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
             "type": "object"
           },
           {
@@ -59847,8 +76217,49 @@ public enum RaviSchemas {
 
   public static let WorkflowsSpecsCreateReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
@@ -59872,18 +76283,59 @@ public enum RaviSchemas {
 
   public static let WorkflowsSpecsListReturnSchema = #"""
   {
-    "additionalProperties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
     "properties": {
       "items": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
       },
       "pagination": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "hasMore": {
             "type": "boolean"
@@ -59934,8 +76386,12 @@ public enum RaviSchemas {
       },
       "specs": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
           "type": "object"
         },
         "type": "array"
@@ -59972,8 +76428,49 @@ public enum RaviSchemas {
 
   public static let WorkflowsSpecsShowReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "propertyNames": {
+      "type": "string"
+    },
     "type": "object"
   }
   """#
