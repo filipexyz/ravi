@@ -6,14 +6,12 @@
 ravi tools search "session attach" --json --limit 5
 ```
 
-Expected:
-
-- output is valid JSON;
-- `query` field matches the input;
-- `limit` is present;
-- `total` is present;
-- `items` is an array with ranked results;
-- each item has `name`, `description`, `score`, `matchedFields`.
+- Output MUST be valid JSON.
+- `query` field MUST match the input.
+- `limit` MUST be present.
+- `total` MUST be present.
+- `items` MUST be an array with ranked results.
+- Each item MUST have `name`, `description`, `score`, `matchedFields`.
 
 ## Search Is Bounded
 
@@ -21,9 +19,7 @@ Expected:
 ravi tools search "list" --json
 ```
 
-Expected:
-
-- `items` length does not exceed the default limit (10).
+- `items` length MUST NOT exceed the default limit (10).
 
 ## Dry-Run Test Does Not Execute
 
@@ -31,12 +27,10 @@ Expected:
 ravi tools test tools_list '{}' --json
 ```
 
-Expected:
-
-- `mode` is `"dry_run"` or `executed` is `false`;
-- no `result.content` with tool output;
-- `invokeCommand` is present;
-- `schema` is present.
+- `mode` MUST be `"dry_run"` or `executed` MUST be `false`.
+- Output MUST NOT contain `result.content` with tool output.
+- `invokeCommand` MUST be present.
+- `schema` MUST be present.
 
 ## Invoke Executes Handler
 
@@ -44,10 +38,8 @@ Expected:
 ravi tools invoke tools_list '{}' --json
 ```
 
-Expected:
-
-- `mode` is `"executed"` or `executed` is `true`;
-- `result` is present with `isError` and `content`.
+- `mode` MUST be `"executed"` or `executed` MUST be `true`.
+- `result` MUST be present with `isError` and `content`.
 
 ## Invoke Preserves Authorization
 
@@ -55,10 +47,8 @@ Expected:
 ravi tools invoke tools_list '{}' --json
 ```
 
-Expected:
-
-- the command access annotation is `mutate/high`;
-- the same enforcement path as runtime tool execution is used.
+- The command access annotation MUST be `mutate/high`.
+- The handler MUST use the same enforcement path as runtime tool execution.
 
 ## Search Never Calls Handler
 
