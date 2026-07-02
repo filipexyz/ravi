@@ -18,6 +18,12 @@ behavior as their histories grow.
 - Use `--all-time` for time-window removal instead of overloading `--all`.
 - Treat `--last` as a legacy alias where it already exists.
 - Make JSON page metadata mandatory before migrating every CLI.
+- Default resource listing to the current agent's own resources when a runtime
+  `agentId` is present. This is a listing default/UX change, not a permission
+  policy change — `isScopeEnforced` and the REBAC engine remain unchanged.
+- Require `--all-agents` for global scope in agent contexts, even for admins.
+  This prevents agents from accidentally receiving a huge global list when they
+  only need to inspect their own jobs.
 
 ## Rejected Alternatives
 
@@ -27,3 +33,6 @@ behavior as their histories grow.
   Counting can be as expensive as listing and is not always needed.
 - Offset pagination as the default.
   Mutable operational data can reorder while an agent is paging through it.
+- Changing `isScopeEnforced` or the global permission provider to enforce
+  agent scoping. The change is a listing UX default, not an authorization
+  policy change.

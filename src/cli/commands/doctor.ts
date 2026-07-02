@@ -18,6 +18,7 @@ import { inspectAgentInstructionFiles, type AgentInstructionState } from "../../
 import { getRuntimeCompatibilityIssues, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
 import type { RuntimeCompatibilityIssue, RuntimeProviderId } from "../../runtime/types.js";
 import {
+  dbGetAgent,
   dbListAgents,
   dbListInstances,
   dbListRoutes,
@@ -33,6 +34,10 @@ import { listTaskAutomations } from "../../tasks/index.js";
 import { getRaviStateDir } from "../../utils/paths.js";
 import { getRegistry, type RegistrySnapshot } from "../registry-snapshot.js";
 import { inspectCliRuntimeTarget, type CliRuntimeTargetSummary } from "../runtime-target.js";
+import { dbListCronJobs } from "../../cron/cron-db.js";
+import { resolveCronTarget, type CronTargetState } from "../../cron/target-resolver.js";
+import { resolveSession } from "../../router/sessions.js";
+import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 
 export type DoctorSeverity = "error" | "warn" | "info";
 export type DoctorCheckStatus = "pass" | "fail" | "skip";
@@ -178,6 +183,10 @@ type DoctorDeps = {
   listSpecFiles: () => string[];
   listSkillFiles: () => string[];
   getGitInfo: () => GitInfo;
+  dbListCronJobs: typeof dbListCronJobs;
+  dbGetAgent: typeof dbGetAgent;
+  resolveSession: typeof resolveSession;
+  deriveSourceFromSessionKey: typeof deriveSourceFromSessionKey;
   exists: (path: string) => boolean;
   readFile: (path: string) => string;
   readDir: (path: string) => Dirent[];
@@ -229,6 +238,10 @@ const DEFAULT_DEPS: DoctorDeps = {
     ...listFilesUnder(join(process.cwd(), "src", "skills"), "SKILL.md"),
   ],
   getGitInfo: () => readGitInfo(process.cwd()),
+  dbListCronJobs,
+  dbGetAgent,
+  resolveSession,
+  deriveSourceFromSessionKey,
   exists: existsSync,
   readFile: (path: string) => readFileSync(path, "utf8"),
   readDir: (path: string) => readdirSync(path, { withFileTypes: true }),
@@ -428,6 +441,7 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
     });
 
     addCheck(checks, () => buildTaskAutomationsCheck(deps));
+    addCheck(checks, () => buildCronTargetsCheck(deps));
     addCheck(checks, () => buildRuntimeSchemaCheck(deps));
     addCheck(checks, () => buildRuntimeMigrationCheck(deps));
     addCheck(checks, () => {
@@ -2200,6 +2214,114 @@ function buildProviderCompatibilityCheck(deps: DoctorDeps): LegacyDoctorCheck {
     details: results.map((entry) => `${entry.provider}: restricted tool access supported`),
     data: {
       providers: results.map((entry) => entry.provider),
+    },
+  };
+}
+
+const CRON_TARGET_STATUS: Record<CronTargetState, LegacyDoctorCheckStatus> = {
+  ok: "ok",
+  agent_missing: "fail",
+  reply_session_missing: "warn",
+  derived_key: "warn",
+  unresolved: "warn",
+};
+
+const FINDING_ID_MAP: Record<CronTargetState, string> = {
+  ok: "cron.ok",
+  agent_missing: "cron.agent_missing",
+  reply_session_missing: "cron.reply_session_missing",
+  derived_key: "cron.routing_derived_key",
+  unresolved: "cron.routing_unresolved",
+};
+
+const FIX_HINT_MAP: Record<CronTargetState, (job: { id: string }) => string> = {
+  ok: () => "",
+  agent_missing: (job) => `ravi cron show ${job.id}; ravi cron set ${job.id} agent <agent>`,
+  reply_session_missing: (job) => `ravi cron show ${job.id}; ravi cron set ${job.id} reply-session -`,
+  derived_key: (job) => `ravi cron show ${job.id}`,
+  unresolved: (job) => `ravi cron show ${job.id}; ravi cron disable ${job.id}`,
+};
+
+function buildCronTargetsCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const jobs = deps.dbListCronJobs();
+  const enabledJobs = jobs.filter((j) => j.enabled);
+
+  if (enabledJobs.length === 0) {
+    return {
+      id: "cron.targets",
+      title: "Cron target resolution",
+      status: "ok",
+      summary: "no enabled cron jobs to check",
+      data: { total: 0, enabled: 0, findings: [] },
+    };
+  }
+
+  const resolverDeps = {
+    getAgent: deps.dbGetAgent,
+    getDefaultAgentId: deps.getDefaultAgentId,
+    resolveSession: deps.resolveSession,
+    deriveSourceFromSessionKey: deps.deriveSourceFromSessionKey,
+  };
+
+  const MAX_FINDINGS = 20;
+  const findings: Array<{
+    id: string;
+    cronId: string;
+    cronName: string;
+    severity: LegacyDoctorCheckStatus;
+    state: CronTargetState;
+    detail?: string;
+    fixHint: string;
+  }> = [];
+
+  let worstSeverity: LegacyDoctorCheckStatus = "ok";
+
+  for (const job of enabledJobs) {
+    const resolution = resolveCronTarget(job, resolverDeps);
+    if (resolution.state === "ok") continue;
+
+    const severity = CRON_TARGET_STATUS[resolution.state];
+    if (severity === "fail") worstSeverity = "fail";
+    else if (severity === "warn" && worstSeverity !== "fail") worstSeverity = "warn";
+
+    if (findings.length < MAX_FINDINGS) {
+      findings.push({
+        id: FINDING_ID_MAP[resolution.state],
+        cronId: job.id,
+        cronName: job.name,
+        severity,
+        state: resolution.state,
+        detail: resolution.detail,
+        fixHint: FIX_HINT_MAP[resolution.state](job),
+      });
+    }
+  }
+
+  const totalIssues = findings.length;
+  const details = findings.map((f) => `${f.cronId} (${f.cronName}): ${f.state}${f.detail ? ` — ${f.detail}` : ""}`);
+
+  if (totalIssues === 0) {
+    return {
+      id: "cron.targets",
+      title: "Cron target resolution",
+      status: "ok",
+      summary: `all ${enabledJobs.length} enabled cron jobs have valid targets`,
+      data: { total: jobs.length, enabled: enabledJobs.length, findings: [] },
+    };
+  }
+
+  return {
+    id: "cron.targets",
+    title: "Cron target resolution",
+    status: worstSeverity === "fail" ? "fail" : "ok",
+    severity: worstSeverity === "warn" ? "warn" : undefined,
+    summary: `${totalIssues} enabled cron jobs have stale or unresolved targets`,
+    details,
+    fixHint: findings[0]?.fixHint,
+    data: {
+      total: jobs.length,
+      enabled: enabledJobs.length,
+      findings,
     },
   };
 }

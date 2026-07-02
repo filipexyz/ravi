@@ -12,7 +12,7 @@ import { getScopeContext, isScopeEnforced, canAccessResource } from "../../permi
 import { getAgent } from "../../router/config.js";
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { resolveSession } from "../../router/sessions.js";
-import { getDefaultTimezone, getAccountForAgent, getDefaultAgentId } from "../../router/router-db.js";
+import { getDefaultTimezone, getAccountForAgent, getDefaultAgentId, dbGetAgent } from "../../router/router-db.js";
 import {
   dbCreateCronJob,
   dbGetCronJob,
@@ -31,6 +31,7 @@ import {
 import { DEFAULT_CRON_SHELL_TIMEOUT_MS } from "../../cron/shell-executor.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { buildCronShowOutput, type CronRoutingResolution, type CronRoutingSource } from "../cron-show-output.js";
+import { resolveCronTarget, type CronTargetResolution } from "../../cron/target-resolver.js";
 
 function parseCronShellTimeout(value: string | undefined): number | undefined {
   if (!value) return undefined;
@@ -106,6 +107,27 @@ function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
 
+const TARGET_STATE_LABELS: Record<string, string> = {
+  ok: "ok",
+  agent_missing: "agent-miss",
+  reply_session_missing: "sess-miss",
+  derived_key: "derived",
+  unresolved: "unresolved",
+};
+
+function formatTargetStateCompact(resolution: CronTargetResolution): string {
+  return (TARGET_STATE_LABELS[resolution.state] ?? resolution.state).padEnd(11);
+}
+
+function getTargetResolverDeps() {
+  return {
+    getAgent: dbGetAgent,
+    getDefaultAgentId,
+    resolveSession,
+    deriveSourceFromSessionKey,
+  };
+}
+
 function serializeCronJob(job: CronJob) {
   return {
     ...job,
@@ -115,6 +137,7 @@ function serializeCronJob(job: CronJob) {
     shellTimeoutDescription:
       job.executionType === "shell" ? formatDurationMs(job.shellTimeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS) : undefined,
     routing: resolveCronRouting(job),
+    targetResolution: resolveCronTarget(job, getTargetResolverDeps()),
   };
 }
 
@@ -124,7 +147,7 @@ function serializeCronJob(job: CronJob) {
   scope: "resource",
 })
 export class CronCommands {
-  @Command({ name: "list", description: "List all scheduled jobs" })
+  @Command({ name: "list", description: "List scheduled jobs (agent-scoped by default)" })
   @CommandAccess({ kind: "read", resource: "cron", action: "list", risk: "low" })
   @Returns(cronListReturnSchema)
   list(
@@ -133,14 +156,49 @@ export class CronCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching cron jobs to skip (default: 0)" })
     offset?: string,
+    @Option({ flags: "--all-agents", description: "List jobs from all agents (requires authorization)" })
+    allAgents?: boolean,
+    @Option({ flags: "--agent <id>", description: "Filter jobs by a specific agent ID" })
+    filterAgentId?: string,
   ) {
     let jobs = dbListCronJobs();
 
-    // Scope isolation: filter to own agent's jobs
-    const scopeCtx = getScopeContext();
-    if (isScopeEnforced(scopeCtx)) {
-      jobs = jobs.filter((j) => canAccessResource(scopeCtx, j.agentId));
+    // Resolve scope: agent-scoped by default when agentId is present
+    const scopeCtx = getScopeContext() ?? {};
+    const callerAgentId = scopeCtx.agentId;
+    let scopeLabel: string;
+    let scopeAgentId: string | undefined;
+
+    if (filterAgentId) {
+      // Explicit --agent <id>: filter to that specific agent
+      scopeAgentId = filterAgentId;
+      scopeLabel = "agent";
+      // REBAC visibility still applies for non-own agents
+      if (isScopeEnforced(scopeCtx)) {
+        jobs = jobs.filter((j) => canAccessResource(scopeCtx, j.agentId));
+      }
+      const effectiveFilterId = filterAgentId;
+      jobs = jobs.filter((j) => (j.agentId ?? getDefaultAgentId()) === effectiveFilterId);
+    } else if (allAgents) {
+      // Explicit --all-agents: global scope, still apply REBAC visibility
+      scopeLabel = "all-agents";
+      if (isScopeEnforced(scopeCtx)) {
+        jobs = jobs.filter((j) => canAccessResource(scopeCtx, j.agentId));
+      }
+    } else if (callerAgentId) {
+      // Default: agent-scoped when running inside an agent context
+      scopeAgentId = callerAgentId;
+      scopeLabel = "agent";
+      const effectiveOwnerId = callerAgentId;
+      jobs = jobs.filter((j) => (j.agentId ?? getDefaultAgentId()) === effectiveOwnerId);
+    } else {
+      // No agent context (direct CLI): show all accessible jobs
+      scopeLabel = "all";
+      if (isScopeEnforced(scopeCtx)) {
+        jobs = jobs.filter((j) => canAccessResource(scopeCtx, j.agentId));
+      }
     }
+
     const tagFilter = tagSlug?.trim() || null;
     jobs = filterItemsByCanonicalTag(jobs, "cron_job", tagFilter ?? undefined, (job) => job.id);
     const page = paginateCliItems(jobs, { limit, offset });
@@ -151,13 +209,23 @@ export class CronCommands {
       offset: page.offset,
       returned: pageJobs.length,
       total: page.total,
-      options: ["--tag", tagFilter],
+      options: [
+        "--tag",
+        tagFilter,
+        filterAgentId ? "--agent" : false,
+        filterAgentId || false,
+        allAgents ? "--all-agents" : false,
+      ],
     });
+
+    const filters: Record<string, unknown> = { scope: scopeLabel };
+    if (scopeAgentId) filters.agentId = scopeAgentId;
+    if (tagFilter) filters.tag = tagFilter;
 
     const payload = {
       total: page.total,
       pagination,
-      ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
+      filters,
       items: pageJobs.map(serializeCronJob),
       jobs: pageJobs.map(serializeCronJob),
     };
@@ -165,27 +233,41 @@ export class CronCommands {
     if (asJson) {
       printJson(payload);
     } else if (pageJobs.length === 0) {
-      console.log("\nNo cron jobs configured.\n");
+      const scopeHint = scopeLabel === "agent" ? ` (scope: agent ${scopeAgentId})` : "";
+      console.log(`\nNo cron jobs configured${scopeHint}.\n`);
       console.log("Usage:");
       console.log('  ravi cron add "Daily Report" --cron "0 9 * * *" --message "Generate report"');
       console.log('  ravi cron add "Check emails" --every 30m --message "Check for new emails"');
+      if (scopeLabel === "agent") {
+        console.log("  ravi cron list --all-agents   # Show jobs from all agents");
+      }
     } else {
-      console.log("\nScheduled Jobs:\n");
-      console.log("  ID        NAME                      ENABLED  SCHEDULE                 NEXT RUN");
-      console.log("  --------  ------------------------  -------  -----------------------  --------------------");
+      const scopeHint =
+        scopeLabel === "agent"
+          ? ` (scope: agent ${scopeAgentId})`
+          : scopeLabel === "all-agents"
+            ? " (scope: all agents)"
+            : "";
+      console.log(`\nScheduled Jobs${scopeHint}:\n`);
+      console.log("  ID        NAME                      ENABLED  SCHEDULE                 TARGET       NEXT RUN");
+      console.log(
+        "  --------  ------------------------  -------  -----------------------  -----------  --------------------",
+      );
 
+      const resolverDeps = getTargetResolverDeps();
       for (const job of pageJobs) {
         const id = job.id.padEnd(8);
         const name = job.name.slice(0, 24).padEnd(24);
         const enabled = (job.enabled ? "yes" : "no").padEnd(7);
         const schedule = describeSchedule(job.schedule).slice(0, 23).padEnd(23);
+        const target = formatTargetStateCompact(resolveCronTarget(job, resolverDeps));
         const nextRun = job.nextRunAt
           ? new Date(job.nextRunAt).toLocaleString()
           : job.schedule.type === "at"
             ? "(expired)"
             : "-";
 
-        console.log(`  ${id}  ${name}  ${enabled}  ${schedule}  ${nextRun}`);
+        console.log(`  ${id}  ${name}  ${enabled}  ${schedule}  ${target}  ${nextRun}`);
       }
 
       console.log(

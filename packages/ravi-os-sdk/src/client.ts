@@ -2202,8 +2202,10 @@ export class RaviClient {
         body: { id },
       });
     },
-    /** List all scheduled jobs */
+    /** List scheduled jobs (agent-scoped by default) */
     list: async (options?: {
+      agent?: string;
+      allAgents?: boolean;
       limit?: string;
       offset?: string;
       tag?: string;

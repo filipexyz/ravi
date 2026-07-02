@@ -4259,6 +4259,8 @@ export type CronEnableReturn = {
 
 /** Input shape for `cron.list`. */
 export type CronListInput = {
+  agent?: string;
+  allAgents?: boolean;
   limit?: string;
   offset?: string;
   tag?: string;
