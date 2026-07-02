@@ -47,6 +47,326 @@ export const changedEntityReturnSchema = z
 
 export const commandEnvelopeReturnSchema = looseObjectSchema;
 
+const contextCapabilityReturnSchema = z
+  .object({
+    permission: z.string(),
+    objectType: z.string(),
+    objectId: z.string(),
+    source: z.string().optional(),
+  })
+  .strict();
+
+const contextSourceReturnSchema = z
+  .object({
+    channel: z.string(),
+    accountId: z.string(),
+    chatId: z.string(),
+    threadId: z.string().optional(),
+  })
+  .strict();
+
+const contextLineageSummaryReturnSchema = z
+  .object({
+    parentContextId: z.string().nullable(),
+    parentContextKind: z.string().nullable(),
+    issuedFor: z.string().nullable(),
+    issuedAt: z.number().nullable(),
+    issuanceMode: z.string().nullable(),
+    approvalSource: jsonValueSchema.nullable(),
+  })
+  .strict();
+
+const contextSummaryReturnSchema = z
+  .object({
+    contextId: z.string(),
+    kind: z.string(),
+    status: z.enum(["active", "expired", "revoked"]),
+    agentId: z.string().nullable(),
+    sessionKey: z.string().nullable(),
+    sessionName: z.string().nullable(),
+    createdAt: z.number(),
+    expiresAt: z.number().nullable(),
+    lastUsedAt: z.number().nullable(),
+    revokedAt: z.number().nullable(),
+    capabilitiesCount: z.number(),
+    parentContextId: z.string().nullable(),
+    issuedFor: z.string().nullable(),
+    issuanceMode: z.string().nullable(),
+  })
+  .strict();
+
+const contextDetailReturnSchema = contextSummaryReturnSchema
+  .extend({
+    source: contextSourceReturnSchema.nullable(),
+    metadata: jsonObjectSchema.nullable(),
+    capabilities: z.array(contextCapabilityReturnSchema),
+    lineage: contextLineageSummaryReturnSchema,
+  })
+  .strict();
+
+const contextPaginationReturnSchema = z
+  .object({
+    limit: z.number(),
+    offset: z.number(),
+    returned: z.number(),
+    total: z.number(),
+    hasMore: z.boolean(),
+    nextOffset: z.number().nullable(),
+    nextCommand: z.string().nullable(),
+  })
+  .strict();
+
+export const contextListReturnSchema = z
+  .object({
+    count: z.number(),
+    total: z.number(),
+    pagination: contextPaginationReturnSchema,
+    items: z.array(contextSummaryReturnSchema),
+    contexts: z.array(contextSummaryReturnSchema),
+  })
+  .strict();
+
+export const contextInfoReturnSchema = contextDetailReturnSchema;
+
+export const contextWhoamiReturnSchema = contextDetailReturnSchema;
+
+export const contextCapabilitiesReturnSchema = z
+  .object({
+    contextId: z.string(),
+    kind: z.string(),
+    agentId: z.string().nullable(),
+    sessionKey: z.string().nullable(),
+    sessionName: z.string().nullable(),
+    capabilities: z.array(contextCapabilityReturnSchema),
+  })
+  .strict();
+
+export const contextCheckReturnSchema = z
+  .object({
+    contextId: z.string(),
+    agentId: z.string().nullable(),
+    permission: z.string(),
+    objectType: z.string(),
+    objectId: z.string(),
+    allowed: z.boolean(),
+    capabilitiesCount: z.number(),
+  })
+  .strict();
+
+export const contextAuthorizeReturnSchema = contextCheckReturnSchema
+  .extend({
+    approved: z.boolean(),
+    inherited: z.boolean(),
+    reason: z.string().nullable(),
+  })
+  .strict();
+
+export const contextIssueReturnSchema = z
+  .object({
+    contextId: z.string(),
+    contextKey: z.string(),
+    kind: z.string(),
+    cliName: z.string(),
+    agentId: z.string().nullable(),
+    sessionKey: z.string().nullable(),
+    sessionName: z.string().nullable(),
+    parentContextId: z.string(),
+    createdAt: z.number(),
+    expiresAt: z.number().nullable(),
+    capabilities: z.array(contextCapabilityReturnSchema),
+    capabilitiesCount: z.number(),
+    source: contextSourceReturnSchema.nullable(),
+    metadata: jsonObjectSchema.nullable(),
+    env: z.record(z.string(), z.string()),
+  })
+  .strict();
+
+export const contextRevokeReturnSchema = z
+  .object({
+    context: contextDetailReturnSchema,
+    cascaded: z.array(contextSummaryReturnSchema),
+    revokedAt: z.number(),
+  })
+  .strict();
+
+export const contextCleanupAgentRuntimeReturnSchema = z
+  .object({
+    dryRun: z.boolean(),
+    reason: z.string().nullable(),
+    olderThan: z.string(),
+    olderThanMs: z.number(),
+    cutoffAt: z.number(),
+    scanned: z
+      .object({
+        kind: z.literal("agent-runtime"),
+        agentId: z.string().nullable(),
+        sessionKey: z.string().nullable(),
+      })
+      .strict(),
+    candidatesCount: z.number(),
+    revokedCount: z.number(),
+    candidates: z.array(
+      z
+        .object({
+          context: contextSummaryReturnSchema,
+          lastSeenAt: z.number(),
+          sessionExists: z.boolean(),
+        })
+        .strict(),
+    ),
+    revoked: z.array(
+      z
+        .object({
+          context: contextDetailReturnSchema,
+          cascaded: z.array(contextSummaryReturnSchema),
+          revokedAt: z.number(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export const contextPruneReturnSchema = z
+  .object({
+    status: z.enum(["pruned", "planned"]),
+    dryRun: z.boolean(),
+    olderThan: z.string(),
+    matchedCount: z.number(),
+    changedCount: z.number(),
+  })
+  .strict();
+
+export const contextLineageReturnSchema = z
+  .object({
+    context: contextDetailReturnSchema,
+    ancestors: z.array(contextSummaryReturnSchema),
+    descendants: z.array(contextSummaryReturnSchema),
+  })
+  .strict();
+
+export const contextCodexBashHookReturnSchema = z
+  .object({
+    hookSpecificOutput: z
+      .object({
+        hookEventName: z.literal("PreToolUse"),
+        permissionDecision: z.enum(["deny"]),
+        permissionDecisionReason: z.string(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export const contextVisibilityReturnSchema = z
+  .object({
+    sessionKey: z.string(),
+    agentId: z.string(),
+    provider: z.string().nullable(),
+    tokens: z
+      .object({
+        used: z.number().nullable(),
+        limit: z.number().nullable(),
+        remaining: z.number().nullable(),
+      })
+      .strict(),
+    compact: z
+      .object({
+        threshold: z.number().nullable(),
+        willCompactAt: z.number().nullable(),
+        lastCompactedAt: z.number().nullable(),
+        count: z.number(),
+      })
+      .strict(),
+    skills: z.array(
+      z
+        .object({
+          id: z.string(),
+          provider: z.string(),
+          state: z.string(),
+          confidence: z.string(),
+          source: z.string().optional(),
+          evidence: z
+            .array(
+              z
+                .object({
+                  kind: z.string(),
+                  itemId: z.string().optional(),
+                  detail: z.string().optional(),
+                })
+                .strict(),
+            )
+            .optional(),
+          loadedAt: z.number().nullable().optional(),
+          lastSeenAt: z.number(),
+        })
+        .strict(),
+    ),
+    loadedSkills: z.array(z.string()),
+    lastUpdatedAt: z.number(),
+  })
+  .strict();
+
+export const contextCredentialsListReturnSchema = z
+  .object({
+    path: z.string(),
+    exists: z.boolean(),
+    default: z.string().nullable(),
+    total: z.number(),
+    pagination: contextPaginationReturnSchema,
+    items: z.array(
+      z
+        .object({
+          contextKey: z.string(),
+          contextId: z.string(),
+          agentId: z.string().nullable(),
+          label: z.string().nullable(),
+          kind: z.string().nullable(),
+          issuedAt: z.number(),
+          expiresAt: z.number().nullable(),
+          isDefault: z.boolean(),
+        })
+        .strict(),
+    ),
+    entries: z.array(
+      z
+        .object({
+          contextKey: z.string(),
+          contextId: z.string(),
+          agentId: z.string().nullable(),
+          label: z.string().nullable(),
+          kind: z.string().nullable(),
+          issuedAt: z.number(),
+          expiresAt: z.number().nullable(),
+          isDefault: z.boolean(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export const contextCredentialsAddReturnSchema = z
+  .object({
+    path: z.string(),
+    default: z.string().nullable(),
+    added: z.string(),
+  })
+  .strict();
+
+export const contextCredentialsRemoveReturnSchema = z
+  .object({
+    path: z.string(),
+    default: z.string().nullable(),
+    removed: z.string(),
+  })
+  .strict();
+
+export const contextCredentialsSetDefaultReturnSchema = z
+  .object({
+    path: z.string(),
+    default: z.string().nullable(),
+  })
+  .strict();
+
 export const runtimeControlReturnSchema = z
   .object({
     ok: z.boolean(),

@@ -3089,13 +3089,36 @@ export type ContextAuthorizeInput = {
 };
 
 /** Return shape for `context.authorize`. */
-export type ContextAuthorizeReturn = Record<string, unknown>;
+export type ContextAuthorizeReturn = {
+  agentId: string | null;
+  allowed: boolean;
+  approved: boolean;
+  capabilitiesCount: number;
+  contextId: string;
+  inherited: boolean;
+  objectId: string;
+  objectType: string;
+  permission: string;
+  reason: string | null;
+};
 
 /** Input shape for `context.capabilities`. */
 export type ContextCapabilitiesInput = Record<string, never>;
 
 /** Return shape for `context.capabilities`. */
-export type ContextCapabilitiesReturn = Record<string, unknown>;
+export type ContextCapabilitiesReturn = {
+  agentId: string | null;
+  capabilities: Array<{
+    objectId: string;
+    objectType: string;
+    permission: string;
+    source?: string;
+  }>;
+  contextId: string;
+  kind: string;
+  sessionKey: string | null;
+  sessionName: string | null;
+};
 
 /** Input shape for `context.check`. */
 export type ContextCheckInput = {
@@ -3105,7 +3128,15 @@ export type ContextCheckInput = {
 };
 
 /** Return shape for `context.check`. */
-export type ContextCheckReturn = Record<string, unknown>;
+export type ContextCheckReturn = {
+  agentId: string | null;
+  allowed: boolean;
+  capabilitiesCount: number;
+  contextId: string;
+  objectId: string;
+  objectType: string;
+  permission: string;
+};
 
 /** Input shape for `context.cleanup-agent-runtime`. */
 export type ContextCleanupAgentRuntimeInput = {
@@ -3117,13 +3148,108 @@ export type ContextCleanupAgentRuntimeInput = {
 };
 
 /** Return shape for `context.cleanup-agent-runtime`. */
-export type ContextCleanupAgentRuntimeReturn = Record<string, unknown>;
+export type ContextCleanupAgentRuntimeReturn = {
+  candidates: Array<{
+    context: {
+      agentId: string | null;
+      capabilitiesCount: number;
+      contextId: string;
+      createdAt: number;
+      expiresAt: number | null;
+      issuanceMode: string | null;
+      issuedFor: string | null;
+      kind: string;
+      lastUsedAt: number | null;
+      parentContextId: string | null;
+      revokedAt: number | null;
+      sessionKey: string | null;
+      sessionName: string | null;
+      status: "active" | "expired" | "revoked";
+    };
+    lastSeenAt: number;
+    sessionExists: boolean;
+  }>;
+  candidatesCount: number;
+  cutoffAt: number;
+  dryRun: boolean;
+  olderThan: string;
+  olderThanMs: number;
+  reason: string | null;
+  revoked: Array<{
+    cascaded: Array<{
+      agentId: string | null;
+      capabilitiesCount: number;
+      contextId: string;
+      createdAt: number;
+      expiresAt: number | null;
+      issuanceMode: string | null;
+      issuedFor: string | null;
+      kind: string;
+      lastUsedAt: number | null;
+      parentContextId: string | null;
+      revokedAt: number | null;
+      sessionKey: string | null;
+      sessionName: string | null;
+      status: "active" | "expired" | "revoked";
+    }>;
+    context: {
+      agentId: string | null;
+      capabilities: Array<{
+        objectId: string;
+        objectType: string;
+        permission: string;
+        source?: string;
+      }>;
+      capabilitiesCount: number;
+      contextId: string;
+      createdAt: number;
+      expiresAt: number | null;
+      issuanceMode: string | null;
+      issuedFor: string | null;
+      kind: string;
+      lastUsedAt: number | null;
+      lineage: {
+        approvalSource: unknown | null;
+        issuanceMode: string | null;
+        issuedAt: number | null;
+        issuedFor: string | null;
+        parentContextId: string | null;
+        parentContextKind: string | null;
+      };
+      metadata: (Record<string, unknown>) | null;
+      parentContextId: string | null;
+      revokedAt: number | null;
+      sessionKey: string | null;
+      sessionName: string | null;
+      source: ({
+        accountId: string;
+        channel: string;
+        chatId: string;
+        threadId?: string;
+      }) | null;
+      status: "active" | "expired" | "revoked";
+    };
+    revokedAt: number;
+  }>;
+  revokedCount: number;
+  scanned: {
+    agentId: string | null;
+    kind: "agent-runtime";
+    sessionKey: string | null;
+  };
+};
 
 /** Input shape for `context.codex-bash-hook`. */
 export type ContextCodexBashHookInput = Record<string, never>;
 
 /** Return shape for `context.codex-bash-hook`. */
-export type ContextCodexBashHookReturn = Record<string, unknown>;
+export type ContextCodexBashHookReturn = {
+  hookSpecificOutput?: {
+    hookEventName: "PreToolUse";
+    permissionDecision: "deny";
+    permissionDecisionReason: string;
+  };
+};
 
 /** Input shape for `context.credentials.add`. */
 export type ContextCredentialsAddInput = {
@@ -3133,7 +3259,11 @@ export type ContextCredentialsAddInput = {
 };
 
 /** Return shape for `context.credentials.add`. */
-export type ContextCredentialsAddReturn = Record<string, unknown>;
+export type ContextCredentialsAddReturn = {
+  added: string;
+  default: string | null;
+  path: string;
+};
 
 /** Input shape for `context.credentials.list`. */
 export type ContextCredentialsListInput = {
@@ -3142,7 +3272,41 @@ export type ContextCredentialsListInput = {
 };
 
 /** Return shape for `context.credentials.list`. */
-export type ContextCredentialsListReturn = Record<string, unknown>;
+export type ContextCredentialsListReturn = {
+  default: string | null;
+  entries: Array<{
+    agentId: string | null;
+    contextId: string;
+    contextKey: string;
+    expiresAt: number | null;
+    isDefault: boolean;
+    issuedAt: number;
+    kind: string | null;
+    label: string | null;
+  }>;
+  exists: boolean;
+  items: Array<{
+    agentId: string | null;
+    contextId: string;
+    contextKey: string;
+    expiresAt: number | null;
+    isDefault: boolean;
+    issuedAt: number;
+    kind: string | null;
+    label: string | null;
+  }>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  path: string;
+  total: number;
+};
 
 /** Input shape for `context.credentials.remove`. */
 export type ContextCredentialsRemoveInput = {
@@ -3150,7 +3314,11 @@ export type ContextCredentialsRemoveInput = {
 };
 
 /** Return shape for `context.credentials.remove`. */
-export type ContextCredentialsRemoveReturn = Record<string, unknown>;
+export type ContextCredentialsRemoveReturn = {
+  default: string | null;
+  path: string;
+  removed: string;
+};
 
 /** Input shape for `context.credentials.set-default`. */
 export type ContextCredentialsSetDefaultInput = {
@@ -3158,7 +3326,10 @@ export type ContextCredentialsSetDefaultInput = {
 };
 
 /** Return shape for `context.credentials.set-default`. */
-export type ContextCredentialsSetDefaultReturn = Record<string, unknown>;
+export type ContextCredentialsSetDefaultReturn = {
+  default: string | null;
+  path: string;
+};
 
 /** Input shape for `context.info`. */
 export type ContextInfoInput = {
@@ -3166,7 +3337,43 @@ export type ContextInfoInput = {
 };
 
 /** Return shape for `context.info`. */
-export type ContextInfoReturn = Record<string, unknown>;
+export type ContextInfoReturn = {
+  agentId: string | null;
+  capabilities: Array<{
+    objectId: string;
+    objectType: string;
+    permission: string;
+    source?: string;
+  }>;
+  capabilitiesCount: number;
+  contextId: string;
+  createdAt: number;
+  expiresAt: number | null;
+  issuanceMode: string | null;
+  issuedFor: string | null;
+  kind: string;
+  lastUsedAt: number | null;
+  lineage: {
+    approvalSource: unknown | null;
+    issuanceMode: string | null;
+    issuedAt: number | null;
+    issuedFor: string | null;
+    parentContextId: string | null;
+    parentContextKind: string | null;
+  };
+  metadata: (Record<string, unknown>) | null;
+  parentContextId: string | null;
+  revokedAt: number | null;
+  sessionKey: string | null;
+  sessionName: string | null;
+  source: ({
+    accountId: string;
+    channel: string;
+    chatId: string;
+    threadId?: string;
+  }) | null;
+  status: "active" | "expired" | "revoked";
+};
 
 /** Input shape for `context.issue`. */
 export type ContextIssueInput = {
@@ -3177,7 +3384,33 @@ export type ContextIssueInput = {
 };
 
 /** Return shape for `context.issue`. */
-export type ContextIssueReturn = Record<string, unknown>;
+export type ContextIssueReturn = {
+  agentId: string | null;
+  capabilities: Array<{
+    objectId: string;
+    objectType: string;
+    permission: string;
+    source?: string;
+  }>;
+  capabilitiesCount: number;
+  cliName: string;
+  contextId: string;
+  contextKey: string;
+  createdAt: number;
+  env: Record<string, string>;
+  expiresAt: number | null;
+  kind: string;
+  metadata: (Record<string, unknown>) | null;
+  parentContextId: string;
+  sessionKey: string | null;
+  sessionName: string | null;
+  source: ({
+    accountId: string;
+    channel: string;
+    chatId: string;
+    threadId?: string;
+  }) | null;
+};
 
 /** Input shape for `context.lineage`. */
 export type ContextLineageInput = {
@@ -3185,7 +3418,77 @@ export type ContextLineageInput = {
 };
 
 /** Return shape for `context.lineage`. */
-export type ContextLineageReturn = Record<string, unknown>;
+export type ContextLineageReturn = {
+  ancestors: Array<{
+    agentId: string | null;
+    capabilitiesCount: number;
+    contextId: string;
+    createdAt: number;
+    expiresAt: number | null;
+    issuanceMode: string | null;
+    issuedFor: string | null;
+    kind: string;
+    lastUsedAt: number | null;
+    parentContextId: string | null;
+    revokedAt: number | null;
+    sessionKey: string | null;
+    sessionName: string | null;
+    status: "active" | "expired" | "revoked";
+  }>;
+  context: {
+    agentId: string | null;
+    capabilities: Array<{
+      objectId: string;
+      objectType: string;
+      permission: string;
+      source?: string;
+    }>;
+    capabilitiesCount: number;
+    contextId: string;
+    createdAt: number;
+    expiresAt: number | null;
+    issuanceMode: string | null;
+    issuedFor: string | null;
+    kind: string;
+    lastUsedAt: number | null;
+    lineage: {
+      approvalSource: unknown | null;
+      issuanceMode: string | null;
+      issuedAt: number | null;
+      issuedFor: string | null;
+      parentContextId: string | null;
+      parentContextKind: string | null;
+    };
+    metadata: (Record<string, unknown>) | null;
+    parentContextId: string | null;
+    revokedAt: number | null;
+    sessionKey: string | null;
+    sessionName: string | null;
+    source: ({
+      accountId: string;
+      channel: string;
+      chatId: string;
+      threadId?: string;
+    }) | null;
+    status: "active" | "expired" | "revoked";
+  };
+  descendants: Array<{
+    agentId: string | null;
+    capabilitiesCount: number;
+    contextId: string;
+    createdAt: number;
+    expiresAt: number | null;
+    issuanceMode: string | null;
+    issuedFor: string | null;
+    kind: string;
+    lastUsedAt: number | null;
+    parentContextId: string | null;
+    revokedAt: number | null;
+    sessionKey: string | null;
+    sessionName: string | null;
+    status: "active" | "expired" | "revoked";
+  }>;
+};
 
 /** Input shape for `context.list`. */
 export type ContextListInput = {
@@ -3198,7 +3501,51 @@ export type ContextListInput = {
 };
 
 /** Return shape for `context.list`. */
-export type ContextListReturn = Record<string, unknown>;
+export type ContextListReturn = {
+  contexts: Array<{
+    agentId: string | null;
+    capabilitiesCount: number;
+    contextId: string;
+    createdAt: number;
+    expiresAt: number | null;
+    issuanceMode: string | null;
+    issuedFor: string | null;
+    kind: string;
+    lastUsedAt: number | null;
+    parentContextId: string | null;
+    revokedAt: number | null;
+    sessionKey: string | null;
+    sessionName: string | null;
+    status: "active" | "expired" | "revoked";
+  }>;
+  count: number;
+  items: Array<{
+    agentId: string | null;
+    capabilitiesCount: number;
+    contextId: string;
+    createdAt: number;
+    expiresAt: number | null;
+    issuanceMode: string | null;
+    issuedFor: string | null;
+    kind: string;
+    lastUsedAt: number | null;
+    parentContextId: string | null;
+    revokedAt: number | null;
+    sessionKey: string | null;
+    sessionName: string | null;
+    status: "active" | "expired" | "revoked";
+  }>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  total: number;
+};
 
 /** Input shape for `context.prune`. */
 export type ContextPruneInput = {
@@ -3208,7 +3555,13 @@ export type ContextPruneInput = {
 };
 
 /** Return shape for `context.prune`. */
-export type ContextPruneReturn = Record<string, unknown>;
+export type ContextPruneReturn = {
+  changedCount: number;
+  dryRun: boolean;
+  matchedCount: number;
+  olderThan: string;
+  status: "pruned" | "planned";
+};
 
 /** Input shape for `context.revoke`. */
 export type ContextRevokeInput = {
@@ -3218,19 +3571,141 @@ export type ContextRevokeInput = {
 };
 
 /** Return shape for `context.revoke`. */
-export type ContextRevokeReturn = Record<string, unknown>;
+export type ContextRevokeReturn = {
+  cascaded: Array<{
+    agentId: string | null;
+    capabilitiesCount: number;
+    contextId: string;
+    createdAt: number;
+    expiresAt: number | null;
+    issuanceMode: string | null;
+    issuedFor: string | null;
+    kind: string;
+    lastUsedAt: number | null;
+    parentContextId: string | null;
+    revokedAt: number | null;
+    sessionKey: string | null;
+    sessionName: string | null;
+    status: "active" | "expired" | "revoked";
+  }>;
+  context: {
+    agentId: string | null;
+    capabilities: Array<{
+      objectId: string;
+      objectType: string;
+      permission: string;
+      source?: string;
+    }>;
+    capabilitiesCount: number;
+    contextId: string;
+    createdAt: number;
+    expiresAt: number | null;
+    issuanceMode: string | null;
+    issuedFor: string | null;
+    kind: string;
+    lastUsedAt: number | null;
+    lineage: {
+      approvalSource: unknown | null;
+      issuanceMode: string | null;
+      issuedAt: number | null;
+      issuedFor: string | null;
+      parentContextId: string | null;
+      parentContextKind: string | null;
+    };
+    metadata: (Record<string, unknown>) | null;
+    parentContextId: string | null;
+    revokedAt: number | null;
+    sessionKey: string | null;
+    sessionName: string | null;
+    source: ({
+      accountId: string;
+      channel: string;
+      chatId: string;
+      threadId?: string;
+    }) | null;
+    status: "active" | "expired" | "revoked";
+  };
+  revokedAt: number;
+};
 
 /** Input shape for `context.visibility`. */
 export type ContextVisibilityInput = Record<string, never>;
 
 /** Return shape for `context.visibility`. */
-export type ContextVisibilityReturn = Record<string, unknown>;
+export type ContextVisibilityReturn = {
+  agentId: string;
+  compact: {
+    count: number;
+    lastCompactedAt: number | null;
+    threshold: number | null;
+    willCompactAt: number | null;
+  };
+  lastUpdatedAt: number;
+  loadedSkills: string[];
+  provider: string | null;
+  sessionKey: string;
+  skills: Array<{
+    confidence: string;
+    evidence?: Array<{
+      detail?: string;
+      itemId?: string;
+      kind: string;
+    }>;
+    id: string;
+    lastSeenAt: number;
+    loadedAt?: number | null;
+    provider: string;
+    source?: string;
+    state: string;
+  }>;
+  tokens: {
+    limit: number | null;
+    remaining: number | null;
+    used: number | null;
+  };
+};
 
 /** Input shape for `context.whoami`. */
 export type ContextWhoamiInput = Record<string, never>;
 
 /** Return shape for `context.whoami`. */
-export type ContextWhoamiReturn = Record<string, unknown>;
+export type ContextWhoamiReturn = {
+  agentId: string | null;
+  capabilities: Array<{
+    objectId: string;
+    objectType: string;
+    permission: string;
+    source?: string;
+  }>;
+  capabilitiesCount: number;
+  contextId: string;
+  createdAt: number;
+  expiresAt: number | null;
+  issuanceMode: string | null;
+  issuedFor: string | null;
+  kind: string;
+  lastUsedAt: number | null;
+  lineage: {
+    approvalSource: unknown | null;
+    issuanceMode: string | null;
+    issuedAt: number | null;
+    issuedFor: string | null;
+    parentContextId: string | null;
+    parentContextKind: string | null;
+  };
+  metadata: (Record<string, unknown>) | null;
+  parentContextId: string | null;
+  revokedAt: number | null;
+  sessionKey: string | null;
+  sessionName: string | null;
+  source: ({
+    accountId: string;
+    channel: string;
+    chatId: string;
+    threadId?: string;
+  }) | null;
+  status: "active" | "expired" | "revoked";
+};
 
 /** Input shape for `costs.agent`. */
 export type CostsAgentInput = {

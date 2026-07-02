@@ -3,7 +3,26 @@ import { readFileSync } from "node:fs";
 import { Arg, Group, Command, CommandAccess, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
-import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
+import {
+  contextAuthorizeReturnSchema,
+  contextCapabilitiesReturnSchema,
+  contextCheckReturnSchema,
+  contextCleanupAgentRuntimeReturnSchema,
+  contextCodexBashHookReturnSchema,
+  contextCredentialsAddReturnSchema,
+  contextCredentialsListReturnSchema,
+  contextCredentialsRemoveReturnSchema,
+  contextCredentialsSetDefaultReturnSchema,
+  contextInfoReturnSchema,
+  contextIssueReturnSchema,
+  contextLineageReturnSchema,
+  contextListReturnSchema,
+  contextPruneReturnSchema,
+  contextRevokeReturnSchema,
+  contextVisibilityReturnSchema,
+  contextWhoamiReturnSchema,
+  declareCommandReturns,
+} from "./operational-return-schemas.js";
 import {
   issueRuntimeContext,
   resolveRuntimeContextOrThrow,
@@ -1064,26 +1083,26 @@ export class ContextCredentialsCommands {
 }
 
 declareCommandReturns(ContextCommands, {
-  authorize: commandEnvelopeReturnSchema,
-  capabilities: commandEnvelopeReturnSchema,
-  check: commandEnvelopeReturnSchema,
-  cleanupAgentRuntime: commandEnvelopeReturnSchema,
-  codexBashHook: commandEnvelopeReturnSchema,
-  info: commandEnvelopeReturnSchema,
-  issue: commandEnvelopeReturnSchema,
-  lineage: commandEnvelopeReturnSchema,
-  list: commandEnvelopeReturnSchema,
-  prune: commandEnvelopeReturnSchema,
-  revoke: commandEnvelopeReturnSchema,
-  visibility: commandEnvelopeReturnSchema,
-  whoami: commandEnvelopeReturnSchema,
+  authorize: contextAuthorizeReturnSchema,
+  capabilities: contextCapabilitiesReturnSchema,
+  check: contextCheckReturnSchema,
+  cleanupAgentRuntime: contextCleanupAgentRuntimeReturnSchema,
+  codexBashHook: contextCodexBashHookReturnSchema,
+  info: contextInfoReturnSchema,
+  issue: contextIssueReturnSchema,
+  lineage: contextLineageReturnSchema,
+  list: contextListReturnSchema,
+  prune: contextPruneReturnSchema,
+  revoke: contextRevokeReturnSchema,
+  visibility: contextVisibilityReturnSchema,
+  whoami: contextWhoamiReturnSchema,
 });
 
 declareCommandReturns(ContextCredentialsCommands, {
-  add: commandEnvelopeReturnSchema,
-  list: commandEnvelopeReturnSchema,
-  remove: commandEnvelopeReturnSchema,
-  setDefault: commandEnvelopeReturnSchema,
+  add: contextCredentialsAddReturnSchema,
+  list: contextCredentialsListReturnSchema,
+  remove: contextCredentialsRemoveReturnSchema,
+  setDefault: contextCredentialsSetDefaultReturnSchema,
 });
 
 function serializeCredentialsFile(data: CredentialsFile): SerializedCredentialEntry[] {
