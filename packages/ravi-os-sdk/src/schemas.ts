@@ -1617,6 +1617,91 @@ export const AppsCheckReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `apps.delete`. */
+export const AppsDeleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dryRun": {
+      "description": "Print planned deletions without removing files",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "App id to delete",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.delete`. */
+export const AppsDeleteReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dryRun": {
+      "type": "boolean"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "planned",
+              "deleted",
+              "not_found"
+            ],
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "manifest",
+              "spec",
+              "skill"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "path",
+          "action"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "id": {
+      "type": "string"
+    },
+    "nextCommands": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "removedDirs": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "dryRun",
+    "files",
+    "removedDirs",
+    "nextCommands"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `apps.guide`. */
 export const AppsGuideInputSchema = {
   "additionalProperties": false,

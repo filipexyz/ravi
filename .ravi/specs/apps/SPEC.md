@@ -5,6 +5,7 @@ kind: domain
 domain: apps
 capabilities:
   - cli
+  - lifecycle
   - manifest
   - router
   - scaffold
