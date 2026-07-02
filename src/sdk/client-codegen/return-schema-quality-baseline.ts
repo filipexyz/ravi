@@ -422,7 +422,6 @@ export const WEAK_PUBLIC_RETURN_COMMANDS_BASELINE = [
   "tools.manifest",
   "tools.schema",
   "tools.show",
-  "tools.test",
   "transcribe.file",
   "triggers.add",
   "triggers.disable",

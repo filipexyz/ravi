@@ -2010,18 +2010,98 @@ export const toolsSchemaReturnSchema = z
   })
   .passthrough();
 
+const toolAccessSchema = z
+  .object({
+    kind: z.string(),
+    resource: z.string(),
+    action: z.string(),
+    risk: z.string(),
+  })
+  .strict();
+
+const toolSkillGateSchema = z
+  .object({
+    skill: z.string(),
+    source: z.string(),
+  })
+  .strict();
+
+const toolMetadataSchema = z
+  .object({
+    group: z.string(),
+    command: z.string(),
+    method: z.string(),
+    args: z.array(jsonObjectSchema),
+    options: z.array(jsonObjectSchema),
+    scope: z.string().optional(),
+    skillGate: toolSkillGateSchema.optional(),
+    access: toolAccessSchema.optional(),
+  })
+  .strict();
+
+const toolSummarySchema = z
+  .object({
+    name: z.string(),
+    description: z.string(),
+    metadata: toolMetadataSchema,
+  })
+  .strict();
+
+const toolResultContentItemSchema = z
+  .object({
+    type: z.literal("text"),
+    text: z.string(),
+  })
+  .strict();
+
 export const toolTestReturnSchema = z
   .object({
-    tool: looseObjectSchema,
-    args: looseObjectSchema,
+    mode: z.literal("dry_run"),
+    executed: z.literal(false),
+    tool: toolSummarySchema,
+    args: z.record(z.string(), jsonValueSchema),
+    schema: jsonObjectSchema.nullable(),
+    access: toolAccessSchema.nullable(),
+    invokeCommand: z.string(),
+  })
+  .strict();
+
+const toolsSearchItemReturnSchema = z
+  .object({
+    rank: z.number(),
+    score: z.number(),
+    name: z.string(),
+    description: z.string(),
+    group: z.string(),
+    command: z.string(),
+    matchedFields: z.array(z.string()),
+  })
+  .strict();
+
+export const toolsSearchReturnSchema = z
+  .object({
+    query: z.string(),
+    limit: z.number(),
+    total: z.number(),
+    returned: z.number(),
+    items: z.array(toolsSearchItemReturnSchema),
+  })
+  .strict();
+
+export const toolInvokeReturnSchema = z
+  .object({
+    mode: z.literal("executed"),
+    executed: z.literal(true),
+    tool: toolSummarySchema,
+    args: z.record(z.string(), jsonValueSchema),
     result: z
       .object({
         isError: z.boolean(),
-        content: z.array(z.unknown()),
+        content: z.array(toolResultContentItemSchema),
       })
-      .passthrough(),
+      .strict(),
   })
-  .passthrough();
+  .strict();
 
 export const routesListReturnSchema = pagedItemsReturnSchema
   .extend({

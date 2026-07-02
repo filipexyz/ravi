@@ -1,5 +1,5 @@
 /**
- * Tools Commands - CLI Tools inspection and export
+ * Tools Commands - CLI Tools inspection, search, safe test, and explicit execution
  */
 
 import "reflect-metadata";
@@ -13,6 +13,8 @@ import {
   toolsListReturnSchema,
   toolsManifestReturnSchema,
   toolsSchemaReturnSchema,
+  toolsSearchReturnSchema,
+  toolInvokeReturnSchema,
 } from "./operational-return-schemas.js";
 import { extractTools, generateManifest, manifestToJSON } from "../tools-export.js";
 import {
@@ -21,6 +23,104 @@ import {
   createSdkTools,
   generateToolsJsonSchema,
 } from "../tool-definitions.js";
+
+// ============================================================================
+// Search helpers (local, deterministic, no LLM/network)
+// ============================================================================
+
+interface SearchHit {
+  rank: number;
+  score: number;
+  name: string;
+  description: string;
+  group: string;
+  command: string;
+  matchedFields: string[];
+}
+
+function tokenize(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[\s_\-./]+/)
+    .filter((t) => t.length > 0);
+}
+
+function searchTools(query: string, limit: number): { items: SearchHit[]; total: number } {
+  const terms = tokenize(query);
+  if (terms.length === 0) return { items: [], total: 0 };
+
+  const tools = extractTools(getAllCommandClasses());
+  const sdkTools = createSdkTools(getAllCommandClasses());
+
+  const scored: SearchHit[] = [];
+
+  for (const tool of tools) {
+    let score = 0;
+    const matchedFields: string[] = [];
+
+    const sdkTool = sdkTools.find((s) => s.name === tool.name);
+    const paramNames = sdkTool
+      ? Object.keys(sdkTool.inputSchema.properties)
+      : [...tool.metadata.args.map((a) => a.name), ...tool.metadata.options.map((o) => o.flags)];
+    const paramDescs = sdkTool
+      ? Object.values(sdkTool.inputSchema.properties)
+          .map((p) => p.description ?? "")
+          .filter(Boolean)
+      : [];
+
+    const accessStr = tool.metadata.access
+      ? `${tool.metadata.access.kind} ${tool.metadata.access.resource} ${tool.metadata.access.action} ${tool.metadata.access.risk}`
+      : "";
+    const skillGateStr = tool.metadata.skillGate
+      ? `${tool.metadata.skillGate.skill} ${tool.metadata.skillGate.source}`
+      : "";
+
+    const fields: Array<{ name: string; text: string; weight: number }> = [
+      { name: "name", text: tool.name, weight: 3 },
+      { name: "fullCommand", text: `${tool.metadata.group} ${tool.metadata.command}`, weight: 3 },
+      { name: "group", text: tool.metadata.group, weight: 2 },
+      { name: "command", text: tool.metadata.command, weight: 2 },
+      { name: "description", text: tool.description, weight: 2 },
+      { name: "parameters", text: paramNames.join(" "), weight: 1 },
+      { name: "parameterDescriptions", text: paramDescs.join(" "), weight: 1 },
+      { name: "access", text: accessStr, weight: 1 },
+      { name: "skillGate", text: skillGateStr, weight: 1 },
+    ];
+
+    for (const term of terms) {
+      for (const field of fields) {
+        if (field.text.toLowerCase().includes(term)) {
+          score += field.weight;
+          if (!matchedFields.includes(field.name)) {
+            matchedFields.push(field.name);
+          }
+        }
+      }
+    }
+
+    if (score > 0) {
+      scored.push({
+        rank: 0,
+        score,
+        name: tool.name,
+        description: tool.description,
+        group: tool.metadata.group,
+        command: tool.metadata.command,
+        matchedFields,
+      });
+    }
+  }
+
+  scored.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  const total = scored.length;
+  const items = scored.slice(0, limit).map((hit, i) => ({ ...hit, rank: i + 1 }));
+
+  return { items, total };
+}
+
+// ============================================================================
+// Commands
+// ============================================================================
 
 @Group({
   name: "tools",
@@ -73,7 +173,6 @@ export class ToolsCommands {
           console.log(`  ${tool.name}`);
           console.log(`    ${tool.description}`);
 
-          // Show parameters
           const params = Object.entries(tool.inputSchema.properties);
           if (params.length > 0) {
             const paramStr = params
@@ -97,10 +196,62 @@ export class ToolsCommands {
         console.log(`  ${pagination.nextCommand}`);
       }
       console.log("\nUsage:");
-      console.log("  ravi tools show <name>   # Show tool details");
-      console.log("  ravi tools manifest      # Export as JSON manifest");
-      console.log("  ravi tools schema        # Export as JSON Schema");
+      console.log("  ravi tools show <name>     # Show tool details");
+      console.log("  ravi tools search <query>  # Search by intent");
+      console.log("  ravi tools manifest        # Export as JSON manifest");
+      console.log("  ravi tools schema          # Export as JSON Schema");
     }
+    return payload;
+  }
+
+  @Command({ name: "search", description: "Search tools by intent, name, description, or metadata" })
+  @CommandAccess({ kind: "read", resource: "tools", action: "search", risk: "low" })
+  search(
+    @Arg("query", { description: "Search query (matches name, description, parameters, access metadata, skill gate)" })
+    query: string,
+    @Option({ flags: "--limit <n>", description: "Max results (default: 10)" }) limitStr?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const limit = Math.max(1, Math.min(100, parseInt(limitStr ?? "10", 10) || 10));
+    const { items, total } = searchTools(query, limit);
+
+    const payload = {
+      query,
+      limit,
+      total,
+      returned: items.length,
+      items,
+    };
+
+    if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else {
+      console.log(`\n🔍 Search: "${query}" (${items.length} of ${total} matches, limit ${limit})\n`);
+
+      if (items.length === 0) {
+        console.log("  No tools matched your query.");
+        console.log("\nTry:");
+        console.log("  ravi tools list --json  # Browse all tools");
+      } else {
+        console.log("─".repeat(60));
+        for (const hit of items) {
+          console.log(`  #${hit.rank}  ${hit.name}  (score: ${hit.score})`);
+          console.log(`       ${hit.description}`);
+          console.log(`       matched: ${hit.matchedFields.join(", ")}`);
+          console.log();
+        }
+        console.log("─".repeat(60));
+        console.log("\nNext steps:");
+        console.log(`  ravi tools show <name>                  # Inspect tool details`);
+        console.log(`  ravi tools test <name> '<args>' --json  # Dry-run plan`);
+        console.log(`  ravi tools invoke <name> '<args>' --json  # Execute`);
+      }
+
+      if (total > items.length) {
+        console.log(`\n  ${total - items.length} more matches. Use --limit ${Math.min(total, limit * 2)} to see more.`);
+      }
+    }
+
     return payload;
   }
 
@@ -192,9 +343,82 @@ export class ToolsCommands {
     return { schema };
   }
 
-  @Command({ name: "test", description: "Test a tool execution" })
+  @Command({ name: "test", description: "Dry-run plan for a tool (does not execute the handler)" })
   @CommandAccess({ kind: "read", resource: "tools", action: "test", risk: "low" })
-  async test(
+  test(
+    @Arg("name", { description: "Tool name" }) name: string,
+    @Arg("args", { required: false, description: "JSON args (optional)" }) argsJson?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const tools = extractTools(getAllCommandClasses());
+    const tool = tools.find((t) => t.name === name);
+
+    if (!tool) {
+      fail(`Tool not found: ${name}`);
+    }
+
+    let args: Record<string, unknown> = {};
+    if (argsJson) {
+      try {
+        args = JSON.parse(argsJson);
+      } catch {
+        fail("Invalid JSON args");
+      }
+    }
+
+    const sdkTool = createSdkTools(getAllCommandClasses(), { filter: new RegExp(`^${name}$`) })[0];
+    const invokeCommand = `ravi tools invoke ${name} '${JSON.stringify(args)}' --json`;
+
+    const payload = {
+      mode: "dry_run" as const,
+      executed: false,
+      tool: {
+        name: tool.name,
+        description: tool.description,
+        metadata: tool.metadata,
+      },
+      args,
+      schema: sdkTool?.inputSchema ?? null,
+      access: tool.metadata.access ?? null,
+      invokeCommand,
+    };
+
+    if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else {
+      console.log(`\n🔧 Dry-run plan: ${name}`);
+      console.log(`Mode: dry_run (handler NOT executed)\n`);
+      console.log("─".repeat(50));
+      console.log(`\nTool: ${tool.name}`);
+      console.log(`Description: ${tool.description}`);
+      console.log(`Group: ${tool.metadata.group}`);
+      console.log(`Command: ${tool.metadata.command}`);
+
+      if (tool.metadata.access) {
+        const a = tool.metadata.access;
+        console.log(`\nAccess: ${a.kind}/${a.risk} on ${a.resource}.${a.action}`);
+      }
+      if (tool.metadata.skillGate) {
+        console.log(`Skill Gate: ${tool.metadata.skillGate.skill} (${tool.metadata.skillGate.source})`);
+      }
+
+      console.log(`\nParsed args: ${JSON.stringify(args, null, 2)}`);
+
+      if (sdkTool) {
+        console.log(`\nSchema: ${JSON.stringify(sdkTool.inputSchema, null, 2)}`);
+      }
+
+      console.log("\n─".repeat(50));
+      console.log("\nTo execute for real:");
+      console.log(`  ${invokeCommand}`);
+    }
+
+    return payload;
+  }
+
+  @Command({ name: "invoke", description: "Execute a tool handler (real execution with full authorization)" })
+  @CommandAccess({ kind: "mutate", resource: "tools", action: "invoke", risk: "high" })
+  async invoke(
     @Arg("name", { description: "Tool name" }) name: string,
     @Arg("args", { required: false, description: "JSON args (optional)" }) argsJson?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -216,13 +440,15 @@ export class ToolsCommands {
     }
 
     if (!asJson) {
-      console.log(`\n🔧 Testing: ${name}`);
+      console.log(`\n⚡ Invoking: ${name}`);
       console.log(`Args: ${JSON.stringify(args)}\n`);
       console.log("─".repeat(50));
     }
 
     const result = await tool.handler(args);
     const payload = {
+      mode: "executed" as const,
+      executed: true,
       tool: {
         name: tool.name,
         description: tool.description,
@@ -252,8 +478,10 @@ export class ToolsCommands {
 
 declareCommandReturns(ToolsCommands, {
   list: toolsListReturnSchema,
+  search: toolsSearchReturnSchema,
   manifest: toolsManifestReturnSchema,
   schema: toolsSchemaReturnSchema,
   show: toolShowReturnSchema,
   test: toolTestReturnSchema,
+  invoke: toolInvokeReturnSchema,
 });

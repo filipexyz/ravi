@@ -50934,6 +50934,233 @@ export const ThreadsShowReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `tools.invoke`. */
+export const ToolsInvokeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "args": {
+      "description": "JSON args (optional)",
+      "type": "string"
+    },
+    "name": {
+      "description": "Tool name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tools.invoke`. */
+export const ToolsInvokeReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "args": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "executed": {
+      "const": true,
+      "type": "boolean"
+    },
+    "mode": {
+      "const": "executed",
+      "type": "string"
+    },
+    "result": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "type": {
+                "const": "text",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "text"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "isError",
+        "content"
+      ],
+      "type": "object"
+    },
+    "tool": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": false,
+          "properties": {
+            "access": {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "resource": {
+                  "type": "string"
+                },
+                "risk": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "resource",
+                "action",
+                "risk"
+              ],
+              "type": "object"
+            },
+            "args": {
+              "items": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "command": {
+              "type": "string"
+            },
+            "group": {
+              "type": "string"
+            },
+            "method": {
+              "type": "string"
+            },
+            "options": {
+              "items": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "skillGate": {
+              "additionalProperties": false,
+              "properties": {
+                "skill": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "skill",
+                "source"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "group",
+            "command",
+            "method",
+            "args",
+            "options"
+          ],
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "metadata"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "mode",
+    "executed",
+    "tool",
+    "args",
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tools.list`. */
 export const ToolsListInputSchema = {
   "additionalProperties": false,
@@ -51111,6 +51338,94 @@ export const ToolsSchemaReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `tools.search`. */
+export const ToolsSearchInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Max results (default: 10)",
+      "type": "string"
+    },
+    "query": {
+      "description": "Search query (matches name, description, parameters, access metadata, skill gate)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "query"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tools.search`. */
+export const ToolsSearchReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "matchedFields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rank": {
+            "type": "number"
+          },
+          "score": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "rank",
+          "score",
+          "name",
+          "description",
+          "group",
+          "command",
+          "matchedFields"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "limit": {
+      "type": "number"
+    },
+    "query": {
+      "type": "string"
+    },
+    "returned": {
+      "type": "number"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "query",
+    "limit",
+    "total",
+    "returned",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tools.show`. */
 export const ToolsShowInputSchema = {
   "additionalProperties": false,
@@ -51163,40 +51478,227 @@ export const ToolsTestInputSchema = {
 
 /** JSON Schema for the return shape of `tools.test`. */
 export const ToolsTestReturnSchema = {
-  "additionalProperties": {},
-  "properties": {
-    "args": {
-      "additionalProperties": {},
-      "properties": {},
-      "type": "object"
-    },
-    "result": {
-      "additionalProperties": {},
-      "properties": {
-        "content": {
-          "items": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
           "type": "array"
         },
-        "isError": {
-          "type": "boolean"
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "access": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "resource": {
+              "type": "string"
+            },
+            "risk": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "resource",
+            "action",
+            "risk"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "args": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "executed": {
+      "const": false,
+      "type": "boolean"
+    },
+    "invokeCommand": {
+      "type": "string"
+    },
+    "mode": {
+      "const": "dry_run",
+      "type": "string"
+    },
+    "schema": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "tool": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": false,
+          "properties": {
+            "access": {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "resource": {
+                  "type": "string"
+                },
+                "risk": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "resource",
+                "action",
+                "risk"
+              ],
+              "type": "object"
+            },
+            "args": {
+              "items": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "command": {
+              "type": "string"
+            },
+            "group": {
+              "type": "string"
+            },
+            "method": {
+              "type": "string"
+            },
+            "options": {
+              "items": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "skillGate": {
+              "additionalProperties": false,
+              "properties": {
+                "skill": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "skill",
+                "source"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "group",
+            "command",
+            "method",
+            "args",
+            "options"
+          ],
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
         }
       },
       "required": [
-        "isError",
-        "content"
+        "name",
+        "description",
+        "metadata"
       ],
-      "type": "object"
-    },
-    "tool": {
-      "additionalProperties": {},
-      "properties": {},
       "type": "object"
     }
   },
   "required": [
+    "mode",
+    "executed",
     "tool",
     "args",
-    "result"
+    "schema",
+    "access",
+    "invokeCommand"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
