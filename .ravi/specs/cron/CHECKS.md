@@ -1,25 +1,21 @@
 # Cron / CHECKS
 
-## List Output Includes Target State
+## List Output MUST Include Target State
 
 ```bash
 ravi cron list --json --limit 5
 ```
 
-Expected:
+- Each item in `items[]` and `jobs[]` MUST carry a `targetResolution` field. The check fails if the field is absent.
+- Shell jobs without notification targets MUST NOT emit `agent_missing`. The check fails if they do.
 
-- each item in `items[]` and `jobs[]` carries `targetResolution` fields;
-- shell jobs without notification targets do not emit agent-missing.
-
-## Doctor Cron Targets Check
+## Doctor Cron Targets Check MUST Use Stable IDs
 
 ```bash
 ravi doctor --json | jq '.checks[] | select(.id == "cron.targets")'
 ```
 
-Expected:
-
-- check id is `cron.targets`;
-- findings use stable ids (`cron.agent_missing`, etc.);
-- evidence is bounded;
-- fix hints are safe read-only commands.
+- The check id MUST be `cron.targets`. It fails if the check is missing.
+- Findings MUST use stable ids (`cron.agent_missing`, `cron.reply_session_missing`, `cron.routing_derived_key`, `cron.routing_unresolved`). The check fails if an unexpected id appears.
+- Evidence MUST be bounded (max 20 findings). The check fails if the findings array exceeds the cap.
+- Fix hints MUST be safe read-only commands. The check fails if a fix hint suggests a destructive mutation.
