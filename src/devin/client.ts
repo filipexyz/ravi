@@ -14,6 +14,8 @@ export interface DevinPullRequest {
   pr_url: string;
 }
 
+export type DevinMode = "normal" | "fast" | "lite" | "ultra" | string;
+
 export interface DevinSession {
   acus_consumed: number;
   created_at: number;
@@ -24,14 +26,17 @@ export interface DevinSession {
   tags: string[];
   updated_at: number;
   url: string;
+  category?: string | null;
   child_session_ids?: string[] | null;
   is_advanced?: boolean;
   is_archived?: boolean;
+  origin?: string | null;
   parent_session_id?: string | null;
   playbook_id?: string | null;
   service_user_id?: string | null;
   status_detail?: string | null;
   structured_output?: Record<string, unknown> | null;
+  subcategory?: string | null;
   title?: string | null;
   user_id?: string | null;
 }
@@ -80,6 +85,12 @@ export interface DevinClientConfig {
   fetchImpl?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 }
 
+export interface DevinSessionSecretInput {
+  key: string;
+  value: string;
+  sensitive?: boolean;
+}
+
 export interface CreateDevinSessionInput {
   prompt: string;
   title?: string;
@@ -89,13 +100,22 @@ export interface CreateDevinSessionInput {
   bypass_approval?: boolean;
   child_playbook_id?: string;
   create_as_user_id?: string;
+  devin_mode?: DevinMode;
   knowledge_ids?: string[];
   max_acu_limit?: number;
+  platform?: string;
   playbook_id?: string;
   repos?: string[];
+  resumable?: boolean;
   secret_ids?: string[];
   session_links?: string[];
+  session_secrets?: DevinSessionSecretInput[];
+  structured_output_required?: boolean;
   structured_output_schema?: Record<string, unknown>;
+}
+
+export interface CreateDevinSessionOptions {
+  idempotencyKey?: string;
 }
 
 export interface ListDevinSessionsInput {
@@ -217,6 +237,34 @@ export function getDefaultMaxAcuLimit(env: NodeJS.ProcessEnv = process.env): num
   return parsed;
 }
 
+export function getDefaultDevinMode(env: NodeJS.ProcessEnv = process.env): DevinMode | undefined {
+  const value = env.DEVIN_DEFAULT_MODE?.trim();
+  if (!value) return undefined;
+  const valid = ["normal", "fast", "lite", "ultra"];
+  if (!valid.includes(value)) {
+    throw new DevinConfigError(`DEVIN_DEFAULT_MODE must be one of: ${valid.join(", ")}`);
+  }
+  return value as DevinMode;
+}
+
+export function getDefaultDevinPlatform(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  return env.DEVIN_DEFAULT_PLATFORM?.trim() || undefined;
+}
+
+export function getDefaultDevinRepos(env: NodeJS.ProcessEnv = process.env): string[] | undefined {
+  const value = env.DEVIN_DEFAULT_REPOS?.trim();
+  if (!value) return undefined;
+  const repos = value
+    .split(",")
+    .map((r) => r.trim())
+    .filter(Boolean);
+  return repos.length > 0 ? repos : undefined;
+}
+
+export function getDefaultCreateAsUserId(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  return env.DEVIN_DEFAULT_CREATE_AS_USER_ID?.trim() || undefined;
+}
+
 export class DevinClient {
   readonly orgId: string;
   readonly baseUrl: string;
@@ -245,8 +293,11 @@ export class DevinClient {
     });
   }
 
-  async createSession(input: CreateDevinSessionInput): Promise<DevinSession> {
-    return this.request<DevinSession>("POST", this.orgPath("/sessions"), { body: compactObject(input) });
+  async createSession(input: CreateDevinSessionInput, options?: CreateDevinSessionOptions): Promise<DevinSession> {
+    return this.request<DevinSession>("POST", this.orgPath("/sessions"), {
+      body: compactObject(input),
+      query: options?.idempotencyKey ? { devin_id: options.idempotencyKey } : undefined,
+    });
   }
 
   async getSession(devinId: string): Promise<DevinSession> {

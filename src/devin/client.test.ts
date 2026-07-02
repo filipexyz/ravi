@@ -1,5 +1,13 @@
 import { describe, expect, it } from "bun:test";
-import { createDevinClientFromEnv, DevinApiError, DevinClient } from "./client.js";
+import {
+  createDevinClientFromEnv,
+  DevinApiError,
+  DevinClient,
+  getDefaultCreateAsUserId,
+  getDefaultDevinMode,
+  getDefaultDevinPlatform,
+  getDefaultDevinRepos,
+} from "./client.js";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -174,5 +182,119 @@ describe("DevinClient", () => {
         DEVIN_ORG_ID: "org_123",
       } as NodeJS.ProcessEnv),
     ).toThrow("cog_");
+  });
+
+  it("sends v3 fields only when explicitly provided", async () => {
+    const requests: Array<{ url: string; body: unknown }> = [];
+    const client = new DevinClient({
+      apiKey: "cog_test",
+      orgId: "org_123",
+      baseUrl: "https://api.example.test/v3",
+      fetchImpl: async (url, init) => {
+        requests.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+        return jsonResponse({
+          session_id: "devin-v3test",
+          org_id: "org_123",
+          url: "https://app.devin.ai/s/devin-v3test",
+          status: "running",
+          tags: [],
+          pull_requests: [],
+          acus_consumed: 0,
+          created_at: 1,
+          updated_at: 2,
+        });
+      },
+    });
+
+    await client.createSession({
+      prompt: "test v3",
+      devin_mode: "fast",
+      platform: "windows",
+      resumable: false,
+      structured_output_required: true,
+      session_secrets: [{ key: "MY_KEY", value: "secret_val", sensitive: true }],
+    });
+
+    expect(requests).toHaveLength(1);
+    const body = requests[0]?.body as Record<string, unknown>;
+    expect(body.prompt).toBe("test v3");
+    expect(body.devin_mode).toBe("fast");
+    expect(body.platform).toBe("windows");
+    expect(body.resumable).toBe(false);
+    expect(body.structured_output_required).toBe(true);
+    expect(body.session_secrets).toEqual([{ key: "MY_KEY", value: "secret_val", sensitive: true }]);
+  });
+
+  it("omits v3 fields when not provided", async () => {
+    const requests: Array<{ body: unknown }> = [];
+    const client = new DevinClient({
+      apiKey: "cog_test",
+      orgId: "org_123",
+      fetchImpl: async (_url, init) => {
+        requests.push({ body: JSON.parse(String(init?.body)) });
+        return jsonResponse({
+          session_id: "devin-omit",
+          org_id: "org_123",
+          url: "https://app.devin.ai/s/devin-omit",
+          status: "running",
+          tags: [],
+          pull_requests: [],
+          acus_consumed: 0,
+          created_at: 1,
+          updated_at: 2,
+        });
+      },
+    });
+
+    await client.createSession({ prompt: "minimal" });
+
+    const body = requests[0]?.body as Record<string, unknown>;
+    expect(body).toEqual({ prompt: "minimal" });
+    expect(body).not.toHaveProperty("devin_mode");
+    expect(body).not.toHaveProperty("platform");
+    expect(body).not.toHaveProperty("resumable");
+    expect(body).not.toHaveProperty("session_secrets");
+    expect(body).not.toHaveProperty("structured_output_required");
+  });
+
+  it("sends idempotency key as query parameter", async () => {
+    const requests: Array<{ url: string }> = [];
+    const client = new DevinClient({
+      apiKey: "cog_test",
+      orgId: "org_123",
+      baseUrl: "https://api.example.test/v3",
+      fetchImpl: async (url) => {
+        requests.push({ url: String(url) });
+        return jsonResponse({
+          session_id: "devin-idem",
+          org_id: "org_123",
+          url: "https://app.devin.ai/s/devin-idem",
+          status: "running",
+          tags: [],
+          pull_requests: [],
+          acus_consumed: 0,
+          created_at: 1,
+          updated_at: 2,
+        });
+      },
+    });
+
+    await client.createSession({ prompt: "idempotent" }, { idempotencyKey: "devin-custom-id" });
+
+    expect(requests[0]?.url).toContain("devin_id=devin-custom-id");
+  });
+
+  it("resolves env config defaults correctly", () => {
+    expect(getDefaultDevinMode({ DEVIN_DEFAULT_MODE: "fast" } as NodeJS.ProcessEnv)).toBe("fast");
+    expect(getDefaultDevinMode({ DEVIN_DEFAULT_MODE: "" } as NodeJS.ProcessEnv)).toBeUndefined();
+    expect(getDefaultDevinPlatform({ DEVIN_DEFAULT_PLATFORM: "windows" } as NodeJS.ProcessEnv)).toBe("windows");
+    expect(getDefaultDevinRepos({ DEVIN_DEFAULT_REPOS: "repo1,repo2" } as NodeJS.ProcessEnv)).toEqual([
+      "repo1",
+      "repo2",
+    ]);
+    expect(getDefaultDevinRepos({ DEVIN_DEFAULT_REPOS: "" } as NodeJS.ProcessEnv)).toBeUndefined();
+    expect(getDefaultCreateAsUserId({ DEVIN_DEFAULT_CREATE_AS_USER_ID: "user_abc" } as NodeJS.ProcessEnv)).toBe(
+      "user_abc",
+    );
   });
 });

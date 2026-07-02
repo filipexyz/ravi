@@ -1887,14 +1887,49 @@ export const agentDebugReturnSchema = z.union([
     .passthrough(),
 ]);
 
-export const devinSessionSummaryReturnSchema = looseObjectSchema;
+export const devinSessionSummaryReturnSchema = z
+  .object({
+    devinId: z.string(),
+    title: z.string().nullable(),
+    status: z.string(),
+    statusDetail: z.string().nullable(),
+    url: z.string(),
+    tags: z.array(z.string()),
+    updatedAt: z.number(),
+    id: z.string().optional(),
+    originType: z.string().nullable().optional(),
+    originId: z.string().nullable().optional(),
+    taskId: z.string().nullable().optional(),
+    projectId: z.string().nullable().optional(),
+    proxRunId: z.string().nullable().optional(),
+    lastSyncedAt: z.number().nullable().optional(),
+    devinMode: z.string().nullable().optional(),
+    platform: z.string().nullable().optional(),
+    resumable: z.boolean().nullable().optional(),
+    maxAcuLimit: z.number().nullable().optional(),
+    maxAcuLimitSource: z.string().nullable().optional(),
+    userId: z.string().nullable().optional(),
+    serviceUserId: z.string().nullable().optional(),
+    effectiveCreateAsUserId: z.string().nullable().optional(),
+    isArchived: z.boolean().optional(),
+    acusConsumed: z.number().optional(),
+    origin: z.string().nullable().optional(),
+  })
+  .passthrough();
 
 export const devinAuthCheckReturnSchema = z
   .object({
     ok: z.boolean(),
     baseUrl: z.string(),
     configuredOrgId: z.string().optional(),
-    self: looseObjectSchema,
+    self: z
+      .object({
+        principal_type: z.string().optional(),
+        service_user_id: z.string().optional(),
+        service_user_name: z.string().optional(),
+        org_id: z.string().optional(),
+      })
+      .passthrough(),
   })
   .passthrough();
 
@@ -1903,6 +1938,9 @@ export const devinSessionCreateReturnSchema = z
     status: z.literal("created"),
     maxAcuLimitSource: z.string(),
     maxAcuLimit: z.number().nullable(),
+    devinMode: z.string().nullable().optional(),
+    platform: z.string().nullable().optional(),
+    resumable: z.boolean().nullable().optional(),
     session: devinSessionSummaryReturnSchema,
   })
   .passthrough();
@@ -1917,7 +1955,7 @@ export const devinSessionsListReturnSchema = pagedItemsReturnSchema
 
 export const devinSessionShowReturnSchema = z
   .object({
-    session: looseObjectSchema,
+    session: devinSessionSummaryReturnSchema,
   })
   .passthrough();
 
@@ -1925,7 +1963,16 @@ export const devinSessionMessagesReturnSchema = z
   .object({
     devinId: z.string(),
     total: z.number(),
-    messages: z.array(looseObjectSchema),
+    messages: z.array(
+      z
+        .object({
+          eventId: z.string(),
+          createdAt: z.number(),
+          source: z.string(),
+          message: z.string(),
+        })
+        .passthrough(),
+    ),
   })
   .passthrough();
 
@@ -1940,15 +1987,32 @@ export const devinSessionAttachmentsReturnSchema = z
   .object({
     devinId: z.string(),
     total: z.number(),
-    attachments: z.array(looseObjectSchema),
+    attachments: z.array(
+      z
+        .object({
+          attachmentId: z.string(),
+          name: z.string(),
+          source: z.string(),
+          url: z.string(),
+          contentType: z.string().nullable().optional(),
+        })
+        .passthrough(),
+    ),
   })
   .passthrough();
 
 export const devinSessionInsightsReturnSchema = z
   .object({
     session: devinSessionSummaryReturnSchema,
-    summary: looseObjectOrNullSchema,
-    insights: looseObjectSchema,
+    summary: z.object({}).passthrough().nullable(),
+    insights: z
+      .object({
+        numUserMessages: z.number().optional(),
+        numDevinMessages: z.number().optional(),
+        sessionSize: z.string().nullable().optional(),
+        analysis: z.object({}).passthrough().nullable().optional(),
+      })
+      .passthrough(),
   })
   .passthrough();
 
@@ -1957,7 +2021,7 @@ export const devinSessionSyncReturnSchema = z
     session: devinSessionSummaryReturnSchema,
     messages: z.number(),
     attachments: z.number(),
-    insights: looseObjectOrNullSchema,
+    insights: z.object({}).passthrough().nullable(),
     artifacts: z.array(z.string()),
   })
   .passthrough();

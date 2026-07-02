@@ -86,23 +86,53 @@ Deferred endpoints:
 
 ## Create Session Payload
 
-Allowed MVP fields:
+Supported v3 request body fields (verified against upstream docs):
 
-- `prompt`
+- `prompt` (required)
 - `title`
 - `tags`
+- `devin_mode` (enum: normal, fast, lite, ultra)
+- `platform` (string, org-specific VM platform override)
+- `resumable` (boolean, default true upstream)
 - `playbook_id`
+- `child_playbook_id`
 - `max_acu_limit`
 - `repos`
-- `snapshot_id`
 - `secret_ids`
+- `session_secrets` ({key, value, sensitive}[], write-only inline secrets)
+- `session_links`
+- `knowledge_ids`
 - `attachment_urls`
-- `structured_output_schema`
+- `bypass_approval`
 - `create_as_user_id`
+- `structured_output_schema`
+- `structured_output_required` (boolean)
+
+Query parameter for idempotent creation:
+
+- `devin_id` (query param, not body)
+
+Legacy/deprecated fields kept for backward compatibility:
+
+- `advanced_mode` (replaced by `devin_mode` upstream; adapter still accepts it)
+- `snapshot_id` (not in current v3 docs; kept in local model only)
 
 `max_acu_limit` SHOULD default from `DEVIN_DEFAULT_MAX_ACU_LIMIT` when configured. The CLI MAY omit `max_acu_limit` only through explicit behavior, such as `--no-max-acu-limit`, or through a visible setup decision.
 
 Every field that can spend quota, expose secrets, or impersonate a user MUST be explicit in CLI options or config. It MUST NOT be silently inferred from ambient context.
+
+## Configuration Defaults
+
+The adapter and CLI recognize the following env/config defaults:
+
+- `DEVIN_DEFAULT_MAX_ACU_LIMIT` — default ACU ceiling
+- `DEVIN_DEFAULT_MODE` — default `devin_mode`
+- `DEVIN_DEFAULT_PLATFORM` — default VM platform
+- `DEVIN_DEFAULT_REPOS` — comma-separated default repo list
+- `DEVIN_DEFAULT_CREATE_AS_USER_ID` — default impersonation user
+- `DEVIN_DEFAULT_TAGS` — comma-separated default tags
+
+Precedence for each field: explicit CLI flag > env/config default > omit.
 
 ## Message Sync
 

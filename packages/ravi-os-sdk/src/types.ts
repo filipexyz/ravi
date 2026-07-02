@@ -4958,7 +4958,13 @@ export type DevinAuthCheckReturn = {
   baseUrl: string;
   configuredOrgId?: string;
   ok: boolean;
-  self: Record<string, unknown>;
+  self: {
+    org_id?: string;
+    principal_type?: string;
+    service_user_id?: string;
+    service_user_name?: string;
+    [k: string]: unknown;
+  };
   [k: string]: unknown;
 };
 
@@ -4969,7 +4975,34 @@ export type DevinSessionsArchiveInput = {
 
 /** Return shape for `devin.sessions.archive`. */
 export type DevinSessionsArchiveReturn = {
-  session: Record<string, unknown>;
+  session: {
+    acusConsumed?: number;
+    devinId: string;
+    devinMode?: string | null;
+    effectiveCreateAsUserId?: string | null;
+    id?: string;
+    isArchived?: boolean;
+    lastSyncedAt?: number | null;
+    maxAcuLimit?: number | null;
+    maxAcuLimitSource?: string | null;
+    origin?: string | null;
+    originId?: string | null;
+    originType?: string | null;
+    platform?: string | null;
+    projectId?: string | null;
+    proxRunId?: string | null;
+    resumable?: boolean | null;
+    serviceUserId?: string | null;
+    status: string;
+    statusDetail: string | null;
+    tags: string[];
+    taskId?: string | null;
+    title: string | null;
+    updatedAt: number;
+    url: string;
+    userId?: string | null;
+    [k: string]: unknown;
+  };
   status: "archived";
   [k: string]: unknown;
 };
@@ -4982,7 +5015,14 @@ export type DevinSessionsAttachmentsInput = {
 
 /** Return shape for `devin.sessions.attachments`. */
 export type DevinSessionsAttachmentsReturn = {
-  attachments: Array<Record<string, unknown>>;
+  attachments: Array<{
+    attachmentId: string;
+    contentType?: string | null;
+    name: string;
+    source: string;
+    url: string;
+    [k: string]: unknown;
+  }>;
   devinId: string;
   total: number;
   [k: string]: unknown;
@@ -4995,17 +5035,24 @@ export type DevinSessionsCreateInput = {
   attachmentUrl?: string[];
   bypassApproval?: boolean;
   childPlaybook?: string;
+  devinId?: string;
+  devinMode?: string;
   knowledge?: string[];
   maxAcu?: string;
   noMaxAcuLimit?: boolean;
+  noResumable?: boolean;
+  platform?: string;
   playbook?: string;
   project?: string;
   prompt?: string;
   promptFile?: string;
   proxRun?: string;
   repo?: string[];
+  resumable?: boolean;
   secret?: string[];
   sessionLink?: string[];
+  sessionSecret?: string[];
+  structuredOutputRequired?: boolean;
   structuredOutputSchema?: string;
   tag?: string[];
   task?: string;
@@ -5014,9 +5061,39 @@ export type DevinSessionsCreateInput = {
 
 /** Return shape for `devin.sessions.create`. */
 export type DevinSessionsCreateReturn = {
+  devinMode?: string | null;
   maxAcuLimit: number | null;
   maxAcuLimitSource: string;
-  session: Record<string, unknown>;
+  platform?: string | null;
+  resumable?: boolean | null;
+  session: {
+    acusConsumed?: number;
+    devinId: string;
+    devinMode?: string | null;
+    effectiveCreateAsUserId?: string | null;
+    id?: string;
+    isArchived?: boolean;
+    lastSyncedAt?: number | null;
+    maxAcuLimit?: number | null;
+    maxAcuLimitSource?: string | null;
+    origin?: string | null;
+    originId?: string | null;
+    originType?: string | null;
+    platform?: string | null;
+    projectId?: string | null;
+    proxRunId?: string | null;
+    resumable?: boolean | null;
+    serviceUserId?: string | null;
+    status: string;
+    statusDetail: string | null;
+    tags: string[];
+    taskId?: string | null;
+    title: string | null;
+    updatedAt: number;
+    url: string;
+    userId?: string | null;
+    [k: string]: unknown;
+  };
   status: "created";
   [k: string]: unknown;
 };
@@ -5029,8 +5106,41 @@ export type DevinSessionsInsightsInput = {
 
 /** Return shape for `devin.sessions.insights`. */
 export type DevinSessionsInsightsReturn = {
-  insights: Record<string, unknown>;
-  session: Record<string, unknown>;
+  insights: {
+    analysis?: (Record<string, unknown>) | null;
+    numDevinMessages?: number;
+    numUserMessages?: number;
+    sessionSize?: string | null;
+    [k: string]: unknown;
+  };
+  session: {
+    acusConsumed?: number;
+    devinId: string;
+    devinMode?: string | null;
+    effectiveCreateAsUserId?: string | null;
+    id?: string;
+    isArchived?: boolean;
+    lastSyncedAt?: number | null;
+    maxAcuLimit?: number | null;
+    maxAcuLimitSource?: string | null;
+    origin?: string | null;
+    originId?: string | null;
+    originType?: string | null;
+    platform?: string | null;
+    projectId?: string | null;
+    proxRunId?: string | null;
+    resumable?: boolean | null;
+    serviceUserId?: string | null;
+    status: string;
+    statusDetail: string | null;
+    tags: string[];
+    taskId?: string | null;
+    title: string | null;
+    updatedAt: number;
+    url: string;
+    userId?: string | null;
+    [k: string]: unknown;
+  };
   summary: (Record<string, unknown>) | null;
   [k: string]: unknown;
 };
@@ -5058,7 +5168,34 @@ export type DevinSessionsListReturn = {
     total: number;
     [k: string]: unknown;
   };
-  sessions: Array<Record<string, unknown>>;
+  sessions: Array<{
+    acusConsumed?: number;
+    devinId: string;
+    devinMode?: string | null;
+    effectiveCreateAsUserId?: string | null;
+    id?: string;
+    isArchived?: boolean;
+    lastSyncedAt?: number | null;
+    maxAcuLimit?: number | null;
+    maxAcuLimitSource?: string | null;
+    origin?: string | null;
+    originId?: string | null;
+    originType?: string | null;
+    platform?: string | null;
+    projectId?: string | null;
+    proxRunId?: string | null;
+    resumable?: boolean | null;
+    serviceUserId?: string | null;
+    status: string;
+    statusDetail: string | null;
+    tags: string[];
+    taskId?: string | null;
+    title: string | null;
+    updatedAt: number;
+    url: string;
+    userId?: string | null;
+    [k: string]: unknown;
+  }>;
   source: string;
   total: number;
   [k: string]: unknown;
@@ -5073,7 +5210,13 @@ export type DevinSessionsMessagesInput = {
 /** Return shape for `devin.sessions.messages`. */
 export type DevinSessionsMessagesReturn = {
   devinId: string;
-  messages: Array<Record<string, unknown>>;
+  messages: Array<{
+    createdAt: number;
+    eventId: string;
+    message: string;
+    source: string;
+    [k: string]: unknown;
+  }>;
   total: number;
   [k: string]: unknown;
 };
@@ -5087,7 +5230,34 @@ export type DevinSessionsSendInput = {
 
 /** Return shape for `devin.sessions.send`. */
 export type DevinSessionsSendReturn = {
-  session: Record<string, unknown>;
+  session: {
+    acusConsumed?: number;
+    devinId: string;
+    devinMode?: string | null;
+    effectiveCreateAsUserId?: string | null;
+    id?: string;
+    isArchived?: boolean;
+    lastSyncedAt?: number | null;
+    maxAcuLimit?: number | null;
+    maxAcuLimitSource?: string | null;
+    origin?: string | null;
+    originId?: string | null;
+    originType?: string | null;
+    platform?: string | null;
+    projectId?: string | null;
+    proxRunId?: string | null;
+    resumable?: boolean | null;
+    serviceUserId?: string | null;
+    status: string;
+    statusDetail: string | null;
+    tags: string[];
+    taskId?: string | null;
+    title: string | null;
+    updatedAt: number;
+    url: string;
+    userId?: string | null;
+    [k: string]: unknown;
+  };
   status: "sent";
   [k: string]: unknown;
 };
@@ -5100,7 +5270,34 @@ export type DevinSessionsShowInput = {
 
 /** Return shape for `devin.sessions.show`. */
 export type DevinSessionsShowReturn = {
-  session: Record<string, unknown>;
+  session: {
+    acusConsumed?: number;
+    devinId: string;
+    devinMode?: string | null;
+    effectiveCreateAsUserId?: string | null;
+    id?: string;
+    isArchived?: boolean;
+    lastSyncedAt?: number | null;
+    maxAcuLimit?: number | null;
+    maxAcuLimitSource?: string | null;
+    origin?: string | null;
+    originId?: string | null;
+    originType?: string | null;
+    platform?: string | null;
+    projectId?: string | null;
+    proxRunId?: string | null;
+    resumable?: boolean | null;
+    serviceUserId?: string | null;
+    status: string;
+    statusDetail: string | null;
+    tags: string[];
+    taskId?: string | null;
+    title: string | null;
+    updatedAt: number;
+    url: string;
+    userId?: string | null;
+    [k: string]: unknown;
+  };
   [k: string]: unknown;
 };
 
@@ -5117,7 +5314,34 @@ export type DevinSessionsSyncReturn = {
   attachments: number;
   insights: (Record<string, unknown>) | null;
   messages: number;
-  session: Record<string, unknown>;
+  session: {
+    acusConsumed?: number;
+    devinId: string;
+    devinMode?: string | null;
+    effectiveCreateAsUserId?: string | null;
+    id?: string;
+    isArchived?: boolean;
+    lastSyncedAt?: number | null;
+    maxAcuLimit?: number | null;
+    maxAcuLimitSource?: string | null;
+    origin?: string | null;
+    originId?: string | null;
+    originType?: string | null;
+    platform?: string | null;
+    projectId?: string | null;
+    proxRunId?: string | null;
+    resumable?: boolean | null;
+    serviceUserId?: string | null;
+    status: string;
+    statusDetail: string | null;
+    tags: string[];
+    taskId?: string | null;
+    title: string | null;
+    updatedAt: number;
+    url: string;
+    userId?: string | null;
+    [k: string]: unknown;
+  };
   [k: string]: unknown;
 };
 
@@ -5130,7 +5354,34 @@ export type DevinSessionsTerminateInput = {
 /** Return shape for `devin.sessions.terminate`. */
 export type DevinSessionsTerminateReturn = {
   archive: boolean;
-  session: Record<string, unknown>;
+  session: {
+    acusConsumed?: number;
+    devinId: string;
+    devinMode?: string | null;
+    effectiveCreateAsUserId?: string | null;
+    id?: string;
+    isArchived?: boolean;
+    lastSyncedAt?: number | null;
+    maxAcuLimit?: number | null;
+    maxAcuLimitSource?: string | null;
+    origin?: string | null;
+    originId?: string | null;
+    originType?: string | null;
+    platform?: string | null;
+    projectId?: string | null;
+    proxRunId?: string | null;
+    resumable?: boolean | null;
+    serviceUserId?: string | null;
+    status: string;
+    statusDetail: string | null;
+    tags: string[];
+    taskId?: string | null;
+    title: string | null;
+    updatedAt: number;
+    url: string;
+    userId?: string | null;
+    [k: string]: unknown;
+  };
   status: "terminated";
   [k: string]: unknown;
 };

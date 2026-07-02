@@ -223,8 +223,10 @@ Contrato:
 - protocolo = escrever briefing Devin-ready, criar sessão remota via `ravi devin sessions create`, monitorar com `show/messages/insights/sync`, e sincronizar o estado da task no Ravi
 - use `ravi devin sessions insights <session> --json` para consultar status rico/contagens/análise remota quando a API disponibilizar
 - use `ravi devin sessions sync <session> --insights --artifacts --json` para registrar o snapshot remoto como artifact
-- inputs padrão = `advancedMode=create`, `maxAcu=20`, `repo=github.com:filipexyz/ravi`
+- inputs padrão = ACU limit via `DEVIN_DEFAULT_MAX_ACU_LIMIT` (explicit, not hidden), repos via `DEVIN_DEFAULT_REPOS` or `--repo`
 - boundary = Devin é executor externo; Ravi continua dono da task, provenance, artifacts e handoff
+- ACU policy = low ACU limits MUST be explicit. The profile MUST NOT silently hide a low default. Use `--max-acu` or configure `DEVIN_DEFAULT_MAX_ACU_LIMIT`
+- v3 fields = `--devin-mode`, `--platform`, `--resumable`/`--no-resumable`, `--structured-output-required` available for session creation control
 
 Profiles de domínio como brainstorm, research, content, vídeo e runtime-only não pertencem ao catálogo built-in. Eles devem ser instalados como `plugin`, `workspace` ou `user`, ou gerados por `ravi tasks profiles init` quando fizer sentido.
 

@@ -56,6 +56,16 @@ export interface DevinSessionRecord {
   lastSyncedAt?: number;
   createdAt: number;
   updatedAt: number;
+  userId?: string;
+  serviceUserId?: string;
+  effectiveCreateAsUserId?: string;
+  devinMode?: string;
+  platform?: string;
+  resumable?: boolean;
+  structuredOutputRequired?: boolean;
+  maxAcuLimit?: number;
+  maxAcuLimitSource?: string;
+  sessionSecretCount?: number;
 }
 
 export interface StoredDevinMessage {
@@ -103,6 +113,16 @@ interface DevinSessionRow {
   last_synced_at: number | null;
   created_at: number;
   updated_at: number;
+  user_id: string | null;
+  service_user_id: string | null;
+  effective_create_as_user_id: string | null;
+  devin_mode: string | null;
+  platform: string | null;
+  resumable: number | null;
+  structured_output_required: number | null;
+  max_acu_limit: number | null;
+  max_acu_limit_source: string | null;
+  session_secret_count: number | null;
 }
 
 interface DevinMessageRow {
@@ -135,6 +155,14 @@ export interface UpsertDevinSessionOptions {
   snapshotId?: string;
   metadata?: Record<string, unknown>;
   lastSyncedAt?: number;
+  effectiveCreateAsUserId?: string;
+  devinMode?: string;
+  platform?: string;
+  resumable?: boolean;
+  structuredOutputRequired?: boolean;
+  maxAcuLimit?: number;
+  maxAcuLimitSource?: string;
+  sessionSecretCount?: number;
 }
 
 export interface ListDevinSessionRecordsOptions {
@@ -215,6 +243,30 @@ function ensureDevinSchema(): void {
       SET devin_id = 'devin-' || devin_id
       WHERE devin_id NOT LIKE 'devin-%';
   `);
+  migrateAuditColumns();
+}
+
+function migrateAuditColumns(): void {
+  const database = getDevinDb();
+  const cols = database.prepare("PRAGMA table_info(devin_sessions)").all() as Array<{ name: string }>;
+  const existing = new Set(cols.map((c) => c.name));
+  const additions: Array<[string, string]> = [
+    ["user_id", "TEXT"],
+    ["service_user_id", "TEXT"],
+    ["effective_create_as_user_id", "TEXT"],
+    ["devin_mode", "TEXT"],
+    ["platform", "TEXT"],
+    ["resumable", "INTEGER"],
+    ["structured_output_required", "INTEGER"],
+    ["max_acu_limit", "INTEGER"],
+    ["max_acu_limit_source", "TEXT"],
+    ["session_secret_count", "INTEGER"],
+  ];
+  for (const [col, type] of additions) {
+    if (!existing.has(col)) {
+      database.exec(`ALTER TABLE devin_sessions ADD COLUMN ${col} ${type}`);
+    }
+  }
 }
 
 function jsonString(value: unknown): string | null {
@@ -264,6 +316,18 @@ function rowToSession(row: DevinSessionRow): DevinSessionRecord {
     ...(row.last_synced_at !== null ? { lastSyncedAt: row.last_synced_at } : {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    ...(row.user_id ? { userId: row.user_id } : {}),
+    ...(row.service_user_id ? { serviceUserId: row.service_user_id } : {}),
+    ...(row.effective_create_as_user_id ? { effectiveCreateAsUserId: row.effective_create_as_user_id } : {}),
+    ...(row.devin_mode ? { devinMode: row.devin_mode } : {}),
+    ...(row.platform ? { platform: row.platform } : {}),
+    ...(row.resumable !== null ? { resumable: row.resumable === 1 } : {}),
+    ...(row.structured_output_required !== null
+      ? { structuredOutputRequired: row.structured_output_required === 1 }
+      : {}),
+    ...(row.max_acu_limit !== null ? { maxAcuLimit: row.max_acu_limit } : {}),
+    ...(row.max_acu_limit_source ? { maxAcuLimitSource: row.max_acu_limit_source } : {}),
+    ...(row.session_secret_count !== null ? { sessionSecretCount: row.session_secret_count } : {}),
   };
 }
 
@@ -337,12 +401,18 @@ export function upsertDevinSession(session: DevinSession, options: UpsertDevinSe
         id, devin_id, org_id, url, status, status_detail, title, tags_json,
         origin_type, origin_id, origin_session_name, agent_id, task_id, project_id, prox_run_id,
         playbook_id, snapshot_id, structured_output_json, pull_requests_json, metadata_json,
-        remote_created_at, remote_updated_at, last_synced_at, created_at, updated_at
+        remote_created_at, remote_updated_at, last_synced_at, created_at, updated_at,
+        user_id, service_user_id, effective_create_as_user_id,
+        devin_mode, platform, resumable, structured_output_required,
+        max_acu_limit, max_acu_limit_source, session_secret_count
       ) VALUES (
         ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?
+        ?, ?, ?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?
       )
       ON CONFLICT(devin_id) DO UPDATE SET
         org_id = excluded.org_id,
@@ -366,7 +436,17 @@ export function upsertDevinSession(session: DevinSession, options: UpsertDevinSe
         remote_created_at = excluded.remote_created_at,
         remote_updated_at = excluded.remote_updated_at,
         last_synced_at = COALESCE(excluded.last_synced_at, devin_sessions.last_synced_at),
-        updated_at = excluded.updated_at`,
+        updated_at = excluded.updated_at,
+        user_id = COALESCE(excluded.user_id, devin_sessions.user_id),
+        service_user_id = COALESCE(excluded.service_user_id, devin_sessions.service_user_id),
+        effective_create_as_user_id = COALESCE(excluded.effective_create_as_user_id, devin_sessions.effective_create_as_user_id),
+        devin_mode = COALESCE(excluded.devin_mode, devin_sessions.devin_mode),
+        platform = COALESCE(excluded.platform, devin_sessions.platform),
+        resumable = COALESCE(excluded.resumable, devin_sessions.resumable),
+        structured_output_required = COALESCE(excluded.structured_output_required, devin_sessions.structured_output_required),
+        max_acu_limit = COALESCE(excluded.max_acu_limit, devin_sessions.max_acu_limit),
+        max_acu_limit_source = COALESCE(excluded.max_acu_limit_source, devin_sessions.max_acu_limit_source),
+        session_secret_count = COALESCE(excluded.session_secret_count, devin_sessions.session_secret_count)`,
     )
     .run(
       id,
@@ -394,6 +474,32 @@ export function upsertDevinSession(session: DevinSession, options: UpsertDevinSe
       options.lastSyncedAt ?? existing?.lastSyncedAt ?? null,
       existing?.createdAt ?? now,
       now,
+      session.user_id ?? null,
+      session.service_user_id ?? null,
+      options.effectiveCreateAsUserId ?? existing?.effectiveCreateAsUserId ?? null,
+      options.devinMode ?? existing?.devinMode ?? null,
+      options.platform ?? existing?.platform ?? null,
+      options.resumable !== undefined
+        ? options.resumable
+          ? 1
+          : 0
+        : existing?.resumable !== undefined
+          ? existing.resumable
+            ? 1
+            : 0
+          : null,
+      options.structuredOutputRequired !== undefined
+        ? options.structuredOutputRequired
+          ? 1
+          : 0
+        : existing?.structuredOutputRequired !== undefined
+          ? existing.structuredOutputRequired
+            ? 1
+            : 0
+          : null,
+      options.maxAcuLimit ?? existing?.maxAcuLimit ?? null,
+      options.maxAcuLimitSource ?? existing?.maxAcuLimitSource ?? null,
+      options.sessionSecretCount ?? existing?.sessionSecretCount ?? null,
     );
 
   const stored = getDevinSession(devinId);
