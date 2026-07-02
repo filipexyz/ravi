@@ -27,6 +27,7 @@ import { enforceScopeCheck } from "../../permissions/scope.js";
 import { emitCliAuditEvent } from "../../cli/audit.js";
 import type { ScopeContext } from "../../permissions/scope.js";
 import type { ContextRecord } from "../../router/router-db.js";
+import { RaviAppError } from "../../apps/types.js";
 import {
   errorResponse,
   internalError,
@@ -163,8 +164,15 @@ export async function dispatch(
     );
   } catch (err) {
     isError = true;
-    const message = err instanceof Error ? err.message : String(err);
-    response = internalError(message);
+    if (err instanceof RaviAppError) {
+      response = errorResponse(err.status, err.code, {
+        message: err.message,
+        evidence: err.evidence,
+      });
+    } else {
+      const message = err instanceof Error ? err.message : String(err);
+      response = internalError(message);
+    }
     const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, isError, startedAt, lineage);
     const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
     return { response, audit: auditEmitted ? audit : null };

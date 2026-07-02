@@ -2,16 +2,17 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { getRaviStateDir } from "../utils/paths.js";
-import type {
-  RaviAppCheckResult,
-  RaviAppDiscoveryOptions,
-  RaviAppDiscoveryRoot,
-  RaviAppListOptions,
-  RaviAppManifest,
-  RaviAppManifestRecord,
-  RaviAppManifestSource,
-  RaviAppPermissionProviderDeclaration,
-  RaviAppPermissions,
+import {
+  RaviAppError,
+  type RaviAppCheckResult,
+  type RaviAppDiscoveryOptions,
+  type RaviAppDiscoveryRoot,
+  type RaviAppListOptions,
+  type RaviAppManifest,
+  type RaviAppManifestRecord,
+  type RaviAppManifestSource,
+  type RaviAppPermissionProviderDeclaration,
+  type RaviAppPermissions,
 } from "./types.js";
 
 export const RAVI_APP_MANIFEST_FILE = "ravi.app.json";
@@ -117,11 +118,15 @@ export function getAppManifest(id: string, options: RaviAppDiscoveryOptions = {}
   const normalizedId = normalizeAppId(id);
   const matches = discoverAppManifests(options).filter((record) => record.manifest?.id === normalizedId);
   if (matches.length === 0) {
-    throw new Error(`App not found: ${normalizedId}`);
+    throw new RaviAppError("not_found", `App not found: ${normalizedId}`, [{ kind: "app", detail: normalizedId }]);
   }
   if (matches.length > 1) {
     const paths = matches.map((record) => record.path).join(", ");
-    throw new Error(`Duplicate app id "${normalizedId}" found at: ${paths}`);
+    throw new RaviAppError(
+      "already_exists",
+      `Duplicate app id "${normalizedId}" found at: ${paths}`,
+      matches.map((record) => ({ kind: "manifest", detail: record.path })),
+    );
   }
   return matches[0]!;
 }

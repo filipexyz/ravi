@@ -6,6 +6,7 @@ domain: apps
 capability: scaffold
 capabilities:
   - scaffold
+  - lifecycle
   - import-cli
   - manifest
   - router

@@ -365,6 +365,25 @@ export type AppsCheckReturn = {
   }>;
 };
 
+/** Input shape for `apps.delete`. */
+export type AppsDeleteInput = {
+  dryRun?: boolean;
+  id: string;
+};
+
+/** Return shape for `apps.delete`. */
+export type AppsDeleteReturn = {
+  dryRun: boolean;
+  files: Array<{
+    action: "planned" | "deleted" | "not_found";
+    kind: "manifest" | "spec" | "skill";
+    path: string;
+  }>;
+  id: string;
+  nextCommands: string[];
+  removedDirs: string[];
+};
+
 /** Input shape for `apps.guide`. */
 export type AppsGuideInput = {
   id?: string;

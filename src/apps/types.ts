@@ -1,3 +1,28 @@
+export type RaviAppErrorCode = "already_exists" | "not_found";
+
+export interface RaviAppErrorEvidence {
+  kind: string;
+  detail: string;
+}
+
+export class RaviAppError extends Error {
+  readonly code: RaviAppErrorCode;
+  readonly status: number;
+  readonly evidence: RaviAppErrorEvidence[];
+
+  constructor(code: RaviAppErrorCode, message: string, evidence: RaviAppErrorEvidence[] = []) {
+    super(message);
+    this.name = "RaviAppError";
+    this.code = code;
+    this.status = code === "already_exists" ? 409 : 404;
+    this.evidence = evidence;
+  }
+
+  toJSON(): { code: string; message: string; status: number; evidence: RaviAppErrorEvidence[] } {
+    return { code: this.code, message: this.message, status: this.status, evidence: this.evidence };
+  }
+}
+
 export type RaviAppManifestSource = "repo" | "plugin" | "state";
 
 export type RaviAppPermissionProviderInterface = "builtin" | "cli";
@@ -155,6 +180,28 @@ export interface RaviAppScaffoldResult {
   skill: string | null;
   files: RaviAppScaffoldFileResult[];
   manifest: RaviAppManifest;
+  nextCommands: string[];
+}
+
+export type RaviAppDeleteFileAction = "planned" | "deleted" | "not_found";
+
+export interface RaviAppDeleteFileResult {
+  kind: RaviAppScaffoldFileKind;
+  path: string;
+  action: RaviAppDeleteFileAction;
+}
+
+export interface RaviAppDeleteOptions {
+  id: string;
+  cwd?: string;
+  dryRun?: boolean;
+}
+
+export interface RaviAppDeleteResult {
+  id: string;
+  dryRun: boolean;
+  files: RaviAppDeleteFileResult[];
+  removedDirs: string[];
   nextCommands: string[];
 }
 

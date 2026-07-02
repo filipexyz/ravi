@@ -6,10 +6,12 @@ import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   buildAppsGuide,
   checkAppManifests,
+  deleteApp,
   discoverAppManifests,
   getAppManifest,
   importCliApp,
   normalizeAppSource,
+  RaviAppError,
   scaffoldApp,
   printAppRunResult,
   runAppOperation,
@@ -137,6 +139,20 @@ const appsScaffoldReturnSchema = z.object({
   skill: z.string().nullable(),
   files: z.array(appScaffoldFileSchema),
   manifest: z.record(z.string(), jsonValueSchema),
+  nextCommands: z.array(z.string()),
+});
+
+const appDeleteFileSchema = z.object({
+  kind: z.enum(["manifest", "spec", "skill"]),
+  path: z.string(),
+  action: z.enum(["planned", "deleted", "not_found"]),
+});
+
+const appsDeleteReturnSchema = z.object({
+  id: z.string(),
+  dryRun: z.boolean(),
+  files: z.array(appDeleteFileSchema),
+  removedDirs: z.array(z.string()),
   nextCommands: z.array(z.string()),
 });
 
@@ -368,6 +384,11 @@ export class AppsCommands {
       }
       return payload;
     } catch (error) {
+      if (error instanceof RaviAppError && asJson) {
+        printJson(error.toJSON());
+        if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
+        return;
+      }
       fail(error instanceof Error ? error.message : String(error));
     }
   }
@@ -415,6 +436,11 @@ export class AppsCommands {
       if (!payload.ok && getContext()?.suppressCliOutput !== true) process.exitCode = 1;
       return payload;
     } catch (error) {
+      if (error instanceof RaviAppError && asJson) {
+        printJson(error.toJSON());
+        if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
+        return;
+      }
       fail(error instanceof Error ? error.message : String(error));
     }
   }
@@ -483,6 +509,49 @@ export class AppsCommands {
       for (const nextCommand of payload.nextCommands) console.log(`  ${nextCommand}`);
       return payload;
     } catch (error) {
+      if (error instanceof RaviAppError && asJson) {
+        printJson(error.toJSON());
+        if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
+        return;
+      }
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  @Command({ name: "delete", description: "Delete scaffold-owned artifacts for a Ravi app" })
+  @CommandAccess({ kind: "mutate", resource: "apps", action: "delete", risk: "high" })
+  @Returns(appsDeleteReturnSchema)
+  delete(
+    @Arg("id", { description: "App id to delete" }) id: string,
+    @Option({ flags: "--dry-run", description: "Print planned deletions without removing files" }) dryRun?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    try {
+      const payload = deleteApp({ id, dryRun });
+
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+
+      console.log(`${payload.dryRun ? "Planned" : "Deleted"} scaffold artifacts for app: ${payload.id}`);
+      for (const file of payload.files) {
+        console.log(`- ${file.action} ${file.kind}: ${file.path}`);
+      }
+      for (const dir of payload.removedDirs) {
+        console.log(`- removed empty dir: ${dir}`);
+      }
+      if (payload.nextCommands.length > 0) {
+        console.log("\nNext commands:");
+        for (const nextCommand of payload.nextCommands) console.log(`  ${nextCommand}`);
+      }
+      return payload;
+    } catch (error) {
+      if (error instanceof RaviAppError && asJson) {
+        printJson(error.toJSON());
+        if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
+        return;
+      }
       fail(error instanceof Error ? error.message : String(error));
     }
   }
