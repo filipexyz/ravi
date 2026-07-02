@@ -232,6 +232,7 @@ describe("CronCommands --json", () => {
         effectiveAgentId: "main",
         scheduleDescription: "every 30m",
         routing: { kind: "none" },
+        targetResolution: { state: "ok", agentExists: true },
       },
     });
   });
@@ -263,6 +264,94 @@ describe("CronCommands --json", () => {
       },
     });
     expect(cronJob).toBeNull();
+  });
+});
+
+describe("CronCommands JSON list target resolution", () => {
+  beforeEach(() => {
+    emitMock.mockClear();
+    mockScopeContext = undefined;
+    mockScopeEnforced = false;
+    cronJobs = [
+      {
+        id: "cron-agent",
+        name: "Agent Job",
+        enabled: true,
+        schedule: { type: "every", every: 1_800_000 },
+        executionType: "agent",
+        agentId: "main",
+        message: "hello",
+        sessionTarget: "main",
+        deleteAfterRun: false,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "cron-shell",
+        name: "Shell Job",
+        enabled: true,
+        schedule: { type: "every", every: 3_600_000 },
+        executionType: "shell",
+        shellCommand: "echo ok",
+        message: "",
+        sessionTarget: "main",
+        deleteAfterRun: false,
+        createdAt: 2,
+        updatedAt: 2,
+      },
+    ];
+    cronJob = cronJobs[0];
+  });
+
+  it("includes targetResolution on every item in JSON list", async () => {
+    const payload = await captureJson(async () => new CronCommands().list(true));
+
+    const items = payload.items as Array<Record<string, unknown>>;
+    for (const item of items) {
+      expect(item.targetResolution).toBeDefined();
+      const tr = item.targetResolution as Record<string, unknown>;
+      expect(["ok", "agent_missing", "reply_session_missing", "derived_key", "unresolved"]).toContain(
+        tr.state as string,
+      );
+    }
+  });
+
+  it("items and jobs carry equivalent targetResolution", async () => {
+    const payload = await captureJson(async () => new CronCommands().list(true));
+
+    const items = payload.items as Array<Record<string, unknown>>;
+    const jobs = payload.jobs as Array<Record<string, unknown>>;
+    expect(items).toHaveLength(jobs.length);
+    for (let i = 0; i < items.length; i++) {
+      expect(items[i].targetResolution).toEqual(jobs[i].targetResolution);
+    }
+  });
+
+  it("JSON list output is parseable by JSON.parse", async () => {
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      lines.push(args.map((arg) => String(arg)).join(" "));
+    };
+
+    try {
+      new CronCommands().list(true);
+    } finally {
+      console.log = originalLog;
+    }
+
+    const raw = lines.join("\n");
+    expect(() => JSON.parse(raw)).not.toThrow();
+  });
+
+  it("shell jobs without onError have targetResolution state=ok", async () => {
+    const payload = await captureJson(async () => new CronCommands().list(true));
+
+    const items = payload.items as Array<Record<string, unknown>>;
+    const shellItem = items.find((i) => i.executionType === "shell");
+    expect(shellItem).toBeDefined();
+    const tr = shellItem!.targetResolution as Record<string, unknown>;
+    expect(tr.state).toBe("ok");
   });
 });
 

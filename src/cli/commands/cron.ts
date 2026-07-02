@@ -12,7 +12,7 @@ import { getScopeContext, isScopeEnforced, canAccessResource } from "../../permi
 import { getAgent } from "../../router/config.js";
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { resolveSession } from "../../router/sessions.js";
-import { getDefaultTimezone, getAccountForAgent, getDefaultAgentId } from "../../router/router-db.js";
+import { getDefaultTimezone, getAccountForAgent, getDefaultAgentId, dbGetAgent } from "../../router/router-db.js";
 import {
   dbCreateCronJob,
   dbGetCronJob,
@@ -31,6 +31,7 @@ import {
 import { DEFAULT_CRON_SHELL_TIMEOUT_MS } from "../../cron/shell-executor.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { buildCronShowOutput, type CronRoutingResolution, type CronRoutingSource } from "../cron-show-output.js";
+import { resolveCronTarget, type CronTargetResolution } from "../../cron/target-resolver.js";
 
 function parseCronShellTimeout(value: string | undefined): number | undefined {
   if (!value) return undefined;
@@ -106,6 +107,27 @@ function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
 
+const TARGET_STATE_LABELS: Record<string, string> = {
+  ok: "ok",
+  agent_missing: "agent-miss",
+  reply_session_missing: "sess-miss",
+  derived_key: "derived",
+  unresolved: "unresolved",
+};
+
+function formatTargetStateCompact(resolution: CronTargetResolution): string {
+  return (TARGET_STATE_LABELS[resolution.state] ?? resolution.state).padEnd(11);
+}
+
+function getTargetResolverDeps() {
+  return {
+    getAgent: dbGetAgent,
+    getDefaultAgentId,
+    resolveSession,
+    deriveSourceFromSessionKey,
+  };
+}
+
 function serializeCronJob(job: CronJob) {
   return {
     ...job,
@@ -115,6 +137,7 @@ function serializeCronJob(job: CronJob) {
     shellTimeoutDescription:
       job.executionType === "shell" ? formatDurationMs(job.shellTimeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS) : undefined,
     routing: resolveCronRouting(job),
+    targetResolution: resolveCronTarget(job, getTargetResolverDeps()),
   };
 }
 
@@ -225,21 +248,25 @@ export class CronCommands {
             ? " (scope: all agents)"
             : "";
       console.log(`\nScheduled Jobs${scopeHint}:\n`);
-      console.log("  ID        NAME                      ENABLED  SCHEDULE                 NEXT RUN");
-      console.log("  --------  ------------------------  -------  -----------------------  --------------------");
+      console.log("  ID        NAME                      ENABLED  SCHEDULE                 TARGET       NEXT RUN");
+      console.log(
+        "  --------  ------------------------  -------  -----------------------  -----------  --------------------",
+      );
 
+      const resolverDeps = getTargetResolverDeps();
       for (const job of pageJobs) {
         const id = job.id.padEnd(8);
         const name = job.name.slice(0, 24).padEnd(24);
         const enabled = (job.enabled ? "yes" : "no").padEnd(7);
         const schedule = describeSchedule(job.schedule).slice(0, 23).padEnd(23);
+        const target = formatTargetStateCompact(resolveCronTarget(job, resolverDeps));
         const nextRun = job.nextRunAt
           ? new Date(job.nextRunAt).toLocaleString()
           : job.schedule.type === "at"
             ? "(expired)"
             : "-";
 
-        console.log(`  ${id}  ${name}  ${enabled}  ${schedule}  ${nextRun}`);
+        console.log(`  ${id}  ${name}  ${enabled}  ${schedule}  ${target}  ${nextRun}`);
       }
 
       console.log(

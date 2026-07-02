@@ -87,6 +87,26 @@ function makeHealthyDeps() {
         { id: "a2", enabled: false },
       ] as any,
     getRuntimeCompatibilityIssues: () => [],
+    dbListCronJobs: () =>
+      [
+        {
+          id: "cron-1",
+          name: "Daily",
+          enabled: true,
+          agentId: "main",
+          executionType: "agent",
+          schedule: { type: "every", every: 1_800_000 },
+          sessionTarget: "main",
+          message: "hello",
+          deleteAfterRun: false,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ] as any,
+    dbGetAgent: (id: string) => (id === "main" || id === "codex-dev" ? { id } : null) as any,
+    getDefaultAgentId: () => "main",
+    resolveSession: () => null as any,
+    deriveSourceFromSessionKey: () => null as any,
     exists: (path: string) =>
       [stateDir, join(stateDir, "ravi.db"), join(stateDir, "insights.db"), join(home, ".codex", "hooks.json")].includes(
         path,
@@ -173,6 +193,116 @@ describe("inspectDoctor", () => {
     expect(report.checks.find((check) => check.id === "codex.bash-hook")?.status).toBe("fail");
     expect(report.checks.find((check) => check.id === "agents.instructions")?.status).toBe("fail");
     expect(report.checks.find((check) => check.id === "runtime.providers")?.status).toBe("fail");
+  });
+
+  it("reports cron targets with stale agents as fail", () => {
+    const deps = makeHealthyDeps();
+    deps.dbListCronJobs = () =>
+      [
+        {
+          id: "cron-stale",
+          name: "Stale Job",
+          enabled: true,
+          agentId: "deleted-agent",
+          executionType: "agent",
+          schedule: { type: "every", every: 1_800_000 },
+          sessionTarget: "main",
+          message: "hello",
+          deleteAfterRun: false,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ] as any;
+    deps.dbGetAgent = () => null as any;
+
+    const report = inspectDoctor(deps);
+    const cronCheck = report.checks.find((check) => check.id === "cron.targets");
+    expect(cronCheck).toBeDefined();
+    expect(cronCheck!.status).toBe("fail");
+    const findings = (cronCheck!.data as any).findings;
+    expect(findings).toHaveLength(1);
+    expect(findings[0].id).toBe("cron.agent_missing");
+    expect(findings[0].fixHint).toContain("ravi cron show");
+  });
+
+  it("reports derived-key routing as warn", () => {
+    const deps = makeHealthyDeps();
+    deps.dbListCronJobs = () =>
+      [
+        {
+          id: "cron-derived",
+          name: "Derived Job",
+          enabled: true,
+          agentId: "main",
+          executionType: "agent",
+          replySession: "agent:main:whatsapp:main:group:123",
+          schedule: { type: "every", every: 1_800_000 },
+          sessionTarget: "main",
+          message: "hello",
+          deleteAfterRun: false,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ] as any;
+    deps.resolveSession = () => null as any;
+    deps.deriveSourceFromSessionKey = () => ({
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "group:123",
+    });
+
+    const report = inspectDoctor(deps);
+    const cronCheck = report.checks.find((check) => check.id === "cron.targets");
+    expect(cronCheck).toBeDefined();
+    expect(cronCheck!.status).toBe("warn");
+    const findings = (cronCheck!.data as any).findings;
+    expect(findings[0].id).toBe("cron.routing_derived_key");
+  });
+
+  it("reports ok when all cron targets are valid", () => {
+    const deps = makeHealthyDeps();
+    const report = inspectDoctor(deps);
+    const cronCheck = report.checks.find((check) => check.id === "cron.targets");
+    expect(cronCheck).toBeDefined();
+    expect(cronCheck!.status).toBe("ok");
+  });
+
+  it("reports ok when no enabled crons exist", () => {
+    const deps = makeHealthyDeps();
+    deps.dbListCronJobs = () => [] as any;
+
+    const report = inspectDoctor(deps);
+    const cronCheck = report.checks.find((check) => check.id === "cron.targets");
+    expect(cronCheck).toBeDefined();
+    expect(cronCheck!.status).toBe("ok");
+    expect(cronCheck!.summary).toContain("no enabled");
+  });
+
+  it("shell jobs without notification targets are ok, not agent_missing", () => {
+    const deps = makeHealthyDeps();
+    deps.dbListCronJobs = () =>
+      [
+        {
+          id: "cron-shell",
+          name: "Shell Job",
+          enabled: true,
+          agentId: "ghost",
+          executionType: "shell",
+          shellCommand: "echo ok",
+          schedule: { type: "every", every: 1_800_000 },
+          sessionTarget: "main",
+          message: "",
+          deleteAfterRun: false,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ] as any;
+    deps.dbGetAgent = () => null as any;
+
+    const report = inspectDoctor(deps);
+    const cronCheck = report.checks.find((check) => check.id === "cron.targets");
+    expect(cronCheck).toBeDefined();
+    expect(cronCheck!.status).toBe("ok");
   });
 });
 
