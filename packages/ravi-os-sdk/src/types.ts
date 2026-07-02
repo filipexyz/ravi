@@ -11202,6 +11202,26 @@ export type ThreadsShowReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `tools.invoke`. */
+export type ToolsInvokeInput = {
+  args?: string;
+  name: string;
+};
+
+/** Return shape for `tools.invoke`. */
+export type ToolsInvokeReturn = {
+  args: Record<string, unknown>;
+  executed: true;
+  mode: "executed";
+  result: {
+    content: unknown[];
+    isError: boolean;
+    [k: string]: unknown;
+  };
+  tool: Record<string, unknown>;
+  [k: string]: unknown;
+};
+
 /** Input shape for `tools.list`. */
 export type ToolsListInput = {
   limit?: string;
@@ -11250,6 +11270,31 @@ export type ToolsSchemaReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `tools.search`. */
+export type ToolsSearchInput = {
+  limit?: string;
+  query: string;
+};
+
+/** Return shape for `tools.search`. */
+export type ToolsSearchReturn = {
+  items: Array<{
+    command: string;
+    description: string;
+    group: string;
+    matchedFields: string[];
+    name: string;
+    rank: number;
+    score: number;
+    [k: string]: unknown;
+  }>;
+  limit: number;
+  query: string;
+  returned: number;
+  total: number;
+  [k: string]: unknown;
+};
+
 /** Input shape for `tools.show`. */
 export type ToolsShowInput = {
   name: string;
@@ -11269,12 +11314,12 @@ export type ToolsTestInput = {
 
 /** Return shape for `tools.test`. */
 export type ToolsTestReturn = {
+  access: (Record<string, unknown>) | null;
   args: Record<string, unknown>;
-  result: {
-    content: unknown[];
-    isError: boolean;
-    [k: string]: unknown;
-  };
+  executed: false;
+  invokeCommand: string;
+  mode: "dry_run";
+  schema: (Record<string, unknown>) | null;
   tool: Record<string, unknown>;
   [k: string]: unknown;
 };

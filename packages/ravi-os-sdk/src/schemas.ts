@@ -50934,6 +50934,75 @@ export const ThreadsShowReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `tools.invoke`. */
+export const ToolsInvokeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "args": {
+      "description": "JSON args (optional)",
+      "type": "string"
+    },
+    "name": {
+      "description": "Tool name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tools.invoke`. */
+export const ToolsInvokeReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "args": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "executed": {
+      "const": true,
+      "type": "boolean"
+    },
+    "mode": {
+      "const": "executed",
+      "type": "string"
+    },
+    "result": {
+      "additionalProperties": {},
+      "properties": {
+        "content": {
+          "items": {},
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "isError",
+        "content"
+      ],
+      "type": "object"
+    },
+    "tool": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "mode",
+    "executed",
+    "tool",
+    "args",
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tools.list`. */
 export const ToolsListInputSchema = {
   "additionalProperties": false,
@@ -51111,6 +51180,94 @@ export const ToolsSchemaReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `tools.search`. */
+export const ToolsSearchInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Max results (default: 10)",
+      "type": "string"
+    },
+    "query": {
+      "description": "Search query (matches name, description, parameters, access metadata, skill gate)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "query"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tools.search`. */
+export const ToolsSearchReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "matchedFields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rank": {
+            "type": "number"
+          },
+          "score": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "rank",
+          "score",
+          "name",
+          "description",
+          "group",
+          "command",
+          "matchedFields"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "limit": {
+      "type": "number"
+    },
+    "query": {
+      "type": "string"
+    },
+    "returned": {
+      "type": "number"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "query",
+    "limit",
+    "total",
+    "returned",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tools.show`. */
 export const ToolsShowInputSchema = {
   "additionalProperties": false,
@@ -51165,27 +51322,45 @@ export const ToolsTestInputSchema = {
 export const ToolsTestReturnSchema = {
   "additionalProperties": {},
   "properties": {
+    "access": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "args": {
       "additionalProperties": {},
       "properties": {},
       "type": "object"
     },
-    "result": {
-      "additionalProperties": {},
-      "properties": {
-        "content": {
-          "items": {},
-          "type": "array"
+    "executed": {
+      "const": false,
+      "type": "boolean"
+    },
+    "invokeCommand": {
+      "type": "string"
+    },
+    "mode": {
+      "const": "dry_run",
+      "type": "string"
+    },
+    "schema": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
         },
-        "isError": {
-          "type": "boolean"
+        {
+          "type": "null"
         }
-      },
-      "required": [
-        "isError",
-        "content"
-      ],
-      "type": "object"
+      ]
     },
     "tool": {
       "additionalProperties": {},
@@ -51194,9 +51369,13 @@ export const ToolsTestReturnSchema = {
     }
   },
   "required": [
+    "mode",
+    "executed",
     "tool",
     "args",
-    "result"
+    "schema",
+    "access",
+    "invokeCommand"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
