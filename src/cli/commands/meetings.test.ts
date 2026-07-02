@@ -239,6 +239,38 @@ describe("MeetingsCommands", () => {
       "1440x900",
     ]);
   });
+
+  it("voice-runtimes payload conforms to meetingVoiceRuntimesReturnSchema", async () => {
+    const { meetingVoiceRuntimesReturnSchema } = await import("./operational-return-schemas.js");
+    const { output } = await captureConsole(() => new MeetingsCommands().voiceRuntimes(true));
+    const payload = JSON.parse(output);
+    const parsed = meetingVoiceRuntimesReturnSchema.safeParse(payload);
+    expect(parsed.success).toBe(true);
+  });
+
+  it("profiles.show payload conforms to meetingProfileReturnSchema", async () => {
+    const { meetingProfileReturnSchema } = await import("./operational-return-schemas.js");
+    const { output } = await captureConsole(() => new MeetingProfileCommands().show("default", true));
+    const payload = JSON.parse(output);
+    const parsed = meetingProfileReturnSchema.safeParse(payload);
+    expect(parsed.success).toBe(true);
+  });
+
+  it("profiles.list payload conforms to meetingProfilesListReturnSchema", async () => {
+    const { meetingProfilesListReturnSchema } = await import("./operational-return-schemas.js");
+    const { output } = await captureConsole(() => new MeetingProfileCommands().list(true));
+    const payload = JSON.parse(output);
+    const parsed = meetingProfilesListReturnSchema.safeParse(payload);
+    expect(parsed.success).toBe(true);
+  });
+
+  it("profiles.validate payload conforms to meetingProfilesValidateReturnSchema", async () => {
+    const { meetingProfilesValidateReturnSchema } = await import("./operational-return-schemas.js");
+    const { output } = await captureConsole(() => new MeetingProfileCommands().validate(undefined, true));
+    const payload = JSON.parse(output);
+    const parsed = meetingProfilesValidateReturnSchema.safeParse(payload);
+    expect(parsed.success).toBe(true);
+  });
 });
 
 async function captureConsole<T>(run: () => T | Promise<T>): Promise<{ output: string; result: T }> {

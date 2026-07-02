@@ -16082,8 +16082,65 @@ export const ContextAuthorizeInputSchema = {
 
 /** JSON Schema for the return shape of `context.authorize`. */
 export const ContextAuthorizeReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "allowed": {
+      "type": "boolean"
+    },
+    "approved": {
+      "type": "boolean"
+    },
+    "capabilitiesCount": {
+      "type": "number"
+    },
+    "contextId": {
+      "type": "string"
+    },
+    "inherited": {
+      "type": "boolean"
+    },
+    "objectId": {
+      "type": "string"
+    },
+    "objectType": {
+      "type": "string"
+    },
+    "permission": {
+      "type": "string"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "contextId",
+    "agentId",
+    "permission",
+    "objectType",
+    "objectId",
+    "allowed",
+    "capabilitiesCount",
+    "approved",
+    "inherited",
+    "reason"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -16096,8 +16153,79 @@ export const ContextCapabilitiesInputSchema = {
 
 /** JSON Schema for the return shape of `context.capabilities`. */
 export const ContextCapabilitiesReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "capabilities": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "objectId": {
+            "type": "string"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "permission",
+          "objectType",
+          "objectId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "contextId": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "sessionKey": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionName": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "contextId",
+    "kind",
+    "agentId",
+    "sessionKey",
+    "sessionName",
+    "capabilities"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -16128,8 +16256,46 @@ export const ContextCheckInputSchema = {
 
 /** JSON Schema for the return shape of `context.check`. */
 export const ContextCheckReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "allowed": {
+      "type": "boolean"
+    },
+    "capabilitiesCount": {
+      "type": "number"
+    },
+    "contextId": {
+      "type": "string"
+    },
+    "objectId": {
+      "type": "string"
+    },
+    "objectType": {
+      "type": "string"
+    },
+    "permission": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "contextId",
+    "agentId",
+    "permission",
+    "objectType",
+    "objectId",
+    "allowed",
+    "capabilitiesCount"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -16163,8 +16329,707 @@ export const ContextCleanupAgentRuntimeInputSchema = {
 
 /** JSON Schema for the return shape of `context.cleanup-agent-runtime`. */
 export const ContextCleanupAgentRuntimeReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "candidates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "capabilitiesCount": {
+                "type": "number"
+              },
+              "contextId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "expiresAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "issuanceMode": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "issuedFor": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string"
+              },
+              "lastUsedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "parentContextId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "revokedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sessionKey": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sessionName": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "expired",
+                  "revoked"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "contextId",
+              "kind",
+              "status",
+              "agentId",
+              "sessionKey",
+              "sessionName",
+              "createdAt",
+              "expiresAt",
+              "lastUsedAt",
+              "revokedAt",
+              "capabilitiesCount",
+              "parentContextId",
+              "issuedFor",
+              "issuanceMode"
+            ],
+            "type": "object"
+          },
+          "lastSeenAt": {
+            "type": "number"
+          },
+          "sessionExists": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "context",
+          "lastSeenAt",
+          "sessionExists"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "candidatesCount": {
+      "type": "number"
+    },
+    "cutoffAt": {
+      "type": "number"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "olderThan": {
+      "type": "string"
+    },
+    "olderThanMs": {
+      "type": "number"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "revoked": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "cascaded": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "agentId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "capabilitiesCount": {
+                  "type": "number"
+                },
+                "contextId": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "number"
+                },
+                "expiresAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "issuanceMode": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "issuedFor": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "lastUsedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "parentContextId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "revokedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "sessionKey": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "sessionName": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "active",
+                    "expired",
+                    "revoked"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "contextId",
+                "kind",
+                "status",
+                "agentId",
+                "sessionKey",
+                "sessionName",
+                "createdAt",
+                "expiresAt",
+                "lastUsedAt",
+                "revokedAt",
+                "capabilitiesCount",
+                "parentContextId",
+                "issuedFor",
+                "issuanceMode"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "context": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "capabilities": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "objectId": {
+                      "type": "string"
+                    },
+                    "objectType": {
+                      "type": "string"
+                    },
+                    "permission": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "permission",
+                    "objectType",
+                    "objectId"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "capabilitiesCount": {
+                "type": "number"
+              },
+              "contextId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "expiresAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "issuanceMode": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "issuedFor": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string"
+              },
+              "lastUsedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "lineage": {
+                "additionalProperties": false,
+                "properties": {
+                  "approvalSource": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "issuanceMode": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "issuedAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "issuedFor": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "parentContextId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "parentContextKind": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "parentContextId",
+                  "parentContextKind",
+                  "issuedFor",
+                  "issuedAt",
+                  "issuanceMode",
+                  "approvalSource"
+                ],
+                "type": "object"
+              },
+              "metadata": {
+                "anyOf": [
+                  {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "parentContextId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "revokedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sessionKey": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sessionName": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "source": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "accountId": {
+                        "type": "string"
+                      },
+                      "channel": {
+                        "type": "string"
+                      },
+                      "chatId": {
+                        "type": "string"
+                      },
+                      "threadId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "channel",
+                      "accountId",
+                      "chatId"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "expired",
+                  "revoked"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "contextId",
+              "kind",
+              "status",
+              "agentId",
+              "sessionKey",
+              "sessionName",
+              "createdAt",
+              "expiresAt",
+              "lastUsedAt",
+              "revokedAt",
+              "capabilitiesCount",
+              "parentContextId",
+              "issuedFor",
+              "issuanceMode",
+              "source",
+              "metadata",
+              "capabilities",
+              "lineage"
+            ],
+            "type": "object"
+          },
+          "revokedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "context",
+          "cascaded",
+          "revokedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "revokedCount": {
+      "type": "number"
+    },
+    "scanned": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "const": "agent-runtime",
+          "type": "string"
+        },
+        "sessionKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "agentId",
+        "sessionKey"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "dryRun",
+    "reason",
+    "olderThan",
+    "olderThanMs",
+    "cutoffAt",
+    "scanned",
+    "candidatesCount",
+    "revokedCount",
+    "candidates",
+    "revoked"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -16177,8 +17042,33 @@ export const ContextCodexBashHookInputSchema = {
 
 /** JSON Schema for the return shape of `context.codex-bash-hook`. */
 export const ContextCodexBashHookReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "hookSpecificOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "hookEventName": {
+          "const": "PreToolUse",
+          "type": "string"
+        },
+        "permissionDecision": {
+          "enum": [
+            "deny"
+          ],
+          "type": "string"
+        },
+        "permissionDecisionReason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "hookEventName",
+        "permissionDecision",
+        "permissionDecisionReason"
+      ],
+      "type": "object"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -16207,8 +17097,30 @@ export const ContextCredentialsAddInputSchema = {
 
 /** JSON Schema for the return shape of `context.credentials.add`. */
 export const ContextCredentialsAddReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "added": {
+      "type": "string"
+    },
+    "default": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "path": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "default",
+    "added"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -16230,8 +17142,229 @@ export const ContextCredentialsListInputSchema = {
 
 /** JSON Schema for the return shape of `context.credentials.list`. */
 export const ContextCredentialsListReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "default": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "entries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contextId": {
+            "type": "string"
+          },
+          "contextKey": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "issuedAt": {
+            "type": "number"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "contextKey",
+          "contextId",
+          "agentId",
+          "label",
+          "kind",
+          "issuedAt",
+          "expiresAt",
+          "isDefault"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "exists": {
+      "type": "boolean"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contextId": {
+            "type": "string"
+          },
+          "contextKey": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "issuedAt": {
+            "type": "number"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "contextKey",
+          "contextId",
+          "agentId",
+          "label",
+          "kind",
+          "issuedAt",
+          "expiresAt",
+          "isDefault"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "path": {
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "path",
+    "exists",
+    "default",
+    "total",
+    "pagination",
+    "items",
+    "entries"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -16252,8 +17385,30 @@ export const ContextCredentialsRemoveInputSchema = {
 
 /** JSON Schema for the return shape of `context.credentials.remove`. */
 export const ContextCredentialsRemoveReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "default": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "path": {
+      "type": "string"
+    },
+    "removed": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "default",
+    "removed"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -16274,8 +17429,26 @@ export const ContextCredentialsSetDefaultInputSchema = {
 
 /** JSON Schema for the return shape of `context.credentials.set-default`. */
 export const ContextCredentialsSetDefaultReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "default": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "path": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "default"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -16296,8 +17469,322 @@ export const ContextInfoInputSchema = {
 
 /** JSON Schema for the return shape of `context.info`. */
 export const ContextInfoReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "capabilities": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "objectId": {
+            "type": "string"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "permission",
+          "objectType",
+          "objectId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "capabilitiesCount": {
+      "type": "number"
+    },
+    "contextId": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "number"
+    },
+    "expiresAt": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "issuanceMode": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "issuedFor": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "kind": {
+      "type": "string"
+    },
+    "lastUsedAt": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lineage": {
+      "additionalProperties": false,
+      "properties": {
+        "approvalSource": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/__schema0"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issuanceMode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issuedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issuedFor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parentContextId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parentContextKind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "parentContextId",
+        "parentContextKind",
+        "issuedFor",
+        "issuedAt",
+        "issuanceMode",
+        "approvalSource"
+      ],
+      "type": "object"
+    },
+    "metadata": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "parentContextId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "revokedAt": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionKey": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionName": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "channel": {
+              "type": "string"
+            },
+            "chatId": {
+              "type": "string"
+            },
+            "threadId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "channel",
+            "accountId",
+            "chatId"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "status": {
+      "enum": [
+        "active",
+        "expired",
+        "revoked"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "contextId",
+    "kind",
+    "status",
+    "agentId",
+    "sessionKey",
+    "sessionName",
+    "createdAt",
+    "expiresAt",
+    "lastUsedAt",
+    "revokedAt",
+    "capabilitiesCount",
+    "parentContextId",
+    "issuedFor",
+    "issuanceMode",
+    "source",
+    "metadata",
+    "capabilities",
+    "lineage"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -16330,8 +17817,205 @@ export const ContextIssueInputSchema = {
 
 /** JSON Schema for the return shape of `context.issue`. */
 export const ContextIssueReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "capabilities": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "objectId": {
+            "type": "string"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "permission",
+          "objectType",
+          "objectId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "capabilitiesCount": {
+      "type": "number"
+    },
+    "cliName": {
+      "type": "string"
+    },
+    "contextId": {
+      "type": "string"
+    },
+    "contextKey": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "number"
+    },
+    "env": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "expiresAt": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "kind": {
+      "type": "string"
+    },
+    "metadata": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "parentContextId": {
+      "type": "string"
+    },
+    "sessionKey": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionName": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "channel": {
+              "type": "string"
+            },
+            "chatId": {
+              "type": "string"
+            },
+            "threadId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "channel",
+            "accountId",
+            "chatId"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "contextId",
+    "contextKey",
+    "kind",
+    "cliName",
+    "agentId",
+    "sessionKey",
+    "sessionName",
+    "parentContextId",
+    "createdAt",
+    "expiresAt",
+    "capabilities",
+    "capabilitiesCount",
+    "source",
+    "metadata",
+    "env"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -16352,8 +18036,603 @@ export const ContextLineageInputSchema = {
 
 /** JSON Schema for the return shape of `context.lineage`. */
 export const ContextLineageReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "ancestors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "capabilitiesCount": {
+            "type": "number"
+          },
+          "contextId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuanceMode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuedFor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parentContextId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "active",
+              "expired",
+              "revoked"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "contextId",
+          "kind",
+          "status",
+          "agentId",
+          "sessionKey",
+          "sessionName",
+          "createdAt",
+          "expiresAt",
+          "lastUsedAt",
+          "revokedAt",
+          "capabilitiesCount",
+          "parentContextId",
+          "issuedFor",
+          "issuanceMode"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "context": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capabilities": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "objectId": {
+                "type": "string"
+              },
+              "objectType": {
+                "type": "string"
+              },
+              "permission": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "permission",
+              "objectType",
+              "objectId"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "capabilitiesCount": {
+          "type": "number"
+        },
+        "contextId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issuanceMode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issuedFor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastUsedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lineage": {
+          "additionalProperties": false,
+          "properties": {
+            "approvalSource": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/__schema0"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "issuanceMode": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "issuedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "issuedFor": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "parentContextId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "parentContextKind": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "parentContextId",
+            "parentContextKind",
+            "issuedFor",
+            "issuedAt",
+            "issuanceMode",
+            "approvalSource"
+          ],
+          "type": "object"
+        },
+        "metadata": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parentContextId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revokedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "channel": {
+                  "type": "string"
+                },
+                "chatId": {
+                  "type": "string"
+                },
+                "threadId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "channel",
+                "accountId",
+                "chatId"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "active",
+            "expired",
+            "revoked"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "contextId",
+        "kind",
+        "status",
+        "agentId",
+        "sessionKey",
+        "sessionName",
+        "createdAt",
+        "expiresAt",
+        "lastUsedAt",
+        "revokedAt",
+        "capabilitiesCount",
+        "parentContextId",
+        "issuedFor",
+        "issuanceMode",
+        "source",
+        "metadata",
+        "capabilities",
+        "lineage"
+      ],
+      "type": "object"
+    },
+    "descendants": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "capabilitiesCount": {
+            "type": "number"
+          },
+          "contextId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuanceMode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuedFor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parentContextId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "active",
+              "expired",
+              "revoked"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "contextId",
+          "kind",
+          "status",
+          "agentId",
+          "sessionKey",
+          "sessionName",
+          "createdAt",
+          "expiresAt",
+          "lastUsedAt",
+          "revokedAt",
+          "capabilitiesCount",
+          "parentContextId",
+          "issuedFor",
+          "issuanceMode"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "context",
+    "ancestors",
+    "descendants"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -16391,8 +18670,342 @@ export const ContextListInputSchema = {
 
 /** JSON Schema for the return shape of `context.list`. */
 export const ContextListReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "contexts": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "capabilitiesCount": {
+            "type": "number"
+          },
+          "contextId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuanceMode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuedFor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parentContextId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "active",
+              "expired",
+              "revoked"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "contextId",
+          "kind",
+          "status",
+          "agentId",
+          "sessionKey",
+          "sessionName",
+          "createdAt",
+          "expiresAt",
+          "lastUsedAt",
+          "revokedAt",
+          "capabilitiesCount",
+          "parentContextId",
+          "issuedFor",
+          "issuanceMode"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "count": {
+      "type": "number"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "capabilitiesCount": {
+            "type": "number"
+          },
+          "contextId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuanceMode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuedFor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parentContextId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "active",
+              "expired",
+              "revoked"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "contextId",
+          "kind",
+          "status",
+          "agentId",
+          "sessionKey",
+          "sessionName",
+          "createdAt",
+          "expiresAt",
+          "lastUsedAt",
+          "revokedAt",
+          "capabilitiesCount",
+          "parentContextId",
+          "issuedFor",
+          "issuanceMode"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "count",
+    "total",
+    "pagination",
+    "items",
+    "contexts"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -16418,8 +19031,35 @@ export const ContextPruneInputSchema = {
 
 /** JSON Schema for the return shape of `context.prune`. */
 export const ContextPruneReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "matchedCount": {
+      "type": "number"
+    },
+    "olderThan": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "pruned",
+        "planned"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "dryRun",
+    "olderThan",
+    "matchedCount",
+    "changedCount"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -16449,8 +19089,471 @@ export const ContextRevokeInputSchema = {
 
 /** JSON Schema for the return shape of `context.revoke`. */
 export const ContextRevokeReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "cascaded": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "capabilitiesCount": {
+            "type": "number"
+          },
+          "contextId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuanceMode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuedFor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parentContextId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "active",
+              "expired",
+              "revoked"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "contextId",
+          "kind",
+          "status",
+          "agentId",
+          "sessionKey",
+          "sessionName",
+          "createdAt",
+          "expiresAt",
+          "lastUsedAt",
+          "revokedAt",
+          "capabilitiesCount",
+          "parentContextId",
+          "issuedFor",
+          "issuanceMode"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "context": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capabilities": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "objectId": {
+                "type": "string"
+              },
+              "objectType": {
+                "type": "string"
+              },
+              "permission": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "permission",
+              "objectType",
+              "objectId"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "capabilitiesCount": {
+          "type": "number"
+        },
+        "contextId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issuanceMode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issuedFor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastUsedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lineage": {
+          "additionalProperties": false,
+          "properties": {
+            "approvalSource": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/__schema0"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "issuanceMode": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "issuedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "issuedFor": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "parentContextId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "parentContextKind": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "parentContextId",
+            "parentContextKind",
+            "issuedFor",
+            "issuedAt",
+            "issuanceMode",
+            "approvalSource"
+          ],
+          "type": "object"
+        },
+        "metadata": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parentContextId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revokedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "channel": {
+                  "type": "string"
+                },
+                "chatId": {
+                  "type": "string"
+                },
+                "threadId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "channel",
+                "accountId",
+                "chatId"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "active",
+            "expired",
+            "revoked"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "contextId",
+        "kind",
+        "status",
+        "agentId",
+        "sessionKey",
+        "sessionName",
+        "createdAt",
+        "expiresAt",
+        "lastUsedAt",
+        "revokedAt",
+        "capabilitiesCount",
+        "parentContextId",
+        "issuedFor",
+        "issuanceMode",
+        "source",
+        "metadata",
+        "capabilities",
+        "lineage"
+      ],
+      "type": "object"
+    },
+    "revokedAt": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "context",
+    "cascaded",
+    "revokedAt"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -16463,8 +19566,195 @@ export const ContextVisibilityInputSchema = {
 
 /** JSON Schema for the return shape of `context.visibility`. */
 export const ContextVisibilityReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "compact": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": "number"
+        },
+        "lastCompactedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "willCompactAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "threshold",
+        "willCompactAt",
+        "lastCompactedAt",
+        "count"
+      ],
+      "type": "object"
+    },
+    "lastUpdatedAt": {
+      "type": "number"
+    },
+    "loadedSkills": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "provider": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionKey": {
+      "type": "string"
+    },
+    "skills": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "detail": {
+                  "type": "string"
+                },
+                "itemId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "type": "number"
+          },
+          "loadedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "state",
+          "confidence",
+          "lastSeenAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "tokens": {
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "remaining": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "used": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "used",
+        "limit",
+        "remaining"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "sessionKey",
+    "agentId",
+    "provider",
+    "tokens",
+    "compact",
+    "skills",
+    "loadedSkills",
+    "lastUpdatedAt"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -16477,8 +19767,322 @@ export const ContextWhoamiInputSchema = {
 
 /** JSON Schema for the return shape of `context.whoami`. */
 export const ContextWhoamiReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "capabilities": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "objectId": {
+            "type": "string"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "permission",
+          "objectType",
+          "objectId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "capabilitiesCount": {
+      "type": "number"
+    },
+    "contextId": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "number"
+    },
+    "expiresAt": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "issuanceMode": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "issuedFor": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "kind": {
+      "type": "string"
+    },
+    "lastUsedAt": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lineage": {
+      "additionalProperties": false,
+      "properties": {
+        "approvalSource": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/__schema0"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issuanceMode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issuedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issuedFor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parentContextId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parentContextKind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "parentContextId",
+        "parentContextKind",
+        "issuedFor",
+        "issuedAt",
+        "issuanceMode",
+        "approvalSource"
+      ],
+      "type": "object"
+    },
+    "metadata": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "parentContextId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "revokedAt": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionKey": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionName": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "channel": {
+              "type": "string"
+            },
+            "chatId": {
+              "type": "string"
+            },
+            "threadId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "channel",
+            "accountId",
+            "chatId"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "status": {
+      "enum": [
+        "active",
+        "expired",
+        "revoked"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "contextId",
+    "kind",
+    "status",
+    "agentId",
+    "sessionKey",
+    "sessionName",
+    "createdAt",
+    "expiresAt",
+    "lastUsedAt",
+    "revokedAt",
+    "capabilitiesCount",
+    "parentContextId",
+    "issuedFor",
+    "issuanceMode",
+    "source",
+    "metadata",
+    "capabilities",
+    "lineage"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 

@@ -1006,4 +1006,75 @@ describe("ContextCommands", () => {
       ]);
     });
   });
+
+  describe("return schema conformance", () => {
+    it("codex-bash-hook allow payload conforms to contextCodexBashHookReturnSchema", async () => {
+      const { contextCodexBashHookReturnSchema } = await import("./operational-return-schemas.js");
+      const result = callCodexBashHook({ tool_input: { command: "ravi context whoami" } });
+      const parsed = contextCodexBashHookReturnSchema.safeParse(result);
+      expect(parsed.success).toBe(true);
+    });
+
+    it("codex-bash-hook deny payload conforms to contextCodexBashHookReturnSchema", async () => {
+      const { contextCodexBashHookReturnSchema } = await import("./operational-return-schemas.js");
+      const result = callCodexBashHook({ tool_input: { command: "node -v" } });
+      const parsed = contextCodexBashHookReturnSchema.safeParse(result);
+      expect(parsed.success).toBe(true);
+    });
+
+    it("list payload conforms to contextListReturnSchema", async () => {
+      const { contextListReturnSchema } = await import("./operational-return-schemas.js");
+      listedContexts = [resolvedContext!];
+      const command = new ContextCommands();
+      const lines: string[] = [];
+      const originalLog = console.log;
+      console.log = (value?: unknown) => {
+        lines.push(String(value));
+      };
+      try {
+        command.list(undefined, undefined, undefined, false, true);
+      } finally {
+        console.log = originalLog;
+      }
+      const payload = JSON.parse(lines[0] ?? "{}");
+      const parsed = contextListReturnSchema.safeParse(payload);
+      expect(parsed.success).toBe(true);
+    });
+
+    it("info payload conforms to contextInfoReturnSchema", async () => {
+      const { contextInfoReturnSchema } = await import("./operational-return-schemas.js");
+      const command = new ContextCommands();
+      const lines: string[] = [];
+      const originalLog = console.log;
+      console.log = (value?: unknown) => {
+        lines.push(String(value));
+      };
+      try {
+        command.info("ctx_123", true);
+      } finally {
+        console.log = originalLog;
+      }
+      const payload = JSON.parse(lines[0] ?? "{}");
+      const parsed = contextInfoReturnSchema.safeParse(payload);
+      expect(parsed.success).toBe(true);
+    });
+
+    it("issue payload conforms to contextIssueReturnSchema", async () => {
+      const { contextIssueReturnSchema } = await import("./operational-return-schemas.js");
+      const command = new ContextCommands();
+      const lines: string[] = [];
+      const originalLog = console.log;
+      console.log = (value?: unknown) => {
+        lines.push(String(value));
+      };
+      try {
+        command.issue("sync-cli", "execute:group:daemon", "2h", false, true);
+      } finally {
+        console.log = originalLog;
+      }
+      const payload = JSON.parse(lines[0] ?? "{}");
+      const parsed = contextIssueReturnSchema.safeParse(payload);
+      expect(parsed.success).toBe(true);
+    });
+  });
 });
