@@ -86,7 +86,8 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("## Background Followup Automation");
     expect(prompt).toContain('ravi cron add "<name>" --at "<ISO time>"');
     expect(prompt).toContain("Do this in the background without announcing it in your visible response.");
-    expect(prompt).toContain("Inactivity-based cadences belong to `ravi sessions followups`, not cron.");
+    expect(prompt).toContain("Inactivity / silence-based follow-up");
+    expect(prompt).toContain("`ravi sessions followups`");
     expect(prompt).toContain("## WhatsApp Thread Workspaces");
     expect(prompt).toContain("sugira proativamente criar um agent e um grupo dedicados");
     expect(prompt).toContain('ravi whatsapp group create "<nome>" --agent <agent>');
@@ -159,6 +160,95 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("current session (main-dm-615153)");
     expect(prompt).toContain("ravi sessions read --json");
     expect(prompt).toContain("Never recover missing context from another DM/group/session");
+  });
+
+  describe("proactive scheduling prompt", () => {
+    function activePrompt(): string {
+      return buildSystemPrompt("main", {
+        channelId: "whatsapp-baileys",
+        channelName: "WhatsApp",
+        isGroup: false,
+      });
+    }
+
+    it("contains the decision checklist for cron creation", () => {
+      const prompt = activePrompt();
+      expect(prompt).toContain("Decision checklist");
+      expect(prompt).toContain("create a background cron only when ALL of these are true");
+      expect(prompt).toContain("concrete next step");
+      expect(prompt).toContain("time-based or recurring");
+      expect(prompt).toContain("concrete schedule");
+      expect(prompt).toContain("sufficient permission and context");
+      expect(prompt).toContain("Expected noise is low");
+      expect(prompt).toContain("real operational risk if forgotten");
+    });
+
+    it("includes one-shot cron creation syntax with --delete-after", () => {
+      const prompt = activePrompt();
+      expect(prompt).toContain('ravi cron add "<name>" --at "<ISO time>" --message "<prompt>" --delete-after');
+    });
+
+    it("includes interval and calendar cron syntax for concrete recurring schedules", () => {
+      const prompt = activePrompt();
+      expect(prompt).toContain('ravi cron add "<name>" --every <duration> --message "<prompt>"');
+      expect(prompt).toContain('ravi cron add "<name>" --cron "<expr>" --message "<prompt>" --tz "<timezone>"');
+    });
+
+    it("rejects vague reminders explicitly", () => {
+      const prompt = activePrompt();
+      expect(prompt).toContain("vague");
+      expect(prompt).toContain('"check on this later"');
+      expect(prompt).toContain('"follow up sometime"');
+    });
+
+    it("rejects duplicate and noisy cron jobs", () => {
+      const prompt = activePrompt();
+      expect(prompt).toContain("duplicate cron already covers the same check");
+      expect(prompt).toContain("fire frequently without clear value");
+    });
+
+    it("routes inactivity follow-up to ravi sessions followups, not cron", () => {
+      const prompt = activePrompt();
+      expect(prompt).toContain("Inactivity / silence-based follow-up");
+      expect(prompt).toContain("`ravi sessions followups`");
+      expect(prompt).toContain("not cron");
+    });
+
+    it("routes deterministic shell work to cron --shell with error-only notification", () => {
+      const prompt = activePrompt();
+      expect(prompt).toContain("`ravi cron add --shell`");
+      expect(prompt).toContain("error-only notification");
+    });
+
+    it("routes recurring policy behavior to routine/spec, not long cron prompt", () => {
+      const prompt = activePrompt();
+      expect(prompt).toContain("routine/spec, cron references it");
+      expect(prompt).toContain("routine/spec, not a long cron prompt");
+    });
+
+    it("instructs agents to inspect created cron via ravi cron show <id>", () => {
+      const prompt = activePrompt();
+      expect(prompt).toContain("`ravi cron show <id>`");
+      expect(prompt).toContain("verify agent, account, session/reply-session, schedule, and delete-after");
+    });
+
+    it("preserves sentinel exclusion from background followup automation", () => {
+      const prompt = buildSystemPrompt(
+        "observer",
+        {
+          channelId: "whatsapp-baileys",
+          channelName: "WhatsApp",
+          isGroup: false,
+        },
+        undefined,
+        "observer",
+        { agentMode: "sentinel" },
+      );
+
+      expect(prompt).not.toContain("## Background Followup Automation");
+      expect(prompt).not.toContain("Decision checklist");
+      expect(prompt).not.toContain("ravi cron add");
+    });
   });
 
   it("does not render mentioned contact metadata into the system prompt", () => {

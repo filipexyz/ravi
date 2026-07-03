@@ -267,24 +267,44 @@ function sessionBoundaryText(sessionName?: string): string {
 }
 
 function backgroundFollowupAutomationText(): string {
-  return `When finishing work, silently check whether there is an important next step that benefits from scheduled follow-up.
+  return `When finishing work, silently evaluate whether there is a concrete next step that benefits from scheduled follow-up.
 
-Create a background cron only when all of these are true:
-- the next step is time-based or recurring;
-- it can be expressed as a concrete check, reminder, report, or validation with a due time or cadence;
-- forgetting it would create operational risk, user-visible drift, or lost follow-through;
-- you have permission and enough context to schedule it safely.
+**Decision checklist — create a background cron only when ALL of these are true:**
 
-Use \`ravi cron add\` for fixed wall-clock schedules:
+1. There is a concrete next step (a specific check, reminder, report, or validation — not a vague intention).
+2. The next step is time-based or recurring (has a due time, cadence, or calendar anchor — not inactivity-based).
+3. You can express a concrete schedule (ISO datetime, interval, or cron expression — "soon" or "later" is not a schedule).
+4. You have sufficient permission and context to schedule and act on it safely.
+5. Expected noise is low (the job will not fire repeatedly without producing value).
+6. There is real operational risk if forgotten (missed deadline, user-visible drift, lost follow-through, or data staleness).
+
+If any item is false, do not create the cron. Route to the correct primitive instead (see below).
+
+**Commands:**
 - one-shot: \`ravi cron add "<name>" --at "<ISO time>" --message "<prompt>" --delete-after\`
 - interval: \`ravi cron add "<name>" --every <duration> --message "<prompt>"\`
-- calendar schedule: \`ravi cron add "<name>" --cron "<expr>" --message "<prompt>" --tz "<timezone>"\`
+- calendar: \`ravi cron add "<name>" --cron "<expr>" --message "<prompt>" --tz "<timezone>"\`
 
-After creating a cron, run \`ravi cron show <id>\` and verify agent, account, session/reply-session, schedule and delete-after before considering it done.
+**After creating a cron**, run \`ravi cron show <id>\` and verify agent, account, session/reply-session, schedule, and delete-after before considering it done.
+
+**Routing — use the right primitive:**
+- Fixed wall-clock or calendar schedule → \`ravi cron add\`
+- Inactivity / silence-based follow-up → \`ravi sessions followups\` (not cron)
+- Deterministic shell work, no agent judgment → \`ravi cron add --shell\` with error-only notification
+- Recurring behavior with policy/rules → routine/spec, cron references it
+- Event-driven reaction → \`ravi triggers add\`
+
+**Do NOT create cron when:**
+- The reminder is vague ("check on this later", "follow up sometime").
+- A duplicate cron already covers the same check with an overlapping schedule.
+- The check would fire frequently without clear value (noisy).
+- The follow-up is based on inactivity or silence (use \`ravi sessions followups\`).
+- The behavior is speculative ("might need this later").
+- The recurring behavior has policy that should live in a routine/spec, not a long cron prompt.
 
 Do this in the background without announcing it in your visible response. Do not say that you created, skipped, or plan to create a cron unless the user asks, the action needs a decision, or permission/context is missing.
 
-Do not create cron jobs for every task. Do not create vague reminders, duplicate existing jobs, or noise-generating checks. Inactivity-based cadences belong to \`ravi sessions followups\`, not cron. Deterministic recurring shell work should use cron \`--shell\` and notify an agent only on error. Recurring behavior with policy should have or reference a routine/spec instead of living only as a long cron prompt.`;
+You MAY ask for confirmation before creating a cron when there is cost, external impact, noisy recurrence, unclear owner, or ambiguous scope.`;
 }
 
 /**
