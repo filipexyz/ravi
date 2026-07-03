@@ -5,6 +5,7 @@ kind: domain
 domain: routines
 capabilities:
   - composition
+  - proactive-scheduling
   - scheduling
   - silence-policy
   - quality-watch
@@ -43,7 +44,7 @@ This domain exists because a cron prompt is too weak as the source of truth for 
 - Routine is the durable contract that may use cron, triggers, tasks, sessions, skills, and quality modes.
 - Cron MAY execute deterministic shell jobs directly when the work requires no agent judgment. Shell cron jobs MUST preserve the same lifecycle/status tracking as agent cron jobs and MUST NOT invoke an agent on successful runs.
 - Shell cron jobs MAY notify a session on failure, but the notification MUST be an explicit `on-error` policy.
-- Agents MAY create background cron jobs silently for concrete time-based next steps when the task has enough context, permission, and operational value. This is a follow-through aid, not a replacement for explicit routine design.
+- Agents MAY create background cron jobs silently for concrete time-based next steps when the task has enough context, permission, and operational value. This is a follow-through aid, not a replacement for explicit routine design. See `routines/proactive-scheduling` for the full decision checklist.
 - Background cron jobs that route replies through a chat/session MUST suppress interactive presence while they work; only an actual final response should appear in the target chat.
 - Inactivity-based follow-up belongs to the sessions followups domain, not cron.
 
