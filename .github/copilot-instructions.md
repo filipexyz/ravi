@@ -1,35 +1,35 @@
-# GitHub Copilot Instructions
+# Instruções do GitHub Copilot
 
-## Pull request review
+## Revisão de pull requests
 
-When reviewing a pull request, inspect the PR description before reviewing code.
+Ao revisar uma pull request, inspecione a descrição da PR antes de revisar o código.
 
-A reviewable PR description must clearly answer:
+Uma descrição revisável precisa responder com clareza:
 
-- What problem does this solve?
-- What behavior changes after merge?
-- What does not change?
-- Who or what is affected?
-- How was it validated?
-- What are the risks?
-- How can it be rolled back?
+- Qual problema esta PR resolve?
+- Qual comportamento muda depois do merge?
+- O que não muda?
+- Quem ou qual fluxo é afetado?
+- Como a mudança foi validada?
+- Quais são os riscos?
+- Como desfazer ou mitigar a mudança?
 
-Flag the PR when the description is vague, generic, or mostly implementation history.
-Ask for a rewrite before deep code review when the description does not make the
-merge decision obvious to a reviewer.
+Marque a PR quando a descrição estiver vaga, genérica ou focada demais em histórico
+de implementação. Peça uma reescrita antes de uma revisão profunda de código quando
+a descrição não deixar a decisão de merge óbvia para quem revisa.
 
-Prefer comments that identify the missing decision-critical detail. Do not ask for
-business-sensitive details when a safe technical summary is enough.
+Prefira comentários que identifiquem o detalhe decisivo que está faltando. Não peça
+detalhes sensíveis de negócio quando um resumo técnico seguro for suficiente.
 
-Watch for these PR-description issues:
+Procure estes problemas na descrição da PR:
 
-- missing problem statement;
-- missing concrete behavior change;
-- missing validation commands or evidence;
-- missing risk or rollback section;
-- irrelevant logs, chat history, or implementation chronology;
-- claims such as "tested" without naming what was tested;
-- sensitive business/customer data that should be summarized safely instead.
+- ausência de problema claro;
+- ausência de mudança concreta de comportamento;
+- ausência de comandos ou evidências de validação;
+- ausência de seção de riscos ou rollback;
+- logs, histórico de chat ou cronologia de implementação irrelevantes;
+- afirmações como "testado" sem dizer o que foi testado;
+- dados sensíveis de negócio ou cliente que deveriam ser resumidos com segurança.
 
-For code review, keep feedback actionable and scoped to behavior, safety,
-compatibility, tests, and maintainability.
+Na revisão de código, mantenha o feedback acionável e focado em comportamento,
+segurança, compatibilidade, testes e manutenibilidade.

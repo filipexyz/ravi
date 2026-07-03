@@ -4,47 +4,47 @@
 
 ## Problema
 
-<!-- Liste o problema observavel que motivou a mudanca. Evite historico irrelevante. -->
+<!-- Liste o problema observável que motivou a mudança. Evite histórico irrelevante. -->
 
 - 
 
-## Solucao
+## Solução
 
-<!-- Descreva a decisao tecnica/produto principal. Foque no comportamento novo. -->
-
-- 
-
-## O que muda na pratica
-
-<!-- Diga quem/qual fluxo sera afetado apos o merge. -->
+<!-- Descreva a decisão técnica/produto principal. Foque no comportamento novo. -->
 
 - 
 
-## O que NAO muda
+## O que muda na prática
 
-<!-- Deixe claro o que permanece igual para reduzir ambiguidade de review. -->
+<!-- Diga quem/qual fluxo será afetado após o merge. -->
 
 - 
 
-## Validacao
+## O que NÃO muda
 
-<!-- Liste comandos, testes, checks, dry-runs ou validacoes reais executadas. -->
+<!-- Deixe claro o que permanece igual para reduzir ambiguidade na revisão. -->
+
+- 
+
+## Validação
+
+<!-- Liste comandos, testes, checks, execuções simuladas ou validações reais executadas. -->
 
 - 
 
 ## Riscos
 
-<!-- Liste riscos conhecidos, compatibilidade, migracao, privacidade ou edge cases. -->
+<!-- Liste riscos conhecidos, compatibilidade, migração, privacidade ou casos-limite. -->
 
 - 
 
 ## Rollback
 
-<!-- Explique como desfazer ou mitigar rapidamente se algo falhar em producao. -->
+<!-- Explique como desfazer ou mitigar rapidamente se algo falhar em produção. -->
 
 - 
 
-## Follow-ups
+## Pendências
 
 <!-- Opcional: itens fora do escopo desta PR. -->
 
