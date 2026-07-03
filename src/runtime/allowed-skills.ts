@@ -24,12 +24,10 @@ import type { ContextCapability } from "../router/router-db.js";
  * conversão para nome aceito por cada provider é feita em `expandSkillNames`.
  */
 export const BASELINE_SYSTEM_SKILL_SLUGS: readonly string[] = [
-  "ravi-system-agents-manager",
   "ravi-system-sessions",
   "ravi-system-tasks",
-  "ravi-system-permissions-manager",
-  "ravi-system-skill-creator",
   "ravi-system-specs",
+  "ravi-system-skill-creator",
 ];
 
 export interface ResolvedAgentSkills {
