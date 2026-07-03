@@ -1134,6 +1134,47 @@ export const skillsSyncReturnSchema = z
   })
   .passthrough();
 
+export const skillGrantRecordReturnSchema = z
+  .object({
+    agentId: z.string(),
+    skillName: z.string(),
+    note: z.string().optional(),
+    grantedAt: z.number(),
+  })
+  .passthrough();
+
+export const skillGrantMutationReturnSchema = z
+  .object({
+    success: z.boolean(),
+    agentId: z.string(),
+    skillName: z.string(),
+    grant: skillGrantRecordReturnSchema.optional(),
+  })
+  .passthrough();
+
+export const skillGrantWhoReturnSchema = z
+  .object({
+    skillName: z.string(),
+    total: z.number(),
+    grants: z.array(skillGrantRecordReturnSchema),
+  })
+  .passthrough();
+
+export const skillInspectReturnSchema = z
+  .object({
+    agentId: z.string(),
+    hasConfiguration: z.boolean(),
+    allowlist: z.array(z.string()),
+    provenance: z
+      .object({
+        baseline: z.array(z.string()),
+        fromCapabilities: z.array(z.string()),
+        fromGrants: z.array(z.string()),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+
 export const specsListReturnSchema = pagedItemsReturnSchema
   .extend({
     specs: z.array(looseObjectSchema),

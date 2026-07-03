@@ -9,6 +9,15 @@ import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { syncCodexSkills } from "../../plugins/codex-skills.js";
 import { discoverPlugins } from "../../plugins/index.js";
 import {
+  getAgent,
+  dbListAgentsForSkill,
+  dbListSkillGrants,
+  dbListSkillGrantsForAgent,
+  dbUpsertSkillGrant,
+  dbDeleteSkillGrant,
+  type DbSkillGrant,
+} from "../../router/index.js";
+import {
   discoverSkills,
   findSkillByName,
   findInstalledSkill,
@@ -20,7 +29,11 @@ import {
   type RaviSkill,
 } from "../../skills/manager.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
+import { resolveAgentSkills } from "../../runtime/allowed-skills.js";
 import {
+  skillGrantMutationReturnSchema,
+  skillGrantWhoReturnSchema,
+  skillInspectReturnSchema,
   skillShowReturnSchema,
   skillsInstallReturnSchema,
   skillsListReturnSchema,
@@ -243,6 +256,155 @@ export class SkillsCommands {
       printJson(payload);
     } else {
       console.log(`✓ Synced Codex skills: ${codexSynced.length}`);
+    }
+    return payload;
+  }
+
+  @Command({
+    name: "grant",
+    description: "Grant a custom skill to an agent (per-agent visibility). System skills follow permissions.",
+  })
+  @CommandAccess({ kind: "mutate", resource: "skills", action: "grant", risk: "medium" })
+  @Returns(skillGrantMutationReturnSchema)
+  grant(
+    @Arg("agent", { description: "Agent id (immutable)" }) agent: string,
+    @Arg("skill", { description: "Skill name (matches SKILL.md name)" }) skill: string,
+    @Option({ flags: "--note <text>", description: "Optional operator note" }) note?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const agentId = agent?.trim();
+    const skillName = skill?.trim();
+    if (!agentId) fail("Agent id is required.");
+    if (!skillName) fail("Skill name is required.");
+    if (!getAgent(agentId)) {
+      fail(`Agent not found: ${agentId}`);
+    }
+    const resolved =
+      findSkillByName(listCatalogSkills(), skillName) ??
+      findSkillByName(listInstalledSkills({ includeCodex: false }), skillName);
+    if (!resolved) {
+      fail(`Skill not found: ${skillName}. Install or publish it before granting.`);
+    }
+
+    const grant = dbUpsertSkillGrant({ agentId, skillName, ...(note?.trim() ? { note: note.trim() } : {}) });
+    const payload = {
+      success: true,
+      agentId,
+      skillName,
+      grant,
+    };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ Granted ${skillName} to ${agentId}`);
+      if (grant.note) console.log(`  note: ${grant.note}`);
+    }
+    return payload;
+  }
+
+  @Command({
+    name: "revoke",
+    description: "Revoke a skill grant from an agent",
+  })
+  @CommandAccess({ kind: "mutate", resource: "skills", action: "revoke", risk: "medium" })
+  @Returns(skillGrantMutationReturnSchema)
+  revoke(
+    @Arg("agent", { description: "Agent id (immutable)" }) agent: string,
+    @Arg("skill", { description: "Skill name" }) skill: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const agentId = agent?.trim();
+    const skillName = skill?.trim();
+    if (!agentId) fail("Agent id is required.");
+    if (!skillName) fail("Skill name is required.");
+    const removed = dbDeleteSkillGrant(agentId, skillName);
+    const payload = {
+      success: removed,
+      agentId,
+      skillName,
+    };
+    if (asJson) {
+      printJson(payload);
+    } else if (removed) {
+      console.log(`✓ Revoked ${skillName} from ${agentId}`);
+    } else {
+      console.log(`No grant found for ${skillName} on ${agentId}.`);
+    }
+    return payload;
+  }
+
+  @Command({
+    name: "inspect",
+    description: "Show the resolved per-agent skill allowlist (baseline ∪ permission-derived ∪ grants)",
+  })
+  @CommandAccess({ kind: "read", resource: "skills", action: "inspect", risk: "low" })
+  @Returns(skillInspectReturnSchema)
+  inspect(
+    @Arg("agent", { description: "Agent id (immutable)" }) agent: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const agentId = agent?.trim();
+    if (!agentId) fail("Agent id is required.");
+    if (!getAgent(agentId)) fail(`Agent not found: ${agentId}`);
+    const resolved = resolveAgentSkills(agentId);
+    const payload = {
+      agentId,
+      hasConfiguration: resolved.hasConfiguration,
+      allowlist: resolved.allowlist,
+      provenance: resolved.provenance,
+    };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`# skills.inspect ${agentId}`);
+      console.log(`hasConfiguration=${resolved.hasConfiguration}`);
+      console.log(`allowlist (${resolved.allowlist.length}):`);
+      for (const skill of resolved.allowlist) console.log(`  - ${skill}`);
+      console.log(`from baseline (${resolved.provenance.baseline.length})`);
+      console.log(`from capabilities (${resolved.provenance.fromCapabilities.length})`);
+      console.log(`from grants (${resolved.provenance.fromGrants.length})`);
+    }
+    return payload;
+  }
+
+  @Command({
+    name: "who",
+    description: "List agents currently granted a skill (or list all grants for an agent with --agent)",
+  })
+  @CommandAccess({ kind: "read", resource: "skills", action: "who", risk: "low" })
+  @Returns(skillGrantWhoReturnSchema)
+  who(
+    @Arg("skill", { required: false, description: "Skill name to look up" }) skill?: string,
+    @Option({ flags: "--agent <id>", description: "List grants for a specific agent instead" }) agentFilter?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const agentId = agentFilter?.trim();
+    const skillName = skill?.trim();
+    let grants: DbSkillGrant[] = [];
+    let scopeLabel = "";
+    if (agentId) {
+      grants = dbListSkillGrantsForAgent(agentId);
+      scopeLabel = `agent ${agentId}`;
+    } else if (skillName) {
+      grants = dbListAgentsForSkill(skillName);
+      scopeLabel = `skill ${skillName}`;
+    } else {
+      grants = dbListSkillGrants();
+      scopeLabel = "all grants";
+    }
+    const payload = {
+      skillName: skillName ?? "",
+      total: grants.length,
+      grants,
+    };
+    if (asJson) {
+      printJson(payload);
+    } else if (grants.length === 0) {
+      console.log(`No grants for ${scopeLabel}.`);
+    } else {
+      for (const grant of grants) {
+        console.log(`- agent=${grant.agentId} skill=${grant.skillName}${grant.note ? ` note="${grant.note}"` : ""}`);
+      }
     }
     return payload;
   }

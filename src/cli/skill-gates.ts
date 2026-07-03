@@ -99,6 +99,24 @@ export function isDefaultSkillGateRuleId(id: string): boolean {
   return DEFAULT_RAVI_GROUP_SKILL_RULES.some((rule) => rule.id === id);
 }
 
+export function getGroupSkillMap(): ReadonlyMap<string, string> {
+  const map = new Map<string, string>();
+  for (const rule of DEFAULT_RAVI_GROUP_SKILL_RULES) {
+    map.set(rule.id, rule.skill);
+  }
+  return map;
+}
+
+export interface GroupSkillRuleView {
+  id: string;
+  pattern: RegExp;
+  skill: string;
+}
+
+export function listGroupSkillRules(): readonly GroupSkillRuleView[] {
+  return DEFAULT_RAVI_GROUP_SKILL_RULES.map((rule) => ({ id: rule.id, pattern: rule.pattern, skill: rule.skill }));
+}
+
 export function resolveCommandSkillGate(
   input: ResolveCommandSkillGateInput,
   options?: { rules?: readonly SkillGateRuleConfig[] },

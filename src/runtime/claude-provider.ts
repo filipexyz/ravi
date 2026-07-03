@@ -99,6 +99,7 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
         state: "advertised",
         confidence: "declared",
         evidenceKind: "plugin-bootstrap",
+        ...(input.allowedSkills && input.allowedSkills.length > 0 ? { allowedSkills: input.allowedSkills } : {}),
       });
       let activeQuery: Query | null = null;
       let currentModel = input.model;
@@ -274,6 +275,7 @@ function buildClaudeQueryOptions(
     settingSources: input.settingSources ?? ["project"],
     ...(input.hooks ? { hooks: input.hooks } : {}),
     ...(input.plugins && input.plugins.length > 0 ? { plugins: input.plugins } : {}),
+    ...(input.allowedSkills && input.allowedSkills.length > 0 ? { skills: input.allowedSkills } : {}),
     ...(input.remoteSpawn ? { spawnClaudeCodeProcess: input.remoteSpawn as Options["spawnClaudeCodeProcess"] } : {}),
   };
 }
