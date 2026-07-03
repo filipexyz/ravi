@@ -20,11 +20,22 @@ const REQUIRED_COMPANIONS = ["WHY.md", "RUNBOOK.md", "CHECKS.md"] as const;
  */
 export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/omni/": ["src/omni/consumer-context.test.ts", "src/omni/consumer-policy.test.ts"],
-  "src/router/": ["src/router/router.test.ts", "src/router/sessions.test.ts", "src/router/resolver.test.ts"],
+  "src/router/": [
+    "src/router/router.test.ts",
+    "src/router/sessions.test.ts",
+    "src/router/resolver.test.ts",
+    // Skill-grant store (dbUpsert/List/DeleteSkillGrant*) is exercised here.
+    "src/cli/commands/skills.test.ts",
+    "src/runtime/allowed-skills.test.ts",
+  ],
   "src/runtime/": [
     "src/runtime/index.test.ts",
     "src/runtime/model-catalog.test.ts",
     "src/runtime/context-registry.test.ts",
+    // Per-agent skill visibility: core resolution, gate, and local-skill preservation.
+    "src/runtime/allowed-skills.test.ts",
+    "src/runtime/skill-gate.test.ts",
+    "src/runtime/claude-local-skills.test.ts",
   ],
   "src/session-trace/": ["src/session-trace/session-trace.test.ts"],
   "src/triggers/": ["src/triggers/triggers.test.ts"],
