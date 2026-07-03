@@ -2377,7 +2377,12 @@ function getDb(): Database {
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_contexts_key ON contexts(context_key)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_agent ON contexts(agent_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_session ON contexts(session_key)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_agent_kind ON contexts(agent_id, kind, created_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_session_kind ON contexts(session_key, kind, created_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_created ON contexts(created_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_expires ON contexts(expires_at)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_expires_created ON contexts(expires_at, created_at)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_revoked_created ON contexts(revoked_at, created_at)");
   db.exec(`
     CREATE TABLE IF NOT EXISTS audit_log (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -7270,24 +7275,35 @@ export function dbGetContextByKeyReadOnly(contextKey: string): ContextRecord | n
 }
 
 export function dbListContexts(options: ListContextsOptions = {}): ContextRecord[] {
-  const s = getStatements();
   const now = Date.now();
-  const rows = s.listContexts.all() as ContextRow[];
+  const where: string[] = [];
+  const params: Array<number | string> = [];
 
-  return rows
-    .map((row) => rowToContext(row))
-    .filter((context) => {
-      if (options.agentId && context.agentId !== options.agentId) return false;
-      if (options.sessionKey && context.sessionKey !== options.sessionKey) return false;
-      if (options.kind && context.kind !== options.kind) return false;
+  if (options.agentId) {
+    where.push("agent_id = ?");
+    params.push(options.agentId);
+  }
+  if (options.sessionKey) {
+    where.push("session_key = ?");
+    params.push(options.sessionKey);
+  }
+  if (options.kind) {
+    where.push("kind = ?");
+    params.push(options.kind);
+  }
 
-      if (!options.includeInactive) {
-        if (context.revokedAt && context.revokedAt <= now) return false;
-        if (context.expiresAt && context.expiresAt <= now) return false;
-      }
+  if (!options.includeInactive) {
+    where.push("(revoked_at IS NULL OR revoked_at = 0 OR revoked_at > ?)");
+    params.push(now);
+    where.push("(expires_at IS NULL OR expires_at = 0 OR expires_at > ?)");
+    params.push(now);
+  }
 
-      return true;
-    });
+  const sql = `SELECT * FROM contexts${where.length > 0 ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY created_at DESC`;
+  const rows = getDb()
+    .prepare(sql)
+    .all(...params) as ContextRow[];
+  return rows.map((row) => rowToContext(row));
 }
 
 export function dbTouchContext(contextId: string, lastUsedAt = Date.now()): void {
@@ -7461,22 +7477,27 @@ export interface PruneContextsResult {
  * so pruning cannot drop live authority. Timestamps are epoch milliseconds.
  */
 export function dbPruneContexts(options: { apply?: boolean; olderThanMs?: number } = {}): PruneContextsResult {
+  const db = getDb();
   const now = Date.now();
   const cutoff = options.olderThanMs != null ? now - Math.max(0, options.olderThanMs) : now;
-  const prunable = dbListContexts({ includeInactive: true }).filter((context) => {
-    const inactive =
-      (context.revokedAt != null && context.revokedAt <= now) ||
-      (context.expiresAt != null && context.expiresAt <= now);
-    return inactive && context.createdAt <= cutoff;
-  });
+  const where = `
+    created_at <= ?
+    AND (
+      (revoked_at IS NOT NULL AND revoked_at != 0 AND revoked_at <= ?)
+      OR (expires_at IS NOT NULL AND expires_at != 0 AND expires_at <= ?)
+    )
+  `;
+  const params = [cutoff, now, now];
+  const matched =
+    (db.prepare(`SELECT COUNT(*) AS c FROM contexts WHERE ${where}`).get(...params) as { c?: number } | undefined)?.c ??
+    0;
 
   if (options.apply === true) {
-    for (const context of prunable) {
-      dbDeleteContext(context.contextId);
-    }
+    db.prepare(`DELETE FROM contexts WHERE ${where}`).run(...params);
+    return { matched, pruned: getDbChanges() };
   }
 
-  return { matched: prunable.length, pruned: options.apply === true ? prunable.length : 0 };
+  return { matched, pruned: 0 };
 }
 
 // ============================================================================

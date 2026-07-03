@@ -1452,6 +1452,8 @@ function formatTraceWindow(trace: SessionTraceQueryResult): string {
   return `until ${formatTraceDateTime(until)}`;
 }
 
+const DEFAULT_TRACE_LIMIT = 200;
+
 function parseTraceLimit(value: string | undefined): number | undefined {
   if (value === undefined || value === null || value === "") return undefined;
   if (!/^\d+$/.test(value)) {
@@ -4133,7 +4135,7 @@ export class SessionCommands {
       messageId,
       correlationId,
       only,
-      limit: parseTraceLimit(limitStr),
+      limit: parseTraceLimit(limitStr) ?? DEFAULT_TRACE_LIMIT,
       includeStream,
       raw,
       showSystemPrompt,
