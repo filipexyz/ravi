@@ -1,35 +1,35 @@
-# Instruções do GitHub Copilot
+# GitHub Copilot Instructions
 
-## Revisão de pull requests
+## Pull request review
 
-Ao revisar uma pull request, inspecione a descrição da PR antes de revisar o código.
+When reviewing a pull request, inspect the PR description before reviewing code.
 
-Uma descrição revisável precisa responder com clareza:
+A reviewable PR description must clearly answer:
 
-- Qual problema esta PR resolve?
-- Qual comportamento muda depois do merge?
-- O que não muda?
-- Quem ou qual fluxo é afetado?
-- Como a mudança foi validada?
-- Quais são os riscos?
-- Como desfazer ou mitigar a mudança?
+- What problem does this PR solve?
+- What behavior changes after merge?
+- What does not change?
+- Who or what workflow is affected?
+- How was the change validated?
+- What are the risks?
+- How can the change be rolled back or mitigated?
 
-Marque a PR quando a descrição estiver vaga, genérica ou focada demais em histórico
-de implementação. Peça uma reescrita antes de uma revisão profunda de código quando
-a descrição não deixar a decisão de merge óbvia para quem revisa.
+Flag the PR when the description is vague, generic, or mostly implementation history.
+Ask for a rewrite before deep code review when the description does not make the
+merge decision obvious to a reviewer.
 
-Prefira comentários que identifiquem o detalhe decisivo que está faltando. Não peça
-detalhes sensíveis de negócio quando um resumo técnico seguro for suficiente.
+Prefer comments that identify the missing decision-critical detail. Do not ask for
+business-sensitive details when a safe technical summary is enough.
 
-Procure estes problemas na descrição da PR:
+Watch for these PR-description issues:
 
-- ausência de problema claro;
-- ausência de mudança concreta de comportamento;
-- ausência de comandos ou evidências de validação;
-- ausência de seção de riscos ou rollback;
-- logs, histórico de chat ou cronologia de implementação irrelevantes;
-- afirmações como "testado" sem dizer o que foi testado;
-- dados sensíveis de negócio ou cliente que deveriam ser resumidos com segurança.
+- missing problem statement;
+- missing concrete behavior change;
+- missing validation commands or evidence;
+- missing risk or rollback section;
+- irrelevant logs, chat history, or implementation chronology;
+- claims such as "tested" without naming what was tested;
+- sensitive business/customer data that should be summarized safely instead.
 
-Na revisão de código, mantenha o feedback acionável e focado em comportamento,
-segurança, compatibilidade, testes e manutenibilidade.
+For code review, keep feedback actionable and scoped to behavior, safety,
+compatibility, tests, and maintainability.

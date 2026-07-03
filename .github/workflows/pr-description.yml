@@ -1,4 +1,4 @@
-name: Descrição da PR
+name: PR Description
 
 on:
   pull_request:
@@ -10,12 +10,12 @@ permissions:
 
 jobs:
   required-sections:
-    name: Seções obrigatórias da descrição da PR
+    name: PR Description Required Sections
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
-      - name: Validar descrição da PR
+      - name: Validate PR body
         shell: bash
         run: |
           node <<'NODE'
@@ -25,13 +25,13 @@ jobs:
           const body = event.pull_request?.body ?? "";
 
           const required = [
-            "Objetivo",
-            "Problema",
-            "Solução",
-            "O que muda na prática",
-            "O que NÃO muda",
-            "Validação",
-            "Riscos",
+            "Objective",
+            "Problem",
+            "Solution",
+            "Practical impact",
+            "What does NOT change",
+            "Validation",
+            "Risks",
             "Rollback",
           ];
 
@@ -85,13 +85,13 @@ jobs:
 
           const errors = [];
           if (missing.length > 0) {
-            errors.push(`Seções obrigatórias ausentes: ${missing.join(", ")}`);
+            errors.push(`Missing required sections: ${missing.join(", ")}`);
           }
           if (empty.length > 0) {
-            errors.push(`Seções precisam de conteúdo concreto: ${empty.join(", ")}`);
+            errors.push(`Sections need concrete content: ${empty.join(", ")}`);
           }
           if (placeholder.length > 0) {
-            errors.push(`Remova marcadores do template em: ${placeholder.join(", ")}`);
+            errors.push(`Remove template markers from: ${placeholder.join(", ")}`);
           }
 
           if (errors.length > 0) {
@@ -99,5 +99,5 @@ jobs:
             process.exit(1);
           }
 
-          console.log("A descrição da PR tem as seções obrigatórias e conteúdo concreto.");
+          console.log("PR description has the required sections and concrete content.");
           NODE

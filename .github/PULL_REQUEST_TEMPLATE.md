@@ -1,51 +1,51 @@
-## Objetivo
+## Objective
 
-<!-- Explique em 2-4 frases o que esta PR muda e por que isso deve existir. -->
+<!-- Explain in 2-4 sentences what this PR changes and why it should exist. -->
 
-## Problema
+## Problem
 
-<!-- Liste o problema observável que motivou a mudança. Evite histórico irrelevante. -->
-
-- 
-
-## Solução
-
-<!-- Descreva a decisão técnica/produto principal. Foque no comportamento novo. -->
+<!-- List the observable problem that motivated the change. Avoid irrelevant history. -->
 
 - 
 
-## O que muda na prática
+## Solution
 
-<!-- Diga quem/qual fluxo será afetado após o merge. -->
-
-- 
-
-## O que NÃO muda
-
-<!-- Deixe claro o que permanece igual para reduzir ambiguidade na revisão. -->
+<!-- Describe the main technical/product decision. Focus on the new behavior. -->
 
 - 
 
-## Validação
+## Practical impact
 
-<!-- Liste comandos, testes, checks, execuções simuladas ou validações reais executadas. -->
+<!-- Say who or what workflow is affected after merge. -->
 
 - 
 
-## Riscos
+## What does NOT change
 
-<!-- Liste riscos conhecidos, compatibilidade, migração, privacidade ou casos-limite. -->
+<!-- Make unchanged behavior explicit to reduce review ambiguity. -->
+
+- 
+
+## Validation
+
+<!-- List commands, tests, checks, dry-runs, or real validations executed. -->
+
+- 
+
+## Risks
+
+<!-- List known risks, compatibility, migration, privacy, or edge cases. -->
 
 - 
 
 ## Rollback
 
-<!-- Explique como desfazer ou mitigar rapidamente se algo falhar em produção. -->
+<!-- Explain how to revert or mitigate quickly if something fails in production. -->
 
 - 
 
-## Pendências
+## Follow-ups
 
-<!-- Opcional: itens fora do escopo desta PR. -->
+<!-- Optional: items intentionally left outside this PR scope. -->
 
 - 
