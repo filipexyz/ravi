@@ -10277,11 +10277,9 @@ export type SkillsGrantReturn = {
     grantedAt: number;
     note?: string;
     skillName: string;
-    [k: string]: unknown;
   };
   skillName: string;
   success: boolean;
-  [k: string]: unknown;
 };
 
 /** Input shape for `skills.inspect`. */
@@ -10298,9 +10296,7 @@ export type SkillsInspectReturn = {
     baseline: string[];
     fromCapabilities: string[];
     fromGrants: string[];
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `skills.install`. */
@@ -10382,11 +10378,9 @@ export type SkillsRevokeReturn = {
     grantedAt: number;
     note?: string;
     skillName: string;
-    [k: string]: unknown;
   };
   skillName: string;
   success: boolean;
-  [k: string]: unknown;
 };
 
 /** Input shape for `skills.show`. */
@@ -10435,11 +10429,9 @@ export type SkillsWhoReturn = {
     grantedAt: number;
     note?: string;
     skillName: string;
-    [k: string]: unknown;
   }>;
   skillName?: string;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `specs.get`. */

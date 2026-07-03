@@ -48950,13 +48950,13 @@ export const SkillsGrantInputSchema = {
 
 /** JSON Schema for the return shape of `skills.grant`. */
 export const SkillsGrantReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "agentId": {
       "type": "string"
     },
     "grant": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "agentId": {
           "type": "string"
@@ -49010,7 +49010,7 @@ export const SkillsInspectInputSchema = {
 
 /** JSON Schema for the return shape of `skills.inspect`. */
 export const SkillsInspectReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "agentId": {
       "type": "string"
@@ -49025,7 +49025,7 @@ export const SkillsInspectReturnSchema = {
       "type": "boolean"
     },
     "provenance": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "baseline": {
           "items": {
@@ -49357,13 +49357,13 @@ export const SkillsRevokeInputSchema = {
 
 /** JSON Schema for the return shape of `skills.revoke`. */
 export const SkillsRevokeReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "agentId": {
       "type": "string"
     },
     "grant": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "agentId": {
           "type": "string"
@@ -49535,11 +49535,11 @@ export const SkillsWhoInputSchema = {
 
 /** JSON Schema for the return shape of `skills.who`. */
 export const SkillsWhoReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "grants": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "agentId": {
             "type": "string"

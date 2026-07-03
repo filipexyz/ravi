@@ -1141,7 +1141,7 @@ export const skillGrantRecordReturnSchema = z
     note: z.string().optional(),
     grantedAt: z.number(),
   })
-  .passthrough();
+  .strict();
 
 export const skillGrantMutationReturnSchema = z
   .object({
@@ -1150,7 +1150,7 @@ export const skillGrantMutationReturnSchema = z
     skillName: z.string(),
     grant: skillGrantRecordReturnSchema.optional(),
   })
-  .passthrough();
+  .strict();
 
 export const skillGrantWhoReturnSchema = z
   .object({
@@ -1159,7 +1159,7 @@ export const skillGrantWhoReturnSchema = z
     total: z.number(),
     grants: z.array(skillGrantRecordReturnSchema),
   })
-  .passthrough();
+  .strict();
 
 export const skillInspectReturnSchema = z
   .object({
@@ -1172,9 +1172,9 @@ export const skillInspectReturnSchema = z
         fromCapabilities: z.array(z.string()),
         fromGrants: z.array(z.string()),
       })
-      .passthrough(),
+      .strict(),
   })
-  .passthrough();
+  .strict();
 
 export const specsListReturnSchema = pagedItemsReturnSchema
   .extend({
