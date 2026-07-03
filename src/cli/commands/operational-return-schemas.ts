@@ -1154,7 +1154,8 @@ export const skillGrantMutationReturnSchema = z
 
 export const skillGrantWhoReturnSchema = z
   .object({
-    skillName: z.string(),
+    // Filled with the positional skill argument; omitted for --agent / no-filter scopes.
+    skillName: z.string().optional(),
     total: z.number(),
     grants: z.array(skillGrantRecordReturnSchema),
   })

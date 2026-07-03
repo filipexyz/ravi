@@ -136,4 +136,20 @@ describe("resolveAgentSkills — custom grants integration", () => {
     expect(second.allowlist).toContain("gmail-pack");
     expect(other.allowlist).not.toContain("gmail-pack");
   });
+
+  it("N3 — custom-plugin slug outside the 3 known prefixes surfaces as-is (no alias expansion)", () => {
+    // The known prefixes are ravi-system-, ravi-dev-, ravi-user-skills-. A grant
+    // that does not start with any of them (e.g. from a private org plugin)
+    // should be exposed unmodified, since Claude's SDK matches SKILL.md name
+    // directly. This locks the current behavior.
+    const exoticSlug = "my-custom-org-thing";
+    dbUpsertSkillGrant({ agentId: "agent-org", skillName: exoticSlug });
+    const resolved = resolveAgentSkills("agent-org", { capabilitiesOverride: [] });
+    expect(resolved.allowlist).toContain(exoticSlug);
+    // Must NOT have accidentally produced plugin:name / bare-name variants
+    // by "guessing" a prefix.
+    expect(resolved.allowlist).not.toContain(`my-custom:org-thing`);
+    expect(resolved.allowlist).not.toContain(`custom-org-thing`);
+    expect(resolved.provenance.fromGrants).toEqual([exoticSlug]);
+  });
 });

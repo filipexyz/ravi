@@ -6756,6 +6756,8 @@ export function dbDeleteAgent(id: string): boolean {
   }
 
   const s = getStatements();
+  // Clean up per-agent skill grants so a same-id recreation does not inherit orphans.
+  s.deleteSkillGrantsForAgent.run(id);
   s.deleteAgent.run(id);
   if (getDbChanges() > 0) {
     log.info("Deleted agent", { id });

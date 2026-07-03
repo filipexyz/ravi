@@ -286,17 +286,22 @@ export class SkillsCommands {
       fail(`Skill not found: ${skillName}. Install or publish it before granting.`);
     }
 
-    const grant = dbUpsertSkillGrant({ agentId, skillName, ...(note?.trim() ? { note: note.trim() } : {}) });
+    const canonicalSkillName = resolved.name;
+    const grant = dbUpsertSkillGrant({
+      agentId,
+      skillName: canonicalSkillName,
+      ...(note?.trim() ? { note: note.trim() } : {}),
+    });
     const payload = {
       success: true,
       agentId,
-      skillName,
+      skillName: canonicalSkillName,
       grant,
     };
     if (asJson) {
       printJson(payload);
     } else {
-      console.log(`✓ Granted ${skillName} to ${agentId}`);
+      console.log(`✓ Granted ${canonicalSkillName} to ${agentId}`);
       if (grant.note) console.log(`  note: ${grant.note}`);
     }
     return payload;
@@ -393,7 +398,7 @@ export class SkillsCommands {
       scopeLabel = "all grants";
     }
     const payload = {
-      skillName: skillName ?? "",
+      ...(skillName ? { skillName } : {}),
       total: grants.length,
       grants,
     };
