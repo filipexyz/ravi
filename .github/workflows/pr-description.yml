@@ -1,0 +1,103 @@
+name: PR Description
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  required-sections:
+    name: PR Description Required Sections
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Validate PR body
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+
+          const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
+          const body = event.pull_request?.body ?? "";
+
+          const required = [
+            "Objective",
+            "Problem",
+            "Solution",
+            "Practical impact",
+            "What does NOT change",
+            "Validation",
+            "Risks",
+            "Rollback",
+          ];
+
+          const normalize = (value) =>
+            value
+              .normalize("NFD")
+              .replace(/[\u0300-\u036f]/g, "")
+              .replace(/\s+/g, " ")
+              .trim()
+              .toLowerCase();
+
+          const sections = new Map();
+          const headingRegex = /^##\s+(.+?)\s*$/gm;
+          const matches = [...body.matchAll(headingRegex)];
+
+          for (let index = 0; index < matches.length; index += 1) {
+            const current = matches[index];
+            const next = matches[index + 1];
+            const title = normalize(current[1]);
+            const contentStart = current.index + current[0].length;
+            const contentEnd = next?.index ?? body.length;
+            sections.set(title, body.slice(contentStart, contentEnd).trim());
+          }
+
+          const missing = [];
+          const empty = [];
+          const placeholder = [];
+          const placeholderPatterns = [
+            /<!--[\s\S]*?-->/,
+            /\b(todo|tbd|preencher|preencha)\b/i,
+            /^\s*-\s*$/m,
+          ];
+
+          for (const section of required) {
+            const key = normalize(section);
+            const content = sections.get(key);
+            if (content === undefined) {
+              missing.push(section);
+              continue;
+            }
+
+            const withoutComments = content.replace(/<!--[\s\S]*?-->/g, "").trim();
+            if (withoutComments.length < 20) {
+              empty.push(section);
+            }
+
+            if (placeholderPatterns.some((pattern) => pattern.test(content))) {
+              placeholder.push(section);
+            }
+          }
+
+          const errors = [];
+          if (missing.length > 0) {
+            errors.push(`Missing required sections: ${missing.join(", ")}`);
+          }
+          if (empty.length > 0) {
+            errors.push(`Sections need concrete content: ${empty.join(", ")}`);
+          }
+          if (placeholder.length > 0) {
+            errors.push(`Remove template markers from: ${placeholder.join(", ")}`);
+          }
+
+          if (errors.length > 0) {
+            console.error(errors.join("\n"));
+            process.exit(1);
+          }
+
+          console.log("PR description has the required sections and concrete content.");
+          NODE
