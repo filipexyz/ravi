@@ -10262,6 +10262,47 @@ export type SkillGatesShowReturn = {
   };
 };
 
+/** Input shape for `skills.grant`. */
+export type SkillsGrantInput = {
+  agent: string;
+  note?: string;
+  skill: string;
+};
+
+/** Return shape for `skills.grant`. */
+export type SkillsGrantReturn = {
+  agentId: string;
+  grant?: {
+    agentId: string;
+    grantedAt: number;
+    note?: string;
+    skillName: string;
+    [k: string]: unknown;
+  };
+  skillName: string;
+  success: boolean;
+  [k: string]: unknown;
+};
+
+/** Input shape for `skills.inspect`. */
+export type SkillsInspectInput = {
+  agent: string;
+};
+
+/** Return shape for `skills.inspect`. */
+export type SkillsInspectReturn = {
+  agentId: string;
+  allowlist: string[];
+  hasConfiguration: boolean;
+  provenance: {
+    baseline: string[];
+    fromCapabilities: string[];
+    fromGrants: string[];
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
+
 /** Input shape for `skills.install`. */
 export type SkillsInstallInput = {
   all?: boolean;
@@ -10327,6 +10368,27 @@ export type SkillsListReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `skills.revoke`. */
+export type SkillsRevokeInput = {
+  agent: string;
+  skill: string;
+};
+
+/** Return shape for `skills.revoke`. */
+export type SkillsRevokeReturn = {
+  agentId: string;
+  grant?: {
+    agentId: string;
+    grantedAt: number;
+    note?: string;
+    skillName: string;
+    [k: string]: unknown;
+  };
+  skillName: string;
+  success: boolean;
+  [k: string]: unknown;
+};
+
 /** Input shape for `skills.show`. */
 export type SkillsShowInput = {
   installed?: boolean;
@@ -10356,6 +10418,26 @@ export type SkillsSyncInput = Record<string, never>;
 export type SkillsSyncReturn = {
   codexSynced: string[];
   success: true;
+  total: number;
+  [k: string]: unknown;
+};
+
+/** Input shape for `skills.who`. */
+export type SkillsWhoInput = {
+  agent?: string;
+  skill?: string;
+};
+
+/** Return shape for `skills.who`. */
+export type SkillsWhoReturn = {
+  grants: Array<{
+    agentId: string;
+    grantedAt: number;
+    note?: string;
+    skillName: string;
+    [k: string]: unknown;
+  }>;
+  skillName?: string;
   total: number;
   [k: string]: unknown;
 };

@@ -48924,6 +48924,145 @@ export const SkillGatesShowReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `skills.grant`. */
+export const SkillsGrantInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id (immutable)",
+      "type": "string"
+    },
+    "note": {
+      "description": "Optional operator note",
+      "type": "string"
+    },
+    "skill": {
+      "description": "Skill name (matches SKILL.md name)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent",
+    "skill"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.grant`. */
+export const SkillsGrantReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "grant": {
+      "additionalProperties": {},
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "grantedAt": {
+          "type": "number"
+        },
+        "note": {
+          "type": "string"
+        },
+        "skillName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agentId",
+        "skillName",
+        "grantedAt"
+      ],
+      "type": "object"
+    },
+    "skillName": {
+      "type": "string"
+    },
+    "success": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "agentId",
+    "skillName"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skills.inspect`. */
+export const SkillsInspectInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id (immutable)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.inspect`. */
+export const SkillsInspectReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "allowlist": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "hasConfiguration": {
+      "type": "boolean"
+    },
+    "provenance": {
+      "additionalProperties": {},
+      "properties": {
+        "baseline": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "fromCapabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "fromGrants": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "baseline",
+        "fromCapabilities",
+        "fromGrants"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "agentId",
+    "hasConfiguration",
+    "allowlist",
+    "provenance"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `skills.install`. */
 export const SkillsInstallInputSchema = {
   "additionalProperties": false,
@@ -49196,6 +49335,71 @@ export const SkillsListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `skills.revoke`. */
+export const SkillsRevokeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id (immutable)",
+      "type": "string"
+    },
+    "skill": {
+      "description": "Skill name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent",
+    "skill"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.revoke`. */
+export const SkillsRevokeReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "grant": {
+      "additionalProperties": {},
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "grantedAt": {
+          "type": "number"
+        },
+        "note": {
+          "type": "string"
+        },
+        "skillName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agentId",
+        "skillName",
+        "grantedAt"
+      ],
+      "type": "object"
+    },
+    "skillName": {
+      "type": "string"
+    },
+    "success": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "agentId",
+    "skillName"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `skills.show`. */
 export const SkillsShowInputSchema = {
   "additionalProperties": false,
@@ -49309,6 +49513,66 @@ export const SkillsSyncReturnSchema = {
     "success",
     "codexSynced",
     "total"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skills.who`. */
+export const SkillsWhoInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "List grants for a specific agent instead",
+      "type": "string"
+    },
+    "skill": {
+      "description": "Skill name to look up",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.who`. */
+export const SkillsWhoReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "grants": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "grantedAt": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          },
+          "skillName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId",
+          "skillName",
+          "grantedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "skillName": {
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "grants"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
