@@ -593,7 +593,6 @@ export function validateReturnSchemaWorkflow(options: ReturnSchemaWorkflowOption
   const rows = listReturnSchemaCommands({ ...options, limit: Number.MAX_SAFE_INTEGER }).items;
   const rowByName = new Map(rows.map((row) => [row.fullName, row]));
   const issues: ReturnSchemaValidationIssue[] = [];
-  const weakBaselineSet = new Set<string>(WEAK_PUBLIC_RETURN_COMMANDS_BASELINE as ReadonlyArray<string>);
   const currentWeak = currentWeakPublicReturnCommands(registry);
 
   for (const cmd of registry.commands) {
@@ -649,12 +648,12 @@ export function validateReturnSchemaWorkflow(options: ReturnSchemaWorkflowOption
       message: "Command no longer lacks @Returns; remove it from return-schema-baseline.ts.",
     });
   }
-  for (const name of summary.newlyWeak) {
+  for (const name of currentWeak) {
     issues.push({
       level: "error",
-      code: "NEW_WEAK_PUBLIC_RETURN_SCHEMA",
+      code: "WEAK_PUBLIC_RETURN_SCHEMA",
       command: name,
-      message: "Public command has a weak @Returns schema and is not in the approved quality debt baseline.",
+      message: "Public command has a weak @Returns schema. Weak public return schemas are prohibited.",
     });
   }
   for (const name of summary.strengthenedButStillListed) {
@@ -673,14 +672,6 @@ export function validateReturnSchemaWorkflow(options: ReturnSchemaWorkflowOption
         command: name,
         message:
           "@CliOnly hides the command from OpenAPI/docs/SDK; strict validation treats it as an exception that must be removed or explicitly justified in code review.",
-      });
-    }
-    for (const name of currentWeak.filter((command) => weakBaselineSet.has(command))) {
-      issues.push({
-        level: "error",
-        code: "WEAK_PUBLIC_RETURN_SCHEMA",
-        command: name,
-        message: "Strict validation rejects weak return-schema baseline debt.",
       });
     }
     for (const name of summary.unreviewedPublicCommands) {

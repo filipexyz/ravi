@@ -21,70 +21,51 @@ applies_to:
   - src/sdk/swift-codegen
 owners:
   - dev
-status: draft
+status: active
 normative: true
 ---
 
 # SDK Return Schema Coverage
 
-Status: draft
+Status: active
 Owner: dev
-Last updated: 2026-06-03
+Last updated: 2026-07-02
 
 ## Intent
 
-Increase `@Returns(zod)` coverage for SDK-facing commands so generated clients
-can expose typed return payloads instead of generic JSON.
-
-This is the priority bottleneck before using Rust codegen as a strong typed
-SDK demonstration.
-
-## Baseline
-
-Measured on 2026-06-03:
-
-```json
-{
-  "groups": 96,
-  "commands": 517,
-  "exposed": 472,
-  "cliOnly": 45,
-  "withReturns": 3,
-  "withoutReturns": 469,
-  "binary": 1
-}
-```
-
-This means a new language backend can generate the command surface today, but
-most methods would return `unknown`, `RaviJSON`, or `serde_json::Value`.
+Every SDK-facing public command MUST expose a concrete, JSON-safe return
+schema via `@Returns(zod)` or `@Returns.binary()`. Weak public return
+schemas are prohibited.
 
 ## Rules
 
-- New SDK-facing commands SHOULD declare `@Returns(zod)` unless their return is
-  intentionally generic.
-- Existing SDK-facing commands SHOULD be migrated toward `@Returns(zod)` in
-  priority order.
-- Commands with no stable remote semantics SHOULD be marked `@CliOnly()`
-  instead of being exposed with an unknown return type.
+- Public commands MUST expose a concrete JSON-safe return schema or
+  `@Returns.binary()`.
+- Public return schemas MUST NOT be weak. A weak schema includes:
+  - `z.unknown()` or fields lowering to unknown
+  - `z.array(z.unknown())` (arrays of unknown items)
+  - `.passthrough()` or open-object schemas (`additionalProperties` not
+    `false` or not a concrete schema)
+  - Empty objects used as a final public contract
+  - `z.record(z.string(), z.unknown())` (unknown additional properties)
+  - Generic command envelopes (e.g. `looseObjectSchema`,
+    `commandEnvelopeReturnSchema`) as the sole return contract
+- `@CliOnly()` MUST be semantically justified and MUST NOT be used as a
+  shortcut to avoid schema work. Valid reasons include: interactive/TUI
+  commands, daemon/process lifecycle, streaming/watch, and commands with
+  no stable request/response contract.
 - Binary commands MUST use `@Returns.binary()`.
 - `@Returns` schemas MUST describe sanitized, JSON-safe return payloads.
-- A command MUST NOT add an overly broad fake return schema just to improve the
-  metric. If the shape is not stable, keep the generic fallback and document why.
 - CLI rendering flags such as `--json`, `--pretty`, `--quiet`, and `--verbose`
   MUST remain rendering concerns and MUST NOT be modeled as SDK contract fields.
-
-## Priority Order
-
-Prioritize schemas where typed clients unlock the most value:
-
-1. SDK and registry commands used to demonstrate codegen itself.
-2. Read/list/show commands for agents, sessions, contacts, chats, routes,
-   permissions, apps, artifacts, tasks, workflows, and sync.
-3. Small mutating commands with stable acknowledgement payloads.
-4. Long-tail admin/debug commands.
-
-The first milestone SHOULD focus on high-value read/list/show commands before
-mutating or process-level commands.
+- For truly dynamic/opaque payloads, use `jsonObjectSchema` or
+  `jsonValueSchema` (concrete recursive JSON types) rather than `z.unknown()`.
+- Default validation (`ravi sdk returns validate`) MUST reject any weak
+  public return schema.
+- The weak baseline (`WEAK_PUBLIC_RETURN_COMMANDS_BASELINE`) MUST remain
+  empty. It is retained only for migration tooling compatibility and MUST
+  NOT be used as a permanent allowlist.
+- Generated SDK/OpenAPI/Swift artifacts MUST stay deterministic and in sync.
 
 ## Shape Guidelines
 
@@ -99,11 +80,12 @@ mutating or process-level commands.
 
 ## Acceptance Criteria
 
-- A coverage audit command or test reports SDK-facing command counts,
-  `@Returns` count, binary count, and unknown fallback count.
-- Adding `@Returns` to a command is covered by dispatcher or codegen tests when
-  the shape is non-trivial.
+- `ravi sdk returns status --json` reports `weakPublic: 0`,
+  `baselineWeakPublic: 0`, and `newlyWeak: []`.
+- `ravi sdk returns validate --json` succeeds when all returns are concrete
+  and fails by default if any weak public return schema remains.
+- Weak baseline file is empty and cannot make weak public schemas pass.
+- All public command return schemas are concrete enough for SDK/OpenAPI.
+- Any `@CliOnly()` has semantic justification and is covered by tests/docs.
 - TypeScript, Swift, and future Rust generators continue to emit deterministic
   clients.
-- Rust codegen demos MUST report the return-shape coverage at the time of the
-  demo.

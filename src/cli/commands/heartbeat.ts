@@ -29,28 +29,24 @@ const DEFAULT_HEARTBEAT_CONFIG: HeartbeatConfig = {
 };
 
 const heartbeatAgentReturnSchema = z.object({
-  agent: z
-    .object({
-      id: z.string(),
-      name: z.string().nullable(),
-      cwd: z.string(),
-      model: z.string().nullable(),
-      provider: z.string().nullable(),
-    })
-    .passthrough(),
-  heartbeat: z
-    .object({
-      enabled: z.boolean(),
-      intervalMs: z.number(),
-      intervalDescription: z.string(),
-      model: z.string().nullable(),
-      accountId: z.string().nullable(),
-      activeStart: z.string().nullable(),
-      activeEnd: z.string().nullable(),
-      activeHours: z.string(),
-      lastRunAt: z.number().nullable(),
-    })
-    .passthrough(),
+  agent: z.object({
+    id: z.string(),
+    name: z.string().nullable(),
+    cwd: z.string(),
+    model: z.string().nullable(),
+    provider: z.string().nullable(),
+  }),
+  heartbeat: z.object({
+    enabled: z.boolean(),
+    intervalMs: z.number(),
+    intervalDescription: z.string(),
+    model: z.string().nullable(),
+    accountId: z.string().nullable(),
+    activeStart: z.string().nullable(),
+    activeEnd: z.string().nullable(),
+    activeHours: z.string(),
+    lastRunAt: z.number().nullable(),
+  }),
   heartbeatFile: z.string(),
   heartbeatFileExists: z.boolean(),
 });
@@ -65,19 +61,17 @@ const heartbeatMutationReturnSchema = heartbeatAgentReturnSchema.extend({
   target: commandTargetSchema,
   changedCount: z.number(),
   property: z.string().optional(),
-  value: z.unknown().optional(),
+  value: z.union([z.string(), z.number(), z.boolean(), z.null()]).optional(),
 });
 
-const heartbeatTriggerReturnSchema = z
-  .object({
-    status: z.string(),
-    target: commandTargetSchema,
-    changedCount: z.number(),
-    heartbeatFile: z.string(),
-    reason: z.string().optional(),
-    sessionName: z.string().optional(),
-  })
-  .passthrough();
+const heartbeatTriggerReturnSchema = z.object({
+  status: z.string(),
+  target: commandTargetSchema,
+  changedCount: z.number(),
+  heartbeatFile: z.string(),
+  reason: z.string().optional(),
+  sessionName: z.string().optional(),
+});
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));

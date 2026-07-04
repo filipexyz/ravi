@@ -40,27 +40,25 @@ interface EffectiveSkillGateRule {
   defaultRule?: DefaultSkillGateRule;
 }
 
-const skillGateRuleReturnSchema = z
-  .object({
-    id: z.string(),
-    skill: z.string().nullable(),
-    enabled: z.boolean(),
-    source: z.string().optional(),
-    disabled: z.boolean().optional(),
-    pattern: z.string().nullable().optional(),
-    groupRegex: z.string().nullable().optional(),
-    tool: z.string().nullable().optional(),
-    toolPrefix: z.string().nullable().optional(),
-    toolRegex: z.string().nullable().optional(),
-    command: z.string().nullable().optional(),
-    commandPrefix: z.string().nullable().optional(),
-    commandRegex: z.string().nullable().optional(),
-    configured: looseObjectSchema.nullable().optional(),
-    defaultRule: looseObjectSchema.nullable().optional(),
-    createdAt: z.number().optional(),
-    updatedAt: z.number().optional(),
-  })
-  .passthrough();
+const skillGateRuleReturnSchema = z.object({
+  id: z.string(),
+  skill: z.string().nullable(),
+  enabled: z.boolean(),
+  source: z.string().optional(),
+  disabled: z.boolean().optional(),
+  pattern: z.string().nullable().optional(),
+  groupRegex: z.string().nullable().optional(),
+  tool: z.string().nullable().optional(),
+  toolPrefix: z.string().nullable().optional(),
+  toolRegex: z.string().nullable().optional(),
+  command: z.string().nullable().optional(),
+  commandPrefix: z.string().nullable().optional(),
+  commandRegex: z.string().nullable().optional(),
+  configured: looseObjectSchema.nullable().optional(),
+  defaultRule: looseObjectSchema.nullable().optional(),
+  createdAt: z.number().optional(),
+  updatedAt: z.number().optional(),
+});
 
 const skillGatesListReturnSchema = z.object({
   total: z.number(),
@@ -80,14 +78,12 @@ const skillGateRuleMutationReturnSchema = z.object({
   rule: skillGateRuleReturnSchema,
 });
 
-const skillGateRemoveReturnSchema = z
-  .object({
-    success: z.literal(true),
-    action: z.string(),
-    rule: skillGateRuleReturnSchema.optional(),
-    deleted: z.boolean().optional(),
-  })
-  .passthrough();
+const skillGateRemoveReturnSchema = z.object({
+  success: z.literal(true),
+  action: z.string(),
+  rule: skillGateRuleReturnSchema.optional(),
+  deleted: z.boolean().optional(),
+});
 
 const skillGateResetReturnSchema = z.object({
   success: z.literal(true),

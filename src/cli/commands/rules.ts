@@ -27,18 +27,16 @@ const rulesSourcesReturnSchema = z.object({
   }),
 });
 
-const rulesImportReturnSchema = z
-  .object({
-    cwd: z.string(),
-    includeUser: z.boolean(),
-    write: z.boolean(),
-    force: z.boolean(),
-    rulesDir: z.string(),
-    sources: z.array(looseObjectSchema),
-    candidates: z.array(looseObjectSchema),
-    counts: looseObjectSchema,
-  })
-  .passthrough();
+const rulesImportReturnSchema = z.object({
+  cwd: z.string(),
+  includeUser: z.boolean(),
+  write: z.boolean(),
+  force: z.boolean(),
+  rulesDir: z.string(),
+  sources: z.array(looseObjectSchema),
+  candidates: z.array(looseObjectSchema),
+  counts: looseObjectSchema,
+});
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));

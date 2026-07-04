@@ -20,10 +20,9 @@ export type AdaptersListReturn = {
       bound: boolean;
       cliName: string | null;
       contextId: string | null;
-      contextKey?: unknown;
+      contextKey?: string;
       sessionKey: string;
       sessionName: string | null;
-      [k: string]: unknown;
     };
     diagnosticState: "live" | "dead" | "unbound" | "protocol-invalid" | "stopped" | "configured";
     health: Record<string, unknown>;
@@ -35,7 +34,6 @@ export type AdaptersListReturn = {
     status: string;
     transport: string;
     updatedAt: number;
-    [k: string]: unknown;
   }>;
   count: number;
   items: Array<{
@@ -46,10 +44,9 @@ export type AdaptersListReturn = {
       bound: boolean;
       cliName: string | null;
       contextId: string | null;
-      contextKey?: unknown;
+      contextKey?: string;
       sessionKey: string;
       sessionName: string | null;
-      [k: string]: unknown;
     };
     diagnosticState: "live" | "dead" | "unbound" | "protocol-invalid" | "stopped" | "configured";
     health: Record<string, unknown>;
@@ -61,7 +58,6 @@ export type AdaptersListReturn = {
     status: string;
     transport: string;
     updatedAt: number;
-    [k: string]: unknown;
   }>;
   pagination: {
     hasMore?: boolean;
@@ -71,7 +67,6 @@ export type AdaptersListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
 };
@@ -90,10 +85,9 @@ export type AdaptersShowReturn = {
     bound: boolean;
     cliName: string | null;
     contextId: string | null;
-    contextKey?: unknown;
+    contextKey?: string;
     sessionKey: string;
     sessionName: string | null;
-    [k: string]: unknown;
   };
   diagnosticState: "live" | "dead" | "unbound" | "protocol-invalid" | "stopped" | "configured";
   health: Record<string, unknown>;
@@ -105,7 +99,6 @@ export type AdaptersShowReturn = {
   status: string;
   transport: string;
   updatedAt: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `agents.create`. */
@@ -124,7 +117,6 @@ export type AgentsCreateReturn = {
   changed: boolean;
   permissions: Record<string, unknown>;
   runtimeTarget: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `agents.debounce`. */
@@ -140,7 +132,6 @@ export type AgentsDebounceReturn = {
   changed?: boolean;
   debounceMs: number | null;
   enabled: boolean;
-  [k: string]: unknown;
 };
 
 /** Input shape for `agents.debug`. */
@@ -155,12 +146,10 @@ export type AgentsDebugReturn = ({
   agentId: string;
   availableSessions: string[];
   error: string;
-  [k: string]: unknown;
 }) | ({
   entries: unknown[];
   session: Record<string, unknown>;
   transcript: Record<string, unknown>;
-  [k: string]: unknown;
 });
 
 /** Input shape for `agents.delete`. */
@@ -174,7 +163,6 @@ export type AgentsDeleteReturn = {
   agentId: string;
   before?: Record<string, unknown>;
   changed: boolean;
-  [k: string]: unknown;
 };
 
 /** Input shape for `agents.list`. */
@@ -198,10 +186,8 @@ export type AgentsListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `agents.permissions`. */
@@ -267,7 +253,6 @@ export type AgentsResetReturn = {
   resetSessions?: Array<Record<string, unknown>>;
   session?: Record<string, unknown>;
   target: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `agents.session`. */
@@ -280,7 +265,6 @@ export type AgentsSessionReturn = {
   agent: Record<string, unknown>;
   sessions: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `agents.set`. */
@@ -298,7 +282,6 @@ export type AgentsSetReturn = {
   changed: boolean;
   key: string;
   value: unknown;
-  [k: string]: unknown;
 };
 
 /** Input shape for `agents.show`. */
@@ -310,7 +293,6 @@ export type AgentsShowInput = {
 export type AgentsShowReturn = {
   agent: Record<string, unknown>;
   permissionsCommand: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `agents.spec-mode`. */
@@ -325,7 +307,6 @@ export type AgentsSpecModeReturn = {
   agentId: string;
   changed?: boolean;
   specMode: boolean;
-  [k: string]: unknown;
 };
 
 /** Input shape for `agents.sync-instructions`. */
@@ -343,7 +324,6 @@ export type AgentsSyncInstructionsReturn = {
   missing: number;
   results: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `apps.check`. */
@@ -824,7 +804,6 @@ export type ArtifactsArchiveInput = {
 /** Return shape for `artifacts.archive`. */
 export type ArtifactsArchiveReturn = {
   success: true;
-  [k: string]: unknown;
 };
 
 /** Input shape for `artifacts.attach`. */
@@ -839,7 +818,6 @@ export type ArtifactsAttachInput = {
 /** Return shape for `artifacts.attach`. */
 export type ArtifactsAttachReturn = {
   success: true;
-  [k: string]: unknown;
 };
 
 /** Input shape for `artifacts.blob`. */
@@ -887,7 +865,6 @@ export type ArtifactsCreateReturn = {
   package?: Record<string, unknown>;
   success: true;
   version?: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `artifacts.event`. */
@@ -905,7 +882,6 @@ export type ArtifactsEventReturn = {
   artifact?: Record<string, unknown>;
   event: Record<string, unknown>;
   success: true;
-  [k: string]: unknown;
 };
 
 /** Input shape for `artifacts.events`. */
@@ -918,7 +894,6 @@ export type ArtifactsEventsReturn = {
   artifactId: string;
   events: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `artifacts.list`. */
@@ -948,10 +923,8 @@ export type ArtifactsListReturn = ({
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 }) | ({
   generatedAt: number;
   items: Array<Record<string, unknown>>;
@@ -964,11 +937,9 @@ export type ArtifactsListReturn = ({
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   query: Record<string, unknown>;
   stats: Record<string, unknown>;
-  [k: string]: unknown;
 });
 
 /** Input shape for `artifacts.publish`. */
@@ -1044,7 +1015,6 @@ export type ArtifactsReleaseActivateReturn = {
   routes: unknown[];
   site: unknown;
   url: string | null;
-  [k: string]: unknown;
 };
 
 /** Input shape for `artifacts.restore`. */
@@ -1060,7 +1030,6 @@ export type ArtifactsRestoreReturn = {
   restoreVersion: Record<string, unknown>;
   restoredFrom: Record<string, unknown>;
   success: true;
-  [k: string]: unknown;
 };
 
 /** Input shape for `artifacts.show`. */
@@ -1074,7 +1043,6 @@ export type ArtifactsShowReturn = {
   events: Array<Record<string, unknown>>;
   links: Array<Record<string, unknown>>;
   versions: Array<Record<string, unknown>>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `artifacts.snapshot`. */
@@ -1092,7 +1060,6 @@ export type ArtifactsSnapshotInput = {
 export type ArtifactsSnapshotReturn = {
   success: true;
   version: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `artifacts.update`. */
@@ -1127,7 +1094,6 @@ export type ArtifactsUpdateInput = {
 /** Return shape for `artifacts.update`. */
 export type ArtifactsUpdateReturn = {
   success: true;
-  [k: string]: unknown;
 };
 
 /** Input shape for `artifacts.version`. */
@@ -1140,7 +1106,6 @@ export type ArtifactsVersionInput = {
 export type ArtifactsVersionReturn = {
   artifactId: string;
   version: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `artifacts.versions`. */
@@ -1153,7 +1118,6 @@ export type ArtifactsVersionsReturn = {
   artifactId: string;
   total: number;
   versions: Array<Record<string, unknown>>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `audio.blob`. */
@@ -1185,7 +1149,6 @@ export type AudioGenerateReturn = {
     mimeType: string;
     sendCommand: string;
     text: string;
-    [k: string]: unknown;
   };
   options: Record<string, unknown>;
   sent?: {
@@ -1200,10 +1163,8 @@ export type AudioGenerateReturn = {
     threadId?: string;
     transport: string;
     voiceNote: true;
-    [k: string]: unknown;
   };
   success: true;
-  [k: string]: unknown;
 };
 
 /** Input shape for `audio.pending`. */
@@ -2599,7 +2560,6 @@ export type CommandsListReturn = {
       message: string;
       path: string | null;
       scope: string | null;
-      [k: string]: unknown;
     }>;
     path: string;
     relativePath: string;
@@ -2608,7 +2568,6 @@ export type CommandsListReturn = {
     shadows: string[];
     title: string | null;
     token: string;
-    [k: string]: unknown;
   }>;
   issues: Array<{
     code: string;
@@ -2617,7 +2576,6 @@ export type CommandsListReturn = {
     message: string;
     path: string | null;
     scope: string | null;
-    [k: string]: unknown;
   }>;
   items: Array<Record<string, unknown>>;
   locations: Record<string, unknown>;
@@ -2629,10 +2587,8 @@ export type CommandsListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `commands.run`. */
@@ -2658,7 +2614,6 @@ export type CommandsRunReturn = {
       message: string;
       path: string | null;
       scope: string | null;
-      [k: string]: unknown;
     }>;
     path: string;
     relativePath: string;
@@ -2667,12 +2622,10 @@ export type CommandsRunReturn = {
     shadows: string[];
     title: string | null;
     token: string;
-    [k: string]: unknown;
   };
   metadata: Record<string, unknown>;
   positionalArguments: unknown[];
   prompt: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `commands.show`. */
@@ -2697,7 +2650,6 @@ export type CommandsShowReturn = {
       message: string;
       path: string | null;
       scope: string | null;
-      [k: string]: unknown;
     }>;
     path: string;
     relativePath: string;
@@ -2706,9 +2658,7 @@ export type CommandsShowReturn = {
     shadows: string[];
     title: string | null;
     token: string;
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `commands.validate`. */
@@ -2727,7 +2677,6 @@ export type CommandsValidateReturn = {
     message: string;
     path: string | null;
     scope: string | null;
-    [k: string]: unknown;
   }>;
   total: number;
   valid: boolean;
@@ -2738,9 +2687,7 @@ export type CommandsValidateReturn = {
     message: string;
     path: string | null;
     scope: string | null;
-    [k: string]: unknown;
   }>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `connectors.list`. */
@@ -3751,7 +3698,6 @@ export type CostsAgentsReturn = {
     total_output: number;
     total_tokens: number;
     turns: number;
-    [k: string]: unknown;
   }>;
   limit: number;
   totalAgents: number;
@@ -3877,7 +3823,6 @@ export type CostsTopSessionsReturn = {
     total_output: number;
     total_tokens: number;
     turns: number;
-    [k: string]: unknown;
   }>;
   window: {
     effectiveHours: number;
@@ -3896,7 +3841,6 @@ export type CrmAccountInput = {
 export type CrmAccountReturn = {
   crm: Record<string, unknown>;
   target: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.account.create`. */
@@ -3912,7 +3856,6 @@ export type CrmAccountCreateInput = {
 export type CrmAccountCreateReturn = {
   changedCount: number;
   status: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.account.link-contact`. */
@@ -3927,7 +3870,6 @@ export type CrmAccountLinkContactInput = {
 export type CrmAccountLinkContactReturn = {
   changedCount: number;
   status: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.account.show`. */
@@ -3939,7 +3881,6 @@ export type CrmAccountShowInput = {
 export type CrmAccountShowReturn = {
   crm: Record<string, unknown>;
   target: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.board`. */
@@ -3953,7 +3894,6 @@ export type CrmBoardReturn = {
   opportunities: Array<Record<string, unknown>>;
   stages?: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.contact`. */
@@ -3965,7 +3905,6 @@ export type CrmContactInput = {
 export type CrmContactReturn = {
   crm: Record<string, unknown>;
   target: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.contact.set`. */
@@ -3980,7 +3919,6 @@ export type CrmContactSetInput = {
 export type CrmContactSetReturn = {
   changedCount: number;
   status: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.contact.show`. */
@@ -3992,7 +3930,6 @@ export type CrmContactShowInput = {
 export type CrmContactShowReturn = {
   crm: Record<string, unknown>;
   target: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.contacts`. */
@@ -4014,10 +3951,8 @@ export type CrmContactsReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.fact.confirm`. */
@@ -4029,7 +3964,6 @@ export type CrmFactConfirmInput = {
 export type CrmFactConfirmReturn = {
   changedCount: number;
   status: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.fact.list`. */
@@ -4056,10 +3990,8 @@ export type CrmFactListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.fact.propose`. */
@@ -4080,7 +4012,6 @@ export type CrmFactProposeInput = {
 export type CrmFactProposeReturn = {
   changedCount: number;
   status: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.fact.reject`. */
@@ -4092,7 +4023,6 @@ export type CrmFactRejectInput = {
 export type CrmFactRejectReturn = {
   changedCount: number;
   status: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.next`. */
@@ -4120,10 +4050,8 @@ export type CrmNextReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.opportunity`. */
@@ -4135,7 +4063,6 @@ export type CrmOpportunityInput = {
 export type CrmOpportunityReturn = {
   opportunity: Record<string, unknown>;
   target: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.opportunity.contacts`. */
@@ -4147,7 +4074,6 @@ export type CrmOpportunityContactsInput = {
 export type CrmOpportunityContactsReturn = {
   contacts: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.opportunity.create`. */
@@ -4167,7 +4093,6 @@ export type CrmOpportunityCreateInput = {
 export type CrmOpportunityCreateReturn = {
   changedCount: number;
   status: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.opportunity.link-contact`. */
@@ -4183,7 +4108,6 @@ export type CrmOpportunityLinkContactInput = {
 export type CrmOpportunityLinkContactReturn = {
   changedCount: number;
   status: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.opportunity.move`. */
@@ -4197,7 +4121,6 @@ export type CrmOpportunityMoveInput = {
 export type CrmOpportunityMoveReturn = {
   changedCount: number;
   status: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.opportunity.show`. */
@@ -4209,7 +4132,6 @@ export type CrmOpportunityShowInput = {
 export type CrmOpportunityShowReturn = {
   opportunity: Record<string, unknown>;
   target: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.pipeline.create`. */
@@ -4244,7 +4166,6 @@ export type CrmPipelineCreateInput = {
 export type CrmPipelineCreateReturn = {
   changedCount: number;
   status: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.pipeline.list`. */
@@ -4266,10 +4187,8 @@ export type CrmPipelineListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.pipeline.policy.hitl-check`. */
@@ -4382,7 +4301,6 @@ export type CrmPipelineSetInput = {
 export type CrmPipelineSetReturn = {
   changedCount: number;
   status: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.pipeline.show`. */
@@ -4411,7 +4329,6 @@ export type CrmPipelineStageAddInput = {
 export type CrmPipelineStageAddReturn = {
   changedCount: number;
   status: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.pipeline.stage.archive`. */
@@ -4424,7 +4341,6 @@ export type CrmPipelineStageArchiveInput = {
 export type CrmPipelineStageArchiveReturn = {
   changedCount: number;
   status: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.pipeline.stage.list`. */
@@ -4446,10 +4362,8 @@ export type CrmPipelineStageListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.pipeline.stage.set`. */
@@ -4464,7 +4378,6 @@ export type CrmPipelineStageSetInput = {
 export type CrmPipelineStageSetReturn = {
   changedCount: number;
   status: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.pipeline.stage.show`. */
@@ -4493,7 +4406,6 @@ export type CrmPipelineStageTopicAddInput = {
 export type CrmPipelineStageTopicAddReturn = {
   changedCount: number;
   status: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.pipeline.stage.topic.archive`. */
@@ -4507,7 +4419,6 @@ export type CrmPipelineStageTopicArchiveInput = {
 export type CrmPipelineStageTopicArchiveReturn = {
   changedCount: number;
   status: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.pipeline.stage.topic.set`. */
@@ -4523,7 +4434,6 @@ export type CrmPipelineStageTopicSetInput = {
 export type CrmPipelineStageTopicSetReturn = {
   changedCount: number;
   status: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.pipeline.stage.topics`. */
@@ -4546,10 +4456,8 @@ export type CrmPipelineStageTopicsReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.pipeline.validate`. */
@@ -4587,7 +4495,6 @@ export type CrmTaskCancelInput = {
 export type CrmTaskCancelReturn = {
   changedCount: number;
   status: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.task.create`. */
@@ -4612,7 +4519,6 @@ export type CrmTaskCreateInput = {
 export type CrmTaskCreateReturn = {
   changedCount: number;
   status: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.task.done`. */
@@ -4624,7 +4530,6 @@ export type CrmTaskDoneInput = {
 export type CrmTaskDoneReturn = {
   changedCount: number;
   status: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.task.list`. */
@@ -4653,10 +4558,8 @@ export type CrmTaskListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.task.show`. */
@@ -4668,7 +4571,6 @@ export type CrmTaskShowInput = {
 export type CrmTaskShowReturn = {
   target: string;
   task: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `crm.task.snooze`. */
@@ -4682,7 +4584,6 @@ export type CrmTaskSnoozeInput = {
 export type CrmTaskSnoozeReturn = {
   changedCount: number;
   status: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `cron.add`. */
@@ -4712,9 +4613,7 @@ export type CronAddReturn = {
   status: string;
   target: {
     type: string;
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `cron.disable`. */
@@ -4729,9 +4628,7 @@ export type CronDisableReturn = {
   status: string;
   target: {
     type: string;
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `cron.enable`. */
@@ -4746,9 +4643,7 @@ export type CronEnableReturn = {
   status: string;
   target: {
     type: string;
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `cron.list`. */
@@ -4772,10 +4667,8 @@ export type CronListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `cron.rm`. */
@@ -4790,9 +4683,7 @@ export type CronRmReturn = {
   status: string;
   target: {
     type: string;
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `cron.run`. */
@@ -4807,9 +4698,7 @@ export type CronRunReturn = {
   status: string;
   target: {
     type: string;
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `cron.set`. */
@@ -4826,9 +4715,7 @@ export type CronSetReturn = {
   status: string;
   target: {
     type: string;
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `cron.show`. */
@@ -4839,7 +4726,6 @@ export type CronShowInput = {
 /** Return shape for `cron.show`. */
 export type CronShowReturn = {
   job: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `daemon.env`. */
@@ -4852,7 +4738,6 @@ export type DaemonEnvReturn = {
   existedBefore: boolean;
   openedEditor: boolean;
   path: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `daemon.init-admin-key`. */
@@ -4867,7 +4752,6 @@ export type DaemonInitAdminKeyInput = {
 export type DaemonInitAdminKeyReturn = {
   action: "init-admin-key";
   changed: boolean;
-  [k: string]: unknown;
 };
 
 /** Input shape for `daemon.install`. */
@@ -4877,7 +4761,6 @@ export type DaemonInstallInput = Record<string, never>;
 export type DaemonInstallReturn = {
   action: string;
   changed: boolean;
-  [k: string]: unknown;
 };
 
 /** Input shape for `daemon.logs`. */
@@ -4891,7 +4774,6 @@ export type DaemonLogsInput = {
 /** Return shape for `daemon.logs`. */
 export type DaemonLogsReturn = {
   action: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `daemon.restart`. */
@@ -4904,7 +4786,6 @@ export type DaemonRestartInput = {
 export type DaemonRestartReturn = {
   action: string;
   changed: boolean;
-  [k: string]: unknown;
 };
 
 /** Input shape for `daemon.start`. */
@@ -4914,7 +4795,6 @@ export type DaemonStartInput = Record<string, never>;
 export type DaemonStartReturn = {
   action: string;
   changed: boolean;
-  [k: string]: unknown;
 };
 
 /** Input shape for `daemon.status`. */
@@ -4927,7 +4807,6 @@ export type DaemonStatusReturn = {
   processName: string;
   processes: Array<Record<string, unknown>>;
   ravi: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `daemon.stop`. */
@@ -4937,7 +4816,6 @@ export type DaemonStopInput = Record<string, never>;
 export type DaemonStopReturn = {
   action: string;
   changed: boolean;
-  [k: string]: unknown;
 };
 
 /** Input shape for `daemon.uninstall`. */
@@ -4947,7 +4825,6 @@ export type DaemonUninstallInput = Record<string, never>;
 export type DaemonUninstallReturn = {
   action: string;
   changed: boolean;
-  [k: string]: unknown;
 };
 
 /** Input shape for `devin.auth.check`. */
@@ -4959,7 +4836,6 @@ export type DevinAuthCheckReturn = {
   configuredOrgId?: string;
   ok: boolean;
   self: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `devin.sessions.archive`. */
@@ -4971,7 +4847,6 @@ export type DevinSessionsArchiveInput = {
 export type DevinSessionsArchiveReturn = {
   session: Record<string, unknown>;
   status: "archived";
-  [k: string]: unknown;
 };
 
 /** Input shape for `devin.sessions.attachments`. */
@@ -4985,7 +4860,6 @@ export type DevinSessionsAttachmentsReturn = {
   attachments: Array<Record<string, unknown>>;
   devinId: string;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `devin.sessions.create`. */
@@ -5018,7 +4892,6 @@ export type DevinSessionsCreateReturn = {
   maxAcuLimitSource: string;
   session: Record<string, unknown>;
   status: "created";
-  [k: string]: unknown;
 };
 
 /** Input shape for `devin.sessions.insights`. */
@@ -5032,7 +4905,6 @@ export type DevinSessionsInsightsReturn = {
   insights: Record<string, unknown>;
   session: Record<string, unknown>;
   summary: (Record<string, unknown>) | null;
-  [k: string]: unknown;
 };
 
 /** Input shape for `devin.sessions.list`. */
@@ -5056,12 +4928,10 @@ export type DevinSessionsListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   sessions: Array<Record<string, unknown>>;
   source: string;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `devin.sessions.messages`. */
@@ -5075,7 +4945,6 @@ export type DevinSessionsMessagesReturn = {
   devinId: string;
   messages: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `devin.sessions.send`. */
@@ -5089,7 +4958,6 @@ export type DevinSessionsSendInput = {
 export type DevinSessionsSendReturn = {
   session: Record<string, unknown>;
   status: "sent";
-  [k: string]: unknown;
 };
 
 /** Input shape for `devin.sessions.show`. */
@@ -5101,7 +4969,6 @@ export type DevinSessionsShowInput = {
 /** Return shape for `devin.sessions.show`. */
 export type DevinSessionsShowReturn = {
   session: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `devin.sessions.sync`. */
@@ -5118,7 +4985,6 @@ export type DevinSessionsSyncReturn = {
   insights: (Record<string, unknown>) | null;
   messages: number;
   session: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `devin.sessions.terminate`. */
@@ -5132,7 +4998,6 @@ export type DevinSessionsTerminateReturn = {
   archive: boolean;
   session: Record<string, unknown>;
   status: "terminated";
-  [k: string]: unknown;
 };
 
 /** Input shape for `eval.run`. */
@@ -5148,7 +5013,6 @@ export type EvalRunReturn = {
   outputDir: string;
   runId: string;
   session: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `feedback.send`. */
@@ -5216,7 +5080,6 @@ export type HeartbeatDisableReturn = {
     model: string | null;
     name: string | null;
     provider: string | null;
-    [k: string]: unknown;
   };
   changedCount: number;
   heartbeat: {
@@ -5229,7 +5092,6 @@ export type HeartbeatDisableReturn = {
     intervalMs: number;
     lastRunAt: number | null;
     model: string | null;
-    [k: string]: unknown;
   };
   heartbeatFile: string;
   heartbeatFileExists: boolean;
@@ -5237,9 +5099,8 @@ export type HeartbeatDisableReturn = {
   status: string;
   target: {
     type: string;
-    [k: string]: unknown;
   };
-  value?: unknown;
+  value?: string | number | boolean | null;
 };
 
 /** Input shape for `heartbeat.enable`. */
@@ -5256,7 +5117,6 @@ export type HeartbeatEnableReturn = {
     model: string | null;
     name: string | null;
     provider: string | null;
-    [k: string]: unknown;
   };
   changedCount: number;
   heartbeat: {
@@ -5269,7 +5129,6 @@ export type HeartbeatEnableReturn = {
     intervalMs: number;
     lastRunAt: number | null;
     model: string | null;
-    [k: string]: unknown;
   };
   heartbeatFile: string;
   heartbeatFileExists: boolean;
@@ -5277,9 +5136,8 @@ export type HeartbeatEnableReturn = {
   status: string;
   target: {
     type: string;
-    [k: string]: unknown;
   };
-  value?: unknown;
+  value?: string | number | boolean | null;
 };
 
 /** Input shape for `heartbeat.set`. */
@@ -5297,7 +5155,6 @@ export type HeartbeatSetReturn = {
     model: string | null;
     name: string | null;
     provider: string | null;
-    [k: string]: unknown;
   };
   changedCount: number;
   heartbeat: {
@@ -5310,7 +5167,6 @@ export type HeartbeatSetReturn = {
     intervalMs: number;
     lastRunAt: number | null;
     model: string | null;
-    [k: string]: unknown;
   };
   heartbeatFile: string;
   heartbeatFileExists: boolean;
@@ -5318,9 +5174,8 @@ export type HeartbeatSetReturn = {
   status: string;
   target: {
     type: string;
-    [k: string]: unknown;
   };
-  value?: unknown;
+  value?: string | number | boolean | null;
 };
 
 /** Input shape for `heartbeat.show`. */
@@ -5336,7 +5191,6 @@ export type HeartbeatShowReturn = {
     model: string | null;
     name: string | null;
     provider: string | null;
-    [k: string]: unknown;
   };
   heartbeat: {
     accountId: string | null;
@@ -5348,7 +5202,6 @@ export type HeartbeatShowReturn = {
     intervalMs: number;
     lastRunAt: number | null;
     model: string | null;
-    [k: string]: unknown;
   };
   heartbeatFile: string;
   heartbeatFileExists: boolean;
@@ -5366,7 +5219,6 @@ export type HeartbeatStatusReturn = {
       model: string | null;
       name: string | null;
       provider: string | null;
-      [k: string]: unknown;
     };
     heartbeat: {
       accountId: string | null;
@@ -5378,7 +5230,6 @@ export type HeartbeatStatusReturn = {
       intervalMs: number;
       lastRunAt: number | null;
       model: string | null;
-      [k: string]: unknown;
     };
     heartbeatFile: string;
     heartbeatFileExists: boolean;
@@ -5400,9 +5251,7 @@ export type HeartbeatTriggerReturn = {
   status: string;
   target: {
     type: string;
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `hooks.create`. */
@@ -5434,9 +5283,7 @@ export type HooksCreateReturn = {
   status: string;
   target: {
     type: string;
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `hooks.disable`. */
@@ -5451,9 +5298,7 @@ export type HooksDisableReturn = {
   status: string;
   target: {
     type: string;
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `hooks.enable`. */
@@ -5468,9 +5313,7 @@ export type HooksEnableReturn = {
   status: string;
   target: {
     type: string;
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `hooks.list`. */
@@ -5492,10 +5335,8 @@ export type HooksListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `hooks.rm`. */
@@ -5510,9 +5351,7 @@ export type HooksRmReturn = {
   status: string;
   target: {
     type: string;
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `hooks.show`. */
@@ -5523,7 +5362,6 @@ export type HooksShowInput = {
 /** Return shape for `hooks.show`. */
 export type HooksShowReturn = {
   hook: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `hooks.test`. */
@@ -5566,7 +5404,6 @@ export type ImageAtlasSplitReturn = {
   parentArtifactId: string | null;
   sent: Array<Record<string, unknown>>;
   success: true;
-  [k: string]: unknown;
 };
 
 /** Input shape for `image.generate`. */
@@ -5602,7 +5439,6 @@ export type ImageGenerateReturn = ({
   status: string;
   success: true;
   workerPid?: number;
-  [k: string]: unknown;
 }) | ({
   images: Array<{
     artifactId: string;
@@ -5612,7 +5448,6 @@ export type ImageGenerateReturn = ({
     prompt: string;
     provider: string;
     sendCommand: string;
-    [k: string]: unknown;
   }>;
   options: Record<string, unknown>;
   sent: Array<{
@@ -5626,10 +5461,8 @@ export type ImageGenerateReturn = ({
     status?: string;
     threadId?: string;
     transport: string;
-    [k: string]: unknown;
   }>;
   success: true;
-  [k: string]: unknown;
 });
 
 /** Input shape for `inbox.archive`. */
@@ -5640,7 +5473,6 @@ export type InboxArchiveInput = {
 /** Return shape for `inbox.archive`. */
 export type InboxArchiveReturn = {
   item: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `inbox.disable`. */
@@ -5650,7 +5482,6 @@ export type InboxDisableInput = Record<string, never>;
 export type InboxDisableReturn = {
   changed: boolean;
   enabled: boolean;
-  [k: string]: unknown;
 };
 
 /** Input shape for `inbox.done`. */
@@ -5661,7 +5492,6 @@ export type InboxDoneInput = {
 /** Return shape for `inbox.done`. */
 export type InboxDoneReturn = {
   item: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `inbox.enable`. */
@@ -5671,7 +5501,6 @@ export type InboxEnableInput = Record<string, never>;
 export type InboxEnableReturn = {
   changed: boolean;
   enabled: boolean;
-  [k: string]: unknown;
 };
 
 /** Input shape for `inbox.items`. */
@@ -5683,7 +5512,6 @@ export type InboxItemsInput = {
 export type InboxItemsReturn = {
   items: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `inbox.list`. */
@@ -5699,7 +5527,6 @@ export type InboxListInput = {
 export type InboxListReturn = {
   items: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `inbox.poll`. */
@@ -5711,7 +5538,6 @@ export type InboxPollInput = {
 export type InboxPollReturn = {
   ok: true;
   snapshot: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `inbox.read`. */
@@ -5723,7 +5549,6 @@ export type InboxReadInput = {
 export type InboxReadReturn = {
   events: Array<Record<string, unknown>>;
   item: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `inbox.replay`. */
@@ -5738,7 +5563,6 @@ export type InboxReplayReturn = {
   replayedAt: string;
   sequence: number;
   subject: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `inbox.snooze`. */
@@ -5750,7 +5574,6 @@ export type InboxSnoozeInput = {
 /** Return shape for `inbox.snooze`. */
 export type InboxSnoozeReturn = {
   item: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `inbox.sources`. */
@@ -5759,7 +5582,6 @@ export type InboxSourcesInput = Record<string, never>;
 /** Return shape for `inbox.sources`. */
 export type InboxSourcesReturn = {
   sources: Array<Record<string, unknown>>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `inbox.status`. */
@@ -5793,7 +5615,6 @@ export type InsightsCreateReturn = {
   insight: Record<string, unknown>;
   success: true;
   tags: string[];
-  [k: string]: unknown;
 };
 
 /** Input shape for `insights.list`. */
@@ -5825,18 +5646,15 @@ export type InsightsListReturn = ({
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   query: Record<string, unknown>;
   total: number;
-  [k: string]: unknown;
 }) | ({
   generatedAt: number;
   items: Array<Record<string, unknown>>;
   ok: true;
   query: Record<string, unknown>;
   stats: Record<string, unknown>;
-  [k: string]: unknown;
 });
 
 /** Input shape for `insights.search`. */
@@ -5850,7 +5668,6 @@ export type InsightsSearchReturn = {
   count: number;
   insights: Array<Record<string, unknown>>;
   query: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `insights.show`. */
@@ -5862,7 +5679,6 @@ export type InsightsShowInput = {
 export type InsightsShowReturn = {
   insight: Record<string, unknown>;
   tags: string[];
-  [k: string]: unknown;
 };
 
 /** Input shape for `instances.create`. */
@@ -7133,7 +6949,6 @@ export type MediaSendReturn = {
     mimeType: string;
     type: string;
     voiceNote: boolean;
-    [k: string]: unknown;
   };
   success: true;
   target: {
@@ -7142,7 +6957,6 @@ export type MediaSendReturn = {
     chatId: string;
     instanceId: string;
     threadId?: string;
-    [k: string]: unknown;
   };
 };
 
@@ -7411,10 +7225,8 @@ export type ObserversListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `observers.profiles.init`. */
@@ -7429,7 +7241,6 @@ export type ObserversProfilesInitReturn = {
   profileDir: string;
   profilePath: string;
   sourceKind: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `observers.profiles.list`. */
@@ -7449,11 +7260,9 @@ export type ObserversProfilesListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   profiles: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `observers.profiles.preview`. */
@@ -7468,7 +7277,6 @@ export type ObserversProfilesPreviewReturn = {
   eventType: string;
   profile: Record<string, unknown>;
   prompt: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `observers.profiles.show`. */
@@ -7480,7 +7288,6 @@ export type ObserversProfilesShowInput = {
 export type ObserversProfilesShowReturn = {
   body: string;
   profile: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `observers.profiles.validate`. */
@@ -7493,7 +7300,6 @@ export type ObserversProfilesValidateReturn = {
   errors: Array<Record<string, unknown>>;
   ok: boolean;
   profiles: Array<Record<string, unknown>>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `observers.refresh`. */
@@ -7508,7 +7314,6 @@ export type ObserversRefreshReturn = {
   skipped: Array<Record<string, unknown>>;
   source: Record<string, unknown>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `observers.rules.disable`. */
@@ -7520,7 +7325,6 @@ export type ObserversRulesDisableInput = {
 export type ObserversRulesDisableReturn = {
   rule: Record<string, unknown>;
   success: true;
-  [k: string]: unknown;
 };
 
 /** Input shape for `observers.rules.enable`. */
@@ -7532,7 +7336,6 @@ export type ObserversRulesEnableInput = {
 export type ObserversRulesEnableReturn = {
   rule: Record<string, unknown>;
   success: true;
-  [k: string]: unknown;
 };
 
 /** Input shape for `observers.rules.explain`. */
@@ -7545,7 +7348,6 @@ export type ObserversRulesExplainReturn = {
   bindings: Array<Record<string, unknown>>;
   rules: Array<Record<string, unknown>>;
   source: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `observers.rules.list`. */
@@ -7565,11 +7367,9 @@ export type ObserversRulesListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   rules: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `observers.rules.rm`. */
@@ -7581,7 +7381,6 @@ export type ObserversRulesRmInput = {
 export type ObserversRulesRmReturn = {
   deleted: unknown;
   success: true;
-  [k: string]: unknown;
 };
 
 /** Input shape for `observers.rules.set`. */
@@ -7614,7 +7413,6 @@ export type ObserversRulesSetInput = {
 export type ObserversRulesSetReturn = {
   rule: Record<string, unknown>;
   success: true;
-  [k: string]: unknown;
 };
 
 /** Input shape for `observers.rules.show`. */
@@ -7625,7 +7423,6 @@ export type ObserversRulesShowInput = {
 /** Return shape for `observers.rules.show`. */
 export type ObserversRulesShowReturn = {
   rule: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `observers.rules.validate`. */
@@ -7635,7 +7432,6 @@ export type ObserversRulesValidateInput = Record<string, never>;
 export type ObserversRulesValidateReturn = {
   errors: Array<Record<string, unknown>>;
   ok: boolean;
-  [k: string]: unknown;
 };
 
 /** Input shape for `observers.show`. */
@@ -7646,7 +7442,6 @@ export type ObserversShowInput = {
 /** Return shape for `observers.show`. */
 export type ObserversShowReturn = {
   binding: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `pages.create`. */
@@ -8084,7 +7879,6 @@ export type ProjectsFixturesSeedInput = {
 export type ProjectsFixturesSeedReturn = {
   fixtures: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `projects.init`. */
@@ -8107,7 +7901,6 @@ export type ProjectsInitInput = {
 export type ProjectsInitReturn = {
   details: Record<string, unknown>;
   workflows: Array<Record<string, unknown>>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `projects.link`. */
@@ -8144,11 +7937,9 @@ export type ProjectsListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   projects: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `projects.next`. */
@@ -8162,7 +7953,6 @@ export type ProjectsNextReturn = {
   filters: Record<string, unknown>;
   projects: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `projects.resources.add`. */
@@ -8193,7 +7983,6 @@ export type ProjectsResourcesImportInput = {
 export type ProjectsResourcesImportReturn = {
   resources: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `projects.resources.list`. */
@@ -8215,11 +8004,9 @@ export type ProjectsResourcesListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   resources: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `projects.resources.show`. */
@@ -8263,7 +8050,6 @@ export type ProjectsTasksAttachReturn = {
   defaults: Record<string, unknown>;
   details: Record<string, unknown>;
   workflow: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `projects.tasks.create`. */
@@ -8285,7 +8071,6 @@ export type ProjectsTasksCreateReturn = {
   defaults: Record<string, unknown>;
   details: Record<string, unknown>;
   workflow: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `projects.tasks.dispatch`. */
@@ -8301,7 +8086,6 @@ export type ProjectsTasksDispatchReturn = {
   defaults: Record<string, unknown>;
   details: Record<string, unknown>;
   workflow: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `projects.update`. */
@@ -8332,7 +8116,6 @@ export type ProjectsWorkflowsAttachInput = {
 export type ProjectsWorkflowsAttachReturn = {
   details: Record<string, unknown>;
   workflow: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `projects.workflows.start`. */
@@ -8347,7 +8130,6 @@ export type ProjectsWorkflowsStartInput = {
 export type ProjectsWorkflowsStartReturn = {
   details: Record<string, unknown>;
   workflow: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `prox.calls.cancel`. */
@@ -8361,7 +8143,6 @@ export type ProxCallsCancelReturn = {
   message: string;
   request_id: string;
   success: boolean;
-  [k: string]: unknown;
 };
 
 /** Input shape for `prox.calls.events`. */
@@ -8374,7 +8155,6 @@ export type ProxCallsEventsReturn = {
   events: Array<Record<string, unknown>>;
   request_id: string;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `prox.calls.profiles.configure`. */
@@ -8396,7 +8176,6 @@ export type ProxCallsProfilesConfigureInput = {
 export type ProxCallsProfilesConfigureReturn = {
   profile: Record<string, unknown>;
   provider_sync: unknown | null;
-  [k: string]: unknown;
 };
 
 /** Input shape for `prox.calls.profiles.list`. */
@@ -8417,10 +8196,8 @@ export type ProxCallsProfilesListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `prox.calls.profiles.show`. */
@@ -8450,7 +8227,6 @@ export type ProxCallsRequestReturn = {
   hint: string;
   provider_mode: "stub" | "live";
   request: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `prox.calls.rules`. */
@@ -8462,7 +8238,6 @@ export type ProxCallsRulesInput = {
 export type ProxCallsRulesReturn = (Record<string, unknown>) | ({
   message: string;
   rules: null;
-  [k: string]: unknown;
 });
 
 /** Input shape for `prox.calls.show`. */
@@ -8475,7 +8250,6 @@ export type ProxCallsShowReturn = {
   request: Record<string, unknown>;
   result: (Record<string, unknown>) | null;
   runs: Array<Record<string, unknown>>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `prox.calls.tools.bind`. */
@@ -8533,10 +8307,8 @@ export type ProxCallsToolsListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `prox.calls.tools.run`. */
@@ -8550,7 +8322,6 @@ export type ProxCallsToolsRunInput = {
 /** Return shape for `prox.calls.tools.run`. */
 export type ProxCallsToolsRunReturn = {
   ok: boolean;
-  [k: string]: unknown;
 };
 
 /** Input shape for `prox.calls.tools.runs`. */
@@ -8563,7 +8334,6 @@ export type ProxCallsToolsRunsReturn = {
   request_id: string;
   tool_runs: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `prox.calls.tools.show`. */
@@ -8584,7 +8354,6 @@ export type ProxCallsToolsUnbindInput = {
 export type ProxCallsToolsUnbindReturn = {
   success: true;
   tool_id: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `prox.calls.transcript`. */
@@ -8599,7 +8368,6 @@ export type ProxCallsTranscriptReturn = {
   request_id: string;
   summary?: string | null;
   transcript: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `prox.calls.voice-agents.bind-tool`. */
@@ -8654,10 +8422,8 @@ export type ProxCallsVoiceAgentsListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `prox.calls.voice-agents.show`. */
@@ -8683,7 +8449,6 @@ export type ProxCallsVoiceAgentsSyncReturn = {
   provider_agent_id?: string | null;
   provider_sync: string;
   voice_agent_id: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `prox.calls.voice-agents.unbind-tool`. */
@@ -8696,7 +8461,6 @@ export type ProxCallsVoiceAgentsUnbindToolInput = {
 export type ProxCallsVoiceAgentsUnbindToolReturn = {
   success: true;
   tool_id: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `react.send`. */
@@ -8713,7 +8477,6 @@ export type ReactSendReturn = {
     chatId: string;
     emoji: string;
     messageId: string;
-    [k: string]: unknown;
   };
   reaction: {
     emoji: string;
@@ -8743,7 +8506,6 @@ export type RoutesExplainReturn = {
   liveEffect: (Record<string, unknown>) | null;
   pattern: string | null;
   target: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `routes.list`. */
@@ -8767,11 +8529,9 @@ export type RoutesListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   routes: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `routes.show`. */
@@ -8785,7 +8545,6 @@ export type RoutesShowReturn = {
   instance: string;
   pattern: string;
   route: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `rules.import`. */
@@ -8807,7 +8566,6 @@ export type RulesImportReturn = {
   rulesDir: string;
   sources: Array<Record<string, unknown>>;
   write: boolean;
-  [k: string]: unknown;
 };
 
 /** Input shape for `rules.sources`. */
@@ -8851,7 +8609,6 @@ export type RuntimeCredentialsAddInput = {
 /** Return shape for `runtime.credentials.add`. */
 export type RuntimeCredentialsAddReturn = {
   credential: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `runtime.credentials.classify`. */
@@ -8871,7 +8628,6 @@ export type RuntimeCredentialsClassifyInput = {
 export type RuntimeCredentialsClassifyReturn = {
   pressure: Record<string, unknown>;
   signal: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `runtime.credentials.disable`. */
@@ -8882,7 +8638,6 @@ export type RuntimeCredentialsDisableInput = {
 /** Return shape for `runtime.credentials.disable`. */
 export type RuntimeCredentialsDisableReturn = {
   credential: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `runtime.credentials.enable`. */
@@ -8893,7 +8648,6 @@ export type RuntimeCredentialsEnableInput = {
 /** Return shape for `runtime.credentials.enable`. */
 export type RuntimeCredentialsEnableReturn = {
   credential: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `runtime.credentials.import`. */
@@ -8908,7 +8662,6 @@ export type RuntimeCredentialsImportInput = {
 /** Return shape for `runtime.credentials.import`. */
 export type RuntimeCredentialsImportReturn = {
   credential: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `runtime.credentials.list`. */
@@ -8932,11 +8685,9 @@ export type RuntimeCredentialsListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   providerHealth: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `runtime.credentials.refresh`. */
@@ -8953,7 +8704,6 @@ export type RuntimeCredentialsRefreshInput = {
 /** Return shape for `runtime.credentials.refresh`. */
 export type RuntimeCredentialsRefreshReturn = {
   refreshed: Array<Record<string, unknown>>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `runtime.credentials.reset-health`. */
@@ -8965,7 +8715,6 @@ export type RuntimeCredentialsResetHealthInput = {
 export type RuntimeCredentialsResetHealthReturn = {
   credential: Record<string, unknown>;
   health: (Record<string, unknown>) | null;
-  [k: string]: unknown;
 };
 
 /** Input shape for `runtime.credentials.select`. */
@@ -8982,7 +8731,6 @@ export type RuntimeCredentialsSelectReturn = {
   candidates: Array<Record<string, unknown>>;
   rejected: Array<Record<string, unknown>>;
   selected: (Record<string, unknown>) | null;
-  [k: string]: unknown;
 };
 
 /** Input shape for `runtime.credentials.status`. */
@@ -8994,7 +8742,6 @@ export type RuntimeCredentialsStatusInput = {
 export type RuntimeCredentialsStatusReturn = {
   credential: Record<string, unknown>;
   health: (Record<string, unknown>) | null;
-  [k: string]: unknown;
 };
 
 /** Input shape for `sdk.client.check`. */
@@ -9104,7 +8851,6 @@ export type SelfChatReturn = {
   data?: unknown;
   reason?: string;
   status: "ok" | "partial" | "missing" | "unavailable";
-  [k: string]: unknown;
 };
 
 /** Input shape for `self.context`. */
@@ -9119,13 +8865,11 @@ export type SelfContextReturn = {
     data?: unknown;
     reason?: string;
     status: "ok" | "partial" | "missing" | "unavailable";
-    [k: string]: unknown;
   };
   chat: {
     data?: unknown;
     reason?: string;
     status: "ok" | "partial" | "missing" | "unavailable";
-    [k: string]: unknown;
   };
   depth: string;
   explain: Array<Record<string, unknown>>;
@@ -9135,7 +8879,6 @@ export type SelfContextReturn = {
     data?: unknown;
     reason?: string;
     status: "ok" | "partial" | "missing" | "unavailable";
-    [k: string]: unknown;
   };
   limit: number;
   nextReads: string[];
@@ -9143,27 +8886,22 @@ export type SelfContextReturn = {
     data?: unknown;
     reason?: string;
     status: "ok" | "partial" | "missing" | "unavailable";
-    [k: string]: unknown;
   };
   recent: {
     data?: unknown;
     reason?: string;
     status: "ok" | "partial" | "missing" | "unavailable";
-    [k: string]: unknown;
   };
   route: {
     data?: unknown;
     reason?: string;
     status: "ok" | "partial" | "missing" | "unavailable";
-    [k: string]: unknown;
   };
   session: {
     data?: unknown;
     reason?: string;
     status: "ok" | "partial" | "missing" | "unavailable";
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `self.explain`. */
@@ -9174,7 +8912,6 @@ export type SelfExplainReturn = {
   explain: Array<Record<string, unknown>>;
   generatedAt: number;
   nextReads: string[];
-  [k: string]: unknown;
 };
 
 /** Input shape for `self.knowledge`. */
@@ -9185,7 +8922,6 @@ export type SelfKnowledgeReturn = {
   data?: unknown;
   reason?: string;
   status: "ok" | "partial" | "missing" | "unavailable";
-  [k: string]: unknown;
 };
 
 /** Input shape for `self.permissions`. */
@@ -9196,7 +8932,6 @@ export type SelfPermissionsReturn = {
   data?: unknown;
   reason?: string;
   status: "ok" | "partial" | "missing" | "unavailable";
-  [k: string]: unknown;
 };
 
 /** Input shape for `self.recent`. */
@@ -9209,7 +8944,6 @@ export type SelfRecentReturn = {
   data?: unknown;
   reason?: string;
   status: "ok" | "partial" | "missing" | "unavailable";
-  [k: string]: unknown;
 };
 
 /** Input shape for `self.route`. */
@@ -9220,7 +8954,6 @@ export type SelfRouteReturn = {
   data?: unknown;
   reason?: string;
   status: "ok" | "partial" | "missing" | "unavailable";
-  [k: string]: unknown;
 };
 
 /** Input shape for `self.whoami`. */
@@ -9232,13 +8965,11 @@ export type SelfWhoamiReturn = {
     data?: unknown;
     reason?: string;
     status: "ok" | "partial" | "missing" | "unavailable";
-    [k: string]: unknown;
   };
   chat: {
     data?: unknown;
     reason?: string;
     status: "ok" | "partial" | "missing" | "unavailable";
-    [k: string]: unknown;
   };
   generatedAt: number;
   identity: Record<string, unknown>;
@@ -9247,15 +8978,12 @@ export type SelfWhoamiReturn = {
     data?: unknown;
     reason?: string;
     status: "ok" | "partial" | "missing" | "unavailable";
-    [k: string]: unknown;
   };
   session: {
     data?: unknown;
     reason?: string;
     status: "ok" | "partial" | "missing" | "unavailable";
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `sessions.actions`. */
@@ -9416,10 +9144,8 @@ export type SessionsFollowupsListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `sessions.followups.pause`. */
@@ -9474,10 +9200,8 @@ export type SessionsFollowupsRunsReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `sessions.followups.snooze`. */
@@ -9609,10 +9333,8 @@ export type SessionsListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `sessions.mute`. */
@@ -9679,7 +9401,6 @@ export type SessionsRuntimeFollowUpReturn = {
   error?: string;
   ok: boolean;
   operation?: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `sessions.runtime.fork`. */
@@ -9696,7 +9417,6 @@ export type SessionsRuntimeForkReturn = {
   error?: string;
   ok: boolean;
   operation?: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `sessions.runtime.interrupt`. */
@@ -9712,7 +9432,6 @@ export type SessionsRuntimeInterruptReturn = {
   error?: string;
   ok: boolean;
   operation?: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `sessions.runtime.list`. */
@@ -9731,7 +9450,6 @@ export type SessionsRuntimeListReturn = {
   error?: string;
   ok: boolean;
   operation?: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `sessions.runtime.read`. */
@@ -9747,7 +9465,6 @@ export type SessionsRuntimeReadReturn = {
   error?: string;
   ok: boolean;
   operation?: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `sessions.runtime.rollback`. */
@@ -9763,7 +9480,6 @@ export type SessionsRuntimeRollbackReturn = {
   error?: string;
   ok: boolean;
   operation?: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `sessions.runtime.steer`. */
@@ -9781,7 +9497,6 @@ export type SessionsRuntimeSteerReturn = {
   error?: string;
   ok: boolean;
   operation?: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `sessions.send`. */
@@ -9909,7 +9624,6 @@ export type SettingsDeleteReturn = {
   status: string;
   target: {
     type: string;
-    [k: string]: unknown;
   };
 };
 
@@ -9994,7 +9708,6 @@ export type SettingsListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   showLegacy: boolean;
   total: number;
@@ -10022,7 +9735,6 @@ export type SettingsSetReturn = {
   status: string;
   target: {
     type: string;
-    [k: string]: unknown;
   };
 };
 
@@ -10051,7 +9763,6 @@ export type SkillGatesDisableReturn = {
     toolPrefix?: string | null;
     toolRegex?: string | null;
     updatedAt?: number;
-    [k: string]: unknown;
   };
   success: true;
 };
@@ -10081,7 +9792,6 @@ export type SkillGatesEnableReturn = {
     toolPrefix?: string | null;
     toolRegex?: string | null;
     updatedAt?: number;
-    [k: string]: unknown;
   };
   success: true;
 };
@@ -10115,7 +9825,6 @@ export type SkillGatesListReturn = {
     toolPrefix?: string | null;
     toolRegex?: string | null;
     updatedAt?: number;
-    [k: string]: unknown;
   }>;
   pagination: {
     hasMore?: boolean;
@@ -10125,7 +9834,6 @@ export type SkillGatesListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   rules: Array<{
     command?: string | null;
@@ -10145,7 +9853,6 @@ export type SkillGatesListReturn = {
     toolPrefix?: string | null;
     toolRegex?: string | null;
     updatedAt?: number;
-    [k: string]: unknown;
   }>;
   total: number;
 };
@@ -10188,10 +9895,8 @@ export type SkillGatesRmReturn = {
     toolPrefix?: string | null;
     toolRegex?: string | null;
     updatedAt?: number;
-    [k: string]: unknown;
   };
   success: true;
-  [k: string]: unknown;
 };
 
 /** Input shape for `skill-gates.set`. */
@@ -10228,7 +9933,6 @@ export type SkillGatesSetReturn = {
     toolPrefix?: string | null;
     toolRegex?: string | null;
     updatedAt?: number;
-    [k: string]: unknown;
   };
   success: true;
 };
@@ -10258,7 +9962,6 @@ export type SkillGatesShowReturn = {
     toolPrefix?: string | null;
     toolRegex?: string | null;
     updatedAt?: number;
-    [k: string]: unknown;
   };
 };
 
@@ -10283,11 +9986,9 @@ export type SkillsInstallReturn = {
     pluginName: string | null;
     skillFilePath: string;
     source: string;
-    [k: string]: unknown;
   }>;
   source: string;
   success: true;
-  [k: string]: unknown;
 };
 
 /** Input shape for `skills.list`. */
@@ -10311,7 +10012,6 @@ export type SkillsListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   skills: Array<{
     description: string | null;
@@ -10320,11 +10020,9 @@ export type SkillsListReturn = {
     pluginName: string | null;
     skillFilePath: string;
     source: string;
-    [k: string]: unknown;
   }>;
   source: string;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `skills.show`. */
@@ -10344,9 +10042,7 @@ export type SkillsShowReturn = {
     pluginName: string | null;
     skillFilePath: string;
     source: string;
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `skills.sync`. */
@@ -10357,7 +10053,6 @@ export type SkillsSyncReturn = {
   codexSynced: string[];
   success: true;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `specs.get`. */
@@ -10369,7 +10064,6 @@ export type SpecsGetInput = {
 /** Return shape for `specs.get`. */
 export type SpecsGetReturn = {
   context: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `specs.list`. */
@@ -10391,11 +10085,9 @@ export type SpecsListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   specs: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `specs.new`. */
@@ -10412,7 +10104,6 @@ export type SpecsNewReturn = {
   missingAncestors: Array<Record<string, unknown>>;
   spec: Record<string, unknown>;
   status: "created";
-  [k: string]: unknown;
 };
 
 /** Input shape for `specs.sync`. */
@@ -10423,7 +10114,6 @@ export type SpecsSyncReturn = {
   rootPath: string;
   status: "synced";
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `stickers.add`. */
@@ -10453,7 +10143,6 @@ export type StickersAddReturn = {
     label: string;
     media: Record<string, unknown>;
     updatedAt: number | null;
-    [k: string]: unknown;
   };
   success: boolean;
 };
@@ -10477,7 +10166,6 @@ export type StickersListReturn = {
     label: string;
     media: Record<string, unknown>;
     updatedAt: number | null;
-    [k: string]: unknown;
   }>;
   pagination: {
     hasMore?: boolean;
@@ -10487,7 +10175,6 @@ export type StickersListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   stickers: Array<{
     agents: string[];
@@ -10500,7 +10187,6 @@ export type StickersListReturn = {
     label: string;
     media: Record<string, unknown>;
     updatedAt: number | null;
-    [k: string]: unknown;
   }>;
   total: number;
 };
@@ -10560,7 +10246,6 @@ export type StickersShowReturn = {
     label: string;
     media: Record<string, unknown>;
     updatedAt: number | null;
-    [k: string]: unknown;
   };
 };
 
@@ -10749,7 +10434,6 @@ export type TagRulesEvaluateReturn = {
   ruleId: string;
   target: Record<string, unknown>;
   traces: Array<Record<string, unknown>>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tag-rules.explain`. */
@@ -10763,7 +10447,6 @@ export type TagRulesExplainReturn = {
   outcomes: Array<Record<string, unknown>>;
   rules: Record<string, unknown>;
   target: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tag-rules.list`. */
@@ -10780,10 +10463,8 @@ export type TagRulesListReturn = {
     offset: number;
     returned?: number;
     total: number;
-    [k: string]: unknown;
   };
   rules: Array<Record<string, unknown>>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tag-rules.show`. */
@@ -10795,7 +10476,6 @@ export type TagRulesShowInput = {
 export type TagRulesShowReturn = {
   rule: Record<string, unknown>;
   source?: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tag-rules.tick`. */
@@ -10812,7 +10492,6 @@ export type TagRulesTickReturn = {
   loadErrors: Array<Record<string, unknown>>;
   matched: number;
   rulesLoaded: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tag-rules.validate`. */
@@ -10823,7 +10502,6 @@ export type TagRulesValidateReturn = {
   errors: Array<Record<string, unknown>>;
   ruleCount: number;
   status: "ok" | "error";
-  [k: string]: unknown;
 };
 
 /** Input shape for `tags.attach`. */
@@ -10868,7 +10546,6 @@ export type TagsAttachReturn = {
   status: string;
   tag?: Record<string, unknown>;
   target: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tags.create`. */
@@ -10889,7 +10566,6 @@ export type TagsCreateReturn = {
   status: string;
   tag?: Record<string, unknown>;
   target: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tags.detach`. */
@@ -10930,7 +10606,6 @@ export type TagsDetachReturn = {
   changedCount: number;
   status: "detached";
   target: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tags.list`. */
@@ -10956,11 +10631,9 @@ export type TagsListReturn = {
     nextCursor: string | null;
     order: string;
     sort: string;
-    [k: string]: unknown;
   };
   tags: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tags.search`. */
@@ -11015,10 +10688,8 @@ export type TagsSearchReturn = {
     nextCursor: string | null;
     order: string;
     sort: string;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tags.set`. */
@@ -11036,7 +10707,6 @@ export type TagsSetReturn = {
   status: string;
   tag?: Record<string, unknown>;
   target: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tags.show`. */
@@ -11049,7 +10719,6 @@ export type TagsShowReturn = {
   behaviorConsumers: Array<Record<string, unknown>>;
   bindings: Array<Record<string, unknown>>;
   tag: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.archive`. */
@@ -11062,7 +10731,6 @@ export type TasksArchiveInput = {
 export type TasksArchiveReturn = {
   event: Record<string, unknown>;
   task: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.automations.add`. */
@@ -11096,9 +10764,7 @@ export type TasksAutomationsAddReturn = {
   target: {
     id: string;
     type: string;
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.automations.disable`. */
@@ -11114,9 +10780,7 @@ export type TasksAutomationsDisableReturn = {
   target: {
     id: string;
     type: string;
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.automations.enable`. */
@@ -11132,9 +10796,7 @@ export type TasksAutomationsEnableReturn = {
   target: {
     id: string;
     type: string;
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.automations.list`. */
@@ -11157,10 +10819,8 @@ export type TasksAutomationsListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.automations.rm`. */
@@ -11176,9 +10836,7 @@ export type TasksAutomationsRmReturn = {
   target: {
     id: string;
     type: string;
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.automations.show`. */
@@ -11190,7 +10848,6 @@ export type TasksAutomationsShowInput = {
 export type TasksAutomationsShowReturn = {
   automation: Record<string, unknown>;
   runs: Array<Record<string, unknown>>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.block`. */
@@ -11203,7 +10860,6 @@ export type TasksBlockInput = {
 export type TasksBlockReturn = {
   event: Record<string, unknown>;
   task: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.comment`. */
@@ -11217,7 +10873,6 @@ export type TasksCommentReturn = {
   comment: Record<string, unknown>;
   event: Record<string, unknown>;
   task: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.create`. */
@@ -11255,7 +10910,6 @@ export type TasksCreateReturn = {
   relatedEvents: Array<Record<string, unknown>>;
   task: Record<string, unknown>;
   taskProfile: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.deps.add`. */
@@ -11268,7 +10922,6 @@ export type TasksDepsAddInput = {
 export type TasksDepsAddReturn = {
   event: Record<string, unknown>;
   task: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.deps.ls`. */
@@ -11292,12 +10945,10 @@ export type TasksDepsLsReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   readiness: Record<string, unknown>;
   taskId: string;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.deps.rm`. */
@@ -11310,7 +10961,6 @@ export type TasksDepsRmInput = {
 export type TasksDepsRmReturn = {
   event: Record<string, unknown>;
   task: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.dispatch`. */
@@ -11333,7 +10983,6 @@ export type TasksDispatchReturn = {
   mode: string;
   readiness?: Record<string, unknown>;
   task: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.done`. */
@@ -11346,7 +10995,6 @@ export type TasksDoneInput = {
 export type TasksDoneReturn = {
   event: Record<string, unknown>;
   task: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.fail`. */
@@ -11359,7 +11007,6 @@ export type TasksFailInput = {
 export type TasksFailReturn = {
   event: Record<string, unknown>;
   task: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.list`. */
@@ -11395,7 +11042,6 @@ export type TasksListReturn = {
   page: Record<string, unknown>;
   tasks: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.profiles.init`. */
@@ -11410,7 +11056,6 @@ export type TasksProfilesInitReturn = {
   manifestPath: string;
   profileDir: string;
   sourceKind: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.profiles.list`. */
@@ -11430,11 +11075,9 @@ export type TasksProfilesListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   profiles: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.profiles.preview`. */
@@ -11454,7 +11097,6 @@ export type TasksProfilesPreviewInput = {
 export type TasksProfilesPreviewReturn = {
   profile: Record<string, unknown>;
   rendered: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.profiles.show`. */
@@ -11474,7 +11116,6 @@ export type TasksProfilesValidateInput = {
 export type TasksProfilesValidateReturn = {
   results: Array<Record<string, unknown>>;
   valid: boolean;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.report`. */
@@ -11488,7 +11129,6 @@ export type TasksReportInput = {
 export type TasksReportReturn = {
   event: Record<string, unknown>;
   task: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.show`. */
@@ -11507,7 +11147,6 @@ export type TasksShowReturn = {
   launchPlan: (Record<string, unknown>) | null;
   readiness: Record<string, unknown>;
   task: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tasks.unarchive`. */
@@ -11519,7 +11158,6 @@ export type TasksUnarchiveInput = {
 export type TasksUnarchiveReturn = {
   event: Record<string, unknown>;
   task: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `threads.brief`. */
@@ -11533,7 +11171,6 @@ export type ThreadsBriefReturn = {
   action: string;
   brief: Record<string, unknown>;
   thread: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `threads.close`. */
@@ -11547,7 +11184,6 @@ export type ThreadsCloseInput = {
 export type ThreadsCloseReturn = {
   action: string;
   thread: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `threads.comment`. */
@@ -11563,7 +11199,6 @@ export type ThreadsCommentReturn = {
   action: string;
   entry: Record<string, unknown>;
   thread: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `threads.create`. */
@@ -11581,7 +11216,6 @@ export type ThreadsCreateInput = {
 export type ThreadsCreateReturn = {
   action: string;
   thread: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `threads.entries`. */
@@ -11597,7 +11231,6 @@ export type ThreadsEntriesReturn = {
   action: string;
   entries: Array<Record<string, unknown>>;
   thread: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `threads.link`. */
@@ -11615,7 +11248,6 @@ export type ThreadsLinkReturn = {
   action: string;
   link: Record<string, unknown>;
   thread: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `threads.list`. */
@@ -11640,9 +11272,7 @@ export type ThreadsListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `threads.note`. */
@@ -11658,7 +11288,6 @@ export type ThreadsNoteReturn = {
   action: string;
   entry: Record<string, unknown>;
   thread: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `threads.show`. */
@@ -11674,7 +11303,6 @@ export type ThreadsShowReturn = {
   entries: Array<Record<string, unknown>>;
   links: Array<Record<string, unknown>>;
   thread: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tools.invoke`. */
@@ -11730,7 +11358,6 @@ export type ToolsListReturn = {
   groups: Array<{
     name: string;
     tools: Array<Record<string, unknown>>;
-    [k: string]: unknown;
   }>;
   items: Array<Record<string, unknown>>;
   pagination: {
@@ -11741,11 +11368,9 @@ export type ToolsListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   tools: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tools.manifest`. */
@@ -11755,7 +11380,6 @@ export type ToolsManifestInput = Record<string, never>;
 export type ToolsManifestReturn = {
   tools: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tools.schema`. */
@@ -11764,7 +11388,6 @@ export type ToolsSchemaInput = Record<string, never>;
 /** Return shape for `tools.schema`. */
 export type ToolsSchemaReturn = {
   schema: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tools.search`. */
@@ -11798,7 +11421,6 @@ export type ToolsShowInput = {
 /** Return shape for `tools.show`. */
 export type ToolsShowReturn = {
   tool: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `tools.test`. */
@@ -11867,9 +11489,8 @@ export type TranscribeFileReturn = {
     duration?: number;
     model?: string;
     provider?: string;
-    segments?: Array<Record<string, unknown>>;
+    segments?: Array<Record<string, string | number | boolean | null>>;
     text: string;
-    [k: string]: unknown;
   };
 };
 
@@ -11892,10 +11513,8 @@ export type TriggersAddReturn = {
   status: string;
   target: {
     type: string;
-    [k: string]: unknown;
   };
   trigger: (Record<string, unknown>) | null;
-  [k: string]: unknown;
 };
 
 /** Input shape for `triggers.disable`. */
@@ -11909,10 +11528,8 @@ export type TriggersDisableReturn = {
   status: string;
   target: {
     type: string;
-    [k: string]: unknown;
   };
   trigger: (Record<string, unknown>) | null;
-  [k: string]: unknown;
 };
 
 /** Input shape for `triggers.enable`. */
@@ -11926,10 +11543,8 @@ export type TriggersEnableReturn = {
   status: string;
   target: {
     type: string;
-    [k: string]: unknown;
   };
   trigger: (Record<string, unknown>) | null;
-  [k: string]: unknown;
 };
 
 /** Input shape for `triggers.list`. */
@@ -11950,11 +11565,9 @@ export type TriggersListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
   triggers: Array<Record<string, unknown>>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `triggers.rm`. */
@@ -11968,10 +11581,8 @@ export type TriggersRmReturn = {
   status: string;
   target: {
     type: string;
-    [k: string]: unknown;
   };
   trigger: (Record<string, unknown>) | null;
-  [k: string]: unknown;
 };
 
 /** Input shape for `triggers.set`. */
@@ -11987,10 +11598,8 @@ export type TriggersSetReturn = {
   status: string;
   target: {
     type: string;
-    [k: string]: unknown;
   };
   trigger: (Record<string, unknown>) | null;
-  [k: string]: unknown;
 };
 
 /** Input shape for `triggers.show`. */
@@ -12001,7 +11610,6 @@ export type TriggersShowInput = {
 /** Return shape for `triggers.show`. */
 export type TriggersShowReturn = {
   trigger: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `triggers.test`. */
@@ -12015,10 +11623,8 @@ export type TriggersTestReturn = {
   status: string;
   target: {
     type: string;
-    [k: string]: unknown;
   };
   trigger: (Record<string, unknown>) | null;
-  [k: string]: unknown;
 };
 
 /** Input shape for `triggers.topics`. */
@@ -12027,7 +11633,6 @@ export type TriggersTopicsInput = Record<string, never>;
 /** Return shape for `triggers.topics`. */
 export type TriggersTopicsReturn = {
   topics: Array<Record<string, unknown>>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `video.analyze`. */
@@ -12055,9 +11660,7 @@ export type VideoAnalyzeReturn = {
     topics: string[];
     transcript: string;
     visualDescription: string;
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `watch.connectors`. */
@@ -12070,7 +11673,6 @@ export type WatchConnectorsReturn = {
   connectors: Array<Record<string, unknown>>;
   items: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `watch.create`. */
@@ -12091,7 +11693,6 @@ export type WatchCreateReturn = {
   next: Record<string, unknown>;
   status: string;
   watch: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `watch.disable`. */
@@ -12103,7 +11704,6 @@ export type WatchDisableInput = {
 export type WatchDisableReturn = {
   status: string;
   watch: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `watch.enable`. */
@@ -12115,7 +11715,6 @@ export type WatchEnableInput = {
 export type WatchEnableReturn = {
   status: string;
   watch: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `watch.events`. */
@@ -12128,7 +11727,6 @@ export type WatchEventsReturn = {
   eventTypes: string[];
   subjects: string[];
   watchId: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `watch.list`. */
@@ -12150,11 +11748,9 @@ export type WatchListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
   watches: Array<Record<string, unknown>>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `watch.rm`. */
@@ -12166,7 +11762,6 @@ export type WatchRmInput = {
 export type WatchRmReturn = {
   deleted: boolean;
   id: string;
-  [k: string]: unknown;
 };
 
 /** Input shape for `watch.show`. */
@@ -12177,7 +11772,6 @@ export type WatchShowInput = {
 /** Return shape for `watch.show`. */
 export type WatchShowReturn = {
   watch: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `watch.trigger`. */
@@ -12196,7 +11790,6 @@ export type WatchTriggerReturn = {
   status: string;
   trigger: Record<string, unknown>;
   watch: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `whatsapp.dm.ack`. */
@@ -12641,7 +12234,6 @@ export type WorkflowsRunsArchiveNodeInput = {
 /** Return shape for `workflows.runs.archive-node`. */
 export type WorkflowsRunsArchiveNodeReturn = {
   details: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `workflows.runs.cancel`. */
@@ -12653,7 +12245,6 @@ export type WorkflowsRunsCancelInput = {
 /** Return shape for `workflows.runs.cancel`. */
 export type WorkflowsRunsCancelReturn = {
   details: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `workflows.runs.list`. */
@@ -12673,11 +12264,9 @@ export type WorkflowsRunsListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   runs: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `workflows.runs.release`. */
@@ -12689,7 +12278,6 @@ export type WorkflowsRunsReleaseInput = {
 /** Return shape for `workflows.runs.release`. */
 export type WorkflowsRunsReleaseReturn = {
   details: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `workflows.runs.show`. */
@@ -12709,7 +12297,6 @@ export type WorkflowsRunsSkipInput = {
 /** Return shape for `workflows.runs.skip`. */
 export type WorkflowsRunsSkipReturn = {
   details: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `workflows.runs.start`. */
@@ -12731,7 +12318,6 @@ export type WorkflowsRunsTaskAttachInput = {
 /** Return shape for `workflows.runs.task-attach`. */
 export type WorkflowsRunsTaskAttachReturn = {
   details: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `workflows.runs.task-create`. */
@@ -12750,7 +12336,6 @@ export type WorkflowsRunsTaskCreateInput = {
 export type WorkflowsRunsTaskCreateReturn = {
   task: Record<string, unknown>;
   workflow: (Record<string, unknown>) | null;
-  [k: string]: unknown;
 };
 
 /** Input shape for `workflows.specs.create`. */
@@ -12780,11 +12365,9 @@ export type WorkflowsSpecsListReturn = {
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   specs: Array<Record<string, unknown>>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `workflows.specs.show`. */

@@ -42,33 +42,29 @@ interface SerializedAdapterRecord {
   updatedAt: number;
 }
 
-const adapterRecordReturnSchema = z
-  .object({
-    adapterId: z.string(),
-    adapterName: z.string(),
-    transport: z.string(),
+const adapterRecordReturnSchema = z.object({
+  adapterId: z.string(),
+  adapterName: z.string(),
+  transport: z.string(),
+  sessionKey: z.string(),
+  sessionName: z.string().nullable(),
+  status: z.string(),
+  diagnosticState: z.enum(["live", "dead", "unbound", "protocol-invalid", "stopped", "configured"]),
+  bind: z.object({
+    bound: z.boolean(),
     sessionKey: z.string(),
     sessionName: z.string().nullable(),
-    status: z.string(),
-    diagnosticState: z.enum(["live", "dead", "unbound", "protocol-invalid", "stopped", "configured"]),
-    bind: z
-      .object({
-        bound: z.boolean(),
-        sessionKey: z.string(),
-        sessionName: z.string().nullable(),
-        agentId: z.string().nullable(),
-        contextId: z.string().nullable(),
-        cliName: z.string().nullable(),
-        contextKey: z.undefined().optional(),
-      })
-      .passthrough(),
-    health: looseObjectSchema,
-    lastEvent: looseObjectSchema.nullable(),
-    lastCommand: looseObjectSchema.nullable(),
-    lastProtocolError: looseObjectSchema.nullable(),
-    updatedAt: z.number(),
-  })
-  .passthrough();
+    agentId: z.string().nullable(),
+    contextId: z.string().nullable(),
+    cliName: z.string().nullable(),
+    contextKey: z.string().optional(),
+  }),
+  health: looseObjectSchema,
+  lastEvent: looseObjectSchema.nullable(),
+  lastCommand: looseObjectSchema.nullable(),
+  lastProtocolError: looseObjectSchema.nullable(),
+  updatedAt: z.number(),
+});
 
 const adaptersListReturnSchema = z.object({
   count: z.number(),

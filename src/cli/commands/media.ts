@@ -11,25 +11,21 @@ import { sendMediaWithOmniCli } from "../media-send.js";
 
 const mediaSendReturnSchema = z.object({
   success: z.literal(true),
-  media: z
-    .object({
-      filePath: z.string(),
-      filename: z.string(),
-      mimeType: z.string(),
-      type: z.string(),
-      caption: z.string().optional(),
-      voiceNote: z.boolean(),
-    })
-    .passthrough(),
-  target: z
-    .object({
-      channel: z.string().optional(),
-      accountId: z.string(),
-      instanceId: z.string(),
-      chatId: z.string(),
-      threadId: z.string().optional(),
-    })
-    .passthrough(),
+  media: z.object({
+    filePath: z.string(),
+    filename: z.string(),
+    mimeType: z.string(),
+    type: z.string(),
+    caption: z.string().optional(),
+    voiceNote: z.boolean(),
+  }),
+  target: z.object({
+    channel: z.string().optional(),
+    accountId: z.string(),
+    instanceId: z.string(),
+    chatId: z.string(),
+    threadId: z.string().optional(),
+  }),
   delivery: looseObjectSchema,
 });
 

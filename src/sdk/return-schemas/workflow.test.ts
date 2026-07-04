@@ -133,7 +133,7 @@ describe("return schema workflow", () => {
       const validation = validateReturnSchemaWorkflow({ dbPath, registry });
       expect(validation.ok).toBe(false);
       expect(validation.issues.some((issue) => issue.code === "NEW_UNTYPED_PUBLIC_COMMAND")).toBe(true);
-      expect(validation.issues.some((issue) => issue.code === "NEW_WEAK_PUBLIC_RETURN_SCHEMA")).toBe(true);
+      expect(validation.issues.some((issue) => issue.code === "WEAK_PUBLIC_RETURN_SCHEMA")).toBe(true);
       expect(validation.issues.some((issue) => issue.code === "CLI_ONLY_COMMAND")).toBe(false);
 
       const missing = listReturnSchemaCommands({ dbPath, kind: "missing" });

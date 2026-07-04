@@ -28,20 +28,18 @@ function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
 
-const stickerReturnSchema = z
-  .object({
-    id: z.string(),
-    label: z.string(),
-    description: z.string(),
-    avoid: z.string().nullable(),
-    channels: z.array(z.string()),
-    agents: z.array(z.string()),
-    media: looseObjectSchema,
-    enabled: z.boolean(),
-    createdAt: z.number().nullable(),
-    updatedAt: z.number().nullable(),
-  })
-  .passthrough();
+const stickerReturnSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  description: z.string(),
+  avoid: z.string().nullable(),
+  channels: z.array(z.string()),
+  agents: z.array(z.string()),
+  media: looseObjectSchema,
+  enabled: z.boolean(),
+  createdAt: z.number().nullable(),
+  updatedAt: z.number().nullable(),
+});
 
 const stickerMutationReturnSchema = z.object({
   success: z.boolean(),

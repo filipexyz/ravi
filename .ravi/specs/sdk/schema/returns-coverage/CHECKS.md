@@ -7,20 +7,25 @@ capability: schema
 feature: returns-coverage
 owners:
   - dev
-status: draft
+status: active
 ---
 
 # Checks
 
-## Coverage Audit
+## Weak Schema Quality Gate
 
-Run:
+Default validation rejects any weak public return schema:
 
 ```bash
-bun -e 'import "reflect-metadata"; import { getRegistry } from "./src/cli/registry-snapshot.ts"; const exposed=getRegistry().commands.filter(c=>!c.cliOnly); const withReturns=exposed.filter(c=>!!c.returns).length; const binary=exposed.filter(c=>c.binary).length; const byGroup={}; for (const c of exposed) { const g=c.groupSegments[0] ?? "root"; byGroup[g] ??= { exposed:0, returns:0, binary:0 }; byGroup[g].exposed++; if (c.returns) byGroup[g].returns++; if (c.binary) byGroup[g].binary++; } console.log(JSON.stringify({exposed:exposed.length, withReturns, withoutReturns:exposed.length-withReturns, binary, byGroup}, null, 2));'
+ravi sdk returns status --json
+ravi sdk returns validate --json
+bun test src/sdk/client-codegen/return-schema-coverage.test.ts
 ```
 
-The output SHOULD be included in PRs that claim return-coverage improvements.
+- `weakPublic` MUST be `0`.
+- `baselineWeakPublic` MUST be `0`.
+- `newlyWeak` MUST be `[]`.
+- `ravi sdk returns validate --json` MUST return `ok: true`.
 
 ## Regression Tests
 
@@ -40,18 +45,26 @@ bun run typecheck
 bun run build
 ```
 
-## Weak-Baseline Quality Gate
+## Coverage Audit
 
-The weak-baseline test ensures that `newlyWeak` is empty and
-`strengthenedButStillListed` is empty:
+Run:
 
 ```bash
 ravi sdk returns status --json
-ravi sdk returns validate --json
-bun test src/sdk/client-codegen/return-schema-coverage.test.ts
 ```
 
-- `newlyWeak` MUST be empty. Fix by adding concrete `@Returns` schemas.
-- `strengthenedButStillListed` MUST be empty. Fix by removing the command
-  from `WEAK_PUBLIC_RETURN_COMMANDS_BASELINE`.
-- See `RUNBOOK.md` for step-by-step diagnosis.
+The output reports total public commands, typed public, binary, weak, and
+CLI-only counts. Include relevant status output in PRs that change return
+schemas.
+
+## Artifact Drift
+
+After changing public return schemas, verify generated artifacts are in sync:
+
+```bash
+ravi sdk openapi check --json
+ravi sdk client check --json
+ravi sdk swift check --json
+```
+
+These checks compare on-disk generated files against a fresh emit.

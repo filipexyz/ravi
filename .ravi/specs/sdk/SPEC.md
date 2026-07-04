@@ -48,9 +48,10 @@ hand-maintained SDK surface.
   later spec explicitly changes the source-of-truth model.
 - `@CliOnly()` commands MUST be excluded from gateway route tables, OpenAPI,
   and generated SDK clients.
-- `@Returns(zod)` SHOULD be present for any command intended for SDK consumers.
-  Commands without `@Returns` MAY be exposed, but generated clients MUST treat
-  their return payload as unknown or generic JSON.
+- `@Returns(zod)` MUST be present for any SDK-facing public command.
+  Public return schemas MUST be concrete — weak schemas (unknown, passthrough,
+  empty objects, arrays of unknown) are prohibited.
+  See `sdk/schema/returns-coverage` for the full quality policy.
 - `@Returns.binary()` is the only supported marker for single-shot binary
   responses.
 

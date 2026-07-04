@@ -10,16 +10,14 @@ import { SUPPORTED_AUDIO_EXTENSIONS, inferAudioMimeType, transcribeFile } from "
 
 const transcribeFileReturnSchema = z.object({
   success: z.literal(true),
-  transcription: z
-    .object({
-      text: z.string(),
-      provider: z.string().optional(),
-      model: z.string().optional(),
-      duration: z.number().optional(),
-      chunks: z.number().optional(),
-      segments: z.array(z.record(z.string(), z.unknown())).optional(),
-    })
-    .passthrough(),
+  transcription: z.object({
+    text: z.string(),
+    provider: z.string().optional(),
+    model: z.string().optional(),
+    duration: z.number().optional(),
+    chunks: z.number().optional(),
+    segments: z.array(z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))).optional(),
+  }),
   source: z.object({
     filePath: z.string(),
     mimeType: z.string(),
