@@ -6,6 +6,7 @@ domain: sessions
 capabilities:
   - attach
   - actions
+  - goals
   - visibility
   - provider-runtime
 tags:

@@ -1085,12 +1085,13 @@ function getDb(): Database {
       session_key TEXT PRIMARY KEY REFERENCES sessions(session_key) ON DELETE CASCADE,
       goal_id TEXT NOT NULL,
       objective TEXT NOT NULL,
-      status TEXT NOT NULL CHECK(status IN ('active','paused','budget_limited','complete')),
+      status TEXT NOT NULL CHECK(status IN ('active','paused','budget_limited','blocked','complete')),
       token_budget INTEGER,
       tokens_used INTEGER NOT NULL DEFAULT 0,
       time_used_seconds INTEGER NOT NULL DEFAULT 0,
       task_id TEXT,
       project_id TEXT,
+      blocked_reason TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
@@ -2403,6 +2404,7 @@ function getDb(): Database {
   removePermissionLegacyTables(db);
   ensureAgentVisibilityMigration(db);
   backfillChatModelOnce(db);
+  ensureSessionGoalBlockedMigration(db);
 
   // Create default agent if none exist
   const count = db.prepare("SELECT COUNT(*) as count FROM agents").get() as {
@@ -2501,6 +2503,10 @@ function ensureCostEventMigrations(database: Database): void {
   ensureColumn(database, "cost_events", "pricing_model", "TEXT");
   ensureColumn(database, "cost_events", "pricing_error", "TEXT");
   database.exec("CREATE INDEX IF NOT EXISTS idx_cost_events_pricing_status ON cost_events(pricing_status, created_at)");
+}
+
+function ensureSessionGoalBlockedMigration(database: Database): void {
+  ensureColumn(database, "session_goals", "blocked_reason", "TEXT");
 }
 
 function removePermissionLegacyTables(database: Database): void {

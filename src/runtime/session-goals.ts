@@ -4,7 +4,7 @@ import { getDb, getRaviDbPath } from "../router/router-db.js";
 
 export const SESSION_GOAL_OBJECTIVE_MAX_CHARS = 4000;
 
-export type SessionGoalStatus = "active" | "paused" | "budget_limited" | "complete";
+export type SessionGoalStatus = "active" | "paused" | "budget_limited" | "blocked" | "complete";
 
 export type SessionGoalAccountingMode =
   | "active_status_only"
@@ -22,6 +22,7 @@ export interface SessionGoal {
   timeUsedSeconds: number;
   taskId?: string;
   projectId?: string;
+  blockedReason?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -36,9 +37,13 @@ interface SessionGoalRow {
   time_used_seconds: number;
   task_id: string | null;
   project_id: string | null;
+  blocked_reason: string | null;
   created_at: number;
   updated_at: number;
 }
+
+const GOAL_COLUMNS = `session_key, goal_id, objective, status, token_budget, tokens_used, time_used_seconds,
+             task_id, project_id, blocked_reason, created_at, updated_at`;
 
 interface SessionGoalStatements {
   get: Statement;
@@ -47,6 +52,7 @@ interface SessionGoalStatements {
   clear: Statement;
   pauseActive: Statement;
   updateStatus: Statement;
+  blockGoal: Statement;
 }
 
 let stmts: SessionGoalStatements | null = null;
@@ -61,16 +67,15 @@ function getStatements(): SessionGoalStatements {
   const db = getDb();
   stmts = {
     get: db.prepare(`
-      SELECT session_key, goal_id, objective, status, token_budget, tokens_used, time_used_seconds,
-             task_id, project_id, created_at, updated_at
+      SELECT ${GOAL_COLUMNS}
       FROM session_goals
       WHERE session_key = ?
     `),
     replace: db.prepare(`
       INSERT INTO session_goals (
         session_key, goal_id, objective, status, token_budget, tokens_used, time_used_seconds,
-        task_id, project_id, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?)
+        task_id, project_id, blocked_reason, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?, NULL, ?, ?)
       ON CONFLICT(session_key) DO UPDATE SET
         goal_id = excluded.goal_id,
         objective = excluded.objective,
@@ -80,40 +85,58 @@ function getStatements(): SessionGoalStatements {
         time_used_seconds = 0,
         task_id = excluded.task_id,
         project_id = excluded.project_id,
+        blocked_reason = NULL,
         created_at = excluded.created_at,
         updated_at = excluded.updated_at
-      RETURNING session_key, goal_id, objective, status, token_budget, tokens_used, time_used_seconds,
-                task_id, project_id, created_at, updated_at
+      RETURNING ${GOAL_COLUMNS}
     `),
     create: db.prepare(`
       INSERT INTO session_goals (
         session_key, goal_id, objective, status, token_budget, tokens_used, time_used_seconds,
-        task_id, project_id, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?)
+        task_id, project_id, blocked_reason, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?, NULL, ?, ?)
       ON CONFLICT(session_key) DO NOTHING
-      RETURNING session_key, goal_id, objective, status, token_budget, tokens_used, time_used_seconds,
-                task_id, project_id, created_at, updated_at
+      RETURNING ${GOAL_COLUMNS}
     `),
     clear: db.prepare("DELETE FROM session_goals WHERE session_key = ?"),
     pauseActive: db.prepare(`
       UPDATE session_goals
-      SET status = 'paused', updated_at = ?
+      SET status = 'paused', blocked_reason = NULL, updated_at = ?
       WHERE session_key = ? AND status = 'active'
-      RETURNING session_key, goal_id, objective, status, token_budget, tokens_used, time_used_seconds,
-                task_id, project_id, created_at, updated_at
+      RETURNING ${GOAL_COLUMNS}
     `),
     updateStatus: db.prepare(`
       UPDATE session_goals
       SET
         status = CASE
-          WHEN status = 'budget_limited' AND ? = 'paused' THEN status
+          WHEN status = 'budget_limited' AND ? IN ('paused', 'blocked') THEN status
+          WHEN status = 'complete' THEN status
           WHEN ? = 'active' AND token_budget IS NOT NULL AND tokens_used >= token_budget THEN 'budget_limited'
           ELSE ?
         END,
+        blocked_reason = CASE
+          WHEN ? IN ('paused', 'blocked') AND status = 'budget_limited' THEN blocked_reason
+          WHEN ? = 'blocked' THEN blocked_reason
+          ELSE NULL
+        END,
         updated_at = ?
       WHERE session_key = ? AND (? IS NULL OR goal_id = ?)
-      RETURNING session_key, goal_id, objective, status, token_budget, tokens_used, time_used_seconds,
-                task_id, project_id, created_at, updated_at
+      RETURNING ${GOAL_COLUMNS}
+    `),
+    blockGoal: db.prepare(`
+      UPDATE session_goals
+      SET
+        status = CASE
+          WHEN status IN ('active', 'paused') THEN 'blocked'
+          ELSE status
+        END,
+        blocked_reason = CASE
+          WHEN status IN ('active', 'paused') THEN ?
+          ELSE blocked_reason
+        END,
+        updated_at = ?
+      WHERE session_key = ? AND (? IS NULL OR goal_id = ?)
+      RETURNING ${GOAL_COLUMNS}
     `),
   };
 
@@ -136,6 +159,7 @@ function rowToGoal(row: SessionGoalRow): SessionGoal {
     timeUsedSeconds: row.time_used_seconds,
     ...(row.task_id ? { taskId: row.task_id } : {}),
     ...(row.project_id ? { projectId: row.project_id } : {}),
+    ...(row.blocked_reason ? { blockedReason: row.blocked_reason } : {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -234,12 +258,36 @@ export function updateSessionGoalStatus(
     status,
     status,
     status,
+    status,
+    status,
     now,
     sessionKey,
     expected,
     expected,
   ) as SessionGoalRow | null;
   return row ? rowToGoal(row) : null;
+}
+
+export function blockSessionGoal(
+  sessionKey: string,
+  reason: string,
+  expectedGoalId?: string | null,
+): SessionGoal | null {
+  const trimmedReason = reason.trim();
+  if (!trimmedReason) {
+    throw new Error("blocked reason must not be empty");
+  }
+  const now = Date.now();
+  const expected = expectedGoalId ?? null;
+  const row = getStatements().blockGoal.get(
+    trimmedReason,
+    now,
+    sessionKey,
+    expected,
+    expected,
+  ) as SessionGoalRow | null;
+  if (!row) return null;
+  return rowToGoal(row);
 }
 
 export function pauseActiveSessionGoal(sessionKey: string): SessionGoal | null {
@@ -314,8 +362,7 @@ export function accountSessionGoalUsage(input: {
     WHERE session_key = ?
       AND ${statusFilter}
       AND ${goalIdFilter}
-    RETURNING session_key, goal_id, objective, status, token_budget, tokens_used, time_used_seconds,
-              task_id, project_id, created_at, updated_at
+    RETURNING ${GOAL_COLUMNS}
   `;
   const params: Array<string | number> = [timeDeltaSeconds, tokenDelta, tokenDelta, Date.now(), input.sessionKey];
   if (expectedGoalId) params.push(expectedGoalId);
@@ -326,4 +373,31 @@ export function accountSessionGoalUsage(input: {
     return { kind: "unchanged", goal: getSessionGoal(input.sessionKey) };
   }
   return { kind: "updated", goal: rowToGoal(row) };
+}
+
+export function buildSessionGoalPromptSection(sessionKey: string): string | null {
+  const goal = getSessionGoal(sessionKey);
+  if (!goal || goal.status === "complete") return null;
+
+  const lines: string[] = [];
+  lines.push(`Goal ID: ${goal.goalId}`);
+  lines.push(`Status: ${goal.status}`);
+
+  const objectivePreview = goal.objective.length > 500 ? `${goal.objective.slice(0, 497)}...` : goal.objective;
+  lines.push(`Objective: ${objectivePreview}`);
+
+  if (goal.tokenBudget !== undefined) {
+    lines.push(`Budget: ${goal.tokensUsed} / ${goal.tokenBudget} tokens`);
+  }
+  if (goal.timeUsedSeconds > 0) {
+    lines.push(`Time used: ${goal.timeUsedSeconds}s`);
+  }
+  if (goal.status === "blocked" && goal.blockedReason) {
+    lines.push(`Blocked reason: ${goal.blockedReason}`);
+  }
+  if (goal.taskId) {
+    lines.push(`Linked task: ${goal.taskId}`);
+  }
+
+  return lines.join("\n");
 }
