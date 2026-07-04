@@ -7,9 +7,9 @@ bun test src/events/audit-stream.test.ts
 ```
 
 Expected:
-- all tests pass
-- `RAVI_EVENTS_SUBJECTS` has no overlapping patterns
-- prompt workqueue subjects are excluded
+- All tests MUST pass
+- `RAVI_EVENTS_SUBJECTS` MUST NOT contain overlapping patterns within the same stream
+- Prompt workqueue subjects (`ravi.session.*.prompt`) MUST be excluded from the audit stream
 
 ## Trigger Topic Catalog
 
@@ -18,9 +18,9 @@ bun test src/triggers/topic-catalog.test.ts
 ```
 
 Expected:
-- all catalog entries have unique ids
-- all entries have schemas and message templates
-- channel transport aliases are not documented as trigger-ready
+- All catalog entries MUST have unique ids
+- All entries MUST have schemas and message templates
+- Channel transport aliases MUST NOT be documented as trigger-ready subjects unless a Ravi publisher actually emits them
 
 ## Spec Sync
 
@@ -29,5 +29,6 @@ ravi specs sync --json
 ```
 
 Expected:
-- `events` domain appears in the spec index
-- capabilities include `audit-stream`, `topic-registry`, `gap-analysis`
+- The `events` domain MUST appear in the spec index
+- Capabilities MUST include `audit-stream`, `topic-registry`, `gap-analysis`
+- The command MUST exit without errors
