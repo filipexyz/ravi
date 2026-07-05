@@ -9,13 +9,16 @@ description: >-
   paginação real (páginas limitadas 50/500 + nextCommand), gate de --help padrão-ouro,
   e os meta-testes de CI que são a lei do repo. Use quando criar nova ferramenta CLI,
   refatorar CLI existente, padronizar comandos, ou integrar CLI ao runtime com
-  RAVI_CONTEXT_KEY. NÃO cobre: criar a skill que ensina o CLI (use skill-creator);
-  o método de escrever o --help em si (use cli-help-engineering).
+  RAVI_CONTEXT_KEY. Skill standalone — o essencial de --help e de skill→cli está inline;
+  cli-help-engineering e dissolving-skills-into-cli-help são aprofundamento opcional.
+  NÃO cobre: criar a skill que ensina o CLI (use skill-creator).
 ---
 
 # CLI Creator — Ciclo Completo de CLIs no Ravi
 
 **Função:** transformar um problema operacional num CLI correto, agent-first e descobrível — usando a arquitetura REAL do runtime do Ravi, não um modelo genérico. Todo padrão aqui foi spike-testado no código vivo (`ravi-src-dev`); nada é aspiracional.
+
+**Esta skill é STANDALONE:** o essencial das 3 capacidades (criar CLI, `--help` padrão-ouro, skill→cli) está todo inline. As companion citadas (`cli-help-engineering`, `dissolving-skills-into-cli-help`) são **aprofundamento opcional, não dependência** — um agente que só tenha esta skill consegue os 3.
 
 > ⚠️ Antes de tudo — a armadilha nº1: **NÃO existe** no CLI `ravi` um comando `cli-manifest` por-CLI nem um `tools cli-register`. Discovery é por **reflexão automática de decorators**. Se você escrever `program.command(...)` + `cli-manifest` + registro manual, está construindo a coisa errada.
 
@@ -59,6 +62,8 @@ Apresentar o mapa ao **aprovador humano (HITL)**. NUNCA implementar sem aprovaç
 Nativo Ravi = classe `@Group` com métodos `@Command` em `src/cli/commands/<grupo>.ts`. Template REAL (de `tasks.ts`):
 
 ```typescript
+import "reflect-metadata";   // OBRIGATÓRIO: 1ª linha do arquivo. Sem ele os decorators viram no-op silencioso — compila mas o comando NÃO registra (mesmo modo de falha da arquitetura fictícia antiga).
+
 @Group({ name: "tasks", description: "Task runtime for dispatching work to Ravi agents", scope: "open" })
 export class TaskCommands {
   @Command({ name: "create", description: "Create a tracked task; ..." })
@@ -78,9 +83,10 @@ export class TaskCommands {
 ```
 
 Os 8 decorators reais (`src/cli/decorators.ts`): `@Group` `@Command` `@Arg` `@Option` `@CommandAccess` `@Returns` `@Scope` `@CliOnly`.
-- **`@CommandAccess({ kind, resource, action, risk })`** — obrigatório em quase todo comando; alimenta o permission-provider. `kind`: `read`|`mutate`. `risk`: `low`|`medium`|`high`.
-- **`@Scope` / `scope` no `@Group`** — fail-secure: default é `admin`. Use `scope: "open"` só para leitura genérica.
+- **`@CommandAccess({ kind, resource, action, risk })`** — obrigatório em quase todo comando; alimenta o permission-provider. `kind`: `read`|`mutate`. `risk`: `low`|`medium`|`high`|`destructive`.
+- **`@Scope` / `scope` no `@Group`** — fail-secure: default é `admin`. Enum real (`decorators.ts`): `superadmin`|`admin`|`writeContacts`|`resource`|`open`. Use `open` só para leitura genérica.
 - **`@Returns(zodSchema)`** — SEM isso o comando não vira tool tipado do SDK. Schema inline (como acima) ou em massa via `declareCommandReturns(Classe, { metodo: schema })`. Primitivos reutilizáveis em `src/cli/return-schemas.ts`: `cliOffsetPaginationSchema`, `cliCursorPageSchema`, `mutationAckSchema`, `jsonValueSchema`.
+- **`@Returns.binary()`** — para resposta binária (blob) no lugar do schema Zod.
 - **`@CliOnly()`** — exclui o comando da superfície SDK (comando só-humano).
 
 ### 4. Descoberta = automática (NÃO manual)
@@ -126,7 +132,7 @@ Rodar CADA comando com input válido / inválido / faltando. Todos os checks aba
 
 ## 5. `--help` padrão-ouro (GATE — o contrato completo)
 
-`--help` NÃO é lista de flags — é o **contrato comportamental completo** da CLI, a SSoT. Um agente sem contexto tem que dirigir a CLI só lendo o help ("teste do agente cego"). **Bloqueia entrega se falhar.** Método técnico completo na skill **`cli-help-engineering`** (14 seções + building blocks + tipologias); o essencial está inline aqui.
+`--help` NÃO é lista de flags — é o **contrato comportamental completo** da CLI, a SSoT. Um agente sem contexto tem que dirigir a CLI só lendo o help ("teste do agente cego"). **Bloqueia entrega se falhar.** **O essencial pra escrever um `--help` padrão-ouro está inline abaixo — esta skill é standalone.** Aprofundamento opcional (building blocks, tipologias): `cli-help-engineering`, se disponível.
 
 **Padrão-ouro de referência (rodar e replicar a estrutura):** `sde tiny pedido-montar-json --help`.
 
@@ -199,15 +205,15 @@ Para sets grandes/temporais use cursor (`src/cli/listing.ts` + `cliCursorPageSch
 
 ## 8. Skill → CLI: injetar conhecimento no `--help` (ferramenta de anotação)
 
-Quando o CLI existe e tem regra de negócio no source que o `--help` não mostra, a ferramenta **`dissolving-skills-into-cli-help`** migra o conhecimento tribal da skill PRA o `--help` — o CLI vira a SSoT e a skill vira **STUB** (triggers + pointer, nunca deletar). Validada em 4 skills do jarvis.
+Quando o CLI existe e tem regra de negócio no source que o `--help` não mostra, migra-se o conhecimento tribal da skill PRA o `--help` — o CLI vira a SSoT e a skill vira **STUB** (triggers + pointer, nunca deletar). Os passos essenciais estão inline abaixo (standalone); aprofundamento opcional: `dissolving-skills-into-cli-help` (validado em 4 skills do jarvis).
 
-**Mecanismo real (anotar o CLI):** estender o comando com `addHelpText('after', ...)` no source, escrevendo as 14 seções canônicas (§5) direto ali. O `--help` passa a carregar REGRAS HARD, HITL template literal, lifecycle e error mapping — não só flags.
+**Mecanismo real (anotar o CLI), POR FAMÍLIA:** CLI **nativo Ravi** → setar a string `helpAfter` no `@Command` (o `registry.ts` chama `addHelpText('after', helpAfter)` por baixo). CLI **standalone/commander** → encadear `.addHelpText('after', ...)` direto. Nos dois, escrever as 14 seções canônicas (§5) ali — o `--help` passa a carregar REGRAS HARD, HITL template literal, lifecycle e error mapping, não só flags.
 
 **Classificar cada pedaço da skill em 5 buckets:** **A** → AGENTS.md (roteamento/triggers) · **B** → `--help` do orquestrador (regras hard, HITL, lifecycle) · **C** → `--help` dos subcomandos (regras locais, formato) · **D** → profile de task (dispatch denso) · **E** → vault (knowledge denso, multi-fase).
 
 **Sequência operacional (o processo completo, condensado):**
 1. **ANTES:** rodar o `--help` atual (baseline) + rodar o CLI com args reais (ver o JSON de output) + ler a skill inteira + classificar cada item nos 5 buckets + rodar `--help` de TODAS as CLIs que vai citar (cross-CLI empírica — **zero invenção de nome**).
-2. **APPLY:** backup atômico do source (`cp index.ts index.ts.bak-<ts>`) → localizar o `program.command('<nome>')` (ou o comando decorator) → migrar buckets **B+C** pro `addHelpText('after', ...)` escrevendo as 14 seções → validar que `--help` renderiza **E** o CLI ainda executa.
+2. **APPLY:** backup do source (nativo: `git stash`/branch; standalone: `cp index.ts index.ts.bak-<ts>`) → localizar o comando (nativo: método `@Command`; standalone: `program.command('<nome>')`) → migrar buckets **B+C** pro help (nativo: string `helpAfter`; standalone: `addHelpText('after', ...)`) escrevendo as 14 seções → validar que `--help` renderiza **E** o CLI ainda executa.
 3. **PÓS:** skill vira **STUB** (mantém triggers + pointer, nunca deletar) → AGENTS.md aponta `→ TODAS regras em <cli> --help` → **simulação real**: operador monta 1 output completo só com o `--help`, sem a skill → archive a skill (só após simulação verde) → delete definitivo **SÓ com "sim" explícito do HITL** (ação destrutiva).
 
 **Fecha o triângulo:** `cli-creator` (constrói) → `cli-help-engineering` (método do `--help`) → `dissolving-skills-into-cli-help` (injeta o conhecimento como anotação). AGENTS.md do operador aponta: `→ TODAS regras em <cli> --help`.
