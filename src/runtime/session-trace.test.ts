@@ -981,12 +981,18 @@ describe("runtime session trace instrumentation", () => {
           text: "ok",
           metadata: { nativeEvent: "item.completed", item: { id: "msg-1", type: "agent_message" } },
         },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
       ]),
     );
 
     expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).toEqual([
       "adapter.request",
       "assistant.message",
+      "turn.complete",
     ]);
   });
 
@@ -1000,6 +1006,78 @@ describe("runtime session trace instrumentation", () => {
     expect(terminal?.status).toBe("interrupted");
     expect(terminal?.payloadJson).toMatchObject({ abort_reason: "provider_interrupted" });
     expect(getSessionTurn("turn-interrupted")?.status).toBe("interrupted");
+  });
+
+  it("replays a pending user turn when the provider stream closes without a terminal event before tools", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "received from slack",
+      deliveryBarrier: "after_response",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      currentTurnToolStarted: false,
+      toolRunning: false,
+    });
+    seedAdapterTrace(streaming, "turn-stream-closed-before-tool");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(streaming, makeRuntimeSession([]), {
+      stashedMessages,
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+    });
+
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual([
+      "received from slack",
+    ]);
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "runtime_event_loop_closed" }]);
+
+    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
+    expect(terminal?.status).toBe("aborted");
+    expect(terminal?.payloadJson).toMatchObject({
+      abort_reason: "runtime_event_loop_closed",
+      autoRecovered: true,
+    });
+    expect(getSessionTurn("turn-stream-closed-before-tool")?.status).toBe("aborted");
+  });
+
+  it("does not replay an unterminated turn after a tool has started", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "do not replay after side effects",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      currentTurnToolStarted: true,
+      toolRunning: false,
+    });
+    seedAdapterTrace(streaming, "turn-stream-closed-after-tool");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(streaming, makeRuntimeSession([]), {
+      stashedMessages,
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+    });
+
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(restartRequests).toEqual([]);
+
+    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
+    expect(terminal?.payloadJson).toMatchObject({
+      abort_reason: "runtime_event_loop_closed",
+      autoRecovered: false,
+    });
   });
 
   it("records failed turns with error details", async () => {

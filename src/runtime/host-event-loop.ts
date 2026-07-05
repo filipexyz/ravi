@@ -990,6 +990,38 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     });
   };
 
+  const prepareUnterminatedTurnRecovery = () => {
+    const currentTurnId = streaming.currentTraceTurnId;
+    if (!currentTurnId || streaming.currentTraceTurnTerminalRecorded || restartStashedReason) {
+      return;
+    }
+
+    const reason =
+      streaming.internalAbortReason ??
+      (streaming.abortController.signal.aborted ? "runtime_aborted" : "runtime_event_loop_closed");
+
+    if (reason !== "runtime_event_loop_closed") {
+      return;
+    }
+    if (streaming.pendingMessages.length === 0 || streaming.toolRunning || streaming.currentTurnToolStarted) {
+      return;
+    }
+
+    const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages);
+    if (stashedCount === 0) {
+      return;
+    }
+
+    restartStashedReason = reason;
+    log.warn("Recovering unterminated runtime turn by replaying pending messages", {
+      runId,
+      sessionName,
+      turnId: currentTurnId,
+      reason,
+      stashedMessages: stashedCount,
+    });
+  };
+
   const patchLiveState = (
     input: Parameters<typeof updateRuntimeLiveState>[1],
     skillVisibility?: RuntimeSkillVisibilitySnapshot,
@@ -2211,6 +2243,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   } finally {
     log.info("Streaming session ended", { runId, sessionName });
 
+    prepareUnterminatedTurnRecovery();
     recordUnterminatedTurnExit();
     clearTraceTurnState();
     clearProviderInactivityWatch();

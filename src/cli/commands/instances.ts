@@ -558,24 +558,26 @@ function deleteConflictingSessions(
 ): number {
   const sessions = listSessions();
   let deleted = 0;
+  const normalizedPattern = pattern.toLowerCase();
   for (const session of sessions) {
     if (!sessionBelongsToRouteAccount(session, opts.accountId)) continue;
-    if (pattern.startsWith("group:")) {
-      const groupId = pattern.replace("group:", "");
-      if (session.sessionKey.includes(`group:${groupId}`) && session.agentId !== targetAgent) {
+    const normalizedSessionKey = session.sessionKey.toLowerCase();
+    if (normalizedPattern.startsWith("group:")) {
+      const groupId = normalizedPattern.replace("group:", "");
+      if (normalizedSessionKey.includes(`group:${groupId}`) && session.agentId !== targetAgent) {
         deleteSession(session.sessionKey);
         if (!opts.silent) console.log(`  Deleted conflicting session: ${session.sessionKey}`);
         deleted++;
       }
-    } else if (pattern.startsWith("lid:")) {
-      const lid = pattern.replace("lid:", "");
-      if (session.sessionKey.includes(`lid:${lid}`) && session.agentId !== targetAgent) {
+    } else if (normalizedPattern.startsWith("lid:")) {
+      const lid = normalizedPattern.replace("lid:", "");
+      if (normalizedSessionKey.includes(`lid:${lid}`) && session.agentId !== targetAgent) {
         deleteSession(session.sessionKey);
         if (!opts.silent) console.log(`  Deleted conflicting session: ${session.sessionKey}`);
         deleted++;
       }
     } else if (pattern.includes("*")) {
-      const regex = new RegExp(pattern.replace(/\*/g, ".*"));
+      const regex = new RegExp(pattern.replace(/\*/g, ".*"), "i");
       const match = session.sessionKey.match(/dm:(\d+)/);
       if (match && regex.test(match[1]) && session.agentId !== targetAgent) {
         deleteSession(session.sessionKey);

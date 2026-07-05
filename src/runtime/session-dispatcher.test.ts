@@ -588,6 +588,71 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
+  it("does not replace the active turn source before an after_tool interrupt starts the next turn", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-interrupt-source-");
+    try {
+      getOrCreateSession("agent:main:test:interrupt-source", "main", stateDir, { name: "interrupt-source" });
+      const activeSource: NonNullable<RuntimeHostStreamingSession["currentSource"]> = {
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "5511947879044",
+        canonicalChatId: "chat_dm",
+        sourceMessageId: "wamid-active",
+      };
+      const slackSource: NonNullable<RuntimeHostStreamingSession["currentSource"]> = {
+        channel: "slack",
+        accountId: "ravi-rbbt-slack",
+        chatId: "C0BFAB90FUG",
+        canonicalChatId: "chat_slack",
+        sourceMessageId: "1783105248.141999",
+      };
+      const interrupt = mock(async () => {});
+      const dispatcher = createDispatcher(2);
+      const activeSession = createActiveSession({
+        agentId: "main",
+        turnActive: true,
+        currentEffort: "xhigh",
+        currentSource: activeSource,
+        queryHandle: {
+          provider: "codex",
+          events: (async function* () {})(),
+          interrupt,
+        },
+      });
+      dispatcher.streamingSessions.set("interrupt-source", activeSession);
+
+      await dispatcher.handlePromptImmediate("interrupt-source", {
+        prompt: "[Slack C0BFAB90FUG mid:1783105248.141999] <@U0BAA2B1LTS>: oi",
+        _agentId: "main",
+        deliveryBarrier: "after_tool",
+        deliveryBarrierSource: "default",
+        source: slackSource,
+        context: {
+          channelId: "slack",
+          channelName: "Slack",
+          accountId: "ravi-rbbt-slack",
+          chatId: "C0BFAB90FUG",
+          canonicalChatId: "chat_slack",
+          messageId: "1783105248.141999",
+          senderId: "U0BAA2B1LTS",
+          senderName: "<@U0BAA2B1LTS>",
+          isGroup: true,
+          groupName: "C0BFAB90FUG",
+          timestamp: Date.now(),
+        },
+      });
+
+      expect(activeSession.currentSource).toEqual(activeSource);
+      expect(activeSession.pendingMessages).toHaveLength(1);
+      expect(activeSession.pendingMessages[0]?.deliveryBarrier).toBe("after_tool");
+      expect(activeSession.pendingMessages[0]?.launchPrompt?.source).toEqual(slackSource);
+      expect(activeSession.interrupted).toBe(true);
+      expect(interrupt).toHaveBeenCalledTimes(1);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
   it("does not record daemon restart snapshots for terminal task sessions", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-restart-terminal-task-");
     try {

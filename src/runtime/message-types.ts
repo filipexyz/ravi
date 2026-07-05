@@ -70,6 +70,10 @@ export interface MessageTarget extends MessageActorMetadata {
   threadId?: string;
   /** Original inbound channel message ID, used for session trace correlation. */
   sourceMessageId?: string;
+  /** Preferred user-visible runtime status anchor message for this session/chat/thread. */
+  statusAnchorMessageId?: string;
+  /** Canonical status anchor kind, following the channels model spec. */
+  statusAnchorKind?: "last_outbound_message" | "chat_thread_transient" | "draft_outbound_message" | "none";
   /**
    * Internal routing hint: deliver responses to this target, but do not expose
    * typing/presence while background automation is working.
