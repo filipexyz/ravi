@@ -25,6 +25,7 @@ import { nats } from "./nats.js";
 import type { ResponseMessage } from "./runtime/message-types.js";
 import { configStore } from "./config-store.js";
 import { recordDeliveryTrace, recordPresenceTrace, recordResponseEmittedTrace } from "./session-trace/channel-trace.js";
+import { listSessionEvents } from "./session-trace/session-trace-db.js";
 import { logger } from "./utils/logger.js";
 import type { OmniSender } from "./omni/sender.js";
 import type { OmniConsumer } from "./omni/consumer.js";
@@ -126,6 +127,12 @@ function deliveryAnchorMessageId(data: Record<string, unknown>): string | undefi
   return undefined;
 }
 
+function slackMessageTs(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const ts = Number(value);
+  return Number.isFinite(ts) ? ts : undefined;
+}
+
 function withOutboundStatusAnchor(target: PresenceTarget, data: Record<string, unknown>): PresenceTarget {
   const anchorMessageId = deliveryAnchorMessageId(data);
   if (!anchorMessageId) return target;
@@ -158,6 +165,14 @@ type PresenceTarget = {
   canonicalChatId?: string;
   suppressPresence?: boolean;
 };
+
+type NativePresenceTurnState = {
+  inboundTarget?: PresenceTarget;
+  outboundTarget?: PresenceTarget;
+  activeTarget?: PresenceTarget;
+  terminal: boolean;
+};
+
 type MessageDeleteRequest = {
   channel?: string;
   accountId: string;
@@ -189,6 +204,7 @@ export class Gateway {
   private terminalRuntimeSessions = new Set<string>();
   private nativePresenceTargets = new Map<string, PresenceTarget>();
   private nativeStatusAnchors = new Map<string, PresenceTarget>();
+  private nativePresenceTurns = new Map<string, NativePresenceTurnState>();
   private postDeliveryRenewals = new Map<string, ReturnType<typeof setTimeout>>();
   private interruptedPresenceStops = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -229,6 +245,7 @@ export class Gateway {
     this.terminalRuntimeSessions.clear();
     this.nativePresenceTargets.clear();
     this.nativeStatusAnchors.clear();
+    this.nativePresenceTurns.clear();
     this.clearPostDeliveryRenewals();
     this.clearInterruptedPresenceStops();
     log.info("Gateway stopped");
@@ -467,6 +484,7 @@ export class Gateway {
   private rememberNativePresenceTarget(sessionName: string, target: PresenceTarget, active: boolean): void {
     if (active) {
       this.nativePresenceTargets.set(sessionName, target);
+      this.activateNativePresenceTurnTarget(sessionName, target);
       this.rememberNativeStatusAnchor(sessionName, target);
       return;
     }
@@ -475,11 +493,53 @@ export class Gateway {
     if (!currentTarget || this.presenceSurfacesMatch(currentTarget, target)) {
       this.nativePresenceTargets.delete(sessionName);
     }
+    const state = this.nativePresenceTurns.get(sessionName);
+    if (state?.activeTarget && this.presenceSurfacesMatch(state.activeTarget, target)) {
+      state.activeTarget = undefined;
+    }
   }
 
   private rememberNativeStatusAnchor(sessionName: string, target: PresenceTarget): void {
     if (target.statusAnchorKind !== "last_outbound_message" || !target.statusAnchorMessageId) return;
     this.nativeStatusAnchors.set(sessionName, target);
+  }
+
+  private nativePresenceTurn(sessionName: string): NativePresenceTurnState {
+    let state = this.nativePresenceTurns.get(sessionName);
+    if (!state) {
+      state = { terminal: false };
+      this.nativePresenceTurns.set(sessionName, state);
+    }
+    return state;
+  }
+
+  private beginNativePresenceTurn(sessionName: string, target: PresenceTarget): void {
+    if (!this.shouldUseNativePresence(target)) return;
+    const state = this.nativePresenceTurn(sessionName);
+    state.inboundTarget = target;
+    state.outboundTarget = undefined;
+    state.activeTarget = target;
+    state.terminal = false;
+    this.nativePresenceTargets.set(sessionName, target);
+  }
+
+  private activateNativePresenceTurnTarget(sessionName: string, target: PresenceTarget): void {
+    if (!this.shouldUseNativePresence(target)) return;
+    const state = this.nativePresenceTurn(sessionName);
+    if (!state.inboundTarget || this.presenceSurfacesMatch(state.inboundTarget, target)) {
+      state.activeTarget = target;
+    }
+  }
+
+  private rememberNativeOutboundTurnAnchor(sessionName: string, target: PresenceTarget): void {
+    if (!this.shouldUseNativePresence(target)) return;
+    this.rememberNativeStatusAnchor(sessionName, target);
+    const state = this.nativePresenceTurn(sessionName);
+    state.outboundTarget = target;
+    if (!state.terminal && this.activeRuntimeSessions.has(sessionName)) {
+      state.activeTarget = target;
+      this.nativePresenceTargets.set(sessionName, target);
+    }
   }
 
   private nativeStatusAnchorTarget(sessionName: string, sourceTarget: PresenceTarget): PresenceTarget | undefined {
@@ -492,16 +552,66 @@ export class Gateway {
     };
   }
 
+  private restoreNativeOutboundAnchorFromTrace(
+    sessionName: string,
+    sourceTarget: PresenceTarget,
+  ): PresenceTarget | undefined {
+    if (this.normalizePresenceChannel(sourceTarget.channel) !== "slack") return undefined;
+    const inboundTs = slackMessageTs(sourceTarget.sourceMessageId);
+    if (inboundTs === undefined) return undefined;
+
+    const session = getSessionByName(sessionName);
+    if (!session) return undefined;
+
+    const events = listSessionEvents(session.sessionKey);
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const event = events[index];
+      if (event.eventType !== "delivery.delivered") continue;
+      const payload = event.payloadJson;
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) continue;
+
+      const payloadRecord = payload as Record<string, unknown>;
+      const anchorMessageId = deliveryAnchorMessageId(payloadRecord);
+      const deliveryTs = slackMessageTs(anchorMessageId);
+      if (deliveryTs === undefined || deliveryTs <= inboundTs) continue;
+
+      const target = parsePresenceTarget(payloadRecord.target);
+      const candidate = target ? withOutboundStatusAnchor(target, payloadRecord) : undefined;
+      if (candidate && !this.presenceSurfacesMatch(candidate, sourceTarget)) continue;
+
+      const restoredTarget: PresenceTarget = {
+        ...sourceTarget,
+        statusAnchorKind: "last_outbound_message",
+        statusAnchorMessageId: anchorMessageId,
+      };
+      this.rememberNativeOutboundTurnAnchor(sessionName, restoredTarget);
+      return restoredTarget;
+    }
+
+    return undefined;
+  }
+
   private runtimePresenceTarget(
     sessionName: string,
     sourceTarget: PresenceTarget | undefined,
   ): PresenceTarget | undefined {
     if (!sourceTarget || !this.shouldUseNativePresence(sourceTarget)) return sourceTarget;
+    const turnState = this.nativePresenceTurns.get(sessionName);
+    if (turnState?.activeTarget && this.presenceSurfacesMatch(turnState.activeTarget, sourceTarget)) {
+      return turnState.activeTarget;
+    }
+    const activeTarget = this.nativePresenceTargets.get(sessionName);
+    if (activeTarget && this.presenceSurfacesMatch(activeTarget, sourceTarget)) return activeTarget;
+    if (sourceTarget.statusAnchorKind === "last_outbound_message" && sourceTarget.statusAnchorMessageId) {
+      return sourceTarget;
+    }
+    if (sourceTarget.sourceMessageId) {
+      const restoredTarget = this.restoreNativeOutboundAnchorFromTrace(sessionName, sourceTarget);
+      return restoredTarget ?? sourceTarget;
+    }
     const anchorTarget = this.nativeStatusAnchorTarget(sessionName, sourceTarget);
     if (anchorTarget) return anchorTarget;
-    const activeTarget = this.nativePresenceTargets.get(sessionName);
-    if (!activeTarget || !this.presenceSurfacesMatch(activeTarget, sourceTarget)) return sourceTarget;
-    return activeTarget;
+    return sourceTarget;
   }
 
   private async renewActiveTargetIfCurrent(sessionName: string, expectedTarget: PresenceTarget): Promise<boolean> {
@@ -578,7 +688,13 @@ export class Gateway {
     this.clearPostDeliveryRenewal(sessionName);
     this.clearInterruptedPresenceStop(sessionName);
 
-    const preferredTarget = target ? (this.runtimePresenceTarget(sessionName, target) ?? target) : undefined;
+    const turnState = this.nativePresenceTurns.get(sessionName);
+    const preferredTarget =
+      turnState?.activeTarget ?? (target ? (this.runtimePresenceTarget(sessionName, target) ?? target) : undefined);
+    if (turnState) {
+      turnState.activeTarget = undefined;
+      turnState.terminal = true;
+    }
     const localTarget = this.omniConsumer.getActiveTarget(sessionName) as PresenceTarget | undefined;
     if (localTarget) {
       const localStopTarget = this.shouldUseNativePresence(localTarget)
@@ -658,7 +774,7 @@ export class Gateway {
     if (!this.shouldUseNativePresence(target)) return;
     if (this.isPresenceSuppressed(target)) return;
     const outboundTarget = withOutboundStatusAnchor(target, data);
-    this.rememberNativeStatusAnchor(sessionName, outboundTarget);
+    this.rememberNativeOutboundTurnAnchor(sessionName, outboundTarget);
     if (!this.activeRuntimeSessions.has(sessionName)) return;
     if (this.terminalRuntimeSessions.has(sessionName)) return;
 
@@ -1116,6 +1232,10 @@ export class Gateway {
     if (this.terminalRuntimeSessions.has(sessionName)) {
       if (!this.isPresenceStartEvent(data.type, data.nativeEvent)) return;
       this.terminalRuntimeSessions.delete(sessionName);
+    }
+
+    if (data._source && this.isPresenceStartEvent(data.type, data.nativeEvent)) {
+      this.beginNativePresenceTurn(sessionName, data._source);
     }
 
     this.clearInterruptedPresenceStop(sessionName);

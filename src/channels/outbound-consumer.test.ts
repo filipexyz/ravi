@@ -36,6 +36,21 @@ describe("channel outbound consumer", () => {
       text: "hello Slack",
     });
     expect(emitEvent).toHaveBeenCalledWith(
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        channelId: "slack",
+        sessionName: "ravi-channels",
+        active: true,
+        reason: "native-delivery-renew",
+        target: expect.objectContaining({
+          channel: "slack",
+          chatId: "C123",
+          statusAnchorKind: "last_outbound_message",
+          statusAnchorMessageId: "1711111111.000100",
+        }),
+      }),
+    );
+    expect(emitEvent).toHaveBeenCalledWith(
       "ravi.session.ravi-channels.delivery",
       expect.objectContaining({
         status: "delivered",

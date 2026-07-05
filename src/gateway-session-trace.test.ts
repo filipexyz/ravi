@@ -13,6 +13,7 @@ import {
   dbUpsertInstance,
 } from "./router/router-db.js";
 import { getOrCreateSession, updateSessionName } from "./router/sessions.js";
+import { recordDeliveryTrace } from "./session-trace/channel-trace.js";
 import { listSessionEvents } from "./session-trace/session-trace-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
 import type { ResponseMessage } from "./runtime/message-types.js";
@@ -847,7 +848,78 @@ describe("Gateway session trace instrumentation", () => {
     ]);
   });
 
-  it("keeps the delivered native Slack anchor available after terminal cleanup for the next turn", async () => {
+  it("restores native Slack outbound anchors from trace after gateway restart", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    delete target.threadId;
+    recordDeliveryTrace({
+      sessionName,
+      delivery: {
+        status: "delivered",
+        messageId: "1783269000.123456",
+        target,
+      },
+    });
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        renewActiveTarget: mock(async () => false),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: target });
+
+    expect(emitted).toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        sessionName,
+        active: true,
+        reason: "runtime-tool.started",
+        target: expect.objectContaining({
+          channel: "slack",
+          chatId: "C123",
+          statusAnchorKind: "last_outbound_message",
+          statusAnchorMessageId: "1783269000.123456",
+          sourceMessageId: "1783268187.075159",
+        }),
+      }),
+    ]);
+  });
+
+  it("clears the restored native Slack outbound anchor on terminal events after gateway restart", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    delete target.threadId;
+    recordDeliveryTrace({
+      sessionName,
+      delivery: {
+        status: "delivered",
+        messageId: "1783269000.123456",
+        target,
+      },
+    });
+    const gateway = makeGateway(mock(async () => ({ messageId: "outbound-1" })));
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
+
+    expect(emitted).toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        sessionName,
+        active: false,
+        reason: "terminal-stop",
+        target: expect.objectContaining({
+          channel: "slack",
+          chatId: "C123",
+          statusAnchorKind: "last_outbound_message",
+          statusAnchorMessageId: "1783269000.123456",
+          sourceMessageId: "1783268187.075159",
+        }),
+      }),
+    ]);
+  });
+
+  it("starts the next native Slack turn on the new inbound message even when an outbound anchor is remembered", async () => {
     const { sessionName } = seedSession();
     const target = makeSlackTarget();
     delete target.threadId;
@@ -873,8 +945,11 @@ describe("Gateway session trace instrumentation", () => {
       _source: { ...target, sourceMessageId: "1783269584.402329" },
     });
 
-    expect(emitted).toContainEqual([
-      "ravi.channel.presence.slack",
+    const startPresence = emitted.find(
+      ([topic, payload]) =>
+        topic === "ravi.channel.presence.slack" && payload.active === true && payload.reason === "runtime-turn.started",
+    );
+    expect(startPresence?.[1]).toEqual(
       expect.objectContaining({
         sessionName,
         active: true,
@@ -883,22 +958,10 @@ describe("Gateway session trace instrumentation", () => {
           channel: "slack",
           chatId: "C123",
           sourceMessageId: "1783269584.402329",
-          statusAnchorKind: "last_outbound_message",
-          statusAnchorMessageId: "1783269000.123456",
         }),
       }),
-    ]);
-    expect(emitted).not.toContainEqual([
-      "ravi.channel.presence.slack",
-      expect.objectContaining({
-        sessionName,
-        active: true,
-        reason: "runtime-turn.started",
-        target: expect.not.objectContaining({
-          statusAnchorMessageId: "1783269000.123456",
-        }),
-      }),
-    ]);
+    );
+    expect((startPresence?.[1].target as Record<string, unknown> | undefined)?.statusAnchorMessageId).toBeUndefined();
   });
 
   it("clears the remembered native Slack outbound anchor on terminal events", async () => {

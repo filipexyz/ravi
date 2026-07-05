@@ -12,6 +12,7 @@ import {
   ensureChannelOutboundInfrastructure,
   type ChannelOutboundJob,
 } from "./outbound-stream.js";
+import { subjectForChannelPresence } from "./presence-consumer.js";
 
 const log = logger.child("channels:outbound-consumer");
 const sc = StringCodec();
@@ -151,6 +152,7 @@ export async function processChannelOutboundJob(
     if (options.persistDelivery !== false) {
       persistDeliveredMessage(job, delivered, text);
     }
+    await emitImmediatePresenceRenewal(emitEvent, job, delivered);
     await emitDelivery(emitEvent, job, {
       status: "delivered",
       provider: delivered.provider,
@@ -176,6 +178,30 @@ export async function processChannelOutboundJob(
     });
     return { disposition: "nak", status: "failed", retryable: true, error: message };
   }
+}
+
+async function emitImmediatePresenceRenewal(
+  emitEvent: typeof nats.emit,
+  job: ChannelOutboundJob,
+  delivered: NativeTextDeliveryResult,
+): Promise<void> {
+  const statusAnchorMessageId = delivered.platformMessageId ?? delivered.messageId;
+  if (!statusAnchorMessageId) return;
+
+  const target = {
+    ...job.request.target,
+    statusAnchorKind: "last_outbound_message" as const,
+    statusAnchorMessageId,
+  };
+
+  await emitEvent(subjectForChannelPresence(job.request.channelId), {
+    channelId: job.request.channelId,
+    sessionName: job.request.origin.sessionName,
+    target,
+    active: true,
+    reason: "native-delivery-renew",
+    timestamp: Date.now(),
+  });
 }
 
 function persistDeliveredMessage(job: ChannelOutboundJob, delivered: NativeTextDeliveryResult, text: string): void {
