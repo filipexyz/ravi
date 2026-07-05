@@ -45817,7 +45817,7 @@ export const SessionsGoalInputSchema = {
   "additionalProperties": false,
   "properties": {
     "action": {
-      "description": "get|set|create|pause|resume|complete|clear|account",
+      "description": "get|set|create|pause|resume|block|complete|clear|account",
       "type": "string"
     },
     "budget": {
@@ -45834,6 +45834,10 @@ export const SessionsGoalInputSchema = {
     },
     "project": {
       "description": "Optional project id link for set/create",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Concrete reason for blocking",
       "type": "string"
     },
     "seconds": {
@@ -45858,8 +45862,139 @@ export const SessionsGoalInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.goal`. */
 export const SessionsGoalReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "goal": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "blockedReason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "goalId": {
+              "type": "string"
+            },
+            "objective": {
+              "type": "string"
+            },
+            "projectId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sessionKey": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "active",
+                "paused",
+                "budget_limited",
+                "blocked",
+                "complete"
+              ],
+              "type": "string"
+            },
+            "taskId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "timeUsedSeconds": {
+              "type": "number"
+            },
+            "tokenBudget": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "tokensUsed": {
+              "type": "number"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "sessionKey",
+            "goalId",
+            "objective",
+            "status",
+            "tokenBudget",
+            "tokensUsed",
+            "timeUsedSeconds",
+            "taskId",
+            "projectId",
+            "blockedReason",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "session": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "sessionKey": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionKey",
+        "agentId",
+        "label"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "session",
+    "goal"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
