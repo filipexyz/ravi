@@ -139,6 +139,20 @@ Rodar CADA comando com input válido / inválido / faltando. Todos os checks aba
 **As 14 seções canônicas** (no `addHelpText('after', ...)` do orquestrador; leitura-pura pode omitir 5-9):
 `3. USE` (quando é a escolha certa) · `4. NÃO USE` (+ pointer alternativo) · `5. REGRAS HARD` (constraints que a CLI bloqueia) · `6. HITL OBRIGATÓRIO` · `7. VALIDAÇÕES AUTOMÁTICAS` (ref arquivo:linha) · `8. LIFECYCLE` (estados+transições) · `9. HITL TEMPLATE` (mensagem literal pro humano) · `10. EXAMPLES` · `11. ON ERROR` (código→causa→fix) · `12. PIPELINE` (upstream→esta→downstream) · `13. SEE ALSO` · `14. FORMATO` (datas/IDs/valores) · `15. DEBUG` · `16. FONTES` (datas + path do source).
 
+**Exemplo real de `--help` anotado** (excerto do padrão-ouro `sde tiny pedido-montar-json`). Repara: cada flag carrega `tipo | significado | origem | constraint | default`, e o rodapé traz as seções — não é "lista de flags", é o contrato inteiro:
+```
+--lista-preco <id>   enum | 629174891="SITE (+39%)" | 601762293="Oficial (+32.25%)" (default: 629174891)
+--parcelas <dias>    string | intervalo em DIAS. LIMITE: <R$1k=max 2x, R$1k-3k=3x, >R$3k=4x (default: 4)
+
+CUSTO / SEGURANÇA
+  • READ-ONLY: monta o JSON, NÃO submete à API. Idempotente, seguro p/ retry.
+  • Destrutivo? NÃO — o passo destrutivo do pipeline é `pedido-incluir`.
+USE          ✓ Cliente existe + SKU cadastrado + balcão padrão
+NÃO USE      ✗ Item sem cadastro → `pedido-incluir` direto   ✗ Marketplace → CLI dedicada
+REGRAS HARD  • Atacado requer subtotal > R$2.000   • Frete=0 + subtotal<R$500 → alerta
+```
+Seções obrigatórias sempre: `USE`, `NÃO USE`, `EXAMPLES`, `ON ERROR`, `FONTES`. As de risco (`REGRAS HARD`, `HITL`, `LIFECYCLE`) entram quando o CLI muta/é irreversível.
+
 **Cristalizar a precedência NO --help** (senão agentes divergem em conflito):
 ```
 REGRAS HARD > INPUT HUMANO > CONVENÇÕES > REGRAS AGENTS.MD
@@ -190,6 +204,11 @@ Quando o CLI existe e tem regra de negócio no source que o `--help` não mostra
 **Mecanismo real (anotar o CLI):** estender o comando com `addHelpText('after', ...)` no source, escrevendo as 14 seções canônicas (§5) direto ali. O `--help` passa a carregar REGRAS HARD, HITL template literal, lifecycle e error mapping — não só flags.
 
 **Classificar cada pedaço da skill em 5 buckets:** **A** → AGENTS.md (roteamento/triggers) · **B** → `--help` do orquestrador (regras hard, HITL, lifecycle) · **C** → `--help` dos subcomandos (regras locais, formato) · **D** → profile de task (dispatch denso) · **E** → vault (knowledge denso, multi-fase).
+
+**Sequência operacional (o processo completo, condensado):**
+1. **ANTES:** rodar o `--help` atual (baseline) + rodar o CLI com args reais (ver o JSON de output) + ler a skill inteira + classificar cada item nos 5 buckets + rodar `--help` de TODAS as CLIs que vai citar (cross-CLI empírica — **zero invenção de nome**).
+2. **APPLY:** backup atômico do source (`cp index.ts index.ts.bak-<ts>`) → localizar o `program.command('<nome>')` (ou o comando decorator) → migrar buckets **B+C** pro `addHelpText('after', ...)` escrevendo as 14 seções → validar que `--help` renderiza **E** o CLI ainda executa.
+3. **PÓS:** skill vira **STUB** (mantém triggers + pointer, nunca deletar) → AGENTS.md aponta `→ TODAS regras em <cli> --help` → **simulação real**: operador monta 1 output completo só com o `--help`, sem a skill → archive a skill (só após simulação verde) → delete definitivo **SÓ com "sim" explícito do HITL** (ação destrutiva).
 
 **Fecha o triângulo:** `cli-creator` (constrói) → `cli-help-engineering` (método do `--help`) → `dissolving-skills-into-cli-help` (injeta o conhecimento como anotação). AGENTS.md do operador aponta: `→ TODAS regras em <cli> --help`.
 
