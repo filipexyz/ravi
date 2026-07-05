@@ -5,6 +5,8 @@ const actualTasksIndexModule = await import("../tasks/index.js");
 
 const promptCalls: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
 const taskCommentCalls: Array<{ taskId: string; payload: Record<string, unknown> }> = [];
+const createTaskCalls: Array<{ input: Record<string, unknown> }> = [];
+const dispatchCalls: Array<{ taskId: string; input: Record<string, unknown> }> = [];
 
 mock.module("../omni/session-stream.js", () => ({
   publishSessionPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
@@ -19,6 +21,26 @@ mock.module("../tasks/index.js", () => ({
     return {};
   }),
   listTasks: () => [],
+  createTask: mock((input: Record<string, unknown>) => {
+    createTaskCalls.push({ input });
+    const now = Date.now();
+    return {
+      task: {
+        id: `spike-task-${createTaskCalls.length}`,
+        title: input.title,
+        instructions: input.instructions,
+        profileId: input.profileId,
+        createdAt: now,
+        updatedAt: now,
+      },
+      event: { id: `event-${now}`, taskId: `spike-task-${createTaskCalls.length}` },
+      relatedEvents: [],
+    };
+  }),
+  queueOrDispatchTask: mock(async (taskId: string, input: Record<string, unknown>) => {
+    dispatchCalls.push({ taskId, input });
+    return { launched: true, launchResult: null };
+  }),
 }));
 
 const { dbCreateHook, dbDeleteHook, dbGetHook, runHookById } = await import("./index.js");
@@ -28,6 +50,8 @@ const createdHookIds: string[] = [];
 beforeEach(() => {
   promptCalls.length = 0;
   taskCommentCalls.length = 0;
+  createTaskCalls.length = 0;
+  dispatchCalls.length = 0;
 });
 
 afterEach(() => {
@@ -173,6 +197,80 @@ describe("hooks-runtime runner", () => {
         }),
       },
     ]);
+  });
+
+  it("dispatches a task via dispatch_task action on Stop", async () => {
+    const created = dbCreateHook({
+      name: "memory-curator",
+      eventName: "Stop",
+      scopeType: "agent",
+      scopeValue: "ravi-dev",
+      actionType: "dispatch_task",
+      actionPayload: {
+        profileId: "default",
+        title: "Curate memory for {{agentId}} after {{eventName}}",
+        targetAgentId: "curator-agent",
+        instructions: "Extract salient facts from the last {{sessionName}} turns.",
+        profileInputJson: '{"agent_id":"{{agentId}}","cadence":"3"}',
+      },
+    });
+    createdHookIds.push(created.id);
+
+    const result = await runHookById(created.id, {
+      eventName: "Stop",
+      source: "test",
+      sessionName: "memory-driver",
+      agentId: "ravi-dev",
+      cwd: process.cwd(),
+    });
+
+    expect(result.skipped).toBeUndefined();
+    expect(createTaskCalls).toHaveLength(1);
+    expect(createTaskCalls[0]!.input).toEqual(
+      expect.objectContaining({
+        title: "Curate memory for ravi-dev after Stop",
+        instructions: "Extract salient facts from the last memory-driver turns.",
+        profileId: "default",
+        createdBy: "hook:memory-curator",
+        createdByAgentId: "ravi-dev",
+        createdBySessionName: "memory-driver",
+        profileInput: { agent_id: "ravi-dev", cadence: "3" },
+      }),
+    );
+    expect(dispatchCalls).toHaveLength(1);
+    expect(dispatchCalls[0]).toEqual(
+      expect.objectContaining({
+        taskId: "spike-task-1",
+        input: expect.objectContaining({
+          agentId: "curator-agent",
+          sessionName: "memory-driver",
+          assignedBy: "hook:memory-curator",
+        }),
+      }),
+    );
+  });
+
+  it("dispatch_task skips dispatch when no targetAgentId is resolved", async () => {
+    const created = dbCreateHook({
+      name: "curator-no-target",
+      eventName: "Stop",
+      scopeType: "global",
+      actionType: "dispatch_task",
+      actionPayload: {
+        profileId: "default",
+        title: "Standalone curation",
+      },
+    });
+    createdHookIds.push(created.id);
+
+    await runHookById(created.id, {
+      eventName: "Stop",
+      source: "test",
+      cwd: process.cwd(),
+    });
+
+    expect(createTaskCalls).toHaveLength(1);
+    expect(dispatchCalls).toHaveLength(0);
   });
 });
 afterAll(() => mock.restore());

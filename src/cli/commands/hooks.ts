@@ -114,6 +114,11 @@ function buildActionPayload(
     targetTask?: string;
     role?: string;
     barrier?: string;
+    dispatchProfile?: string;
+    dispatchTitle?: string;
+    dispatchTargetAgent?: string;
+    dispatchInstructions?: string;
+    dispatchProfileInput?: string;
   },
 ): HookActionPayload {
   switch (actionType) {
@@ -157,6 +162,28 @@ function buildActionPayload(
         body: input.message.trim(),
         ...(input.targetTask?.trim() ? { taskId: input.targetTask.trim() } : {}),
       };
+    case "dispatch_task": {
+      if (!input.dispatchProfile?.trim()) {
+        fail("--dispatch-profile is required for dispatch_task");
+      }
+      if (!input.dispatchTitle?.trim()) {
+        fail("--dispatch-title is required for dispatch_task");
+      }
+      if (input.dispatchProfileInput?.trim()) {
+        try {
+          JSON.parse(input.dispatchProfileInput.trim());
+        } catch (err) {
+          fail(`--dispatch-profile-input must be valid JSON: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      return {
+        profileId: input.dispatchProfile.trim(),
+        title: input.dispatchTitle.trim(),
+        ...(input.dispatchTargetAgent?.trim() ? { targetAgentId: input.dispatchTargetAgent.trim() } : {}),
+        ...(input.dispatchInstructions?.trim() ? { instructions: input.dispatchInstructions.trim() } : {}),
+        ...(input.dispatchProfileInput?.trim() ? { profileInputJson: input.dispatchProfileInput.trim() } : {}),
+      };
+    }
   }
 }
 
@@ -320,6 +347,25 @@ export class HooksCommands {
     @Option({ flags: "--async", description: "Run hook action asynchronously" }) asyncMode?: boolean,
     @Option({ flags: "--disabled", description: "Create hook disabled" }) disabled?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--dispatch-profile <id>", description: "Task profile id for dispatch_task payload" })
+    dispatchProfile?: string,
+    @Option({ flags: "--dispatch-title <text>", description: "Task title template for dispatch_task payload" })
+    dispatchTitle?: string,
+    @Option({
+      flags: "--dispatch-target-agent <id>",
+      description: "Assign the dispatched task to this agent (defaults to firing agent)",
+    })
+    dispatchTargetAgent?: string,
+    @Option({
+      flags: "--dispatch-instructions <text>",
+      description: "Instructions template for dispatch_task payload",
+    })
+    dispatchInstructions?: string,
+    @Option({
+      flags: "--dispatch-profile-input <json>",
+      description: "JSON string with profile inputs for dispatch_task payload",
+    })
+    dispatchProfileInput?: string,
   ) {
     const eventName = normalizeEventName(event);
     const actionType = normalizeActionType(action);
@@ -347,6 +393,11 @@ export class HooksCommands {
         targetTask,
         role,
         barrier,
+        dispatchProfile,
+        dispatchTitle,
+        dispatchTargetAgent,
+        dispatchInstructions,
+        dispatchProfileInput,
       }),
       enabled: disabled !== true,
       async: asyncMode === true,

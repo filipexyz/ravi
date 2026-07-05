@@ -49,7 +49,7 @@ function ensureHooksSchema(): void {
       scope_type TEXT NOT NULL CHECK(scope_type IN ('global','agent','session','workspace','task')),
       scope_value TEXT,
       matcher TEXT,
-      action_type TEXT NOT NULL CHECK(action_type IN ('inject_context','send_session_event','append_history','comment_task')),
+      action_type TEXT NOT NULL CHECK(action_type IN ('inject_context','send_session_event','append_history','comment_task','dispatch_task')),
       action_payload_json TEXT NOT NULL,
       enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
       async INTEGER NOT NULL DEFAULT 0 CHECK(async IN (0,1)),
@@ -66,7 +66,52 @@ function ensureHooksSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_hooks_event ON hooks(event_name);
     CREATE INDEX IF NOT EXISTS idx_hooks_scope ON hooks(scope_type, scope_value);
   `);
+  migrateHooksActionTypeConstraint(db);
   ensuredSchema = true;
+}
+
+function migrateHooksActionTypeConstraint(db: ReturnType<typeof getDb>): void {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='hooks'").get() as
+    | { sql?: string }
+    | undefined;
+  if (!row?.sql || row.sql.includes("'dispatch_task'")) {
+    return;
+  }
+  db.exec("BEGIN");
+  try {
+    db.exec(`
+      CREATE TABLE hooks_new (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        event_name TEXT NOT NULL,
+        scope_type TEXT NOT NULL CHECK(scope_type IN ('global','agent','session','workspace','task')),
+        scope_value TEXT,
+        matcher TEXT,
+        action_type TEXT NOT NULL CHECK(action_type IN ('inject_context','send_session_event','append_history','comment_task','dispatch_task')),
+        action_payload_json TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+        async INTEGER NOT NULL DEFAULT 0 CHECK(async IN (0,1)),
+        cooldown_ms INTEGER NOT NULL DEFAULT 0,
+        dedupe_key TEXT,
+        last_fired_at INTEGER,
+        last_dedupe_key TEXT,
+        fire_count INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      INSERT INTO hooks_new SELECT * FROM hooks;
+      DROP TABLE hooks;
+      ALTER TABLE hooks_new RENAME TO hooks;
+      CREATE INDEX IF NOT EXISTS idx_hooks_enabled ON hooks(enabled);
+      CREATE INDEX IF NOT EXISTS idx_hooks_event ON hooks(event_name);
+      CREATE INDEX IF NOT EXISTS idx_hooks_scope ON hooks(scope_type, scope_value);
+    `);
+    db.exec("COMMIT");
+    log.info("Migrated hooks.action_type CHECK to include dispatch_task");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
 }
 
 function getStatements(): HookStatements {

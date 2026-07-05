@@ -1,12 +1,13 @@
 import { requireDeliveryBarrier } from "../delivery-barriers.js";
 import { saveMessage } from "../db.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
-import { commentTask } from "../tasks/index.js";
+import { commentTask, createTask, queueOrDispatchTask } from "../tasks/index.js";
 import { logger } from "../utils/logger.js";
 import { resolveHookTemplate } from "./template.js";
 import type {
   AppendHistoryActionPayload,
   CommentTaskActionPayload,
+  DispatchTaskActionPayload,
   HookExecutionResult,
   HookRecord,
   InjectContextActionPayload,
@@ -120,6 +121,80 @@ async function handleCommentTask(
   });
 }
 
+async function handleDispatchTask(
+  hook: HookRecord,
+  payload: DispatchTaskActionPayload,
+  event: NormalizedHookEvent,
+): Promise<void> {
+  const profileId = resolveOptionalTemplate(payload.profileId, event) ?? payload.profileId;
+  if (!profileId?.trim()) {
+    throw new Error(`Hook ${hook.id} dispatch_task requires a profileId`);
+  }
+
+  const title = resolveHookTemplate(payload.title, event).trim();
+  if (!title) {
+    log.debug("Skipping empty dispatch_task title", { hookId: hook.id });
+    return;
+  }
+
+  const targetAgentId = resolveOptionalTemplate(payload.targetAgentId, event) ?? event.agentId;
+  const instructions = resolveOptionalTemplate(payload.instructions, event);
+
+  let profileInput: Record<string, string> | undefined;
+  if (payload.profileInputJson?.trim()) {
+    const rendered = resolveHookTemplate(payload.profileInputJson, event);
+    try {
+      const parsed = JSON.parse(rendered) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("profileInputJson must render to a JSON object");
+      }
+      profileInput = {};
+      for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+        profileInput[key] = typeof value === "string" ? value : JSON.stringify(value);
+      }
+    } catch (err) {
+      throw new Error(
+        `Hook ${hook.id} dispatch_task profileInputJson invalid: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  const created = createTask({
+    title,
+    instructions: instructions ?? title,
+    profileId: profileId.trim(),
+    createdBy: `hook:${hook.name}`,
+    ...(event.agentId ? { createdByAgentId: event.agentId } : {}),
+    ...(event.sessionName ? { createdBySessionName: event.sessionName } : {}),
+    ...(profileInput ? { profileInput } : {}),
+  });
+
+  if (targetAgentId) {
+    try {
+      await queueOrDispatchTask(created.task.id, {
+        agentId: targetAgentId,
+        sessionName: event.sessionName ?? `hook-${hook.name}`,
+        assignedBy: `hook:${hook.name}`,
+        ...(event.agentId ? { assignedByAgentId: event.agentId } : {}),
+        ...(event.sessionName ? { assignedBySessionName: event.sessionName } : {}),
+      });
+    } catch (err) {
+      log.warn("dispatch_task created task but dispatch failed", {
+        hookId: hook.id,
+        taskId: created.task.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  log.info("Dispatched task from hook", {
+    hookId: hook.id,
+    taskId: created.task.id,
+    profileId,
+    targetAgentId,
+  });
+}
+
 export async function executeHookAction(hook: HookRecord, event: NormalizedHookEvent): Promise<HookExecutionResult> {
   switch (hook.actionType) {
     case "inject_context":
@@ -133,6 +208,9 @@ export async function executeHookAction(hook: HookRecord, event: NormalizedHookE
       break;
     case "comment_task":
       await handleCommentTask(hook, hook.actionPayload as CommentTaskActionPayload, event);
+      break;
+    case "dispatch_task":
+      await handleDispatchTask(hook, hook.actionPayload as DispatchTaskActionPayload, event);
       break;
   }
 

@@ -15,7 +15,13 @@ export const HOOK_SCOPE_TYPES = ["global", "agent", "session", "workspace", "tas
 
 export type HookScopeType = (typeof HOOK_SCOPE_TYPES)[number];
 
-export const HOOK_ACTION_TYPES = ["inject_context", "send_session_event", "append_history", "comment_task"] as const;
+export const HOOK_ACTION_TYPES = [
+  "inject_context",
+  "send_session_event",
+  "append_history",
+  "comment_task",
+  "dispatch_task",
+] as const;
 
 export type HookActionType = (typeof HOOK_ACTION_TYPES)[number];
 
@@ -45,11 +51,20 @@ export interface CommentTaskActionPayload {
   author?: string;
 }
 
+export interface DispatchTaskActionPayload {
+  profileId: string;
+  title: string;
+  targetAgentId?: string;
+  instructions?: string;
+  profileInputJson?: string;
+}
+
 export type HookActionPayload =
   | InjectContextActionPayload
   | SendSessionEventActionPayload
   | AppendHistoryActionPayload
-  | CommentTaskActionPayload;
+  | CommentTaskActionPayload
+  | DispatchTaskActionPayload;
 
 export interface HookRecord {
   id: string;
