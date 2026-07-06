@@ -17,6 +17,16 @@
 - `turn.interrupted` clears response text and keeps pending prompt queue.
 - `turn.failed` emits user-facing error unless suppressed by internal interrupt recovery.
 
+## Compaction Announcements
+
+- A human/channel turn with `announceCompaction` enabled and normal (non-sentinel) mode emits the external compaction start/end announcements.
+- A cron-originated turn (`_cron`) with a reply source emits no external compaction announcement.
+- A trigger-originated turn (`_trigger`) with a reply source emits no external compaction announcement.
+- A session-followup-originated turn (`_sessionFollowup`) with a resolved source emits no external compaction announcement.
+- Heartbeat and other automation-originated turns compact silently externally.
+- Every origin still records runtime status, the `runtime.status` trace for `compacting=true` and `compacting=false`, live state, and skill visibility reset when applicable.
+- The origin decision is produced by the centralized runtime classifier, not by scattered prompt-marker checks in the event loop.
+
 ## Queue Semantics
 
 - Messages yielded to a provider turn remain pending until terminal completion.

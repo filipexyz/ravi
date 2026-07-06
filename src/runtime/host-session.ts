@@ -1,5 +1,6 @@
 import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barriers.js";
 import type { SessionEntry } from "../router/index.js";
+import type { CompactionAnnouncementSnapshot } from "./compaction-announcement.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
 import type { MessageActorMetadata, RaviCommandPromptMetadata, RuntimeLaunchPrompt } from "./message-types.js";
 import type {
@@ -93,6 +94,13 @@ export interface RuntimeHostStreamingSession {
   _promptTooLong?: boolean;
   /** Whether the SDK is currently compacting (do not interrupt during compaction) */
   compacting: boolean;
+  /**
+   * Whether external compaction announcements may be externalized for the turn
+   * effectively executing. Snapshotted per turn from the turn's origin so that
+   * automation-originated turns compact silently while human/channel turns keep
+   * announcements. Internal compaction observability is unaffected.
+   */
+  currentTurnCompactionAnnouncement?: CompactionAnnouncementSnapshot;
   /** Tool safety classification - "safe" tools can be interrupted, "unsafe" cannot */
   currentToolSafety: "safe" | "unsafe" | null;
   /** Pending abort - set when abort is requested during an unsafe tool call */

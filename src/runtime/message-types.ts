@@ -137,6 +137,8 @@ export interface PromptMessage {
   _runtimeModel?: string;
   /** Observation Plane metadata for observer-session prompts. */
   _observation?: ObservationPromptMetadata;
+  /** Heartbeat runner prompt marker. */
+  _heartbeat?: boolean;
   /** Cron runner prompt marker. */
   _cron?: boolean;
   /** Cron job id when `_cron` is true. */
