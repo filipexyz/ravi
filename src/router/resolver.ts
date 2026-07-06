@@ -6,7 +6,7 @@
 
 import type { RouterConfig, AgentConfig, RouteConfig, MatchedRoute, ResolvedRoute, DmScope } from "./types.js";
 import { buildSessionKey } from "./session-key.js";
-import { generateSessionName, ensureUniqueName } from "./session-name.js";
+import { generateSessionName, ensureUniqueName, slugify } from "./session-name.js";
 import { getOrCreateSession, updateSessionName, getSessionByName } from "./sessions.js";
 import { logger } from "../utils/logger.js";
 
@@ -212,15 +212,18 @@ export function commitMatchedRoute(
 ): ResolvedRoute {
   const { agentId, agent, dmScope, sessionKey, route } = matched;
   const { isGroup, groupId, phone } = params;
+  const threadId = cleanThreadId(params.threadId);
+  const forcedRouteSessionName = route?.session?.trim();
 
   // If route forces a session name that already exists, route directly to it
   // without creating a new session. This enables sharing sessions across sources.
   const agentCwd = expandHome(agent.cwd);
-  if (route?.session) {
-    const target = getSessionByName(route.session);
+  const forcedRouteSession = forcedRouteSessionName ? getSessionByName(forcedRouteSessionName) : null;
+  if (forcedRouteSessionName && !threadId) {
+    const target = forcedRouteSession;
     if (target && target.sessionKey !== sessionKey) {
       log.info("Route redirecting to existing session", {
-        routeSession: route.session,
+        routeSession: forcedRouteSessionName,
         targetKey: target.sessionKey,
         sourceKey: sessionKey,
       });
@@ -228,40 +231,50 @@ export function commitMatchedRoute(
         agent,
         dmScope,
         sessionKey: target.sessionKey,
-        sessionName: route.session,
+        sessionName: forcedRouteSessionName,
         route,
       };
     }
   }
 
-  const existing = getOrCreateSession(sessionKey, agentId, agentCwd);
+  const effectiveSessionKey = resolveCommittedSessionKey({
+    matchedSessionKey: sessionKey,
+    threadId,
+    forcedRouteSessionName,
+    forcedRouteParentSessionKey: forcedRouteSession?.sessionKey ?? null,
+  });
+  const existing = getOrCreateSession(effectiveSessionKey, agentId, agentCwd, {
+    ...(threadId ? { lastThreadId: threadId } : {}),
+  });
   let sessionName = existing.name;
 
   // Route-forced session name takes precedence
-  if (route?.session && existing.name !== route.session) {
-    sessionName = route.session;
-    updateSessionName(sessionKey, sessionName);
+  if (forcedRouteSessionName && !threadId && existing.name !== forcedRouteSessionName) {
+    sessionName = forcedRouteSessionName;
+    updateSessionName(effectiveSessionKey, sessionName);
   } else if (!sessionName) {
     const resolvedPeerKind = (params.peerKind ?? (isGroup ? "group" : "dm")) as "dm" | "group" | "channel";
     const isMain = dmScope === "main";
-    const nameOpts = {
-      isMain,
-      chatType: isGroup ? ("group" as const) : ("dm" as const),
-      peerKind: resolvedPeerKind,
-      peerId: isGroup ? groupId : phone,
-      groupName: existing.displayName ?? existing.subject ?? undefined,
-      threadId: params.threadId,
-    };
-    const baseName = generateSessionName(agentId, nameOpts);
+    const baseName =
+      threadId && forcedRouteSessionName
+        ? generateThreadForkSessionName(forcedRouteSessionName, threadId)
+        : generateSessionName(agentId, {
+            isMain,
+            chatType: isGroup ? ("group" as const) : ("dm" as const),
+            peerKind: resolvedPeerKind,
+            peerId: isGroup ? groupId : phone,
+            groupName: existing.displayName ?? existing.subject ?? undefined,
+            threadId,
+          });
     sessionName = ensureUniqueName(baseName);
-    updateSessionName(sessionKey, sessionName);
+    updateSessionName(effectiveSessionKey, sessionName);
   }
 
   log.debug("Committed matched route", {
     phone,
     agentId,
     dmScope,
-    sessionKey,
+    sessionKey: effectiveSessionKey,
     sessionName,
     matchedPattern: route?.pattern,
   });
@@ -269,10 +282,46 @@ export function commitMatchedRoute(
   return {
     agent,
     dmScope,
-    sessionKey,
+    sessionKey: effectiveSessionKey,
     sessionName,
     route,
   };
+}
+
+function cleanThreadId(threadId: string | undefined): string | undefined {
+  const cleaned = threadId?.trim();
+  return cleaned ? cleaned : undefined;
+}
+
+export function resolveCommittedSessionKey(params: {
+  matchedSessionKey: string;
+  threadId?: string;
+  forcedRouteSessionName?: string;
+  forcedRouteParentSessionKey?: string | null;
+}): string {
+  const threadId = cleanThreadId(params.threadId);
+  if (!threadId) return params.matchedSessionKey;
+
+  const forcedRouteBaseSessionKey =
+    params.forcedRouteParentSessionKey ?? params.forcedRouteSessionName?.trim() ?? undefined;
+  if (!forcedRouteBaseSessionKey) return params.matchedSessionKey;
+
+  return buildForcedRouteThreadSessionKey(forcedRouteBaseSessionKey, threadId);
+}
+
+function buildForcedRouteThreadSessionKey(parentSessionKey: string, threadId: string): string {
+  if (parentSessionKey.includes(":thread:")) return parentSessionKey;
+  return `${parentSessionKey}:thread:${threadId}`;
+}
+
+function generateThreadForkSessionName(parentSessionName: string, threadId: string): string {
+  const parent = slugify(parentSessionName) || "session";
+  const suffix =
+    threadId
+      .replace(/\./g, "")
+      .replace(/[^a-zA-Z0-9]+/g, "")
+      .slice(-16) || "thread";
+  return `${parent}-t-${suffix}`.slice(0, 64);
 }
 
 /**

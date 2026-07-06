@@ -15,6 +15,7 @@ describe("runtime compatibility preflight", () => {
     expect(DEFAULT_RUNTIME_PROVIDER_ID).toBe("codex");
     expect(createRuntimeProvider().id).toBe("codex");
     expect(listRegisteredRuntimeProviderIds()).toContain("claude");
+    expect(listRegisteredRuntimeProviderIds()).toEqual(expect.arrayContaining(["codex", "claude", "pi"]));
   });
 
   it("allows Claude providers to satisfy restricted tool access", () => {

@@ -13,6 +13,7 @@ import {
   dbUpsertInstance,
 } from "./router/router-db.js";
 import { getOrCreateSession, updateSessionName } from "./router/sessions.js";
+import { recordDeliveryTrace } from "./session-trace/channel-trace.js";
 import { listSessionEvents } from "./session-trace/session-trace-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
 import type { ResponseMessage } from "./runtime/message-types.js";
@@ -48,6 +49,12 @@ type MessageDeleteEventData = {
 };
 type MessageEditEventData = MessageDeleteEventData & {
   text: string;
+};
+type DeliveryObservationData = {
+  status?: string;
+  messageId?: string;
+  platformMessageId?: string;
+  target?: ResponseMessage["target"];
 };
 
 let stateDir: string | null = null;
@@ -129,6 +136,18 @@ async function handleResponse(gateway: unknown, sessionName: string, response: R
   ).handleResponseEvent(sessionName, response);
 }
 
+async function handleDeliveryObservation(
+  gateway: unknown,
+  sessionName: string,
+  data: DeliveryObservationData,
+): Promise<void> {
+  await (
+    gateway as {
+      handleDeliveryObservationEvent(sessionName: string, data: Record<string, unknown>): Promise<void>;
+    }
+  ).handleDeliveryObservationEvent(sessionName, data as Record<string, unknown>);
+}
+
 async function handleMessageDelete(gateway: unknown, data: MessageDeleteEventData): Promise<void> {
   await (
     gateway as {
@@ -179,6 +198,17 @@ function makeInstanceAliasTarget(): NonNullable<ResponseMessage["target"]> {
     instanceId: "11111111-1111-1111-1111-111111111111",
     chatId: "5511999999999@s.whatsapp.net",
     sourceMessageId: "inbound-instance-alias",
+  };
+}
+
+function makeSlackTarget(): NonNullable<ResponseMessage["target"]> {
+  return {
+    channel: "slack",
+    accountId: "ravi-rbbt-slack",
+    instanceId: "slack-instance-1",
+    chatId: "C123",
+    threadId: "1783268187.075159",
+    sourceMessageId: "1783268187.075159",
   };
 }
 
@@ -726,6 +756,305 @@ describe("Gateway session trace instrumentation", () => {
 
     expect(renewActiveTarget).not.toHaveBeenCalled();
     expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), true);
+  });
+
+  it("renews native Slack presence after delivered native outbound while the turn is still active", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        renewActiveTarget: mock(async () => false),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    emitted.length = 0;
+
+    await handleDeliveryObservation(gateway, sessionName, {
+      status: "delivered",
+      platformMessageId: "1783269000.123456",
+      target,
+    });
+
+    expect(emitted).toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        sessionName,
+        active: true,
+        reason: "native-delivery-renew",
+        target: expect.objectContaining({
+          channel: "slack",
+          chatId: "C123",
+          statusAnchorKind: "last_outbound_message",
+          statusAnchorMessageId: "1783269000.123456",
+          sourceMessageId: "1783268187.075159",
+        }),
+      }),
+    ]);
+  });
+
+  it("keeps native Slack presence on the delivered outbound anchor during later runtime activity", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    delete target.threadId;
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        renewActiveTarget: mock(async () => false),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    await handleDeliveryObservation(gateway, sessionName, {
+      status: "delivered",
+      platformMessageId: "1783269000.123456",
+      target,
+    });
+    emitted.length = 0;
+    (
+      gateway as unknown as {
+        presenceRenewedAt: Map<string, number>;
+      }
+    ).presenceRenewedAt.set(sessionName, Date.now() - 5_000);
+
+    await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: target });
+
+    expect(emitted).toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        sessionName,
+        active: true,
+        reason: "runtime-tool.started",
+        target: expect.objectContaining({
+          channel: "slack",
+          chatId: "C123",
+          statusAnchorKind: "last_outbound_message",
+          statusAnchorMessageId: "1783269000.123456",
+          sourceMessageId: "1783268187.075159",
+        }),
+      }),
+    ]);
+    expect(emitted).not.toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        sessionName,
+        active: true,
+        reason: "runtime-tool.started",
+        target: expect.not.objectContaining({
+          statusAnchorMessageId: "1783269000.123456",
+        }),
+      }),
+    ]);
+  });
+
+  it("restores native Slack outbound anchors from trace after gateway restart", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    delete target.threadId;
+    recordDeliveryTrace({
+      sessionName,
+      delivery: {
+        status: "delivered",
+        messageId: "1783269000.123456",
+        target,
+      },
+    });
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        renewActiveTarget: mock(async () => false),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: target });
+
+    expect(emitted).toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        sessionName,
+        active: true,
+        reason: "runtime-tool.started",
+        target: expect.objectContaining({
+          channel: "slack",
+          chatId: "C123",
+          statusAnchorKind: "last_outbound_message",
+          statusAnchorMessageId: "1783269000.123456",
+          sourceMessageId: "1783268187.075159",
+        }),
+      }),
+    ]);
+  });
+
+  it("clears the restored native Slack outbound anchor on terminal events after gateway restart", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    delete target.threadId;
+    recordDeliveryTrace({
+      sessionName,
+      delivery: {
+        status: "delivered",
+        messageId: "1783269000.123456",
+        target,
+      },
+    });
+    const gateway = makeGateway(mock(async () => ({ messageId: "outbound-1" })));
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
+
+    expect(emitted).toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        sessionName,
+        active: false,
+        reason: "terminal-stop",
+        target: expect.objectContaining({
+          channel: "slack",
+          chatId: "C123",
+          statusAnchorKind: "last_outbound_message",
+          statusAnchorMessageId: "1783269000.123456",
+          sourceMessageId: "1783268187.075159",
+        }),
+      }),
+    ]);
+  });
+
+  it("starts the next native Slack turn on the new inbound message even when an outbound anchor is remembered", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    delete target.threadId;
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        renewActiveTarget: mock(async () => false),
+        clearActiveTarget: mock(async () => {}),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
+    await handleDeliveryObservation(gateway, sessionName, {
+      status: "delivered",
+      platformMessageId: "1783269000.123456",
+      target,
+    });
+    emitted.length = 0;
+
+    await handleRuntimePresence(gateway, sessionName, {
+      type: "turn.started",
+      _source: { ...target, sourceMessageId: "1783269584.402329" },
+    });
+
+    const startPresence = emitted.find(
+      ([topic, payload]) =>
+        topic === "ravi.channel.presence.slack" && payload.active === true && payload.reason === "runtime-turn.started",
+    );
+    expect(startPresence?.[1]).toEqual(
+      expect.objectContaining({
+        sessionName,
+        active: true,
+        reason: "runtime-turn.started",
+        target: expect.objectContaining({
+          channel: "slack",
+          chatId: "C123",
+          sourceMessageId: "1783269584.402329",
+        }),
+      }),
+    );
+    expect((startPresence?.[1].target as Record<string, unknown> | undefined)?.statusAnchorMessageId).toBeUndefined();
+  });
+
+  it("clears the remembered native Slack outbound anchor on terminal events", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    delete target.threadId;
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        renewActiveTarget: mock(async () => false),
+        clearActiveTarget: mock(async () => {}),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    await handleDeliveryObservation(gateway, sessionName, {
+      status: "delivered",
+      platformMessageId: "1783269000.123456",
+      target,
+    });
+    emitted.length = 0;
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
+
+    expect(emitted).toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        sessionName,
+        active: false,
+        reason: "terminal-stop",
+        target: expect.objectContaining({
+          channel: "slack",
+          chatId: "C123",
+          statusAnchorKind: "last_outbound_message",
+          statusAnchorMessageId: "1783269000.123456",
+        }),
+      }),
+    ]);
+  });
+
+  it("forces native Slack presence clear on terminal events even when the boolean tracker was not primed", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        renewActiveTarget: mock(async () => false),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    emitted.length = 0;
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
+
+    expect(emitted).toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        sessionName,
+        active: false,
+        reason: "terminal-stop",
+        target: expect.objectContaining({
+          channel: "slack",
+          chatId: "C123",
+        }),
+      }),
+    ]);
+  });
+
+  it("does not reactivate native Slack presence after terminal turn delivery", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        renewActiveTarget: mock(async () => false),
+        clearActiveTarget: mock(async () => {}),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
+    emitted.length = 0;
+
+    await handleDeliveryObservation(gateway, sessionName, { status: "delivered", target });
+
+    expect(emitted).not.toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        active: true,
+        reason: "native-delivery-renew",
+      }),
+    ]);
   });
 
   it("keeps presence active on interrupted turns instead of pausing", async () => {

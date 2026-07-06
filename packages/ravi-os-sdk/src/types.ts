@@ -2211,6 +2211,196 @@ export type CalendarsShowReturn = {
   }>;
 };
 
+/** Input shape for `channels.probe`. */
+export type ChannelsProbeInput = Record<string, never>;
+
+/** Return shape for `channels.probe`. */
+export type ChannelsProbeReturn = {
+  adapters: Array<Record<string, unknown>>;
+  outbound: Record<string, unknown>;
+  pid: number;
+  running: boolean;
+  startedAt: number | null;
+};
+
+/** Input shape for `channels.restart`. */
+export type ChannelsRestartInput = {
+  build?: boolean;
+  slackConnection?: string;
+};
+
+/** Return shape for `channels.restart`. */
+export type ChannelsRestartReturn = {
+  action: string;
+  changed: boolean;
+  pm2Status?: number | null;
+  reason?: string;
+  runnerEnv?: {
+    consumeOutbound: string;
+    slackConnection: string | null;
+    slackSocketMode: boolean;
+  };
+  status?: {
+    channels: {
+      cpu: number | null;
+      managed: boolean;
+      memoryBytes: number | null;
+      memoryMb: number | null;
+      name: string;
+      pid: number | null;
+      pmId: number | null;
+      running: boolean;
+      status: string;
+    };
+    pm2Available: boolean;
+    processName: string;
+    processes: Array<{
+      cpu: number | null;
+      managed: boolean;
+      memoryBytes: number | null;
+      memoryMb: number | null;
+      name: string;
+      pid: number | null;
+      pmId: number | null;
+      running: boolean;
+      status: string;
+    }>;
+  };
+  target?: {
+    bundlePath: string;
+    cwd: string;
+    sourceProjectRoot?: string;
+  };
+};
+
+/** Input shape for `channels.start`. */
+export type ChannelsStartInput = {
+  build?: boolean;
+  slackConnection?: string;
+};
+
+/** Return shape for `channels.start`. */
+export type ChannelsStartReturn = {
+  action: string;
+  changed: boolean;
+  pm2Status?: number | null;
+  reason?: string;
+  runnerEnv?: {
+    consumeOutbound: string;
+    slackConnection: string | null;
+    slackSocketMode: boolean;
+  };
+  status?: {
+    channels: {
+      cpu: number | null;
+      managed: boolean;
+      memoryBytes: number | null;
+      memoryMb: number | null;
+      name: string;
+      pid: number | null;
+      pmId: number | null;
+      running: boolean;
+      status: string;
+    };
+    pm2Available: boolean;
+    processName: string;
+    processes: Array<{
+      cpu: number | null;
+      managed: boolean;
+      memoryBytes: number | null;
+      memoryMb: number | null;
+      name: string;
+      pid: number | null;
+      pmId: number | null;
+      running: boolean;
+      status: string;
+    }>;
+  };
+  target?: {
+    bundlePath: string;
+    cwd: string;
+    sourceProjectRoot?: string;
+  };
+};
+
+/** Input shape for `channels.status`. */
+export type ChannelsStatusInput = Record<string, never>;
+
+/** Return shape for `channels.status`. */
+export type ChannelsStatusReturn = {
+  channels: {
+    cpu: number | null;
+    managed: boolean;
+    memoryBytes: number | null;
+    memoryMb: number | null;
+    name: string;
+    pid: number | null;
+    pmId: number | null;
+    running: boolean;
+    status: string;
+  };
+  pm2Available: boolean;
+  processName: string;
+  processes: Array<{
+    cpu: number | null;
+    managed: boolean;
+    memoryBytes: number | null;
+    memoryMb: number | null;
+    name: string;
+    pid: number | null;
+    pmId: number | null;
+    running: boolean;
+    status: string;
+  }>;
+};
+
+/** Input shape for `channels.stop`. */
+export type ChannelsStopInput = Record<string, never>;
+
+/** Return shape for `channels.stop`. */
+export type ChannelsStopReturn = {
+  action: string;
+  changed: boolean;
+  pm2Status?: number | null;
+  reason?: string;
+  runnerEnv?: {
+    consumeOutbound: string;
+    slackConnection: string | null;
+    slackSocketMode: boolean;
+  };
+  status?: {
+    channels: {
+      cpu: number | null;
+      managed: boolean;
+      memoryBytes: number | null;
+      memoryMb: number | null;
+      name: string;
+      pid: number | null;
+      pmId: number | null;
+      running: boolean;
+      status: string;
+    };
+    pm2Available: boolean;
+    processName: string;
+    processes: Array<{
+      cpu: number | null;
+      managed: boolean;
+      memoryBytes: number | null;
+      memoryMb: number | null;
+      name: string;
+      pid: number | null;
+      pmId: number | null;
+      running: boolean;
+      status: string;
+    }>;
+  };
+  target?: {
+    bundlePath: string;
+    cwd: string;
+    sourceProjectRoot?: string;
+  };
+};
+
 /** Input shape for `chats.backfill-provider-timestamps`. */
 export type ChatsBackfillProviderTimestampsInput = {
   apply?: boolean;
@@ -3885,6 +4075,126 @@ export type CostsTopSessionsReturn = {
     sinceMs: number;
     untilMs: number;
   };
+};
+
+/** Input shape for `credentials.connections.disable`. */
+export type CredentialsConnectionsDisableInput = {
+  connection?: string;
+  provider?: string;
+};
+
+/** Return shape for `credentials.connections.disable`. */
+export type CredentialsConnectionsDisableReturn = {
+  connection: ({
+    backend: "keychain" | "vault";
+    connection: string;
+    createdAt: number;
+    id: string;
+    label: string | null;
+    provider: string;
+    scopes: string[];
+    secretRef: string;
+    status: "active" | "disabled";
+    updatedAt: number;
+  }) | null;
+};
+
+/** Input shape for `credentials.connections.enable`. */
+export type CredentialsConnectionsEnableInput = {
+  connection?: string;
+  provider?: string;
+};
+
+/** Return shape for `credentials.connections.enable`. */
+export type CredentialsConnectionsEnableReturn = {
+  connection: ({
+    backend: "keychain" | "vault";
+    connection: string;
+    createdAt: number;
+    id: string;
+    label: string | null;
+    provider: string;
+    scopes: string[];
+    secretRef: string;
+    status: "active" | "disabled";
+    updatedAt: number;
+  }) | null;
+};
+
+/** Input shape for `credentials.connections.list`. */
+export type CredentialsConnectionsListInput = {
+  all?: boolean;
+  limit?: string;
+  offset?: string;
+  provider?: string;
+  status?: string;
+};
+
+/** Return shape for `credentials.connections.list`. */
+export type CredentialsConnectionsListReturn = {
+  items: Array<{
+    backend: "keychain" | "vault";
+    connection: string;
+    createdAt: number;
+    id: string;
+    label: string | null;
+    provider: string;
+    scopes: string[];
+    secretRef: string;
+    status: "active" | "disabled";
+    updatedAt: number;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  total: number;
+};
+
+/** Input shape for `credentials.connections.show`. */
+export type CredentialsConnectionsShowInput = {
+  connection?: string;
+  provider?: string;
+};
+
+/** Return shape for `credentials.connections.show`. */
+export type CredentialsConnectionsShowReturn = {
+  connection: {
+    backend: "keychain" | "vault";
+    connection: string;
+    createdAt: number;
+    id: string;
+    label: string | null;
+    provider: string;
+    scopes: string[];
+    secretRef: string;
+    status: "active" | "disabled";
+    updatedAt: number;
+  };
+};
+
+/** Input shape for `credentials.policies.explain`. */
+export type CredentialsPoliciesExplainInput = {
+  action?: string;
+  connection?: string;
+  provider?: string;
+};
+
+/** Return shape for `credentials.policies.explain`. */
+export type CredentialsPoliciesExplainReturn = {
+  action: string;
+  approval: {
+    reason: string;
+    required: boolean;
+  };
+  connection: string;
+  provider: string;
+  requiredCapabilities: string[];
 };
 
 /** Input shape for `crm.account`. */
@@ -10381,6 +10691,529 @@ export type SkillsSyncReturn = {
   success: true;
   total: number;
   [k: string]: unknown;
+};
+
+/** Input shape for `slack.canvas-access-delete`. */
+export type SlackCanvasAccessDeleteInput = {
+  canvas: string;
+  channels?: string;
+  connection?: string;
+  execute?: boolean;
+  users?: string;
+};
+
+/** Return shape for `slack.canvas-access-delete`. */
+export type SlackCanvasAccessDeleteReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-access-set`. */
+export type SlackCanvasAccessSetInput = {
+  access: string;
+  canvas: string;
+  channels?: string;
+  connection?: string;
+  execute?: boolean;
+  users?: string;
+};
+
+/** Return shape for `slack.canvas-access-set`. */
+export type SlackCanvasAccessSetReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-artifact-publish`. */
+export type SlackCanvasArtifactPublishInput = {
+  artifactOrFile: string;
+  canvas?: string;
+  channel?: string;
+  connection?: string;
+  execute?: boolean;
+  skipRefresh?: boolean;
+  title?: string;
+};
+
+/** Return shape for `slack.canvas-artifact-publish`. */
+export type SlackCanvasArtifactPublishReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-artifact-status`. */
+export type SlackCanvasArtifactStatusInput = {
+  artifact: string;
+};
+
+/** Return shape for `slack.canvas-artifact-status`. */
+export type SlackCanvasArtifactStatusReturn = {
+  item: Record<string, unknown>;
+  ok: true;
+  provider: "slack";
+};
+
+/** Input shape for `slack.canvas-channel-create`. */
+export type SlackCanvasChannelCreateInput = {
+  artifact?: string;
+  channel: string;
+  connection?: string;
+  ensure?: boolean;
+  execute?: boolean;
+  markdown?: string;
+  markdownFile?: string;
+  skipRefresh?: boolean;
+  title?: string;
+};
+
+/** Return shape for `slack.canvas-channel-create`. */
+export type SlackCanvasChannelCreateReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-channel-showcase`. */
+export type SlackCanvasChannelShowcaseInput = {
+  channel: string;
+  connection?: string;
+  execute?: boolean;
+  title?: string;
+};
+
+/** Return shape for `slack.canvas-channel-showcase`. */
+export type SlackCanvasChannelShowcaseReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-create`. */
+export type SlackCanvasCreateInput = {
+  artifact?: string;
+  channel?: string;
+  connection?: string;
+  execute?: boolean;
+  markdown?: string;
+  markdownFile?: string;
+  skipRefresh?: boolean;
+  title?: string;
+};
+
+/** Return shape for `slack.canvas-create`. */
+export type SlackCanvasCreateReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-delete`. */
+export type SlackCanvasDeleteInput = {
+  canvas: string;
+  connection?: string;
+  execute?: boolean;
+};
+
+/** Return shape for `slack.canvas-delete`. */
+export type SlackCanvasDeleteReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-edit`. */
+export type SlackCanvasEditInput = {
+  artifact?: string;
+  canvas: string;
+  connection?: string;
+  execute?: boolean;
+  markdown?: string;
+  markdownFile?: string;
+  operation: string;
+  sectionId?: string;
+  skipRefresh?: boolean;
+  title?: string;
+};
+
+/** Return shape for `slack.canvas-edit`. */
+export type SlackCanvasEditReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-sections-lookup`. */
+export type SlackCanvasSectionsLookupInput = {
+  canvas: string;
+  connection?: string;
+  containsText?: string;
+  sectionTypes?: string;
+};
+
+/** Return shape for `slack.canvas-sections-lookup`. */
+export type SlackCanvasSectionsLookupReturn = {
+  connection: string;
+  items: unknown[];
+  ok: boolean;
+  pagination: {
+    cursor: string | null;
+    hasMore: boolean;
+    limit: number;
+    nextCursor: string | null;
+  };
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-showcase`. */
+export type SlackCanvasShowcaseInput = {
+  canvas: string;
+  channel?: string;
+  connection?: string;
+  execute?: boolean;
+  title?: string;
+};
+
+/** Return shape for `slack.canvas-showcase`. */
+export type SlackCanvasShowcaseReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.channels-create`. */
+export type SlackChannelsCreateInput = {
+  connection?: string;
+  execute?: boolean;
+  name: string;
+  private?: boolean;
+};
+
+/** Return shape for `slack.channels-create`. */
+export type SlackChannelsCreateReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.channels-history`. */
+export type SlackChannelsHistoryInput = {
+  channel: string;
+  connection?: string;
+  cursor?: string;
+  inclusive?: boolean;
+  latest?: string;
+  limit?: string;
+  oldest?: string;
+};
+
+/** Return shape for `slack.channels-history`. */
+export type SlackChannelsHistoryReturn = {
+  connection: string;
+  items: unknown[];
+  ok: boolean;
+  pagination: {
+    cursor: string | null;
+    hasMore: boolean;
+    limit: number;
+    nextCursor: string | null;
+  };
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.channels-info`. */
+export type SlackChannelsInfoInput = {
+  channel: string;
+  connection?: string;
+};
+
+/** Return shape for `slack.channels-info`. */
+export type SlackChannelsInfoReturn = {
+  connection: string;
+  item?: unknown;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.channels-invite`. */
+export type SlackChannelsInviteInput = {
+  channel: string;
+  connection?: string;
+  execute?: boolean;
+  users: string;
+};
+
+/** Return shape for `slack.channels-invite`. */
+export type SlackChannelsInviteReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.channels-list`. */
+export type SlackChannelsListInput = {
+  connection?: string;
+  cursor?: string;
+  includeArchived?: boolean;
+  limit?: string;
+  types?: string;
+};
+
+/** Return shape for `slack.channels-list`. */
+export type SlackChannelsListReturn = {
+  connection: string;
+  items: unknown[];
+  ok: boolean;
+  pagination: {
+    cursor: string | null;
+    hasMore: boolean;
+    limit: number;
+    nextCursor: string | null;
+  };
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.channels-rename`. */
+export type SlackChannelsRenameInput = {
+  channel: string;
+  connection?: string;
+  execute?: boolean;
+  name: string;
+};
+
+/** Return shape for `slack.channels-rename`. */
+export type SlackChannelsRenameReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.files-list`. */
+export type SlackFilesListInput = {
+  channel?: string;
+  connection?: string;
+  cursor?: string;
+  limit?: string;
+  user?: string;
+};
+
+/** Return shape for `slack.files-list`. */
+export type SlackFilesListReturn = {
+  connection: string;
+  items: unknown[];
+  ok: boolean;
+  pagination: {
+    cursor: string | null;
+    hasMore: boolean;
+    limit: number;
+    nextCursor: string | null;
+  };
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.members-list`. */
+export type SlackMembersListInput = {
+  channel: string;
+  connection?: string;
+  cursor?: string;
+  limit?: string;
+};
+
+/** Return shape for `slack.members-list`. */
+export type SlackMembersListReturn = {
+  connection: string;
+  items: unknown[];
+  ok: boolean;
+  pagination: {
+    cursor: string | null;
+    hasMore: boolean;
+    limit: number;
+    nextCursor: string | null;
+  };
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.messages-inspect`. */
+export type SlackMessagesInspectInput = {
+  channel: string;
+  connection?: string;
+  ts: string;
+};
+
+/** Return shape for `slack.messages-inspect`. */
+export type SlackMessagesInspectReturn = {
+  connection: string;
+  item?: unknown;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.messages-replay`. */
+export type SlackMessagesReplayInput = {
+  channel: string;
+  connection?: string;
+  execute?: boolean;
+  force?: boolean;
+  ts: string;
+};
+
+/** Return shape for `slack.messages-replay`. */
+export type SlackMessagesReplayReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.messages-send`. */
+export type SlackMessagesSendInput = {
+  channel: string;
+  connection?: string;
+  execute?: boolean;
+  text: string;
+  threadTs?: string;
+};
+
+/** Return shape for `slack.messages-send`. */
+export type SlackMessagesSendReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.permissions-list`. */
+export type SlackPermissionsListInput = {
+  connection?: string;
+};
+
+/** Return shape for `slack.permissions-list`. */
+export type SlackPermissionsListReturn = {
+  connection: string;
+  item?: unknown;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.topology`. */
+export type SlackTopologyInput = {
+  connection?: string;
+  cursor?: string;
+  includeArchived?: boolean;
+  limit?: string;
+  types?: string;
+};
+
+/** Return shape for `slack.topology`. */
+export type SlackTopologyReturn = {
+  accountId: string;
+  capabilities: Record<string, unknown>;
+  channels: unknown[];
+  connection: string;
+  ok: true;
+  provider: "slack";
+  source: string;
+  ungroupedChannelIds: string[];
 };
 
 /** Input shape for `specs.get`. */
