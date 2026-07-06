@@ -461,6 +461,8 @@ function addOnlyFilter(where: string[], params: SqlParam[], only: SessionTraceOn
   }
   if (clauses.length > 0) {
     where.push(`(${clauses.join(" OR ")})`);
+  } else {
+    where.push("0 = 1");
   }
 }
 

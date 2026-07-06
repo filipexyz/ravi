@@ -4124,6 +4124,9 @@ export class SessionCommands {
     const target = this.resolveTraceTarget(nameOrKey);
     if (!target) return;
 
+    const parsedLimit = parseTraceLimit(limitStr);
+    const traceLimit = parsedLimit ?? (asJson ? undefined : DEFAULT_TRACE_LIMIT);
+
     const trace = querySessionTrace({
       session: nameOrKey,
       sessionKey: target.session?.sessionKey,
@@ -4135,7 +4138,7 @@ export class SessionCommands {
       messageId,
       correlationId,
       only,
-      limit: parseTraceLimit(limitStr) ?? DEFAULT_TRACE_LIMIT,
+      limit: traceLimit,
       includeStream,
       raw,
       showSystemPrompt,
