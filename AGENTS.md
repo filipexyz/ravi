@@ -1,24 +1,25 @@
 # Ravi Bot
 
-The daemon that gives Claude a life. Multi-channel messaging (WhatsApp, Telegram, Discord) via omni-v2, running entirely locally with embedded NATS JetStream and omni API server as child processes.
+The daemon that gives Claude a life. Ravi runs local agent sessions, native Slack channels, and legacy transport bridges with embedded NATS JetStream.
 
 ## Architecture
 
 ```
 ravi daemon start
   ├── nats-server :4222 (JetStream)
-  ├── omni API    :8882 (child process bun)
+  ├── legacy channel bridge :8882 (child process bun)
   │     ├── WhatsApp (Baileys)
   │     ├── Telegram
   │     └── Discord
   └── ravi bot
-        ├── OmniConsumer  → JetStream pull consumer (message.received.>)
+        ├── Native Slack adapter → Socket Mode, Web API, Canvas, files, threads
+        ├── Channel consumer      → JetStream pull consumer (message.received.>)
         ├── Claude Agent SDK (sessions, tools)
-        ├── OmniSender    → HTTP POST /api/v2/messages/send
+        ├── Channel sender        → native Slack delivery + bridge delivery
         └── Runners (cron, heartbeat, triggers)
 ```
 
-**Infrastructure:** nats-server (JetStream enabled) and omni API server start automatically as child processes. The omni API key is bootstrapped on first run and stored in `~/.ravi/omni-api-key`. Configure omni in `~/.ravi/.env` via `OMNI_DIR`, `DATABASE_URL`, `OMNI_API_PORT`.
+**Infrastructure:** nats-server starts automatically for local eventing. Slack runs through the native Ravi Slack adapter. Legacy transport bridges may also start as child processes for channels that have not moved to native adapters yet.
 
 ## Quick Start
 
@@ -29,11 +30,9 @@ bun install
 # 2. Run setup wizard (downloads nats-server, configures auth, creates agent)
 ravi setup
 
-# 3. Configure omni in ~/.ravi/.env:
-# OMNI_DIR=/path/to/omni-v2
-# DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/omni
+# 3. Configure channel credentials in the Ravi credential broker / ~/.ravi/.env
 
-# 4. Start daemon (nats-server + omni + bot + gateway)
+# 4. Start daemon (nats-server + bot + gateway + configured channel adapters)
 ravi daemon start
 
 # 5. Connect WhatsApp
@@ -69,7 +68,7 @@ artifact upload/publish pipeline internally.
 
 For full topic reference with payloads, see the **events** skill (`src/plugins/internal/ravi-system/skills/events/SKILL.md`).
 
-**omni NATS subjects (JetStream stream: MESSAGE):**
+**Legacy bridge NATS subjects (JetStream stream: MESSAGE):**
 - `message.received.{channelType}.{instanceId}` — inbound message
 - `reaction.received.{channelType}.{instanceId}` — inbound reaction
 - `instance.connected.{channelType}.{instanceId}` — account connected
@@ -438,7 +437,7 @@ ravi whatsapp connect --account suporte --agent suporte --mode sentinel
 ~/.ravi/
 ├── ravi.db          # Config and sessions (SQLite)
 ├── .env             # Environment variables (loaded by daemon)
-├── omni-api-key     # Auto-generated omni API key
+├── omni-api-key     # Auto-generated legacy bridge API key
 ├── jetstream/       # NATS JetStream storage
 ├── bin/
 │   └── nats-server  # nats-server binary (auto-downloaded)
@@ -481,7 +480,7 @@ This keeps three truths aligned:
 ravi setup             # Interactive setup wizard
 
 # Daemon (recommended)
-ravi daemon start      # Start nats + omni + bot + gateway
+ravi daemon start      # Start nats + bot + gateway + configured channel adapters
 ravi daemon stop       # Stop daemon
 ravi daemon restart    # Restart daemon
 ravi daemon status     # Show status
@@ -691,7 +690,7 @@ Images, videos, documents, and stickers are downloaded to `/tmp/ravi-media/` and
 CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-xxx
 ANTHROPIC_API_KEY=sk-ant-xxx
 
-# Omni (required for channel support)
+# Legacy transport bridge (only for channels still using the bridge)
 OMNI_DIR=/path/to/omni-v2
 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/omni
 OMNI_API_PORT=8882          # Default
@@ -760,7 +759,7 @@ alias nats-local='nats --server nats://127.0.0.1:4222'
 nats stream ls --server nats://127.0.0.1:4222
 ```
 
-Omni streams: `MESSAGE`, `INSTANCE`, `REACTION`, `MEDIA`, `ACCESS`, `IDENTITY`, `CUSTOM`, `SYSTEM`.
+Legacy bridge streams: `MESSAGE`, `INSTANCE`, `REACTION`, `MEDIA`, `ACCESS`, `IDENTITY`, `CUSTOM`, `SYSTEM`.
 
 ### Inspect a stream
 
@@ -834,7 +833,7 @@ ravi daemon restart
 
 ### Live subscribe (plain pub/sub — no JetStream)
 
-Watch events in real time as they arrive from omni:
+Watch legacy bridge events in real time:
 
 ```bash
 # All message events

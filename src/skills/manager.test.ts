@@ -89,10 +89,14 @@ describe("skills manager", () => {
     const home = join(root, "home");
     const catalogSkills = listCatalogSkills();
     const imageSkill = catalogSkills.find((skill) => skill.name === "image");
+    const slackSkill = catalogSkills.find((skill) => skill.name === "slack");
 
     expect(imageSkill).toBeDefined();
     expect(imageSkill?.source).toBe("catalog:ravi-system/image");
     expect(imageSkill?.files?.map((file) => file.path)).toContain("SKILL.md");
+    expect(slackSkill).toBeDefined();
+    expect(slackSkill?.source).toBe("catalog:ravi-system/slack");
+    expect(slackSkill?.files?.map((file) => file.path)).toContain("references/canvas.md");
 
     const [installed] = installSkills([imageSkill!], { homeDir: home });
 
