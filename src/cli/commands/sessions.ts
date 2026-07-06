@@ -1456,6 +1456,8 @@ function formatTraceWindow(trace: SessionTraceQueryResult): string {
   return `until ${formatTraceDateTime(until)}`;
 }
 
+const DEFAULT_TRACE_LIMIT = 200;
+
 function parseTraceLimit(value: string | undefined): number | undefined {
   if (value === undefined || value === null || value === "") return undefined;
   if (!/^\d+$/.test(value)) {
@@ -4147,6 +4149,9 @@ export class SessionCommands {
     const target = this.resolveTraceTarget(nameOrKey);
     if (!target) return;
 
+    const parsedLimit = parseTraceLimit(limitStr);
+    const traceLimit = parsedLimit ?? (asJson ? undefined : DEFAULT_TRACE_LIMIT);
+
     const trace = querySessionTrace({
       session: nameOrKey,
       sessionKey: target.session?.sessionKey,
@@ -4158,7 +4163,7 @@ export class SessionCommands {
       messageId,
       correlationId,
       only,
-      limit: parseTraceLimit(limitStr),
+      limit: traceLimit,
       includeStream,
       raw,
       showSystemPrompt,

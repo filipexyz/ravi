@@ -439,18 +439,38 @@ function isStreamEventType(eventType: string): boolean {
   return false;
 }
 
-function isStreamEvent(event: SessionEventRecord): boolean {
-  return isStreamEventType(event.eventType);
+const STREAM_EVENT_SQL =
+  "(event_type = 'adapter.raw' OR event_type LIKE '%.stream%' OR event_type LIKE '%.delta' OR event_type LIKE '%provider_event%')";
+
+function addOnlyFilter(where: string[], params: SqlParam[], only: SessionTraceOnlyFilter): void {
+  if (only.raw.length === 0) return;
+  const clauses: string[] = [];
+  const streamGroup = only.groups.includes("stream");
+  const nonStreamGroups = only.groups.filter((group) => group !== "stream");
+  if (nonStreamGroups.length > 0) {
+    clauses.push(`(LOWER(event_group) IN (${nonStreamGroups.map(() => "?").join(", ")}) AND NOT ${STREAM_EVENT_SQL})`);
+    params.push(...nonStreamGroups);
+  }
+  if (streamGroup) {
+    clauses.push(`(LOWER(event_group) = ? OR ${STREAM_EVENT_SQL})`);
+    params.push("stream");
+  }
+  if (only.eventTypes.length > 0) {
+    clauses.push(`LOWER(event_type) IN (${only.eventTypes.map(() => "?").join(", ")})`);
+    params.push(...only.eventTypes);
+  }
+  if (clauses.length > 0) {
+    where.push(`(${clauses.join(" OR ")})`);
+  } else {
+    where.push("0 = 1");
+  }
 }
 
-function matchesOnly(event: SessionEventRecord, only: SessionTraceOnlyFilter): boolean {
-  if (only.raw.length === 0) return true;
-  if (only.groups.includes(event.eventGroup.toLowerCase())) return true;
-  if (only.eventTypes.includes(event.eventType.toLowerCase())) return true;
-  return false;
-}
-
-function queryEvents(input: SessionTraceQueryInput, only: SessionTraceOnlyFilter): SessionEventRecord[] {
+function queryEvents(
+  input: SessionTraceQueryInput,
+  only: SessionTraceOnlyFilter,
+  limit: number | null,
+): SessionEventRecord[] {
   const where: string[] = [];
   const params: SqlParam[] = [];
 
@@ -459,12 +479,26 @@ function queryEvents(input: SessionTraceQueryInput, only: SessionTraceOnlyFilter
   addExactFilter(where, params, "turn_id", input.turnId);
   addExactFilter(where, params, "run_id", input.runId);
   addExactFilter(where, params, "message_id", input.messageId);
+  if (!input.includeStream) {
+    where.push(`event_group != ? AND NOT ${STREAM_EVENT_SQL}`);
+    params.push("stream");
+  }
+  addOnlyFilter(where, params, only);
+
+  const correlationId = compactText(input.correlationId);
+  const canLimitInSql = limit !== null && !correlationId;
+  const orderSql = canLimitInSql ? "timestamp DESC, seq DESC, id DESC" : "timestamp ASC, seq ASC, id ASC";
+  const limitSql = canLimitInSql ? "LIMIT ?" : "";
+  if (canLimitInSql) {
+    params.push(limit);
+  }
 
   const sql = `
     SELECT *
     FROM session_events
     ${where.length > 0 ? `WHERE ${where.join(" AND ")}` : ""}
-    ORDER BY timestamp ASC, seq ASC, id ASC
+    ORDER BY ${orderSql}
+    ${limitSql}
   `;
 
   let events = (
@@ -473,13 +507,10 @@ function queryEvents(input: SessionTraceQueryInput, only: SessionTraceOnlyFilter
       .all(...params) as SessionEventRow[]
   ).map(rowToSessionEvent);
 
-  if (!input.includeStream) {
-    events = events.filter((event) => !isStreamEvent(event));
+  if (canLimitInSql) {
+    events.reverse();
   }
 
-  events = events.filter((event) => matchesOnly(event, only));
-
-  const correlationId = compactText(input.correlationId);
   if (correlationId) {
     events = events.filter((event) => containsCorrelationId(event.payloadJson, correlationId));
   }
@@ -487,7 +518,12 @@ function queryEvents(input: SessionTraceQueryInput, only: SessionTraceOnlyFilter
   return events;
 }
 
-function queryTurns(input: SessionTraceQueryInput, events: SessionEventRecord[], only: SessionTraceOnlyFilter) {
+function queryTurns(
+  input: SessionTraceQueryInput,
+  events: SessionEventRecord[],
+  only: SessionTraceOnlyFilter,
+  limit: number | null,
+) {
   if (only.raw.length > 0 && !only.includeTurns) {
     return [];
   }
@@ -520,18 +556,30 @@ function queryTurns(input: SessionTraceQueryInput, events: SessionEventRecord[],
     params.push(...eventTurnIds);
   }
 
+  const canLimitInSql = limit !== null;
+  const orderSql = canLimitInSql ? "started_at DESC, turn_id DESC" : "started_at ASC, turn_id ASC";
+  const limitSql = canLimitInSql ? "LIMIT ?" : "";
+  if (canLimitInSql) {
+    params.push(limit);
+  }
+
   const sql = `
     SELECT *
     FROM session_turns
     ${where.length > 0 ? `WHERE ${where.join(" AND ")}` : ""}
-    ORDER BY started_at ASC, turn_id ASC
+    ORDER BY ${orderSql}
+    ${limitSql}
   `;
 
-  return (
+  const turns = (
     getDb()
       .prepare(sql)
       .all(...params) as SessionTurnRow[]
   ).map(rowToSessionTurn);
+  if (canLimitInSql) {
+    turns.reverse();
+  }
+  return turns;
 }
 
 function normalizeLimit(limit: number | undefined): number | null {
@@ -733,8 +781,8 @@ export function parseSessionTraceTime(value: string | undefined, now = Date.now(
 export function querySessionTrace(input: SessionTraceQueryInput): SessionTraceQueryResult {
   const only = normalizeSessionTraceOnly(input.only);
   const limit = normalizeLimit(input.limit);
-  const queriedEvents = queryEvents(input, only);
-  const queriedTurns = input.includeTurns === false ? [] : queryTurns(input, queriedEvents, only);
+  const queriedEvents = queryEvents(input, only, limit);
+  const queriedTurns = input.includeTurns === false ? [] : queryTurns(input, queriedEvents, only, limit);
   const { events, turns } = applyTimelineLimit(queriedEvents, queriedTurns, limit);
   const requestedBlobs = new Set<string>();
   const systemPrompt = input.showSystemPrompt
