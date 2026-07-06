@@ -43,6 +43,7 @@ import { prepareOmniMentionMessage, type OmniUserMention } from "./omni/mentions
 import { resolveOmniConnection } from "./omni-config.js";
 import { resolveOmniGroupMetadata } from "./omni/group-metadata-cache.js";
 import { buildRaviTtsRequest, handleRaviTtsRequest, RAVI_TTS_TOPIC, shouldAutoTtsForAgent } from "./audio/tts.js";
+import type { NativeTextDelivery } from "./channels/native/types.js";
 
 const log = logger.child("gateway");
 const PRESENCE_RENEW_THROTTLE_MS = 4_000;
@@ -89,6 +90,7 @@ export interface GatewayOptions {
   omniSender: OmniSender;
   omniConsumer: OmniConsumer;
   emitEvent?: typeof nats.emit;
+  nativeTextDeliveries?: readonly NativeTextDelivery[];
 }
 
 type PresenceTarget = {
@@ -123,6 +125,7 @@ export class Gateway {
   private omniSender: OmniSender;
   private omniConsumer: OmniConsumer;
   private emitEvent: typeof nats.emit;
+  private nativeTextDeliveries: readonly NativeTextDelivery[];
   private activeSubscriptions = new Set<string>();
   private typingTracker = new SessionTypingTracker();
   private presenceRenewedAt = new Map<string, number>();
@@ -135,6 +138,7 @@ export class Gateway {
     this.omniSender = options.omniSender;
     this.omniConsumer = options.omniConsumer;
     this.emitEvent = options.emitEvent ?? nats.emit;
+    this.nativeTextDeliveries = options.nativeTextDeliveries ?? [];
     if (options.logLevel) {
       logger.setLevel(options.logLevel);
     }
@@ -538,6 +542,12 @@ export class Gateway {
       return;
     }
 
+    const nativeDelivery = this.nativeTextDeliveries.find((delivery) => delivery.supports(target));
+    if (nativeDelivery) {
+      await this.handleNativeTextResponse(sessionName, response, nativeDelivery, emitDelivery);
+      return;
+    }
+
     const instanceId = configStore.resolveInstanceId(target.accountId);
     if (!instanceId) {
       await emitDelivery({ status: "dropped", reason: "missing_instance", target });
@@ -621,6 +631,81 @@ export class Gateway {
         target,
         instanceId,
         chatId,
+        textLen: text.length,
+        error: err instanceof Error ? err.message : String(err),
+        durationMs: Date.now() - t0,
+      });
+    }
+  }
+
+  private async handleNativeTextResponse(
+    sessionName: string,
+    response: ResponseMessage,
+    delivery: NativeTextDelivery,
+    emitDelivery: (data: Record<string, unknown>) => Promise<void>,
+  ): Promise<void> {
+    const target = response.target;
+    if (!target) {
+      await emitDelivery({ status: "dropped", reason: "missing_target" });
+      return;
+    }
+
+    const text = response.error ? `Error: ${response.error}` : response.response;
+    if (text && text.trim() === SILENT_TOKEN) {
+      log.debug("Silent native response, not sending to channel", { sessionName, channel: target.channel });
+      await emitDelivery({ status: "dropped", reason: "silent", target });
+      return;
+    }
+    if (!text) {
+      await emitDelivery({ status: "dropped", reason: "empty_response", target });
+      return;
+    }
+    if (!response._emitId) {
+      log.warn("GHOST NATIVE RESPONSE DROPPED", {
+        sessionName,
+        channel: target.channel,
+        textPreview: text.slice(0, 200),
+      });
+      await emitDelivery({ status: "dropped", reason: "missing_emit_id", target, textLen: text.length });
+      return;
+    }
+
+    const t0 = Date.now();
+    try {
+      const delivered = await delivery.deliverText({
+        sessionName,
+        emitId: response._emitId,
+        target,
+        text,
+      });
+      const instanceId = target.instanceId ?? target.accountId;
+      const providerMessageId = delivered.messageId ?? delivered.platformMessageId;
+      this.saveOutboundMessageActorMetadata(sessionName, target, instanceId, target.chatId, providerMessageId, text);
+      this.recordOutboundContactInteraction(sessionName, target);
+      await emitDelivery({
+        status: "delivered",
+        provider: delivered.provider,
+        emitId: response._emitId,
+        messageId: delivered.messageId,
+        platformMessageId: delivered.platformMessageId,
+        target,
+        deliveredAt: Date.now(),
+        durationMs: Date.now() - t0,
+        textLen: text.length,
+      });
+      log.info("Native response delivered", {
+        sessionName,
+        channel: target.channel,
+        provider: delivered.provider,
+        durationMs: Date.now() - t0,
+      });
+    } catch (err) {
+      log.error("Failed to send native response", { channel: target.channel, error: err });
+      await emitDelivery({
+        status: "failed",
+        reason: "native_send_error",
+        provider: delivery.channelId,
+        target,
         textLen: text.length,
         error: err instanceof Error ? err.message : String(err),
         durationMs: Date.now() - t0,
