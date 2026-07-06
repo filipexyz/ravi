@@ -12,9 +12,8 @@ description: |
 
 # Slack Nativo
 
-Slack e um canal nativo do Ravi. Para Slack, prefira sempre `ravi slack ...`
-e as specs `channels/slack/*`. Nao use Omni como caminho normal para novas
-operacoes Slack.
+Slack e um canal nativo do Ravi. Para Slack, use `ravi slack ...` e as specs
+`channels/slack/*` como fonte operacional.
 
 ## Principios
 

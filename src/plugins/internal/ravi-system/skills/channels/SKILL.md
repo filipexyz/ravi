@@ -11,8 +11,7 @@ description: |
 
 # Channels Manager
 
-Canais são gerenciados por adapters do Ravi. WhatsApp ainda pode passar pelo
-Omni como compatibilidade de transporte, mas Slack deve usar a skill nativa
+Canais são gerenciados por adapters do Ravi. Para Slack, use a skill nativa
 `ravi-system:slack` / `ravi-system-slack` e os comandos `ravi slack ...`.
 
 Cada conta conectada é uma **instância** — a entidade central de configuração do Ravi.
@@ -54,7 +53,7 @@ ravi instances set <name> dmScope per-peer
 ravi instances disconnect <name>
 ```
 
-### Ver status omni
+### Ver status da instância
 ```bash
 ravi instances status <name>
 ```
@@ -97,11 +96,11 @@ ravi instances set suporte groupPolicy allowlist
 ```bash
 ravi instances status main    # Ver estado da instância
 ravi instances connect main   # Reconectar (mostra QR se necessário)
-ravi daemon logs              # Ver logs do daemon e omni
+ravi daemon logs              # Ver logs do daemon
 ```
 
 ### Daemon não inicia
 ```bash
 ravi daemon logs              # Ver erros de startup
-# Verificar OMNI_DIR em ~/.ravi/.env
+# Verificar configuração da instância e credenciais em ~/.ravi/.env
 ```
