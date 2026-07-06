@@ -774,10 +774,6 @@ export class RuntimeSessionDispatcher {
           return;
         }
 
-        if (prompt.source) {
-          existing.currentSource = prompt.source;
-        }
-
         const userMsg: RuntimeUserMessage = {
           ...createQueuedRuntimeUserMessage(prompt),
         };
@@ -814,7 +810,11 @@ export class RuntimeSessionDispatcher {
         });
 
         if (existing.pushMessage) {
-          if (hasDeliverableRuntimeMessages(sessionName, existing)) {
+          const deliverableNow = hasDeliverableRuntimeMessages(sessionName, existing);
+          if (deliverableNow) {
+            if (!existing.turnActive && prompt.source) {
+              existing.currentSource = prompt.source;
+            }
             log.info("Streaming: waking generator", {
               sessionName,
               queueSize: existing.pendingMessages.length,

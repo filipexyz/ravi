@@ -1,8 +1,8 @@
 ---
 name: channels-manager
 description: |
-  Gerencia canais de comunicação do Ravi via omni. Use quando o usuário quiser:
-  - Ver status das instâncias WhatsApp, Discord, Telegram
+  Gerencia canais de comunicação do Ravi. Use quando o usuário quiser:
+  - Ver status das instâncias WhatsApp, Slack, Discord, Telegram
   - Conectar ou desconectar contas
   - Configurar policies de DM e grupo por instância
   - Verificar QR code de pareamento
@@ -11,7 +11,20 @@ description: |
 
 # Channels Manager
 
-Canais são gerenciados pelo omni API server (processo filho do daemon). Cada conta conectada é uma **instância** — a entidade central de configuração do Ravi.
+Canais são gerenciados por adapters do Ravi. Para Slack, use a skill nativa
+`ravi-system:slack` / `ravi-system-slack` e os comandos `ravi slack ...`.
+
+Cada conta conectada é uma **instância** — a entidade central de configuração do Ravi.
+
+## Slack Nativo
+
+Para qualquer tarefa de Slack, Canvas, threads, topology, replay, delivery ou
+presenca nativa, use a skill `ravi-system:slack`.
+
+```bash
+ravi skills show slack --json
+ravi slack --help
+```
 
 ## Instâncias (central config)
 
@@ -40,7 +53,7 @@ ravi instances set <name> dmScope per-peer
 ravi instances disconnect <name>
 ```
 
-### Ver status omni
+### Ver status da instância
 ```bash
 ravi instances status <name>
 ```
@@ -83,11 +96,11 @@ ravi instances set suporte groupPolicy allowlist
 ```bash
 ravi instances status main    # Ver estado da instância
 ravi instances connect main   # Reconectar (mostra QR se necessário)
-ravi daemon logs              # Ver logs do daemon e omni
+ravi daemon logs              # Ver logs do daemon
 ```
 
 ### Daemon não inicia
 ```bash
 ravi daemon logs              # Ver erros de startup
-# Verificar OMNI_DIR em ~/.ravi/.env
+# Verificar configuração da instância e credenciais em ~/.ravi/.env
 ```

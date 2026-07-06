@@ -10,6 +10,7 @@ import {
   commandEnvelopeReturnSchema,
   declareCommandReturns,
   pagedItemsReturnSchema,
+  sessionGoalReturnSchema,
 } from "./operational-return-schemas.js";
 import { nats } from "../../nats.js";
 import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "../../session-control.js";
@@ -87,6 +88,7 @@ import { getRuntimeLiveStateForSession } from "../../runtime/live-state.js";
 import { buildRuntimeSessionVisibilityPayload } from "../../runtime/session-visibility.js";
 import {
   accountSessionGoalUsage,
+  blockSessionGoal,
   clearSessionGoal,
   completeSessionGoal,
   createSessionGoal,
@@ -1030,6 +1032,7 @@ function buildSessionGoalJson(goal: SessionGoal | null): Record<string, unknown>
     timeUsedSeconds: goal.timeUsedSeconds,
     taskId: goal.taskId ?? null,
     projectId: goal.projectId ?? null,
+    blockedReason: goal.blockedReason ?? null,
     createdAt: goal.createdAt,
     updatedAt: goal.updatedAt,
   };
@@ -1070,6 +1073,7 @@ function printSessionGoal(goal: SessionGoal | null, session: SessionEntry): void
   console.log(`  Time: ${goal.timeUsedSeconds}s`);
   if (goal.taskId) console.log(`  Task: ${goal.taskId}`);
   if (goal.projectId) console.log(`  Project: ${goal.projectId}`);
+  if (goal.blockedReason) console.log(`  Blocked reason: ${goal.blockedReason}`);
   console.log();
 }
 
@@ -1451,6 +1455,8 @@ function formatTraceWindow(trace: SessionTraceQueryResult): string {
   if (since) return `since ${formatTraceDateTime(since)}`;
   return `until ${formatTraceDateTime(until)}`;
 }
+
+const DEFAULT_TRACE_LIMIT = 200;
 
 function parseTraceLimit(value: string | undefined): number | undefined {
   if (value === undefined || value === null || value === "") return undefined;
@@ -2204,7 +2210,7 @@ export class SessionCommands {
   })
   goal(
     @Arg("action", {
-      description: "get|set|create|pause|resume|complete|clear|account",
+      description: "get|set|create|pause|resume|block|complete|clear|account",
     })
     action: string,
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
@@ -2235,6 +2241,11 @@ export class SessionCommands {
       description: "Elapsed seconds delta for account",
     })
     secondsStr?: string,
+    @Option({
+      flags: "--reason <text>",
+      description: "Concrete reason for blocking",
+    })
+    reason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
@@ -2297,6 +2308,16 @@ export class SessionCommands {
         goal = resumeSessionGoal(session.sessionKey);
         changed = Boolean(goal);
         break;
+      case "block": {
+        if (!reason?.trim()) {
+          fail("Blocked reason is required for action: block (use --reason)");
+          return;
+        }
+        goal = blockSessionGoal(session.sessionKey, reason);
+        changed = goal?.status === "blocked";
+        goal = goal ?? getSessionGoal(session.sessionKey);
+        break;
+      }
       case "complete":
         goal = completeSessionGoal(session.sessionKey);
         changed = Boolean(goal);
@@ -2318,14 +2339,20 @@ export class SessionCommands {
         break;
       }
       default:
-        fail(`Unknown goal action: ${action}. Use get, set, create, pause, resume, complete, clear, or account.`);
+        fail(
+          `Unknown goal action: ${action}. Use get, set, create, pause, resume, block, complete, clear, or account.`,
+        );
         return;
     }
 
     const payload = {
       action: normalizedAction,
       changed,
-      session: buildSessionJson(session),
+      session: {
+        sessionKey: session.sessionKey,
+        agentId: session.agentId,
+        label: session.name ?? session.sessionKey,
+      },
       goal: buildSessionGoalJson(goal),
     };
 
@@ -4122,6 +4149,9 @@ export class SessionCommands {
     const target = this.resolveTraceTarget(nameOrKey);
     if (!target) return;
 
+    const parsedLimit = parseTraceLimit(limitStr);
+    const traceLimit = parsedLimit ?? (asJson ? undefined : DEFAULT_TRACE_LIMIT);
+
     const trace = querySessionTrace({
       session: nameOrKey,
       sessionKey: target.session?.sessionKey,
@@ -4133,7 +4163,7 @@ export class SessionCommands {
       messageId,
       correlationId,
       only,
-      limit: parseTraceLimit(limitStr),
+      limit: traceLimit,
       includeStream,
       raw,
       showSystemPrompt,
@@ -5354,7 +5384,7 @@ declareCommandReturns(SessionCommands, {
   editMessage: commandEnvelopeReturnSchema,
   execute: commandEnvelopeReturnSchema,
   extend: commandEnvelopeReturnSchema,
-  goal: commandEnvelopeReturnSchema,
+  goal: sessionGoalReturnSchema,
   info: commandEnvelopeReturnSchema,
   inform: commandEnvelopeReturnSchema,
   keep: commandEnvelopeReturnSchema,

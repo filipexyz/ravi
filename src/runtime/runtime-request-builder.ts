@@ -9,6 +9,7 @@ import {
   summarizeRuntimeCapabilities,
 } from "../session-trace/runtime-trace.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
+import { classifyCompactionAnnouncement } from "./compaction-announcement.js";
 import { createRuntimeMessageGenerator } from "./delivery-queue.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import {
@@ -335,6 +336,10 @@ export async function buildRuntimeStartRequest(
       if (turnSource) {
         streamingSession.currentSource = turnSource;
       }
+      streamingSession.currentTurnCompactionAnnouncement = classifyCompactionAnnouncement({
+        prompt: turnPrompt,
+        source: turnSource,
+      });
       refreshRuntimeRequestContextForTurn({
         runtimeContext,
         toolContext,

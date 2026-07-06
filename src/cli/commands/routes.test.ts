@@ -465,6 +465,43 @@ describe("RoutesCommands", () => {
     expect(sessions.map((session) => session.sessionKey)).toEqual(["agent:dev:whatsapp:main:group:120363424772797713"]);
   });
 
+  it("cleans Slack channel sessions case-insensitively", () => {
+    instanceNames = new Set(["ravi-rbbt-slack"]);
+    routes = [
+      {
+        id: 1,
+        accountId: "ravi-rbbt-slack",
+        pattern: "group:c0bg33zuwjc",
+        agent: "ravi-rbbt-slack",
+        priority: 0,
+        channel: "slack",
+      },
+    ];
+    sessions = [
+      {
+        sessionKey: "agent:ravi-rbbt-slack:slack:ravi-rbbt-slack:group:C0BG33ZUWJC",
+        agentId: "ravi-rbbt-slack",
+        accountId: "ravi-rbbt-slack",
+        lastAccountId: "ravi-rbbt-slack",
+      },
+    ];
+
+    const payload = captureJson(() => {
+      new InstancesRoutesCommands().set(
+        "ravi-rbbt-slack",
+        "group:c0bg33zuwjc",
+        "agent",
+        "ravi-channels-migration",
+        undefined,
+        true,
+      );
+    });
+
+    expect(payload.cleanedSessions).toBe(1);
+    expect(deletedSessionKeys).toEqual(["agent:ravi-rbbt-slack:slack:ravi-rbbt-slack:group:C0BG33ZUWJC"]);
+    expect(sessions).toEqual([]);
+  });
+
   it("prints pending entries in --json mode", () => {
     pendingEntries = [
       {

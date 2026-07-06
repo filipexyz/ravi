@@ -1,7 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { saveMessage } from "../db.js";
+import { nats } from "../nats.js";
+import { attachChatToSession } from "../router/sessions.js";
+import { classifyCompactionAnnouncement } from "./compaction-announcement.js";
 import {
   getOrCreateSession,
   getSession,
@@ -9,7 +12,7 @@ import {
   type AgentConfig,
   type SessionEntry,
 } from "../router/index.js";
-import { getDb } from "../router/router-db.js";
+import { dbUpsertChat, getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { getSessionTraceBlob, getSessionTurn, listSessionEvents } from "../session-trace/session-trace-db.js";
 import { recordAdapterRequestTrace } from "../session-trace/runtime-trace.js";
@@ -815,6 +818,109 @@ describe("runtime session trace instrumentation", () => {
     expect(streaming.turnActive).toBe(false);
   });
 
+  function collectRuntimeStatusCompacting(): Array<unknown> {
+    return listSessionEvents(SESSION_KEY)
+      .filter((event) => event.eventType === "runtime.status")
+      .map((event) => {
+        const payload = event.payloadJson;
+        if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+        return payload.compacting;
+      });
+  }
+
+  function attachSpeakingOutputChat(): void {
+    const outputChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "compaction-gate@s.whatsapp.net",
+      chatType: "dm",
+      title: "compaction-gate",
+    });
+    attachChatToSession({ sessionKey: SESSION_KEY, chatId: outputChat.id, setOutputTarget: true });
+  }
+
+  const compactingThenIdle: RuntimeEvent[] = [
+    { type: "status", status: "compacting" },
+    { type: "status", status: "idle" },
+    {
+      type: "turn.complete",
+      providerSessionId: "provider-after",
+      usage: { inputTokens: 1, outputTokens: 1 },
+    },
+  ];
+
+  it("emits external compaction announcements for a human/channel turn", async () => {
+    attachSpeakingOutputChat();
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentTurnCompactionAnnouncement: classifyCompactionAnnouncement({ source }),
+    });
+    seedAdapterTrace(streaming);
+
+    const responses: string[] = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        const response = (data as { response?: unknown }).response;
+        if (typeof response === "string") responses.push(response);
+      }
+    });
+
+    try {
+      await runTraceLoop(streaming, makeRuntimeSession(compactingThenIdle));
+    } finally {
+      emitSpy.mockRestore();
+    }
+
+    expect(responses.some((text) => text.includes("Compactando"))).toBe(true);
+    expect(responses.some((text) => text.includes("compactada"))).toBe(true);
+    expect(collectRuntimeStatusCompacting()).toEqual([true, false]);
+  });
+
+  for (const scenario of [
+    { name: "cron", prompt: { _cron: true } },
+    { name: "trigger", prompt: { _trigger: true } },
+    { name: "session followup", prompt: { _sessionFollowup: true } },
+    { name: "heartbeat", prompt: { _heartbeat: true } },
+  ] as const) {
+    it(`suppresses external compaction announcements for a ${scenario.name} turn while preserving trace observability`, async () => {
+      attachSpeakingOutputChat();
+      const streaming = makeStreamingSession({
+        agentMode: "active",
+        currentTurnCompactionAnnouncement: classifyCompactionAnnouncement({
+          prompt: scenario.prompt,
+          source,
+        }),
+      });
+      seedAdapterTrace(streaming);
+
+      const responses: string[] = [];
+      const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
+        if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+          const response = (data as { response?: unknown }).response;
+          if (typeof response === "string") responses.push(response);
+        }
+      });
+
+      try {
+        await runTraceLoop(streaming, makeRuntimeSession(compactingThenIdle));
+      } finally {
+        emitSpy.mockRestore();
+      }
+
+      expect(responses.some((text) => text.includes("Compactando") || text.includes("compactada"))).toBe(false);
+      // Internal observability MUST be preserved for automation origins.
+      expect(collectRuntimeStatusCompacting()).toEqual([true, false]);
+      const statusEvents = listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "runtime.status");
+      expect(
+        statusEvents.every((event) => {
+          const payload = event.payloadJson;
+          if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+          return payload.externalAnnouncementsAllowed === false;
+        }),
+      ).toBe(true);
+    });
+  }
+
   it("marks a skill loaded when a ravi skills show command completes", async () => {
     const streaming = makeStreamingSession();
     seedAdapterTrace(streaming);
@@ -981,12 +1087,18 @@ describe("runtime session trace instrumentation", () => {
           text: "ok",
           metadata: { nativeEvent: "item.completed", item: { id: "msg-1", type: "agent_message" } },
         },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
       ]),
     );
 
     expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).toEqual([
       "adapter.request",
       "assistant.message",
+      "turn.complete",
     ]);
   });
 
@@ -1000,6 +1112,78 @@ describe("runtime session trace instrumentation", () => {
     expect(terminal?.status).toBe("interrupted");
     expect(terminal?.payloadJson).toMatchObject({ abort_reason: "provider_interrupted" });
     expect(getSessionTurn("turn-interrupted")?.status).toBe("interrupted");
+  });
+
+  it("replays a pending user turn when the provider stream closes without a terminal event before tools", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "received from slack",
+      deliveryBarrier: "after_response",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      currentTurnToolStarted: false,
+      toolRunning: false,
+    });
+    seedAdapterTrace(streaming, "turn-stream-closed-before-tool");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(streaming, makeRuntimeSession([]), {
+      stashedMessages,
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+    });
+
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual([
+      "received from slack",
+    ]);
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "runtime_event_loop_closed" }]);
+
+    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
+    expect(terminal?.status).toBe("aborted");
+    expect(terminal?.payloadJson).toMatchObject({
+      abort_reason: "runtime_event_loop_closed",
+      autoRecovered: true,
+    });
+    expect(getSessionTurn("turn-stream-closed-before-tool")?.status).toBe("aborted");
+  });
+
+  it("does not replay an unterminated turn after a tool has started", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "do not replay after side effects",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      currentTurnToolStarted: true,
+      toolRunning: false,
+    });
+    seedAdapterTrace(streaming, "turn-stream-closed-after-tool");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(streaming, makeRuntimeSession([]), {
+      stashedMessages,
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+    });
+
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(restartRequests).toEqual([]);
+
+    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
+    expect(terminal?.payloadJson).toMatchObject({
+      abort_reason: "runtime_event_loop_closed",
+      autoRecovered: false,
+    });
   });
 
   it("records failed turns with error details", async () => {

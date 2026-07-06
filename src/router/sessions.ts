@@ -1024,12 +1024,15 @@ export class SessionAttachInstanceMismatchError extends Error {
 }
 
 /**
- * Returns true when the chat and the session live on the same Omni
- * instance. Cross-instance attach is forbidden because output
- * would be sent via the chat's instance — which may be a different
- * account entirely (e.g. an "observer" instance bound to the operator's
- * personal WhatsApp number rather than the bot's number). The 2026-05-21
- * production loop was caused by exactly this jump.
+ * Returns true when the chat and the session can be attached together.
+ * Same-channel cross-instance attach is forbidden because output would be
+ * sent via the chat's instance — which may be a different account entirely
+ * (e.g. an "observer" instance bound to the operator's personal WhatsApp
+ * number rather than the bot's number). The 2026-05-21 production loop was
+ * caused by exactly this jump.
+ *
+ * Cross-channel attach is allowed: that is the native model for one session
+ * consuming WhatsApp, Slack, and future channels without forking history.
  *
  * The session_key encodes `agent:<agent>:<channel>:<account>:...` where
  * `<account>` is the instance NAME. The chat row stores `instance_id`
@@ -1047,10 +1050,20 @@ function isChatOnSameInstanceAsSession(
   if (!sessionInstance) return { ok: true };
   const chat = dbGetChat(chatId);
   if (!chat) return { ok: true };
+  const sessionChannel = canonicalAttachChannel(session?.channel);
+  const chatChannel = canonicalAttachChannel(chat.channel);
+  if (sessionChannel && chatChannel && sessionChannel !== chatChannel) return { ok: true };
   const chatInstanceRow = dbGetInstanceByInstanceId(chat.instanceId);
   const chatInstance = chatInstanceRow?.name ?? chat.instanceId;
   if (chatInstance === sessionInstance) return { ok: true };
   return { ok: false, chatInstance, sessionInstance };
+}
+
+function canonicalAttachChannel(value: string | null | undefined): string | null {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized.startsWith("whatsapp")) return "whatsapp";
+  return normalized;
 }
 
 /**

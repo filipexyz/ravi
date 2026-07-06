@@ -266,6 +266,15 @@ describe("sessions/attach — instance isolation", () => {
       title: `chat-${suffix}`,
     });
   }
+  function chatOnChannelInstance(suffix: string, channel: string, instanceId: string) {
+    return dbUpsertChat({
+      channel,
+      instanceId,
+      platformChatId: channel === "slack" ? suffix : `${suffix}@g.us`,
+      chatType: "group",
+      title: `${channel}-${suffix}`,
+    });
+  }
   function sessionOnInstance(suffix: string, accountId: string) {
     // getOrCreateSession only persists `account_id` when it's in defaults at
     // first-create. `updateSessionSource` writes `last_account_id`, which is
@@ -295,6 +304,14 @@ describe("sessions/attach — instance isolation", () => {
     const session = sessionOnInstance("iso-2", "main");
     const fgnChat = chatOnInstance("iso-2", "luis");
     expect(subscriptionAllowsCrossInstance(fgnChat.id, session.sessionKey)).toBe(false);
+  });
+
+  it("allows cross-channel attach even when instances differ", () => {
+    const session = sessionOnInstance("iso-slack", "main");
+    const slackChat = chatOnChannelInstance("C0BG33ZUWJC", "slack", "ravi-rbbt-slack");
+    const result = attachChatToSession({ sessionKey: session.sessionKey, chatId: slackChat.id });
+    expect(result.created).toBe(true);
+    expect(subscriptionAllowsCrossInstance(slackChat.id, session.sessionKey)).toBe(true);
   });
 
   it("attachChatToSession allows chat on the same instance", () => {

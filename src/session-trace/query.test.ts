@@ -264,6 +264,10 @@ describe("querySessionTrace", () => {
 
     const onlyAdapterWithStream = querySessionTrace({ session: "trace-session", only: "adapter", includeStream: true });
     expect(onlyAdapterWithStream.events.map((event) => event.eventType)).toEqual(["adapter.request"]);
+
+    const onlyTurns = querySessionTrace({ session: "trace-session", only: "turns" });
+    expect(onlyTurns.events).toEqual([]);
+    expect(onlyTurns.turns.map((turn) => turn.turnId)).toEqual(["turn-1"]);
   });
 
   it("limits the latest visible timeline rows after filters", () => {

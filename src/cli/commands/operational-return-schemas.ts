@@ -2513,3 +2513,37 @@ export const routeExplainReturnSchema = z
     liveEffect: looseObjectOrNullSchema,
   })
   .passthrough();
+
+const sessionGoalObjectSchema = z
+  .object({
+    sessionKey: z.string(),
+    goalId: z.string(),
+    objective: z.string(),
+    status: z.enum(["active", "paused", "budget_limited", "blocked", "complete"]),
+    tokenBudget: z.number().nullable(),
+    tokensUsed: z.number(),
+    timeUsedSeconds: z.number(),
+    taskId: z.string().nullable(),
+    projectId: z.string().nullable(),
+    blockedReason: z.string().nullable(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+  })
+  .strict();
+
+const sessionGoalSessionSummarySchema = z
+  .object({
+    sessionKey: z.string(),
+    agentId: z.string(),
+    label: z.string(),
+  })
+  .strict();
+
+export const sessionGoalReturnSchema = z
+  .object({
+    action: z.string(),
+    changed: z.boolean(),
+    session: sessionGoalSessionSummarySchema,
+    goal: sessionGoalObjectSchema.nullable(),
+  })
+  .strict();
