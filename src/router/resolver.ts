@@ -237,10 +237,12 @@ export function commitMatchedRoute(
     }
   }
 
-  const effectiveSessionKey =
-    threadId && forcedRouteSession
-      ? buildForcedRouteThreadSessionKey(forcedRouteSession.sessionKey, threadId)
-      : sessionKey;
+  const effectiveSessionKey = resolveCommittedSessionKey({
+    matchedSessionKey: sessionKey,
+    threadId,
+    forcedRouteSessionName,
+    forcedRouteParentSessionKey: forcedRouteSession?.sessionKey ?? null,
+  });
   const existing = getOrCreateSession(effectiveSessionKey, agentId, agentCwd, {
     ...(threadId ? { lastThreadId: threadId } : {}),
   });
@@ -289,6 +291,22 @@ export function commitMatchedRoute(
 function cleanThreadId(threadId: string | undefined): string | undefined {
   const cleaned = threadId?.trim();
   return cleaned ? cleaned : undefined;
+}
+
+export function resolveCommittedSessionKey(params: {
+  matchedSessionKey: string;
+  threadId?: string;
+  forcedRouteSessionName?: string;
+  forcedRouteParentSessionKey?: string | null;
+}): string {
+  const threadId = cleanThreadId(params.threadId);
+  if (!threadId) return params.matchedSessionKey;
+
+  const forcedRouteBaseSessionKey =
+    params.forcedRouteParentSessionKey ?? params.forcedRouteSessionName?.trim() ?? undefined;
+  if (!forcedRouteBaseSessionKey) return params.matchedSessionKey;
+
+  return buildForcedRouteThreadSessionKey(forcedRouteBaseSessionKey, threadId);
 }
 
 function buildForcedRouteThreadSessionKey(parentSessionKey: string, threadId: string): string {

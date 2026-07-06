@@ -6,6 +6,7 @@ import {
   ensureChannelOutboundConsumer,
   ensureChannelOutboundInfrastructure,
   ensureChannelOutboundStream,
+  resetChannelOutboundInfrastructureCacheForTests,
   subjectForChannel,
 } from "./outbound-stream.js";
 
@@ -16,6 +17,7 @@ afterAll(() => {
 });
 
 beforeEach(() => {
+  resetChannelOutboundInfrastructureCacheForTests();
   currentJsm = makeChannelOutboundJsm();
 });
 
@@ -137,6 +139,10 @@ describe("channel outbound JetStream infrastructure", () => {
     streamAddGate.resolve();
     await Promise.all([firstEnsure, secondEnsure]);
 
+    expect(calls.streamAdds).toBe(1);
+    expect(calls.consumerAdds).toBe(1);
+
+    await ensureChannelOutboundInfrastructure(currentJsm as never);
     expect(calls.streamAdds).toBe(1);
     expect(calls.consumerAdds).toBe(1);
   });

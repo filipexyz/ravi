@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { matchPattern, findRoute, matchRoute } from "./resolver.js";
+import { matchPattern, findRoute, matchRoute, resolveCommittedSessionKey } from "./resolver.js";
 import type { RouterConfig, RouteConfig, AgentConfig } from "./types.js";
 
 // ============================================================================
@@ -345,5 +345,44 @@ describe("matchRoute — thread: normalization", () => {
 
     // Fallback to * → main
     expect(result?.agentId).toBe("main");
+  });
+});
+
+// ============================================================================
+// resolveCommittedSessionKey — forced session thread forks
+// ============================================================================
+
+describe("resolveCommittedSessionKey", () => {
+  const matchedThreadSessionKey = "agent:main:channel:slack:account:T1:channel:C1:thread:1783200000.000001";
+
+  it("uses forced route session name for a first thread message when the parent session row is absent", () => {
+    expect(
+      resolveCommittedSessionKey({
+        matchedSessionKey: matchedThreadSessionKey,
+        threadId: "1783200000.000001",
+        forcedRouteSessionName: "ravi-hil",
+        forcedRouteParentSessionKey: null,
+      }),
+    ).toBe("ravi-hil:thread:1783200000.000001");
+  });
+
+  it("uses the existing forced parent session key when present", () => {
+    expect(
+      resolveCommittedSessionKey({
+        matchedSessionKey: matchedThreadSessionKey,
+        threadId: "1783200000.000001",
+        forcedRouteSessionName: "ravi-hil",
+        forcedRouteParentSessionKey: "agent:ravi-hil:shared",
+      }),
+    ).toBe("agent:ravi-hil:shared:thread:1783200000.000001");
+  });
+
+  it("keeps the matched key when no thread or forced session exists", () => {
+    expect(
+      resolveCommittedSessionKey({
+        matchedSessionKey: "agent:main:dm:5511999999999",
+        forcedRouteSessionName: "ravi-hil",
+      }),
+    ).toBe("agent:main:dm:5511999999999");
   });
 });

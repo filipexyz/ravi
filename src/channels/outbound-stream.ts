@@ -17,6 +17,7 @@ const PUBLISH_RETRY_ATTEMPTS = 3;
 const PUBLISH_RETRY_DELAY_MS = 250;
 
 let channelOutboundInfrastructureInFlight: Promise<void> | null = null;
+let channelOutboundInfrastructureReady = false;
 
 export type ChannelOutboundJobStatus =
   | "queued"
@@ -138,12 +139,22 @@ export async function ensureChannelOutboundConsumer(existingJsm?: JetStreamManag
 }
 
 export async function ensureChannelOutboundInfrastructure(existingJsm?: JetStreamManager): Promise<void> {
+  if (channelOutboundInfrastructureReady) return;
   if (channelOutboundInfrastructureInFlight) return channelOutboundInfrastructureInFlight;
 
-  channelOutboundInfrastructureInFlight = ensureChannelOutboundInfrastructureOnce(existingJsm).finally(() => {
-    channelOutboundInfrastructureInFlight = null;
-  });
+  channelOutboundInfrastructureInFlight = ensureChannelOutboundInfrastructureOnce(existingJsm)
+    .then(() => {
+      channelOutboundInfrastructureReady = true;
+    })
+    .finally(() => {
+      channelOutboundInfrastructureInFlight = null;
+    });
   return channelOutboundInfrastructureInFlight;
+}
+
+export function resetChannelOutboundInfrastructureCacheForTests(): void {
+  channelOutboundInfrastructureInFlight = null;
+  channelOutboundInfrastructureReady = false;
 }
 
 async function ensureChannelOutboundInfrastructureOnce(existingJsm?: JetStreamManager): Promise<void> {

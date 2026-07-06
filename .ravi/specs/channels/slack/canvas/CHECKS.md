@@ -1,19 +1,19 @@
 # Checks
 
-- Criar canvas standalone deve chamar `canvases.create` com `document_content` markdown quando markdown for informado.
-- Criar channel canvas deve chamar `conversations.canvases.create`; com `--ensure`, `channel_canvas_already_exists` deve retornar o canvas existente via `conversations.info`.
-- `canvas-edit` deve validar requisitos por operacao: markdown para insert/replace, section id para delete e insert relativo, title para rename.
-- `canvas-sections-lookup` deve expor `section_types` e `contains_text`.
-- `canvas-access-set` e `canvas-access-delete` devem rejeitar uso simultaneo de `--users` e `--channels`.
-- `canvas-access-set owner` deve rejeitar `--channels`; owner so pode mirar usuarios.
-- `canvas-showcase` deve publicar markdown rico e a lista de lacunas atuais.
-- `canvas-channel-showcase` deve garantir o channel canvas antes de publicar o showcase.
-- `canvas-channel-showcase` deve reutilizar aba Canvas existente com o mesmo titulo antes de criar nova aba.
-- `canvas-create`, `canvas-channel-create` e `canvas-edit` devem aceitar `--artifact` como fonte Markdown canonica.
-- `canvas-create`, `canvas-channel-create` e `canvas-edit` devem rejeitar combinacao simultanea de `--markdown`, `--markdown-file` e `--artifact`.
-- Publicacao com `--artifact` deve registrar snapshot/version, metadata `slackCanvas.current`, evento `slack.canvas.published` e links para `slack_canvas`/`slack_channel` quando a operacao publicar o documento inteiro.
-- Patch por secao com `--artifact` nao deve sobrescrever `slackCanvas.current`.
-- Publicacao com `--artifact` deve declarar `syncDirection=artifact_to_slack` e `remoteContentExportSupported=false`.
-- `canvas-artifact-status` deve mostrar hash local, ultimo hash publicado e drift local conhecido sem prometer diff remoto contra o Slack.
-- Mutacoes devem ser dry-run por padrao e so executar com `--execute`.
-- Testes devem cobrir serializacao JSON dos argumentos complexos da Slack Web API.
+- Standalone canvas creation MUST call `canvases.create` with markdown `document_content` when markdown is provided.
+- Channel canvas creation MUST call `conversations.canvases.create`; with `--ensure`, `channel_canvas_already_exists` MUST return the existing canvas via `conversations.info`.
+- `canvas-edit` MUST validate operation requirements: markdown for insert/replace, section id for delete and relative insert, title for rename.
+- `canvas-sections-lookup` MUST expose `section_types` and `contains_text`.
+- `canvas-access-set` and `canvas-access-delete` MUST reject simultaneous `--users` and `--channels`.
+- `canvas-access-set owner` MUST reject `--channels`; owner can target users only.
+- `canvas-showcase` MUST publish rich markdown and the current gap list.
+- `canvas-channel-showcase` MUST ensure the channel canvas before publishing the showcase.
+- `canvas-channel-showcase` MUST reuse an existing Canvas tab with the same title before creating a new tab.
+- `canvas-create`, `canvas-channel-create` and `canvas-edit` MUST accept `--artifact` as canonical Markdown input.
+- `canvas-create`, `canvas-channel-create` and `canvas-edit` MUST reject simultaneous `--markdown`, `--markdown-file` and `--artifact`.
+- Publishing with `--artifact` MUST register snapshot/version, `slackCanvas.current` metadata, `slack.canvas.published` event and `slack_canvas`/`slack_channel` links when the operation publishes the full document.
+- Section patching with `--artifact` MUST NOT overwrite `slackCanvas.current`.
+- Publishing with `--artifact` MUST declare `syncDirection=artifact_to_slack` and `remoteContentExportSupported=false`.
+- `canvas-artifact-status` MUST show local hash, last published hash and known local drift without promising remote diff against Slack.
+- Mutations MUST default to dry-run and MUST execute only with `--execute`.
+- Tests MUST cover JSON serialization of complex Slack Web API arguments.
