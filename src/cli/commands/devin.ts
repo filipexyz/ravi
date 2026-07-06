@@ -20,9 +20,15 @@ import {
 import { createArtifact } from "../../artifacts/store.js";
 import {
   createDevinClientFromEnv,
+  getDefaultCreateAsUserId,
+  getDefaultDevinMode,
+  getDefaultDevinPlatform,
+  getDefaultDevinRepos,
   getDefaultMaxAcuLimit,
   type CreateDevinSessionInput,
+  type CreateDevinSessionOptions,
   type DevinClient,
+  type DevinMode,
   type DevinSession,
   type DevinSessionInsights,
 } from "../../devin/client.js";
@@ -106,6 +112,14 @@ function summarizeSession(session: DevinSessionRecord | DevinSession): Record<st
       proxRunId: session.proxRunId ?? null,
       lastSyncedAt: session.lastSyncedAt ?? null,
       updatedAt: session.updatedAt,
+      devinMode: session.devinMode ?? null,
+      platform: session.platform ?? null,
+      resumable: session.resumable ?? null,
+      maxAcuLimit: session.maxAcuLimit ?? null,
+      maxAcuLimitSource: session.maxAcuLimitSource ?? null,
+      userId: session.userId ?? null,
+      serviceUserId: session.serviceUserId ?? null,
+      effectiveCreateAsUserId: session.effectiveCreateAsUserId ?? null,
     };
   }
 
@@ -119,6 +133,9 @@ function summarizeSession(session: DevinSessionRecord | DevinSession): Record<st
     isArchived: session.is_archived ?? false,
     acusConsumed: session.acus_consumed,
     updatedAt: session.updated_at,
+    userId: session.user_id ?? null,
+    serviceUserId: session.service_user_id ?? null,
+    origin: session.origin ?? null,
   };
 }
 
@@ -215,6 +232,55 @@ function determineMaxAcuLimit(explicitValue?: string): {
   const configured = getDefaultMaxAcuLimit();
   if (configured !== undefined) return { maxAcuLimit: configured, source: "env" };
   fail("DEVIN_DEFAULT_MAX_ACU_LIMIT is not configured. Use --max-acu <n> or --no-max-acu-limit explicitly.");
+}
+
+interface ResolvedField<T> {
+  value: T | undefined;
+  source: "explicit" | "env" | "omitted";
+}
+
+function resolveDevinMode(explicit?: string): ResolvedField<DevinMode> {
+  if (explicit?.trim()) return { value: explicit.trim() as DevinMode, source: "explicit" };
+  const env = getDefaultDevinMode();
+  if (env) return { value: env, source: "env" };
+  return { value: undefined, source: "omitted" };
+}
+
+function resolvePlatform(explicit?: string): ResolvedField<string> {
+  if (explicit?.trim()) return { value: explicit.trim(), source: "explicit" };
+  const env = getDefaultDevinPlatform();
+  if (env) return { value: env, source: "env" };
+  return { value: undefined, source: "omitted" };
+}
+
+function resolveRepos(explicit?: string[]): ResolvedField<string[]> {
+  const list = parseStringList(explicit);
+  if (list.length) return { value: list, source: "explicit" };
+  const env = getDefaultDevinRepos();
+  if (env?.length) return { value: env, source: "env" };
+  return { value: undefined, source: "omitted" };
+}
+
+function resolveCreateAsUser(explicit?: string): ResolvedField<string> {
+  if (explicit?.trim()) return { value: explicit.trim(), source: "explicit" };
+  const env = getDefaultCreateAsUserId();
+  if (env) return { value: env, source: "env" };
+  return { value: undefined, source: "omitted" };
+}
+
+function resolveResumable(): ResolvedField<boolean> {
+  if (rawFlagPresent("--no-resumable")) return { value: false, source: "explicit" };
+  if (rawFlagPresent("--resumable")) return { value: true, source: "explicit" };
+  return { value: undefined, source: "omitted" };
+}
+
+function parseSessionSecrets(refs?: string[]): Array<{ key: string; value: string; sensitive?: boolean }> {
+  if (!refs?.length) return [];
+  return parseStringList(refs).map((ref) => {
+    const eqIdx = ref.indexOf("=");
+    if (eqIdx < 1) fail(`Invalid --session-secret format: "${ref}". Expected key=value`);
+    return { key: ref.slice(0, eqIdx), value: ref.slice(eqIdx + 1), sensitive: true };
+  });
 }
 
 async function syncDevinSession(
@@ -340,16 +406,30 @@ export class DevinSessionCommands {
     @Option({ flags: "--repo <repo...>", description: "Repos; can be repeated or comma-separated" }) repos?: string[],
     @Option({ flags: "--attachment-url <url...>", description: "Attachment URLs" }) attachmentUrls?: string[],
     @Option({ flags: "--knowledge <id...>", description: "Knowledge note IDs" }) knowledgeIds?: string[],
-    @Option({ flags: "--secret <id...>", description: "Secret IDs" }) secretIds?: string[],
+    @Option({ flags: "--secret <id...>", description: "Secret IDs (org-level secret references)" })
+    secretIds?: string[],
+    @Option({
+      flags: "--session-secret <ref...>",
+      description: "Inline session secrets (key=value); sensitive by default",
+    })
+    sessionSecretRefs?: string[],
     @Option({ flags: "--session-link <id...>", description: "Linked Devin sessions" }) sessionLinks?: string[],
     @Option({ flags: "--playbook <id>", description: "Playbook ID" }) playbookId?: string,
     @Option({ flags: "--child-playbook <id>", description: "Child playbook ID" }) childPlaybookId?: string,
-    @Option({ flags: "--advanced-mode <mode>", description: "analyze|create|improve|batch|manage" })
+    @Option({ flags: "--devin-mode <mode>", description: "Agent mode: normal|fast|lite|ultra" }) devinMode?: string,
+    @Option({ flags: "--platform <platform>", description: "VM platform override (org-specific)" }) platform?: string,
+    @Option({ flags: "--resumable", description: "Preserve VM state for resume (default: true)" }) _resumable?: boolean,
+    @Option({ flags: "--no-resumable", description: "Disposable session, do not preserve VM state" })
+    _noResumable?: boolean,
+    @Option({ flags: "--structured-output-required", description: "Require structured output before turn ends" })
+    structuredOutputRequired?: boolean,
+    @Option({ flags: "--devin-id <id>", description: "Idempotent session creation key" }) devinId?: string,
+    @Option({ flags: "--advanced-mode <mode>", description: "Legacy: analyze|create|improve|batch|manage" })
     advancedMode?: string,
     @Option({ flags: "--max-acu <n>", description: "Per-session max ACU ceiling" }) maxAcu?: string,
     @Option({ flags: "--no-max-acu-limit", description: "Intentionally omit max_acu_limit" }) _noMaxAcuLimit?: boolean,
     @Option({ flags: "--bypass-approval", description: "Request bypass_approval=true" }) bypassApproval?: boolean,
-    @Option({ flags: "--as-user <id>", description: "create_as_user_id" }) createAsUserId?: string,
+    @Option({ flags: "--as-user <id>", description: "create_as_user_id (impersonate user)" }) createAsUserId?: string,
     @Option({ flags: "--structured-output-schema <json>", description: "JSON schema for structured output" })
     structuredOutputSchema?: string,
     @Option({ flags: "--task <id>", description: "Link to Ravi task" }) taskId?: string,
@@ -363,27 +443,43 @@ export class DevinSessionCommands {
     const acu = determineMaxAcuLimit(maxAcu);
     const defaultTags = parseStringList(process.env.DEVIN_DEFAULT_TAGS);
     const tagList = [...new Set(["ravi", ...defaultTags, ...parseStringList(tags)])].sort();
+
+    const resolvedMode = resolveDevinMode(devinMode);
+    const resolvedPlatform = resolvePlatform(platform);
+    const resolvedRepos = resolveRepos(repos);
+    const resolvedCreateAsUser = resolveCreateAsUser(createAsUserId);
+    const resolvedResumable = resolveResumable();
+    const sessionSecrets = parseSessionSecrets(sessionSecretRefs);
+
     const input: CreateDevinSessionInput = {
       prompt: text,
       ...(title?.trim() ? { title: title.trim() } : {}),
       ...(tagList.length ? { tags: tagList } : {}),
+      ...(resolvedMode.value ? { devin_mode: resolvedMode.value } : {}),
+      ...(resolvedPlatform.value ? { platform: resolvedPlatform.value } : {}),
+      ...(resolvedResumable.value !== undefined ? { resumable: resolvedResumable.value } : {}),
+      ...(structuredOutputRequired === true ? { structured_output_required: true } : {}),
       ...(advancedMode?.trim() ? { advanced_mode: advancedMode.trim() } : {}),
       ...(parseStringList(attachmentUrls).length ? { attachment_urls: parseStringList(attachmentUrls) } : {}),
       ...(bypassApproval === true ? { bypass_approval: true } : {}),
       ...(childPlaybookId?.trim() ? { child_playbook_id: childPlaybookId.trim() } : {}),
-      ...(createAsUserId?.trim() ? { create_as_user_id: createAsUserId.trim() } : {}),
+      ...(resolvedCreateAsUser.value ? { create_as_user_id: resolvedCreateAsUser.value } : {}),
       ...(parseStringList(knowledgeIds).length ? { knowledge_ids: parseStringList(knowledgeIds) } : {}),
       ...(acu.maxAcuLimit !== undefined ? { max_acu_limit: acu.maxAcuLimit } : {}),
       ...(playbookId?.trim() ? { playbook_id: playbookId.trim() } : {}),
-      ...(parseStringList(repos).length ? { repos: parseStringList(repos) } : {}),
+      ...(resolvedRepos.value?.length ? { repos: resolvedRepos.value } : {}),
       ...(parseStringList(secretIds).length ? { secret_ids: parseStringList(secretIds) } : {}),
+      ...(sessionSecrets.length ? { session_secrets: sessionSecrets } : {}),
       ...(parseStringList(sessionLinks).length ? { session_links: parseStringList(sessionLinks) } : {}),
       ...(structuredOutputSchema
         ? { structured_output_schema: parseJsonObject(structuredOutputSchema, "--structured-output-schema") }
         : {}),
     };
+    const createOptions: CreateDevinSessionOptions | undefined = devinId?.trim()
+      ? { idempotencyKey: devinId.trim() }
+      : undefined;
     const startedAt = Date.now();
-    const remote = await client.createSession(input);
+    const remote = await client.createSession(input, createOptions);
     const origin = resolveOrigin({ taskId, projectId, proxRunId });
     const ctx = contextDefaults();
     const stored = upsertDevinSession(remote, {
@@ -393,9 +489,20 @@ export class DevinSessionCommands {
       ...(taskId?.trim() ? { taskId: taskId.trim() } : {}),
       ...(projectId?.trim() ? { projectId: projectId.trim() } : {}),
       ...(proxRunId?.trim() ? { proxRunId: proxRunId.trim() } : {}),
+      ...(resolvedCreateAsUser.value ? { effectiveCreateAsUserId: resolvedCreateAsUser.value } : {}),
+      ...(resolvedMode.value ? { devinMode: resolvedMode.value } : {}),
+      ...(resolvedPlatform.value ? { platform: resolvedPlatform.value } : {}),
+      ...(resolvedResumable.value !== undefined ? { resumable: resolvedResumable.value } : {}),
+      ...(structuredOutputRequired === true ? { structuredOutputRequired: true } : {}),
+      ...(acu.maxAcuLimit !== undefined ? { maxAcuLimit: acu.maxAcuLimit } : {}),
+      maxAcuLimitSource: acu.source,
+      ...(sessionSecrets.length ? { sessionSecretCount: sessionSecrets.length } : {}),
       metadata: {
         maxAcuLimitSource: acu.source,
         ...(acu.maxAcuLimit !== undefined ? { maxAcuLimit: acu.maxAcuLimit } : {}),
+        ...(resolvedMode.source !== "omitted" ? { devinModeSource: resolvedMode.source } : {}),
+        ...(resolvedPlatform.source !== "omitted" ? { platformSource: resolvedPlatform.source } : {}),
+        ...(resolvedCreateAsUser.source !== "omitted" ? { createAsUserSource: resolvedCreateAsUser.source } : {}),
         durationMs: Date.now() - startedAt,
       },
       lastSyncedAt: Date.now(),
@@ -404,6 +511,9 @@ export class DevinSessionCommands {
       status: "created",
       maxAcuLimitSource: acu.source,
       maxAcuLimit: acu.maxAcuLimit ?? null,
+      devinMode: resolvedMode.value ?? null,
+      platform: resolvedPlatform.value ?? null,
+      resumable: resolvedResumable.value ?? null,
       session: summarizeSession(stored),
     };
     if (asJson) {
@@ -412,6 +522,9 @@ export class DevinSessionCommands {
       console.log("Devin session created");
       printSession(stored);
       console.log(`  Max ACU: ${acu.maxAcuLimit ?? "omitted"} (${acu.source})`);
+      if (resolvedMode.value) console.log(`  Mode: ${resolvedMode.value} (${resolvedMode.source})`);
+      if (resolvedPlatform.value) console.log(`  Platform: ${resolvedPlatform.value} (${resolvedPlatform.source})`);
+      if (resolvedResumable.value !== undefined) console.log(`  Resumable: ${resolvedResumable.value}`);
     }
     return payload;
   }
