@@ -104,6 +104,61 @@ export interface SlackFilesListInput {
   readonly tsTo?: string;
 }
 
+export interface SlackCanvasCreateInput {
+  readonly title?: string;
+  readonly markdown?: string;
+  readonly channelId?: string;
+}
+
+export interface SlackConversationCanvasCreateInput {
+  readonly channelId: string;
+  readonly title?: string;
+  readonly markdown?: string;
+}
+
+export type SlackCanvasEditOperation =
+  | "insert_after"
+  | "insert_before"
+  | "insert_at_start"
+  | "insert_at_end"
+  | "replace"
+  | "delete"
+  | "rename";
+
+export interface SlackCanvasEditChange {
+  readonly operation: SlackCanvasEditOperation;
+  readonly sectionId?: string;
+  readonly markdown?: string;
+  readonly title?: string;
+}
+
+export interface SlackCanvasEditInput {
+  readonly canvasId: string;
+  readonly changes: readonly SlackCanvasEditChange[];
+}
+
+export interface SlackCanvasSectionsLookupInput {
+  readonly canvasId: string;
+  readonly sectionTypes?: readonly string[];
+  readonly containsText?: string;
+}
+
+export type SlackCanvasAccessLevel = "read" | "write" | "owner";
+
+export interface SlackCanvasAccessInput {
+  readonly canvasId: string;
+  readonly userIds?: readonly string[];
+  readonly channelIds?: readonly string[];
+}
+
+export interface SlackCanvasAccessSetInput extends SlackCanvasAccessInput {
+  readonly accessLevel: SlackCanvasAccessLevel;
+}
+
+export interface SlackCanvasDeleteInput {
+  readonly canvasId: string;
+}
+
 export interface SlackApiResponse {
   readonly ok?: boolean;
   readonly error?: string;
@@ -164,6 +219,23 @@ export interface SlackFilesListResponse extends SlackApiResponse {
   readonly paging?: unknown;
   readonly response_metadata?: SlackCursorPaging;
 }
+
+export interface SlackCanvasCreateResponse extends SlackApiResponse {
+  readonly canvas_id?: string;
+  readonly canvas?: unknown;
+}
+
+export interface SlackCanvasEditResponse extends SlackApiResponse {
+  readonly canvas?: unknown;
+}
+
+export interface SlackCanvasSectionsLookupResponse extends SlackApiResponse {
+  readonly sections?: unknown[];
+}
+
+export interface SlackCanvasAccessResponse extends SlackApiResponse {}
+
+export interface SlackCanvasDeleteResponse extends SlackApiResponse {}
 
 export class SlackWebApiClient {
   private readonly appToken: string;
@@ -344,6 +416,86 @@ export class SlackWebApiClient {
     );
   }
 
+  async canvasesCreate(input: SlackCanvasCreateInput): Promise<SlackCanvasCreateResponse> {
+    return this.apiJsonRequest<SlackCanvasCreateResponse>(
+      "canvases.create",
+      this.botToken,
+      compactBody({
+        title: input.title,
+        document_content: slackCanvasDocumentContent(input.markdown),
+        channel_id: input.channelId,
+      }),
+    );
+  }
+
+  async conversationsCanvasesCreate(
+    input: SlackConversationCanvasCreateInput,
+    options: { okErrors?: readonly string[] } = {},
+  ): Promise<SlackCanvasCreateResponse> {
+    return this.apiJsonRequest<SlackCanvasCreateResponse>(
+      "conversations.canvases.create",
+      this.botToken,
+      compactBody({
+        channel_id: input.channelId,
+        title: input.title,
+        document_content: slackCanvasDocumentContent(input.markdown),
+      }),
+      options,
+    );
+  }
+
+  async canvasesEdit(input: SlackCanvasEditInput): Promise<SlackCanvasEditResponse> {
+    return this.apiJsonRequest<SlackCanvasEditResponse>("canvases.edit", this.botToken, {
+      canvas_id: input.canvasId,
+      changes: input.changes.map(slackCanvasEditChange),
+    });
+  }
+
+  async canvasesSectionsLookup(input: SlackCanvasSectionsLookupInput): Promise<SlackCanvasSectionsLookupResponse> {
+    return this.apiJsonRequest<SlackCanvasSectionsLookupResponse>(
+      "canvases.sections.lookup",
+      this.botToken,
+      compactBody({
+        canvas_id: input.canvasId,
+        criteria: compactBody({
+          section_types: input.sectionTypes,
+          contains_text: input.containsText,
+        }),
+      }),
+    );
+  }
+
+  async canvasesAccessSet(input: SlackCanvasAccessSetInput): Promise<SlackCanvasAccessResponse> {
+    return this.apiJsonRequest<SlackCanvasAccessResponse>(
+      "canvases.access.set",
+      this.botToken,
+      slackCanvasAccessBody({
+        canvasId: input.canvasId,
+        accessLevel: input.accessLevel,
+        userIds: input.userIds,
+        channelIds: input.channelIds,
+      }),
+    );
+  }
+
+  async canvasesAccessDelete(input: SlackCanvasAccessInput): Promise<SlackCanvasAccessResponse> {
+    return this.apiJsonRequest<SlackCanvasAccessResponse>(
+      "canvases.access.delete",
+      this.botToken,
+      slackCanvasAccessBody({
+        canvasId: input.canvasId,
+        userIds: input.userIds,
+        channelIds: input.channelIds,
+      }),
+    );
+  }
+
+  async canvasesDelete(input: SlackCanvasDeleteInput): Promise<SlackCanvasDeleteResponse> {
+    return this.apiJsonRequest<SlackCanvasDeleteResponse>("canvases.delete", this.botToken, {
+      canvas_id: input.canvasId,
+    });
+  }
+
   async downloadFile(input: SlackDownloadFileInput): Promise<SlackDownloadFileResult> {
     const res = await this.fetchImpl(input.url, {
       headers: {
@@ -379,6 +531,32 @@ export class SlackWebApiClient {
     options: { okErrors?: readonly string[] } = {},
   ): Promise<T> {
     const { payload } = await this.apiRequestWithHeaders<T>(method, token, body, options);
+    return payload;
+  }
+
+  private async apiJsonRequest<T extends SlackApiResponse>(
+    method: string,
+    token: string,
+    body: Record<string, unknown>,
+    options: { okErrors?: readonly string[] } = {},
+  ): Promise<T> {
+    const res = await this.fetchImpl(`${this.apiBaseUrl}/${method}`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify(body),
+    });
+
+    const payload = (await res.json()) as T;
+    if (!res.ok || payload.ok !== true) {
+      const error = payload.error ?? `${res.status} ${res.statusText}`;
+      if (payload.ok === false && options.okErrors?.includes(error)) {
+        return payload;
+      }
+      throw new Error(`Slack ${method} failed: ${formatSlackApiError(payload, error)}`);
+    }
     return payload;
   }
 
@@ -429,6 +607,34 @@ function encodeSlackFormBody(body: Record<string, unknown>): URLSearchParams {
     params.set(key, String(value));
   }
   return params;
+}
+
+function slackCanvasDocumentContent(markdown: string | undefined): Record<string, string> | undefined {
+  if (!markdown?.trim()) return undefined;
+  return { type: "markdown", markdown };
+}
+
+function slackCanvasEditChange(input: SlackCanvasEditChange): Record<string, unknown> {
+  return compactBody({
+    operation: input.operation,
+    section_id: input.sectionId,
+    document_content: slackCanvasDocumentContent(input.markdown),
+    title_content: input.title ? { type: "markdown", markdown: input.title } : undefined,
+  });
+}
+
+function slackCanvasAccessBody(input: {
+  readonly canvasId: string;
+  readonly accessLevel?: SlackCanvasAccessLevel;
+  readonly userIds?: readonly string[];
+  readonly channelIds?: readonly string[];
+}): Record<string, unknown> {
+  return compactBody({
+    canvas_id: input.canvasId,
+    access_level: input.accessLevel,
+    user_ids: input.userIds,
+    channel_ids: input.channelIds,
+  });
 }
 
 function formatSlackApiError(payload: SlackApiResponse, error: string): string {

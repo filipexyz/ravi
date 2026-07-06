@@ -50925,6 +50925,1407 @@ export const SkillsSyncReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `slack.canvas-access-delete`. */
+export const SlackCanvasAccessDeleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "canvas": {
+      "description": "Slack canvas ID",
+      "type": "string"
+    },
+    "channels": {
+      "description": "Comma-separated Slack channel IDs",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Slack credential connection",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "users": {
+      "description": "Comma-separated Slack user IDs",
+      "type": "string"
+    }
+  },
+  "required": [
+    "canvas"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.canvas-access-delete`. */
+export const SlackCanvasAccessDeleteReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.canvas-access-set`. */
+export const SlackCanvasAccessSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "access": {
+      "description": "read|write|owner",
+      "type": "string"
+    },
+    "canvas": {
+      "description": "Slack canvas ID",
+      "type": "string"
+    },
+    "channels": {
+      "description": "Comma-separated Slack channel IDs",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Slack credential connection",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "users": {
+      "description": "Comma-separated Slack user IDs",
+      "type": "string"
+    }
+  },
+  "required": [
+    "access",
+    "canvas"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.canvas-access-set`. */
+export const SlackCanvasAccessSetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.canvas-artifact-publish`. */
+export const SlackCanvasArtifactPublishInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "artifactOrFile": {
+      "description": "Ravi artifact id or local Markdown file path",
+      "type": "string"
+    },
+    "canvas": {
+      "description": "Publish into an existing Slack canvas ID",
+      "type": "string"
+    },
+    "channel": {
+      "description": "Create/reuse a channel canvas for this Slack channel",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Slack credential connection",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "skipRefresh": {
+      "description": "Do not refresh the artifact from its source file before publishing",
+      "type": "boolean"
+    },
+    "title": {
+      "description": "Canvas title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "artifactOrFile"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.canvas-artifact-publish`. */
+export const SlackCanvasArtifactPublishReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.canvas-artifact-status`. */
+export const SlackCanvasArtifactStatusInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "artifact": {
+      "description": "Ravi artifact id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "artifact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.canvas-artifact-status`. */
+export const SlackCanvasArtifactStatusReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "item": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "ok": {
+      "const": true,
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "item"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.canvas-channel-create`. */
+export const SlackCanvasChannelCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "artifact": {
+      "description": "Read initial canvas markdown from a Ravi artifact",
+      "type": "string"
+    },
+    "channel": {
+      "description": "Slack channel/conversation ID",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Slack credential connection",
+      "type": "string"
+    },
+    "ensure": {
+      "description": "Return existing channel canvas when it already exists",
+      "type": "boolean"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "markdown": {
+      "description": "Initial canvas markdown",
+      "type": "string"
+    },
+    "markdownFile": {
+      "description": "Read initial canvas markdown from a file",
+      "type": "string"
+    },
+    "skipRefresh": {
+      "description": "Do not refresh the artifact from its source file before publishing",
+      "type": "boolean"
+    },
+    "title": {
+      "description": "Canvas title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.canvas-channel-create`. */
+export const SlackCanvasChannelCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.canvas-channel-showcase`. */
+export const SlackCanvasChannelShowcaseInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Slack channel/conversation ID",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Slack credential connection",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "title": {
+      "description": "Canvas title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.canvas-channel-showcase`. */
+export const SlackCanvasChannelShowcaseReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.canvas-create`. */
+export const SlackCanvasCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "artifact": {
+      "description": "Read initial canvas markdown from a Ravi artifact",
+      "type": "string"
+    },
+    "channel": {
+      "description": "Optional Slack channel tab target",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Slack credential connection",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "markdown": {
+      "description": "Initial canvas markdown",
+      "type": "string"
+    },
+    "markdownFile": {
+      "description": "Read initial canvas markdown from a file",
+      "type": "string"
+    },
+    "skipRefresh": {
+      "description": "Do not refresh the artifact from its source file before publishing",
+      "type": "boolean"
+    },
+    "title": {
+      "description": "Canvas title",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.canvas-create`. */
+export const SlackCanvasCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.canvas-delete`. */
+export const SlackCanvasDeleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "canvas": {
+      "description": "Slack canvas ID",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Slack credential connection",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "canvas"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.canvas-delete`. */
+export const SlackCanvasDeleteReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.canvas-edit`. */
+export const SlackCanvasEditInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "artifact": {
+      "description": "Read markdown content from a Ravi artifact",
+      "type": "string"
+    },
+    "canvas": {
+      "description": "Slack canvas ID",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Slack credential connection",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "markdown": {
+      "description": "Markdown content for insert/replace operations",
+      "type": "string"
+    },
+    "markdownFile": {
+      "description": "Read markdown content from a file",
+      "type": "string"
+    },
+    "operation": {
+      "description": "insert_after|insert_before|insert_at_start|insert_at_end|replace|delete|rename",
+      "type": "string"
+    },
+    "sectionId": {
+      "description": "Slack canvas section ID",
+      "type": "string"
+    },
+    "skipRefresh": {
+      "description": "Do not refresh the artifact from its source file before publishing",
+      "type": "boolean"
+    },
+    "title": {
+      "description": "New title for rename operation",
+      "type": "string"
+    }
+  },
+  "required": [
+    "canvas",
+    "operation"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.canvas-edit`. */
+export const SlackCanvasEditReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.canvas-sections-lookup`. */
+export const SlackCanvasSectionsLookupInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "canvas": {
+      "description": "Slack canvas ID",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Slack credential connection",
+      "type": "string"
+    },
+    "containsText": {
+      "description": "Text that matching sections must contain",
+      "type": "string"
+    },
+    "sectionTypes": {
+      "default": "any_header",
+      "description": "Comma-separated section types, e.g. h1,h2,h3,any_header",
+      "type": "string"
+    }
+  },
+  "required": [
+    "canvas"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.canvas-sections-lookup`. */
+export const SlackCanvasSectionsLookupReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "limit",
+        "cursor",
+        "nextCursor",
+        "hasMore"
+      ],
+      "type": "object"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "items",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.canvas-showcase`. */
+export const SlackCanvasShowcaseInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "canvas": {
+      "description": "Slack canvas ID",
+      "type": "string"
+    },
+    "channel": {
+      "description": "Slack channel/conversation ID for the showcase context",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Slack credential connection",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "title": {
+      "description": "Canvas title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "canvas"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.canvas-showcase`. */
+export const SlackCanvasShowcaseReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `slack.channels-create`. */
 export const SlackChannelsCreateInputSchema = {
   "additionalProperties": false,

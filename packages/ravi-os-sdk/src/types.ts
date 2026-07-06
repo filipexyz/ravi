@@ -10670,6 +10670,252 @@ export type SkillsSyncReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `slack.canvas-access-delete`. */
+export type SlackCanvasAccessDeleteInput = {
+  canvas: string;
+  channels?: string;
+  connection?: string;
+  execute?: boolean;
+  users?: string;
+};
+
+/** Return shape for `slack.canvas-access-delete`. */
+export type SlackCanvasAccessDeleteReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-access-set`. */
+export type SlackCanvasAccessSetInput = {
+  access: string;
+  canvas: string;
+  channels?: string;
+  connection?: string;
+  execute?: boolean;
+  users?: string;
+};
+
+/** Return shape for `slack.canvas-access-set`. */
+export type SlackCanvasAccessSetReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-artifact-publish`. */
+export type SlackCanvasArtifactPublishInput = {
+  artifactOrFile: string;
+  canvas?: string;
+  channel?: string;
+  connection?: string;
+  execute?: boolean;
+  skipRefresh?: boolean;
+  title?: string;
+};
+
+/** Return shape for `slack.canvas-artifact-publish`. */
+export type SlackCanvasArtifactPublishReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-artifact-status`. */
+export type SlackCanvasArtifactStatusInput = {
+  artifact: string;
+};
+
+/** Return shape for `slack.canvas-artifact-status`. */
+export type SlackCanvasArtifactStatusReturn = {
+  item: Record<string, unknown>;
+  ok: true;
+  provider: "slack";
+};
+
+/** Input shape for `slack.canvas-channel-create`. */
+export type SlackCanvasChannelCreateInput = {
+  artifact?: string;
+  channel: string;
+  connection?: string;
+  ensure?: boolean;
+  execute?: boolean;
+  markdown?: string;
+  markdownFile?: string;
+  skipRefresh?: boolean;
+  title?: string;
+};
+
+/** Return shape for `slack.canvas-channel-create`. */
+export type SlackCanvasChannelCreateReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-channel-showcase`. */
+export type SlackCanvasChannelShowcaseInput = {
+  channel: string;
+  connection?: string;
+  execute?: boolean;
+  title?: string;
+};
+
+/** Return shape for `slack.canvas-channel-showcase`. */
+export type SlackCanvasChannelShowcaseReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-create`. */
+export type SlackCanvasCreateInput = {
+  artifact?: string;
+  channel?: string;
+  connection?: string;
+  execute?: boolean;
+  markdown?: string;
+  markdownFile?: string;
+  skipRefresh?: boolean;
+  title?: string;
+};
+
+/** Return shape for `slack.canvas-create`. */
+export type SlackCanvasCreateReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-delete`. */
+export type SlackCanvasDeleteInput = {
+  canvas: string;
+  connection?: string;
+  execute?: boolean;
+};
+
+/** Return shape for `slack.canvas-delete`. */
+export type SlackCanvasDeleteReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-edit`. */
+export type SlackCanvasEditInput = {
+  artifact?: string;
+  canvas: string;
+  connection?: string;
+  execute?: boolean;
+  markdown?: string;
+  markdownFile?: string;
+  operation: string;
+  sectionId?: string;
+  skipRefresh?: boolean;
+  title?: string;
+};
+
+/** Return shape for `slack.canvas-edit`. */
+export type SlackCanvasEditReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-sections-lookup`. */
+export type SlackCanvasSectionsLookupInput = {
+  canvas: string;
+  connection?: string;
+  containsText?: string;
+  sectionTypes?: string;
+};
+
+/** Return shape for `slack.canvas-sections-lookup`. */
+export type SlackCanvasSectionsLookupReturn = {
+  connection: string;
+  items: unknown[];
+  ok: boolean;
+  pagination: {
+    cursor: string | null;
+    hasMore: boolean;
+    limit: number;
+    nextCursor: string | null;
+  };
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-showcase`. */
+export type SlackCanvasShowcaseInput = {
+  canvas: string;
+  channel?: string;
+  connection?: string;
+  execute?: boolean;
+  title?: string;
+};
+
+/** Return shape for `slack.canvas-showcase`. */
+export type SlackCanvasShowcaseReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
 /** Input shape for `slack.channels-create`. */
 export type SlackChannelsCreateInput = {
   connection?: string;

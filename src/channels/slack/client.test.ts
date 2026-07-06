@@ -164,6 +164,111 @@ describe("Slack Web API client", () => {
       status: "",
     });
   });
+
+  it("calls Slack Canvas methods with JSON payloads", async () => {
+    const calls: Array<{ method: string; init: RequestInit }> = [];
+    const fetchImpl = mock(async (url: string | URL | Request, init?: RequestInit) => {
+      const method = String(url).split("/").pop() ?? "";
+      calls.push({ method, init: init ?? {} });
+      if (method === "canvases.sections.lookup") {
+        return jsonResponse({ ok: true, sections: [{ id: "temp:C:1" }] });
+      }
+      if (method === "canvases.create" || method === "conversations.canvases.create") {
+        return jsonResponse({ ok: true, canvas_id: "F123" });
+      }
+      return jsonResponse({ ok: true });
+    }) as unknown as typeof fetch;
+    const client = new SlackWebApiClient({
+      appToken: "xapp-secret",
+      botToken: "xoxb-secret",
+      fetchImpl,
+    });
+
+    await expect(client.canvasesCreate({ title: "Ravi", markdown: "# Ravi", channelId: "C123" })).resolves.toEqual({
+      ok: true,
+      canvas_id: "F123",
+    });
+    await expect(
+      client.conversationsCanvasesCreate({ channelId: "C123", title: "Hub", markdown: "## Status" }),
+    ).resolves.toEqual({
+      ok: true,
+      canvas_id: "F123",
+    });
+    await expect(
+      client.canvasesEdit({
+        canvasId: "F123",
+        changes: [
+          { operation: "replace", sectionId: "temp:C:1", markdown: "- [x] done" },
+          { operation: "rename", title: "New title" },
+        ],
+      }),
+    ).resolves.toEqual({ ok: true });
+    await expect(
+      client.canvasesSectionsLookup({
+        canvasId: "F123",
+        sectionTypes: ["h1", "h2"],
+        containsText: "Status",
+      }),
+    ).resolves.toEqual({ ok: true, sections: [{ id: "temp:C:1" }] });
+    await expect(
+      client.canvasesAccessSet({ canvasId: "F123", accessLevel: "write", channelIds: ["C123"] }),
+    ).resolves.toEqual({ ok: true });
+    await expect(client.canvasesAccessDelete({ canvasId: "F123", userIds: ["U123"] })).resolves.toEqual({
+      ok: true,
+    });
+    await expect(client.canvasesDelete({ canvasId: "F123" })).resolves.toEqual({ ok: true });
+
+    expect(calls.map((call) => call.method)).toEqual([
+      "canvases.create",
+      "conversations.canvases.create",
+      "canvases.edit",
+      "canvases.sections.lookup",
+      "canvases.access.set",
+      "canvases.access.delete",
+      "canvases.delete",
+    ]);
+    for (const call of calls) {
+      expect(call.init.headers).toMatchObject({
+        authorization: "Bearer xoxb-secret",
+        "content-type": "application/json; charset=utf-8",
+      });
+    }
+    expect(jsonBody(calls[0]?.init.body)).toEqual({
+      title: "Ravi",
+      document_content: { type: "markdown", markdown: "# Ravi" },
+      channel_id: "C123",
+    });
+    expect(jsonBody(calls[2]?.init.body)).toEqual({
+      canvas_id: "F123",
+      changes: [
+        {
+          operation: "replace",
+          section_id: "temp:C:1",
+          document_content: { type: "markdown", markdown: "- [x] done" },
+        },
+        {
+          operation: "rename",
+          title_content: { type: "markdown", markdown: "New title" },
+        },
+      ],
+    });
+    expect(jsonBody(calls[3]?.init.body)).toEqual({
+      canvas_id: "F123",
+      criteria: {
+        section_types: ["h1", "h2"],
+        contains_text: "Status",
+      },
+    });
+    expect(jsonBody(calls[4]?.init.body)).toEqual({
+      canvas_id: "F123",
+      access_level: "write",
+      channel_ids: ["C123"],
+    });
+    expect(jsonBody(calls[5]?.init.body)).toEqual({
+      canvas_id: "F123",
+      user_ids: ["U123"],
+    });
+  });
 });
 
 function jsonResponse(payload: Record<string, unknown>, headers: Record<string, string> = {}): Response {
@@ -176,4 +281,8 @@ function jsonResponse(payload: Record<string, unknown>, headers: Record<string, 
 function formBody(value: RequestInit["body"] | null | undefined): Record<string, string> {
   const params = new URLSearchParams(String(value ?? ""));
   return Object.fromEntries(params.entries());
+}
+
+function jsonBody(value: RequestInit["body"] | null | undefined): unknown {
+  return JSON.parse(String(value ?? "{}"));
 }
