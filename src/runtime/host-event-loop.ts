@@ -25,6 +25,7 @@ import {
   classifyRuntimeContextWindowFailure,
   RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
 } from "./context-window-recovery.js";
+import { classifyCompactionAnnouncement } from "./compaction-announcement.js";
 import { classifyRuntimeCredentialFailure } from "./credential-classifier.js";
 import { mergeRuntimeCredentialSessionMetadata } from "./credential-resolver.js";
 import { refreshRuntimeCredential } from "./credential-refresh.js";
@@ -1275,6 +1276,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const wasCompacting = streaming.compacting;
         streaming.compacting = status === "compacting";
         const compactionChanged = streaming.compacting !== wasCompacting;
+        // Snapshot whether compaction announcements may be externalized for the
+        // turn effectively executing. Falls back to source-only classification
+        // if a per-turn snapshot was not recorded (e.g. resumed stashed turn).
+        const compactionAnnouncement =
+          streaming.currentTurnCompactionAnnouncement ??
+          classifyCompactionAnnouncement({ source: streaming.currentSource });
         if (status === "compacting" || compactionChanged) {
           log.info("Compaction status", {
             sessionName,
@@ -1299,6 +1306,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             status,
             wasCompacting,
             compacting: streaming.compacting,
+            externalAnnouncementsAllowed: compactionAnnouncement.externalAnnouncementsAllowed,
+            announcementOrigin: compactionAnnouncement.origin,
             metadata: event.metadata,
           },
         });
@@ -1333,7 +1342,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           statusSkillVisibility,
         );
 
-        if (getAnnounceCompaction() && streaming.currentSource && streaming.agentMode !== "sentinel") {
+        // External compaction announcements are user-facing runtime responses.
+        // They are suppressed for automation-originated turns (cron, trigger,
+        // session followup, heartbeat, and other background automation) while
+        // human/channel turns keep them when enabled and not in sentinel mode.
+        // Internal status/trace/live-state/skill-visibility handling above is
+        // preserved for every origin.
+        if (
+          getAnnounceCompaction() &&
+          streaming.currentSource &&
+          streaming.agentMode !== "sentinel" &&
+          compactionAnnouncement.externalAnnouncementsAllowed
+        ) {
           if (streaming.compacting && !wasCompacting) {
             emitResponse("🧠 Compactando memória... um momento.").catch(() => {});
           } else if (!streaming.compacting && wasCompacting) {
