@@ -31,6 +31,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/model-catalog.test.ts",
     "src/runtime/context-registry.test.ts",
     "src/runtime/session-goals.test.ts",
+    "src/runtime/session-trace.test.ts",
+    "src/runtime/compaction-announcement.test.ts",
   ],
   "src/session-trace/": ["src/session-trace/session-trace.test.ts"],
   "src/triggers/": ["src/triggers/triggers.test.ts"],
