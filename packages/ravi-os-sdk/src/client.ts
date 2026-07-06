@@ -5164,6 +5164,7 @@ export class RaviClient {
     goal: async (action: string, nameOrKey: string, objective?: string, options?: {
       budget?: string;
       project?: string;
+      reason?: string;
       seconds?: string;
       task?: string;
       tokens?: string;

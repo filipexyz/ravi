@@ -307,7 +307,6 @@ export const WEAK_PUBLIC_RETURN_COMMANDS_BASELINE = [
   "sessions.followups.run",
   "sessions.followups.runs",
   "sessions.followups.snooze",
-  "sessions.goal",
   "sessions.info",
   "sessions.inform",
   "sessions.keep",

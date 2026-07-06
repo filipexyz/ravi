@@ -20,11 +20,17 @@ const REQUIRED_COMPANIONS = ["WHY.md", "RUNBOOK.md", "CHECKS.md"] as const;
  */
 export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/omni/": ["src/omni/consumer-context.test.ts", "src/omni/consumer-policy.test.ts"],
-  "src/router/": ["src/router/router.test.ts", "src/router/sessions.test.ts", "src/router/resolver.test.ts"],
+  "src/router/": [
+    "src/router/router.test.ts",
+    "src/router/sessions.test.ts",
+    "src/router/resolver.test.ts",
+    "src/runtime/session-goals.test.ts",
+  ],
   "src/runtime/": [
     "src/runtime/index.test.ts",
     "src/runtime/model-catalog.test.ts",
     "src/runtime/context-registry.test.ts",
+    "src/runtime/session-goals.test.ts",
   ],
   "src/session-trace/": ["src/session-trace/session-trace.test.ts"],
   "src/triggers/": ["src/triggers/triggers.test.ts"],

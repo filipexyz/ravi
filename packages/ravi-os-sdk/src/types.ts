@@ -9860,13 +9860,36 @@ export type SessionsGoalInput = {
   nameOrKey: string;
   objective?: string;
   project?: string;
+  reason?: string;
   seconds?: string;
   task?: string;
   tokens?: string;
 };
 
 /** Return shape for `sessions.goal`. */
-export type SessionsGoalReturn = Record<string, unknown>;
+export type SessionsGoalReturn = {
+  action: string;
+  changed: boolean;
+  goal: ({
+    blockedReason: string | null;
+    createdAt: number;
+    goalId: string;
+    objective: string;
+    projectId: string | null;
+    sessionKey: string;
+    status: "active" | "paused" | "budget_limited" | "blocked" | "complete";
+    taskId: string | null;
+    timeUsedSeconds: number;
+    tokenBudget: number | null;
+    tokensUsed: number;
+    updatedAt: number;
+  }) | null;
+  session: {
+    agentId: string;
+    label: string;
+    sessionKey: string;
+  };
+};
 
 /** Input shape for `sessions.info`. */
 export type SessionsInfoInput = {
