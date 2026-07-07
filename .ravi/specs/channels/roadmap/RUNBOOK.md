@@ -19,7 +19,6 @@ Se Slack nativo falhar no piloto:
 
 - parar `ravi channels`;
 - manter `ravi daemon` rodando;
-- desabilitar `RAVI_SLACK_SOCKET_MODE`;
+- desabilitar ou remover a instância Slack nativa;
 - remover/disable a connection Slack se o erro for credencial;
 - manter Omni/WhatsApp intactos.
-

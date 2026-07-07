@@ -12484,7 +12484,7 @@ export const ChannelsRestartInputSchema = {
       "type": "boolean"
     },
     "slackConnection": {
-      "description": "Slack credential connection for Socket Mode",
+      "description": "Optional Slack credential connection override",
       "type": "string"
     }
   },
@@ -12756,7 +12756,7 @@ export const ChannelsStartInputSchema = {
       "type": "boolean"
     },
     "slackConnection": {
-      "description": "Slack credential connection for Socket Mode",
+      "description": "Optional Slack credential connection override",
       "type": "string"
     }
   },

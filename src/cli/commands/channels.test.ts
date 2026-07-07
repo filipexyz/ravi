@@ -7,8 +7,6 @@ describe("channels command runner env", () => {
       chooseSlackRunnerConnection({
         explicit: "  ravi-rbbt-slack  ",
         env: { RAVI_SLACK_CONNECTION: "other" },
-        pm2Env: { RAVI_SLACK_CONNECTION: "pm2" },
-        activeCredentialConnections: ["other", "pm2", "ravi-rbbt-slack"],
       }),
     ).toBe("ravi-rbbt-slack");
   });
@@ -17,36 +15,22 @@ describe("channels command runner env", () => {
     expect(
       chooseSlackRunnerConnection({
         env: { RAVI_SLACK_CONNECTION: "ravi-rbbt-slack" },
-        pm2Env: { RAVI_SLACK_CONNECTION: "pm2-slack" },
-        activeCredentialConnections: ["ravi-rbbt-slack", "pm2-slack"],
       }),
     ).toBe("ravi-rbbt-slack");
   });
 
-  it("preserves the previous PM2 Slack connection when the current env is empty", () => {
+  it("supports the legacy Slack credential connection env name", () => {
     expect(
       chooseSlackRunnerConnection({
-        pm2Env: { RAVI_SLACK_CONNECTION: "ravi-rbbt-slack" },
-        activeCredentialConnections: ["ravi-rbbt-slack", "ravi-slack-dev"],
+        env: { RAVI_SLACK_CREDENTIAL_CONNECTION: "ravi-rbbt-slack" },
       }),
     ).toBe("ravi-rbbt-slack");
   });
 
-  it("selects the active Slack credential with configured Slack routes", () => {
+  it("does not synthesize a Slack connection from credentials or routes", () => {
     expect(
       chooseSlackRunnerConnection({
-        activeCredentialConnections: ["ravi-rbbt-slack", "ravi-slack-dev"],
-        enabledSlackInstanceNames: ["ravi-rbbt-slack", "ravi-slack-dev"],
-        routedSlackAccountIds: ["ravi-rbbt-slack", "ravi-rbbt-slack"],
-      }),
-    ).toBe("ravi-rbbt-slack");
-  });
-
-  it("does not guess when multiple active Slack connections are equally plausible", () => {
-    expect(
-      chooseSlackRunnerConnection({
-        activeCredentialConnections: ["ravi-rbbt-slack", "ravi-slack-dev"],
-        enabledSlackInstanceNames: ["ravi-rbbt-slack", "ravi-slack-dev"],
+        env: {},
       }),
     ).toBeUndefined();
   });

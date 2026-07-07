@@ -6,10 +6,10 @@
 2. Register or update the Slack channel instance in Ravi.
    - Preferred: credential connection id equals the instance name.
    - Alternative: set instance defaults with `{"slackCredentialConnection":"<connection>"}`.
-3. Set `RAVI_SLACK_SOCKET_MODE=1` only while the daemon compatibility path owns Socket Mode.
-4. Start `ravi channels run` / `ravi channels start` when the native runner owns adapters, or restart the compatibility daemon while that path exists.
-5. Send a DM or channel message to the Slack app.
-6. Confirm the Ravi session responds in Slack.
+3. Start `ravi channels run` / `ravi channels start` when the native runner owns adapters, or restart the compatibility daemon while that path exists.
+   Slack native uses Socket Mode by definition; there is no separate mode flag.
+4. Send a DM or channel message to the Slack app.
+5. Confirm the Ravi session responds in Slack.
 
 ## Debug
 

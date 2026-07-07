@@ -834,7 +834,6 @@ function syncSlackSessionSubscription(
 export async function createSlackNativeRuntimeFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<SlackNativeRuntime | null> {
-  if (env.RAVI_SLACK_SOCKET_MODE !== "1" && env.RAVI_SLACK_SOCKET_MODE !== "true") return null;
   const credentials = await resolveSlackCredentialConfigFromEnv(env, { instances: configStore.getConfig().instances });
   if (!credentials) {
     log.warn("Slack native runtime disabled: configure a Slack channel instance with brokered credentials");
