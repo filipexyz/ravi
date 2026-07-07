@@ -137,6 +137,111 @@ describe("Slack Socket Mode routing", () => {
     ]);
   });
 
+  it("publishes Block Kit interactions as native inbound interaction events", async () => {
+    const order: string[] = [];
+    const prompts: unknown[] = [];
+    const interactions: Array<{ topic: string; payload: Record<string, unknown> }> = [];
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "ravi-rbbt-slack",
+      routeAccountId: "ravi-rbbt-slack",
+      instanceId: "slack-instance-1",
+      getRouterConfig: () => ({
+        agents: {},
+        routes: [],
+        defaultAgent: "ravi-hil",
+        defaultDmScope: "per-peer",
+        accountAgents: {},
+        instanceToAccount: {},
+        instances: {},
+      }),
+      publishPrompt: async (_sessionName, payload) => {
+        prompts.push(payload);
+      },
+      publishInteraction: async (topic, payload) => {
+        order.push("publish");
+        interactions.push({ topic, payload });
+      },
+      webClient: {} as never,
+    });
+
+    const result = await service.handleEnvelope(
+      {
+        envelope_id: "env-block-actions-1",
+        payload: {
+          type: "block_actions",
+          team: { id: "T1" },
+          user: { id: "U123" },
+          channel: { id: "C123" },
+          trigger_id: "trigger-1",
+          container: {
+            type: "message",
+            channel_id: "C123",
+            message_ts: "1713000000.000100",
+          },
+          message: {
+            ts: "1713000000.000100",
+            thread_ts: "1713000000.000100",
+          },
+          response_url: "https://hooks.slack.test/secret",
+          actions: [
+            {
+              type: "button",
+              block_id: "ravi_blockkit_actions",
+              action_id: "ravi_blockkit_approve",
+              value: "approve",
+              action_ts: "1713000001.000200",
+            },
+          ],
+        },
+      },
+      async () => {
+        order.push("ack");
+      },
+    );
+
+    expect(result).toBe("processed");
+    expect(order).toEqual(["ack", "publish"]);
+    expect(prompts).toHaveLength(0);
+    expect(interactions).toEqual([
+      {
+        topic: "ravi.inbound.interaction",
+        payload: expect.objectContaining({
+          provider: "slack",
+          source: "slack.socket_mode",
+          accountId: "ravi-rbbt-slack",
+          instanceId: "slack-instance-1",
+          envelopeId: "env-block-actions-1",
+          interactionType: "block_actions",
+          teamId: "T1",
+          userId: "U123",
+          channelId: "C123",
+          messageTs: "1713000000.000100",
+          threadTs: "1713000000.000100",
+          triggerId: "trigger-1",
+          containerType: "message",
+          actionId: "ravi_blockkit_approve",
+          blockId: "ravi_blockkit_actions",
+          actionType: "button",
+          value: "approve",
+          responseUrlId: expect.any(String),
+          responseUrlPresent: true,
+          actions: [
+            {
+              actionId: "ravi_blockkit_approve",
+              blockId: "ravi_blockkit_actions",
+              type: "button",
+              value: "approve",
+              actionTs: "1713000001.000200",
+            },
+          ],
+        }),
+      },
+    ]);
+    expect(JSON.stringify(interactions[0]?.payload)).not.toContain("hooks.slack.test");
+  });
+
   it("forks Slack thread replies from a forced route session", async () => {
     getOrCreateSession("ravi-hil", "ravi-hil", "/tmp/ravi-hil", { name: "ravi-hil" });
     const config: RouterConfig = {
@@ -357,6 +462,43 @@ describe("Slack Socket Mode routing", () => {
         threadTs: "1713000000.000100",
         status: "",
       },
+    ]);
+  });
+
+  it("renders elapsed seconds in custom Slack assistant status text", async () => {
+    const calls: Record<string, unknown>[] = [];
+    let now = 1_000_000;
+    const presence = new SlackAssistantThreadPresence(
+      {
+        setAssistantThreadStatus: async (input: Record<string, unknown>) => {
+          calls.push(input);
+          return { ok: true };
+        },
+      } as never,
+      {
+        statusText: "Trabalhando ha {elapsed}s",
+        now: () => now,
+      },
+    );
+    const target = {
+      channel: "slack",
+      accountId: "ravi-rbbt-slack",
+      chatId: "C123",
+      threadId: "1713000000.000100",
+    };
+
+    await presence.sendPresence({ sessionName: "ravi-hil", target, active: true, reason: "runtime-turn.started" });
+    now += 5_250;
+    await presence.sendPresence({ sessionName: "ravi-hil", target, active: true, reason: "runtime-status" });
+    await presence.sendPresence({ sessionName: "ravi-hil", target, active: false, reason: "terminal-stop" });
+    now += 2_000;
+    await presence.sendPresence({ sessionName: "ravi-hil", target, active: true, reason: "runtime-turn.started" });
+
+    expect(calls.map((call) => call.status)).toEqual([
+      "Trabalhando ha 0s",
+      "Trabalhando ha 5s",
+      "",
+      "Trabalhando ha 0s",
     ]);
   });
 

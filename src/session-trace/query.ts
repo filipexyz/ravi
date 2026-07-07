@@ -441,6 +441,7 @@ function isStreamEventType(eventType: string): boolean {
 
 const STREAM_EVENT_SQL =
   "(event_type = 'adapter.raw' OR event_type LIKE '%.stream%' OR event_type LIKE '%.delta' OR event_type LIKE '%provider_event%')";
+const NON_STREAM_EVENT_SQL = `event_group != 'stream' AND NOT ${STREAM_EVENT_SQL}`;
 
 function addOnlyFilter(where: string[], params: SqlParam[], only: SessionTraceOnlyFilter): void {
   if (only.raw.length === 0) return;
@@ -480,8 +481,7 @@ function queryEvents(
   addExactFilter(where, params, "run_id", input.runId);
   addExactFilter(where, params, "message_id", input.messageId);
   if (!input.includeStream) {
-    where.push(`event_group != ? AND NOT ${STREAM_EVENT_SQL}`);
-    params.push("stream");
+    where.push(NON_STREAM_EVENT_SQL);
   }
   addOnlyFilter(where, params, only);
 

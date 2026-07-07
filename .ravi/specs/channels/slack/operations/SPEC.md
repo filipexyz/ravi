@@ -42,6 +42,10 @@ The first native surface MUST include:
 - `slack.files.list`
 - `slack.permissions.list`
 - `slack.messages.send`
+- `slack.blocks.validate`
+- `slack.blocks.send`
+- `slack.blocks.update`
+- `slack.blocks.showcase`
 - `slack.channels.create`
 - `slack.channels.rename`
 - `slack.channels.invite`
@@ -62,6 +66,8 @@ Ravi MUST NOT present Slack `usergroups.*` as "sections". User groups are not eq
 - Mutating operations MUST require an explicit execution flag before calling Slack.
 - Channel invite operations MUST accept explicit Slack user IDs and MUST NOT infer users from display names.
 - Message send operations MUST support explicit channel IDs and optional thread timestamps.
+- Block Kit message operations MUST validate payload shape locally and MUST keep `text` as top-level fallback.
+- Block Kit interactions MUST be published as `ravi.inbound.interaction`, not routed as ordinary chat prompts.
 - Each operation MUST declare command access metadata with resource, action and risk.
 - Agents MUST receive permission to the Ravi operation, not to the raw Slack token.
 - CLI commands running in a Slack-sourced runtime SHOULD default to the source Slack account when no connection is passed.

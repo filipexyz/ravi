@@ -5,6 +5,7 @@ import {
   getSessionTraceBlob,
   getSessionTurn,
   listContactSessionSummaries,
+  listRecentSessionEventsByType,
   listSessionEvents,
   listSessionEventsByContactId,
   recordSessionBlob,
@@ -102,6 +103,40 @@ describe("session trace db", () => {
     });
 
     expect(listSessionEvents("agent:main:main")).toHaveLength(2);
+  });
+
+  it("lists recent session events by type without loading the full session trace", () => {
+    recordSessionEvent({
+      sessionKey: "agent:main:main",
+      eventType: "presence.typing",
+      eventGroup: "presence",
+      timestamp: 10,
+      createdAt: 10,
+    });
+    const firstDelivery = recordSessionEvent({
+      sessionKey: "agent:main:main",
+      eventType: "delivery.delivered",
+      eventGroup: "delivery",
+      timestamp: 11,
+      createdAt: 11,
+      preview: "first",
+    });
+    const secondDelivery = recordSessionEvent({
+      sessionKey: "agent:main:main",
+      eventType: "delivery.delivered",
+      eventGroup: "delivery",
+      timestamp: 12,
+      createdAt: 12,
+      preview: "second",
+    });
+
+    expect(listRecentSessionEventsByType("agent:main:main", "delivery.delivered", { limit: 1 })).toEqual([
+      expect.objectContaining({ id: secondDelivery.id, preview: "second" }),
+    ]);
+    expect(listRecentSessionEventsByType("agent:main:main", "delivery.delivered")).toEqual([
+      expect.objectContaining({ id: secondDelivery.id }),
+      expect.objectContaining({ id: firstDelivery.id }),
+    ]);
   });
 
   it("records canonical chat and actor metadata on session events", () => {

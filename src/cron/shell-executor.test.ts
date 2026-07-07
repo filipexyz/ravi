@@ -43,4 +43,13 @@ describe("runShellCronCommand", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("merges explicit env vars", async () => {
+    const result = await runShellCronCommand("printf $RAVI_TRIGGER_TEST_VALUE", {
+      timeoutMs: 5_000,
+      env: { RAVI_TRIGGER_TEST_VALUE: "from-env" },
+    });
+
+    expect(result.stdout).toBe("from-env");
+  });
 });

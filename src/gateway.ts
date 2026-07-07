@@ -25,7 +25,7 @@ import { nats } from "./nats.js";
 import type { ResponseMessage } from "./runtime/message-types.js";
 import { configStore } from "./config-store.js";
 import { recordDeliveryTrace, recordPresenceTrace, recordResponseEmittedTrace } from "./session-trace/channel-trace.js";
-import { listSessionEvents } from "./session-trace/session-trace-db.js";
+import { listRecentSessionEventsByType } from "./session-trace/session-trace-db.js";
 import { logger } from "./utils/logger.js";
 import type { OmniSender } from "./omni/sender.js";
 import type { OmniConsumer } from "./omni/consumer.js";
@@ -563,10 +563,7 @@ export class Gateway {
     const session = getSessionByName(sessionName);
     if (!session) return undefined;
 
-    const events = listSessionEvents(session.sessionKey);
-    for (let index = events.length - 1; index >= 0; index -= 1) {
-      const event = events[index];
-      if (event.eventType !== "delivery.delivered") continue;
+    for (const event of listRecentSessionEventsByType(session.sessionKey, "delivery.delivered")) {
       const payload = event.payloadJson;
       if (!payload || typeof payload !== "object" || Array.isArray(payload)) continue;
 

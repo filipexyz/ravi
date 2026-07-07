@@ -6,8 +6,11 @@
  * emits it to the agent session.
  */
 
-import { nats } from "../nats.js";
 import { createHash } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { nats } from "../nats.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import { getDefaultAgentId } from "../router/router-db.js";
@@ -27,6 +30,7 @@ import { evaluateFilter } from "./filter.js";
 import type { Trigger } from "./types.js";
 import { isBlockedTriggerTopic } from "./topic-policy.js";
 import { buildTriggerPrompt } from "./prompt.js";
+import { DEFAULT_CRON_SHELL_TIMEOUT_MS, runShellCronCommand, type ShellCronRunResult } from "../cron/shell-executor.js";
 
 const log = logger.child("triggers:runner");
 const EVENT_DEDUPE_TTL_MS = 60_000;
@@ -314,6 +318,11 @@ export class TriggerRunner {
       source.accountId = trigger.accountId;
     }
 
+    if ((trigger.executionType ?? "agent") === "shell") {
+      await this.fireShellTrigger(trigger, event, source);
+      return;
+    }
+
     const prompt = buildTriggerPrompt(trigger, event);
 
     log.info("Firing trigger", {
@@ -338,6 +347,198 @@ export class TriggerRunner {
 
     // Update in-memory trigger too (for cooldown tracking)
     trigger.lastFiredAt = Date.now();
+  }
+
+  private truncateForPrompt(text: string, max = 4000): string {
+    if (text.length <= max) return text;
+    return `${text.slice(0, max)}\n... [truncated ${text.length - max} chars]`;
+  }
+
+  private formatShellError(result: ShellCronRunResult): string {
+    const exit = result.timedOut
+      ? `timeout after ${result.durationMs}ms`
+      : result.signal
+        ? `signal ${result.signal}`
+        : `exit code ${result.exitCode ?? "unknown"}`;
+    const stderr = result.stderr.trim();
+    return stderr
+      ? `Shell trigger command failed with ${exit}: ${this.truncateForPrompt(stderr)}`
+      : `Shell trigger command failed with ${exit}`;
+  }
+
+  private buildShellEnv(
+    trigger: Trigger,
+    event: { topic: string; data: unknown },
+    source: { channel: string; accountId: string; chatId: string } | undefined,
+    eventFile: string,
+    dataFile: string,
+  ): Record<string, string> {
+    const data = event.data && typeof event.data === "object" ? (event.data as Record<string, unknown>) : {};
+    const stringField = (key: string): string => {
+      const value = data[key];
+      return typeof value === "string" ? value : "";
+    };
+
+    return {
+      RAVI_TRIGGER_ID: trigger.id,
+      RAVI_TRIGGER_NAME: trigger.name,
+      RAVI_TRIGGER_TOPIC: event.topic,
+      RAVI_TRIGGER_EVENT_FILE: eventFile,
+      RAVI_TRIGGER_DATA_FILE: dataFile,
+      RAVI_TRIGGER_SOURCE_CHANNEL: source?.channel ?? "",
+      RAVI_TRIGGER_SOURCE_ACCOUNT_ID: source?.accountId ?? "",
+      RAVI_TRIGGER_SOURCE_CHAT_ID: source?.chatId ?? "",
+      RAVI_TRIGGER_PROVIDER: stringField("provider"),
+      RAVI_TRIGGER_INTERACTION_TYPE: stringField("interactionType"),
+      RAVI_TRIGGER_ACTION_ID: stringField("actionId"),
+      RAVI_TRIGGER_BLOCK_ID: stringField("blockId"),
+      RAVI_TRIGGER_VALUE: stringField("value"),
+      RAVI_TRIGGER_USER_ID: stringField("userId"),
+      RAVI_TRIGGER_CHANNEL_ID: stringField("channelId"),
+      RAVI_TRIGGER_MESSAGE_TS: stringField("messageTs"),
+      RAVI_TRIGGER_THREAD_TS: stringField("threadTs"),
+      RAVI_TRIGGER_RESPONSE_URL_ID: stringField("responseUrlId"),
+    };
+  }
+
+  private async notifyShellTriggerError(
+    trigger: Trigger,
+    result: ShellCronRunResult,
+    errorMessage: string,
+  ): Promise<void> {
+    if (!trigger.onError) return;
+    const prefix = "notify-session:";
+    if (!trigger.onError.startsWith(prefix)) {
+      log.warn("Unsupported trigger on-error action", { triggerId: trigger.id, onError: trigger.onError });
+      return;
+    }
+
+    const sessionRef = trigger.onError.slice(prefix.length).trim();
+    if (!sessionRef) {
+      log.warn("Trigger on-error notify-session missing target", { triggerId: trigger.id });
+      return;
+    }
+
+    const resolved = resolveSession(sessionRef);
+    const sessionName = resolved?.name ?? sessionRef;
+    const stdout = result.stdout.trim();
+    const stderr = result.stderr.trim();
+    const prompt = [
+      `[System] Inform: [from: trigger:${trigger.id}] Trigger shell command failed.`,
+      "",
+      `Trigger: ${trigger.name}`,
+      `Topic: ${trigger.topic}`,
+      `Command: ${trigger.shellCommand ?? result.command}`,
+      `Error: ${errorMessage}`,
+      `Exit code: ${result.exitCode ?? "(none)"}`,
+      `Signal: ${result.signal ?? "(none)"}`,
+      `Duration: ${result.durationMs}ms`,
+      stderr ? `\nStderr:\n${this.truncateForPrompt(stderr)}` : "",
+      stdout ? `\nStdout:\n${this.truncateForPrompt(stdout)}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    await publishSessionPrompt(sessionName, {
+      prompt,
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
+      _trigger: true,
+      _triggerId: trigger.id,
+      _triggerOnError: true,
+    });
+  }
+
+  private async fireShellTrigger(
+    trigger: Trigger,
+    event: { topic: string; data: unknown },
+    source: { channel: string; accountId: string; chatId: string } | undefined,
+  ): Promise<void> {
+    if (!trigger.shellCommand?.trim()) {
+      throw new Error("Shell trigger is missing shellCommand");
+    }
+
+    const firedAt = Date.now();
+    const tempDir = await mkdtemp(join(tmpdir(), "ravi-trigger-shell-"));
+    const eventFile = join(tempDir, "event.json");
+    const dataFile = join(tempDir, "data.json");
+
+    try {
+      await writeFile(
+        eventFile,
+        JSON.stringify(
+          {
+            trigger: {
+              id: trigger.id,
+              name: trigger.name,
+              topic: trigger.topic,
+            },
+            event,
+            source,
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      );
+      await writeFile(dataFile, JSON.stringify(event.data ?? null, null, 2), "utf8");
+
+      log.info("Firing shell trigger", {
+        triggerId: trigger.id,
+        triggerName: trigger.name,
+        topic: event.topic,
+        hasSource: !!source,
+      });
+
+      const result = await runShellCronCommand(trigger.shellCommand, {
+        timeoutMs: trigger.shellTimeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS,
+        envFile: trigger.shellEnvFile,
+        env: this.buildShellEnv(trigger, event, source, eventFile, dataFile),
+      });
+
+      if (result.stdout.trim()) {
+        log.info("Shell trigger stdout", {
+          triggerId: trigger.id,
+          output: this.truncateForPrompt(result.stdout.trim()),
+        });
+      }
+      if (result.stderr.trim()) {
+        log.warn("Shell trigger stderr", {
+          triggerId: trigger.id,
+          output: this.truncateForPrompt(result.stderr.trim()),
+        });
+      }
+
+      const ok = !result.timedOut && result.exitCode === 0;
+      const errorMessage = ok ? undefined : this.formatShellError(result);
+
+      if (!ok && errorMessage) {
+        try {
+          await this.notifyShellTriggerError(trigger, result, errorMessage);
+        } catch (notifyError) {
+          log.error("Failed to notify session about trigger shell error", {
+            triggerId: trigger.id,
+            error: notifyError instanceof Error ? notifyError.message : String(notifyError),
+          });
+        }
+      }
+
+      log.info("Shell trigger completed", {
+        triggerId: trigger.id,
+        triggerName: trigger.name,
+        status: ok ? "ok" : "error",
+        exitCode: result.exitCode,
+        signal: result.signal,
+        durationMs: result.durationMs,
+      });
+    } finally {
+      await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      dbUpdateTriggerState(trigger.id, {
+        lastFiredAt: firedAt,
+        incrementFire: true,
+      });
+      trigger.lastFiredAt = firedAt;
+    }
   }
 
   /**

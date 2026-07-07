@@ -72,4 +72,56 @@ describe("triggers-db replySession update path", () => {
     expect(reloaded?.replySession).toBe("stable-session");
     expect(reloaded?.name).toBe("renamed");
   });
+
+  it("persists shell execution fields", () => {
+    const trigger = dbCreateTrigger({
+      name: "shell-ticket",
+      agentId: "agent-a",
+      topic: "ravi.inbound.interaction",
+      message: "",
+      executionType: "shell",
+      shellCommand: "bun scripts/ticket-flow.ts",
+      shellTimeoutMs: 30_000,
+      shellEnvFile: "/tmp/ticket.env",
+      onError: "notify-session:ravi-channels",
+    });
+
+    const reloaded = dbGetTrigger(trigger.id);
+    expect(reloaded?.executionType).toBe("shell");
+    expect(reloaded?.shellCommand).toBe("bun scripts/ticket-flow.ts");
+    expect(reloaded?.shellTimeoutMs).toBe(30_000);
+    expect(reloaded?.shellEnvFile).toBe("/tmp/ticket.env");
+    expect(reloaded?.onError).toBe("notify-session:ravi-channels");
+  });
+
+  it("clears shell execution fields when returning to agent message mode", () => {
+    const trigger = dbCreateTrigger({
+      name: "shell-to-agent",
+      agentId: "agent-a",
+      topic: "ravi.inbound.interaction",
+      message: "",
+      executionType: "shell",
+      shellCommand: "printf ok",
+      shellTimeoutMs: 30_000,
+      shellEnvFile: "/tmp/ticket.env",
+      onError: "notify-session:ravi-channels",
+    });
+
+    dbUpdateTrigger(trigger.id, {
+      executionType: "agent",
+      message: "hello",
+      shellCommand: null,
+      shellTimeoutMs: null,
+      shellEnvFile: null,
+      onError: null,
+    });
+
+    const reloaded = dbGetTrigger(trigger.id);
+    expect(reloaded?.executionType).toBe("agent");
+    expect(reloaded?.message).toBe("hello");
+    expect(reloaded?.shellCommand).toBeUndefined();
+    expect(reloaded?.shellTimeoutMs).toBeUndefined();
+    expect(reloaded?.shellEnvFile).toBeUndefined();
+    expect(reloaded?.onError).toBeUndefined();
+  });
 });

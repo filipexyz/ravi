@@ -4,6 +4,8 @@ description: |
   Opera o canal Slack nativo do Ravi. Use quando o usuario quiser:
   - Criar, listar, inspecionar, renomear ou convidar pessoas para canais Slack
   - Enviar, ler, inspecionar ou dar replay em mensagens Slack
+  - Criar, validar, enviar ou atualizar mensagens Slack Block Kit
+  - Trabalhar com botoes, selects e eventos interativos do Slack nativo
   - Criar, publicar, editar ou gerenciar Slack Canvas
   - Publicar artifacts Markdown como Slack Canvas
   - Entender rotas, sessoes, threads, presenca/status ou topology do Slack nativo
@@ -48,6 +50,9 @@ Leia apenas a referencia relevante para a tarefa:
 - `references/canvas.md` - Slack Canvas, showcase e artifact -> Canvas.
 - `references/operations.md` - criar/renomear/convidar canais, membros, files.
 - `references/messages-replay.md` - envio, historico, inspect e replay.
+- `references/block-kit.md` - mensagens ricas, botoes/selects e eventos interativos.
+- `references/block-kit-workflows.md` - workflows externos com Block Kit,
+  triggers shell, state local e exemplos paralelos.
 - `references/topology.md` - rotas, sessoes, ownership e diagnostico.
 - `references/threads-routing.md` - forks de sessao por Slack thread.
 - `references/presence.md` - status nativo/assistant status e delivery boundary.
@@ -74,6 +79,16 @@ ravi slack permissions-list --json
 ravi slack messages-send <channel> "texto" --execute --json
 ravi slack messages-inspect <channel> <ts> --json
 ravi slack messages-replay <channel> <ts> --execute --json
+```
+
+### Block Kit
+
+```bash
+ravi slack blocks-validate ./message.json --json
+ravi slack blocks-send <channel> ./message.json --execute --json
+ravi slack blocks-update <channel> <ts> ./message.json --execute --json
+ravi slack interactions-respond <responseUrlId> ./response.json --execute --json
+ravi slack blocks-showcase <channel> --execute --json
 ```
 
 ### Canais
@@ -103,6 +118,7 @@ out-of-band e podem ser sobrescritas em novo publish do Ravi.
 
 ```bash
 ravi specs get channels/slack --mode rules --json
+ravi specs get channels/slack/block-kit --mode rules --json
 ravi specs get channels/slack/canvas --mode rules --json
 ravi specs get channels/slack/operations --mode rules --json
 ravi specs get channels/slack/threads --mode rules --json

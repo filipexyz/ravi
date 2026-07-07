@@ -297,8 +297,7 @@ export function getContextLineage(contextId: string): ContextLineage | null {
  */
 export function listLiveAdminContexts(): ContextRecord[] {
   const now = Date.now();
-  return dbListContexts({ includeInactive: false }).filter((ctx) => {
-    if (ctx.kind !== ADMIN_BOOTSTRAP_KIND) return false;
+  return dbListContexts({ kind: ADMIN_BOOTSTRAP_KIND, includeInactive: false }).filter((ctx) => {
     if (ctx.revokedAt && ctx.revokedAt <= now) return false;
     if (ctx.expiresAt && ctx.expiresAt <= now) return false;
     return ctx.capabilities.some(

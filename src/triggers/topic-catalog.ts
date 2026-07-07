@@ -134,6 +134,73 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     notes: ["Subscriber support exists in approval flows; publisher availability depends on the channel provider."],
   },
   {
+    id: "inbound.interaction",
+    category: "inbound",
+    pattern: "ravi.inbound.interaction",
+    title: "Inbound interactive component",
+    description: "Interactive component event from a native channel surface such as Slack Block Kit.",
+    payload:
+      "{ provider, interactionType, userId, channelId, messageTs, actionId, blockId, value, selectedOption, responseUrlId }",
+    schema: {
+      version: 1,
+      fields: [
+        { path: "provider", type: "string", required: true, description: "Channel provider, for example slack." },
+        {
+          path: "interactionType",
+          type: "string",
+          required: true,
+          description: "Provider interaction payload type, for example block_actions or view_submission.",
+        },
+        {
+          path: "userId",
+          type: "string",
+          required: true,
+          description: "Platform user identifier that triggered the interaction.",
+        },
+        { path: "channelId", type: "string", description: "Platform channel or conversation identifier." },
+        {
+          path: "messageTs",
+          type: "string",
+          description: "Platform message identifier when the interaction came from a message.",
+        },
+        {
+          path: "triggerId",
+          type: "string",
+          description: "Provider trigger id for short-lived interactive follow-up flows.",
+        },
+        { path: "actionId", type: "string", description: "Block Kit action_id or equivalent provider action id." },
+        { path: "blockId", type: "string", description: "Block Kit block_id or equivalent provider block id." },
+        { path: "value", type: "string", description: "Action value when the provider includes one." },
+        {
+          path: "selectedOption",
+          type: ["string", "array"],
+          description: "Selected option value or values for select-like controls.",
+        },
+        {
+          path: "responseUrlId",
+          type: "string",
+          description:
+            "Opaque handle for responding to the original interaction without exposing the provider response URL.",
+        },
+      ],
+    },
+    examples: [
+      'ravi triggers add "Slack approve button" --topic "ravi.inbound.interaction" --filter \'data.provider == "slack" && data.actionId == "approve"\' --message "..."',
+      'ravi triggers add "Slack ticket flow" --topic "ravi.inbound.interaction" --filter \'data.provider == "slack" && data.blockId startsWith "ravi_ticket_"\' --shell "bun scripts/slack-ticket-flow.ts"',
+    ],
+    filters: [
+      'data.provider == "slack"',
+      'data.interactionType == "block_actions"',
+      'data.actionId == "approve"',
+      'data.provider == "slack" && data.actionId == "approve"',
+    ],
+    notes: [
+      "Response URLs and channel tokens must not be exposed in trigger payloads.",
+      "Use actionId and blockId as stable automation keys; values are user-controlled input.",
+      "Use shell triggers for deterministic Block Kit automations that only need state updates and channel mutations.",
+    ],
+  },
+  {
     id: "cli.session-command",
     category: "cli",
     pattern: "ravi.*.cli.*.*",

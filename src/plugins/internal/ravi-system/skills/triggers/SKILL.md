@@ -28,6 +28,7 @@ ravi triggers show <id>
 ```bash
 ravi triggers add "<nome>" --topic "<pattern>" --message "<prompt>"
 ravi triggers add "Novo email local" --topic "ravi.inbox.mail.received"
+ravi triggers add "Ticket Slack" --topic "ravi.inbound.interaction" --filter 'data.provider == "slack" && data.blockId == "ticket"' --shell "bun scripts/slack-ticket-flow.ts"
 ```
 
 Opções:
@@ -35,6 +36,21 @@ Opções:
 - `--cooldown <duration>` - Intervalo mínimo entre disparos (ex: 5s, 1m, 30s)
 - `--session <main|isolated>` - Sessão (default: isolated)
 - `--message <prompt>` - Prompt/template manual; opcional quando o tópico do catálogo tem `messageTemplate`
+- `--shell <cmd>` / `--exec <cmd>` - Executa comando shell diretamente, sem acordar agent
+- `--timeout <duration>` - Timeout de shell trigger, ex: `30`, `1m`, `5m`
+- `--env-file <path>` - Env file carregado no processo shell
+- `--on-error notify-session:<session>` - Notifica uma sessão somente em falha do shell
+
+Triggers shell recebem:
+
+- `RAVI_TRIGGER_EVENT_FILE` - JSON com `{ trigger, event, source }`
+- `RAVI_TRIGGER_DATA_FILE` - JSON com `event.data`
+- `RAVI_TRIGGER_ACTION_ID`, `RAVI_TRIGGER_BLOCK_ID`, `RAVI_TRIGGER_VALUE`
+- `RAVI_TRIGGER_USER_ID`, `RAVI_TRIGGER_CHANNEL_ID`, `RAVI_TRIGGER_MESSAGE_TS`
+- `RAVI_TRIGGER_SOURCE_CHAT_ID`, `RAVI_TRIGGER_SOURCE_ACCOUNT_ID`
+
+Use trigger shell para automações determinísticas. Use trigger agent quando a
+decisão exigir linguagem natural, investigação ou julgamento.
 
 ### Ativar/Desativar
 ```bash
@@ -46,7 +62,7 @@ ravi triggers disable <id>
 ```bash
 ravi triggers set <id> <key> <value>
 ```
-Keys: name, message, topic, agent, session, cooldown, filter
+Keys: name, message, shell, exec, timeout, env-file, on-error, topic, agent, session, cooldown, filter
 
 ### Testar trigger
 ```bash
@@ -212,7 +228,7 @@ ravi triggers add "Approval Reaction" \
   --message "Reaction {{data.emoji}} on {{data.targetMessageId}}. Load local approval state by targetMessageId. If there is no pending item or it was already processed, respond @@SILENT@@. Otherwise publish once and mark processed."
 ```
 
-Para receitas completas com cron, state local e publicação idempotente, use a skill `automation-recipes`.
+Para receitas completas com cron, trigger shell, state local e publicação idempotente, use a skill `automation-recipes`.
 
 ## Relação com NATS
 

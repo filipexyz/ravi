@@ -479,6 +479,8 @@ function ensureTaskSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_task_dependencies_task ON task_dependencies(task_id, satisfied_at, created_at);
   `);
   applyTaskWorktreeSchemaMigrations();
+  db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_updated_id ON tasks(updated_at DESC, id DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_status_updated_id ON tasks(status, updated_at DESC, id DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id, updated_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_archived_updated ON tasks(archived_at, updated_at DESC)");
   db.exec(

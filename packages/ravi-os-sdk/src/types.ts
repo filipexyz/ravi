@@ -10944,6 +10944,90 @@ export type SkillsSyncReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `slack.blocks-send`. */
+export type SlackBlocksSendInput = {
+  channel: string;
+  connection?: string;
+  execute?: boolean;
+  file: string;
+  text?: string;
+  threadTs?: string;
+};
+
+/** Return shape for `slack.blocks-send`. */
+export type SlackBlocksSendReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.blocks-showcase`. */
+export type SlackBlocksShowcaseInput = {
+  channel: string;
+  connection?: string;
+  execute?: boolean;
+  threadTs?: string;
+};
+
+/** Return shape for `slack.blocks-showcase`. */
+export type SlackBlocksShowcaseReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.blocks-update`. */
+export type SlackBlocksUpdateInput = {
+  channel: string;
+  connection?: string;
+  execute?: boolean;
+  file: string;
+  text?: string;
+  ts: string;
+};
+
+/** Return shape for `slack.blocks-update`. */
+export type SlackBlocksUpdateReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.blocks-validate`. */
+export type SlackBlocksValidateInput = {
+  connection?: string;
+  file: string;
+  target?: string;
+};
+
+/** Return shape for `slack.blocks-validate`. */
+export type SlackBlocksValidateReturn = {
+  connection: string;
+  item?: unknown;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  source: string;
+};
+
 /** Input shape for `slack.canvas-access-delete`. */
 export type SlackCanvasAccessDeleteInput = {
   canvas: string;
@@ -11343,6 +11427,27 @@ export type SlackFilesListReturn = {
   };
   provider: "slack";
   raw?: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.interactions-respond`. */
+export type SlackInteractionsRespondInput = {
+  connection?: string;
+  execute?: boolean;
+  file: string;
+  responseUrlId: string;
+};
+
+/** Return shape for `slack.interactions-respond`. */
+export type SlackInteractionsRespondReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
   source: string;
 };
 
@@ -12985,11 +13090,16 @@ export type TriggersAddInput = {
   account?: string;
   agent?: string;
   cooldown?: string;
+  envFile?: string;
+  exec?: string;
   filter?: string;
   message?: string;
   name: string;
+  onError?: string;
   replySession?: string;
   session?: string;
+  shell?: string;
+  timeout?: string;
   topic?: string;
 };
 

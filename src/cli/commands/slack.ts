@@ -8,6 +8,13 @@ import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { z } from "zod";
 import {
+  buildSlackBlockKitShowcasePayload,
+  normalizeSlackBlockKitMessagePayload,
+  normalizeSlackBlockKitValidationPayload,
+  parseSlackBlockKitJson,
+} from "../../channels/slack/block-kit.js";
+import { respondToSlackInteraction } from "../../channels/slack/interactions.js";
+import {
   SlackWebApiClient,
   type SlackCanvasAccessLevel,
   type SlackCanvasEditChange,
@@ -182,6 +189,18 @@ function parseRequiredCsvOption(value: string, label: string): string[] {
   const items = parseCsvOption(value);
   if (!items) fail(`Missing ${label}`);
   return items;
+}
+
+function readSlackBlockKitJsonFile(path: string): unknown {
+  return parseSlackBlockKitJson(readFileSync(path, "utf8"));
+}
+
+function slackBlockKitValidationRequest(
+  payload: ReturnType<typeof normalizeSlackBlockKitValidationPayload>,
+): Record<string, unknown> {
+  if (payload.target === "blocks") return { blocks: payload.blocks ?? [] };
+  if (payload.target === "view") return { view: payload.view ?? {} };
+  return { message: payload.message ?? {} };
 }
 
 const SLACK_CANVAS_EDIT_OPERATIONS = new Set<SlackCanvasEditOperation>([
@@ -1108,6 +1127,177 @@ export class SlackCommands {
     if (!execute) return this.printMutationDryRun(config, "chat.postMessage", request, asJson);
     const raw = await client.postMessage(request);
     const payload = this.mutationPayload(config, false, "chat.postMessage", request, raw, raw.raw);
+    if (asJson) printJson(payload);
+    else console.log(`${raw.channel} ${raw.ts}`);
+    return payload;
+  }
+
+  @Command({ name: "blocks-validate", description: "Validate Slack Block Kit JSON with Slack blocks.validate" })
+  @CommandAccess({ kind: "read", resource: "slack.block-kit", action: "validate", risk: "medium" })
+  @Returns(slackObjectReturnSchema)
+  async blocksValidate(
+    @Arg("file", { description: "Path to a Block Kit JSON file" }) file: string,
+    @Option({ flags: "--connection <name>", description: "Slack credential connection" }) connection?: string,
+    @Option({ flags: "--target <target>", description: "Validation target: blocks, message or view" }) target?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const validation = normalizeSlackBlockKitValidationPayload(readSlackBlockKitJsonFile(file), target);
+    const request = slackBlockKitValidationRequest(validation);
+    const { client, config } = await createSlackOpsContext(connection, "blocks.validate");
+    const raw = await client.blocksValidate(request);
+    const payload = {
+      ok: true,
+      provider: "slack" as const,
+      connection: connectionLabel(config),
+      source: config.source,
+      item: {
+        target: validation.target,
+        file,
+        valid: raw.ok === true,
+      },
+      raw,
+    };
+    if (asJson) printJson(payload);
+    else console.log(raw.ok === true ? "valid" : JSON.stringify(raw, null, 2));
+    return payload;
+  }
+
+  @Command({ name: "blocks-send", description: "Send a Slack Block Kit message; dry-run unless --execute is set" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "slack.block-kit",
+    action: "send",
+    risk: "high",
+    requiresConfirmation: true,
+  })
+  @Returns(slackMutationReturnSchema)
+  async blocksSend(
+    @Arg("channel", { description: "Slack channel/conversation ID" }) channel: string,
+    @Arg("file", { description: "Path to a Block Kit message JSON file" }) file: string,
+    @Option({ flags: "--connection <name>", description: "Slack credential connection" }) connection?: string,
+    @Option({ flags: "--text <text>", description: "Top-level fallback text for notifications/accessibility" })
+    text?: string,
+    @Option({ flags: "--thread-ts <ts>", description: "Send inside a Slack thread" }) threadTs?: string,
+    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const message = normalizeSlackBlockKitMessagePayload(readSlackBlockKitJsonFile(file), text);
+    const request = { channel, file, text: message.text, blocks: message.blocks, ...(threadTs ? { threadTs } : {}) };
+    const { client, config } = await createSlackOpsContext(connection, "chat.postMessage");
+    if (!execute) return this.printMutationDryRun(config, "chat.postMessage", request, asJson);
+    const raw = await client.postMessage({
+      channel,
+      text: message.text,
+      blocks: message.blocks,
+      ...(threadTs ? { threadTs } : {}),
+    });
+    const payload = this.mutationPayload(config, false, "chat.postMessage", request, raw, raw.raw);
+    if (asJson) printJson(payload);
+    else console.log(`${raw.channel} ${raw.ts}`);
+    return payload;
+  }
+
+  @Command({
+    name: "blocks-update",
+    description: "Update a Slack message with Block Kit; dry-run unless --execute is set",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "slack.block-kit",
+    action: "update",
+    risk: "high",
+    requiresConfirmation: true,
+  })
+  @Returns(slackMutationReturnSchema)
+  async blocksUpdate(
+    @Arg("channel", { description: "Slack channel/conversation ID" }) channel: string,
+    @Arg("ts", { description: "Slack message timestamp" }) ts: string,
+    @Arg("file", { description: "Path to a Block Kit message JSON file" }) file: string,
+    @Option({ flags: "--connection <name>", description: "Slack credential connection" }) connection?: string,
+    @Option({ flags: "--text <text>", description: "Top-level fallback text for notifications/accessibility" })
+    text?: string,
+    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const message = normalizeSlackBlockKitMessagePayload(readSlackBlockKitJsonFile(file), text);
+    const request = { channel, ts, file, text: message.text, blocks: message.blocks };
+    const { client, config } = await createSlackOpsContext(connection, "chat.update");
+    if (!execute) return this.printMutationDryRun(config, "chat.update", request, asJson);
+    const raw = await client.updateMessage({
+      channel,
+      ts,
+      text: message.text,
+      blocks: message.blocks,
+    });
+    const payload = this.mutationPayload(config, false, "chat.update", request, raw, raw.raw);
+    if (asJson) printJson(payload);
+    else console.log(`${raw.channel} ${raw.ts}`);
+    return payload;
+  }
+
+  @Command({
+    name: "interactions-respond",
+    description: "Respond to a Slack interaction response handle; dry-run unless --execute is set",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "slack.interactions",
+    action: "respond",
+    risk: "high",
+    requiresConfirmation: true,
+  })
+  @Returns(slackMutationReturnSchema)
+  async interactionsRespond(
+    @Arg("responseUrlId", { description: "Opaque Slack interaction response URL handle" }) responseUrlId: string,
+    @Arg("file", { description: "Path to a JSON response payload" }) file: string,
+    @Option({ flags: "--connection <name>", description: "Slack credential connection" }) connection?: string,
+    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const responsePayload = readSlackBlockKitJsonFile(file);
+    if (!responsePayload || typeof responsePayload !== "object" || Array.isArray(responsePayload)) {
+      fail("Slack interaction response payload must be a JSON object");
+    }
+    const request = { responseUrlId, file, payload: responsePayload as Record<string, unknown> };
+    const { config } = await createSlackOpsContext(connection, "slack.interactions.respond");
+    if (!execute) return this.printMutationDryRun(config, "slack.interactions.respond", request, asJson);
+    const raw = await respondToSlackInteraction({
+      responseUrlId,
+      payload: responsePayload as Record<string, unknown>,
+    });
+    const payload = this.mutationPayload(config, false, "slack.interactions.respond", request, raw, raw);
+    if (asJson) printJson(payload);
+    else console.log(`responded ${responseUrlId}`);
+    return payload;
+  }
+
+  @Command({ name: "blocks-showcase", description: "Send a Slack Block Kit showcase; dry-run unless --execute is set" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "slack.block-kit",
+    action: "showcase",
+    risk: "high",
+    requiresConfirmation: true,
+  })
+  @Returns(slackMutationReturnSchema)
+  async blocksShowcase(
+    @Arg("channel", { description: "Slack channel/conversation ID" }) channel: string,
+    @Option({ flags: "--connection <name>", description: "Slack credential connection" }) connection?: string,
+    @Option({ flags: "--thread-ts <ts>", description: "Send inside a Slack thread" }) threadTs?: string,
+    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const message = buildSlackBlockKitShowcasePayload();
+    const request = { channel, text: message.text, blocks: message.blocks, ...(threadTs ? { threadTs } : {}) };
+    const { client, config } = await createSlackOpsContext(connection, "chat.postMessage");
+    if (!execute) return this.printMutationDryRun(config, "slack.block-kit.showcase", request, asJson);
+    const raw = await client.postMessage({
+      channel,
+      text: message.text,
+      blocks: message.blocks,
+      ...(threadTs ? { threadTs } : {}),
+    });
+    const payload = this.mutationPayload(config, false, "slack.block-kit.showcase", request, raw, raw.raw);
     if (asJson) printJson(payload);
     else console.log(`${raw.channel} ${raw.ts}`);
     return payload;

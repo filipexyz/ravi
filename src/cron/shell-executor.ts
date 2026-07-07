@@ -8,6 +8,7 @@ const MAX_CAPTURE_CHARS = 64 * 1024;
 export interface ShellCronRunOptions {
   timeoutMs?: number;
   envFile?: string;
+  env?: Record<string, string>;
 }
 
 export interface ShellCronRunResult {
@@ -67,7 +68,7 @@ export async function runShellCronCommand(
 ): Promise<ShellCronRunResult> {
   const started = Date.now();
   const timeoutMs = options.timeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS;
-  const env = { ...process.env, ...loadEnvFile(options.envFile) };
+  const env = { ...process.env, ...loadEnvFile(options.envFile), ...(options.env ?? {}) };
 
   return new Promise((resolve, reject) => {
     const detached = process.platform !== "win32";

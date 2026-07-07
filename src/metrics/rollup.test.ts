@@ -176,4 +176,41 @@ describe("rollupDailyMetrics", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.totalCostUsd).toBeCloseTo(0.5);
   });
+
+  it("defaults to an incremental refresh after historical days are rolled up", async () => {
+    const { getDb } = await import("../router/router-db.js");
+    const { rollupDailyMetrics } = await import("./rollup.js");
+
+    const db = getDb();
+    const insertCost = db.prepare(
+      `INSERT INTO cost_events (session_key, agent_id, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, input_cost_usd, output_cost_usd, cache_cost_usd, total_cost_usd, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+
+    for (const date of ["2026-04-10", "2026-04-11", "2026-04-12", "2026-04-13"]) {
+      insertCost.run(
+        "agent:main:main",
+        "main",
+        "gpt-5.5",
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.01,
+        Date.parse(`${date}T12:00:00.000Z`),
+      );
+    }
+
+    const backfill = rollupDailyMetrics({
+      since: "2026-04-10",
+      through: "2026-04-13",
+    });
+    expect(backfill.dates).toEqual(["2026-04-10", "2026-04-11", "2026-04-12", "2026-04-13"]);
+
+    const incremental = rollupDailyMetrics({ through: "2026-04-13" });
+    expect(incremental.dates).toEqual(["2026-04-12", "2026-04-13"]);
+  });
 });
