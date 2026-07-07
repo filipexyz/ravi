@@ -27,6 +27,10 @@ normative: true
    - `execute:<provider>:<action>`
 8. The broker MUST support local Keychain and production Vault-compatible refs.
 9. Env credentials MAY be used only as explicit local smoke-test fallback.
+10. Channel instances are the authority for selecting channel credentials.
+    The default credential connection id SHOULD match the Ravi instance name.
+    Instance defaults MAY override this with `slackCredentialConnection` or
+    `credentials.slackConnection`.
 
 ## Slack Secret Shape
 
@@ -47,4 +51,3 @@ SLACK_BOT_TOKEN=xoxb-...
 ```
 
 The raw value MUST never be printed.
-

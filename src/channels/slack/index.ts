@@ -8,6 +8,7 @@ export type {
   SlackWebApiClientOptions,
 } from "./client.js";
 export {
+  credentialConnectionForInstance,
   parseSlackSecretPayload,
   resolveSlackCredentialConfigFromEnv,
 } from "./credentials.js";
