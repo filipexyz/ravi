@@ -465,43 +465,6 @@ describe("Slack Socket Mode routing", () => {
     ]);
   });
 
-  it("renders elapsed seconds in custom Slack assistant status text", async () => {
-    const calls: Record<string, unknown>[] = [];
-    let now = 1_000_000;
-    const presence = new SlackAssistantThreadPresence(
-      {
-        setAssistantThreadStatus: async (input: Record<string, unknown>) => {
-          calls.push(input);
-          return { ok: true };
-        },
-      } as never,
-      {
-        statusText: "Trabalhando ha {elapsed}s",
-        now: () => now,
-      },
-    );
-    const target = {
-      channel: "slack",
-      accountId: "ravi-rbbt-slack",
-      chatId: "C123",
-      threadId: "1713000000.000100",
-    };
-
-    await presence.sendPresence({ sessionName: "ravi-hil", target, active: true, reason: "runtime-turn.started" });
-    now += 5_250;
-    await presence.sendPresence({ sessionName: "ravi-hil", target, active: true, reason: "runtime-status" });
-    await presence.sendPresence({ sessionName: "ravi-hil", target, active: false, reason: "terminal-stop" });
-    now += 2_000;
-    await presence.sendPresence({ sessionName: "ravi-hil", target, active: true, reason: "runtime-turn.started" });
-
-    expect(calls.map((call) => call.status)).toEqual([
-      "Trabalhando ha 0s",
-      "Trabalhando ha 5s",
-      "",
-      "Trabalhando ha 0s",
-    ]);
-  });
-
   it("uses outbound status anchors as Slack assistant thread ids for root messages", async () => {
     const calls: Record<string, unknown>[] = [];
     const presence = new SlackAssistantThreadPresence({

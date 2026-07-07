@@ -128,15 +128,10 @@ export class SlackTextDelivery implements NativeTextDelivery {
 
 export class SlackAssistantThreadPresence implements NativePresenceDelivery {
   readonly channelId = "slack";
-  private readonly activeSinceBySession = new Map<string, number>();
 
   constructor(
     private readonly webClient: Pick<SlackWebApiClient, "setAssistantThreadStatus">,
-    private readonly options: {
-      statusText?: string;
-      loadingMessages?: readonly string[];
-      now?: () => number;
-    } = {},
+    private readonly options: { statusText?: string; loadingMessages?: readonly string[] } = {},
   ) {}
 
   supports(target: MessageTarget): boolean {
@@ -153,10 +148,7 @@ export class SlackAssistantThreadPresence implements NativePresenceDelivery {
       };
     }
 
-    if (!request.active) {
-      this.clearActiveStatus(request);
-    }
-    const status = request.active ? this.activeStatusText(request) : "";
+    const status = request.active ? (this.options.statusText ?? "is working...") : "";
     const raw = await this.webClient.setAssistantThreadStatus({
       channelId: request.target.chatId,
       threadTs,
@@ -176,23 +168,6 @@ export class SlackAssistantThreadPresence implements NativePresenceDelivery {
         response: raw,
       },
     };
-  }
-
-  private activeStatusText(request: NativePresenceDeliveryRequest): string {
-    const now = this.options.now?.() ?? Date.now();
-    const activeSince = this.activeSinceBySession.get(request.sessionName) ?? now;
-    this.activeSinceBySession.set(request.sessionName, activeSince);
-    const elapsedSeconds = Math.max(0, Math.floor((now - activeSince) / 1000));
-    return formatSlackAssistantStatusText(this.options.statusText ?? "is working...", {
-      elapsedSeconds,
-      reason: request.reason,
-      sessionName: request.sessionName,
-    });
-  }
-
-  private clearActiveStatus(request: NativePresenceDeliveryRequest): void {
-    if (request.reason?.includes("replace-anchor")) return;
-    this.activeSinceBySession.delete(request.sessionName);
   }
 }
 
@@ -1067,16 +1042,6 @@ function slackReactionPresenceModeFromEnv(value: string | undefined): SlackReact
   if (["always", "true", "1", "on", "yes"].includes(normalized)) return "always";
   if (["off", "false", "0", "none", "no"].includes(normalized)) return "off";
   return "off";
-}
-
-function formatSlackAssistantStatusText(
-  template: string,
-  input: { elapsedSeconds: number; reason?: string; sessionName: string },
-): string {
-  return template
-    .replace(/\{elapsed(?:Seconds)?\}/g, String(input.elapsedSeconds))
-    .replace(/\{session(?:Name)?\}/g, input.sessionName)
-    .replace(/\{reason\}/g, input.reason ?? "");
 }
 
 function publicPresenceResult(result: NativePresenceDeliveryResult): Record<string, unknown> {
