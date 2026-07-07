@@ -1,4 +1,5 @@
 import { resolveCredentialSecret } from "../../credentials/index.js";
+import type { InstanceConfig } from "../../router/router-db.js";
 
 export interface SlackCredentialConfig {
   appToken: string;
@@ -6,6 +7,7 @@ export interface SlackCredentialConfig {
   accountId: string;
   routeAccountId?: string;
   instanceId: string;
+  connection: string;
   source: "broker" | "env";
 }
 
@@ -25,9 +27,18 @@ export type SlackCredentialResolver = (input: {
 
 export async function resolveSlackCredentialConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env,
-  options: { resolveSecret?: SlackCredentialResolver; action?: string } = {},
+  options: {
+    resolveSecret?: SlackCredentialResolver;
+    action?: string;
+    instance?: InstanceConfig;
+    instances?: Record<string, InstanceConfig>;
+  } = {},
 ): Promise<SlackCredentialConfig | null> {
-  const connection = env.RAVI_SLACK_CONNECTION?.trim() || env.RAVI_SLACK_CREDENTIAL_CONNECTION?.trim();
+  const instance = options.instance ?? selectSlackInstance(options.instances, env);
+  const connection =
+    credentialConnectionForInstance(instance) ||
+    env.RAVI_SLACK_CONNECTION?.trim() ||
+    env.RAVI_SLACK_CREDENTIAL_CONNECTION?.trim();
   if (connection) {
     const resolved = await (options.resolveSecret ?? resolveCredentialSecret)({
       provider: "slack",
@@ -35,18 +46,20 @@ export async function resolveSlackCredentialConfigFromEnv(
       action: options.action ?? "socket_mode.connect",
     });
     const payload = parseSlackSecretPayload(resolved.secret);
+    const accountId =
+      instance?.name ||
+      env.RAVI_SLACK_ACCOUNT?.trim() ||
+      payload.accountId ||
+      resolved.connection?.connection ||
+      connection;
     return {
       appToken: payload.appToken,
       botToken: payload.botToken,
-      accountId: env.RAVI_SLACK_ACCOUNT?.trim() || payload.accountId || resolved.connection?.connection || connection,
-      routeAccountId: env.RAVI_SLACK_ROUTE_ACCOUNT?.trim() || payload.routeAccountId,
+      accountId,
+      routeAccountId: instance?.name || env.RAVI_SLACK_ROUTE_ACCOUNT?.trim() || payload.routeAccountId || accountId,
       instanceId:
-        env.RAVI_SLACK_INSTANCE?.trim() ||
-        payload.instanceId ||
-        env.RAVI_SLACK_ACCOUNT?.trim() ||
-        payload.accountId ||
-        resolved.connection?.connection ||
-        connection,
+        instance?.instanceId || instance?.name || env.RAVI_SLACK_INSTANCE?.trim() || payload.instanceId || accountId,
+      connection,
       source: "broker",
     };
   }
@@ -66,8 +79,37 @@ export async function resolveSlackCredentialConfigFromEnv(
     accountId,
     routeAccountId: env.RAVI_SLACK_ROUTE_ACCOUNT?.trim() || undefined,
     instanceId: env.RAVI_SLACK_INSTANCE?.trim() || accountId,
+    connection: env.RAVI_SLACK_CREDENTIAL_CONNECTION?.trim() || env.RAVI_SLACK_CONNECTION?.trim() || accountId,
     source: "env",
   };
+}
+
+export function credentialConnectionForInstance(instance: InstanceConfig | null | undefined): string | undefined {
+  if (!instance || instance.enabled === false || instance.channel !== "slack") return undefined;
+  const defaults = instance.defaults ?? {};
+  const credentials = asRecord(defaults.credentials);
+  return (
+    stringField(defaults, "slackCredentialConnection", "credentialConnection") ||
+    stringField(credentials, "slackConnection", "slackCredentialConnection", "connection") ||
+    instance.name
+  );
+}
+
+function selectSlackInstance(
+  instances: Record<string, InstanceConfig> | undefined,
+  env: NodeJS.ProcessEnv,
+): InstanceConfig | undefined {
+  if (!instances) return undefined;
+  const selector = env.RAVI_SLACK_ACCOUNT?.trim() || env.RAVI_SLACK_INSTANCE?.trim();
+  const candidates = Object.values(instances).filter(
+    (instance) => instance.enabled !== false && instance.channel === "slack",
+  );
+
+  if (selector) {
+    return candidates.find((instance) => instance.name === selector || instance.instanceId === selector);
+  }
+
+  return candidates.length === 1 ? candidates[0] : undefined;
 }
 
 export function parseSlackSecretPayload(secret: string): SlackSecretPayload {
@@ -118,6 +160,10 @@ function stringField(record: Record<string, unknown>, ...keys: string[]): string
     if (typeof value === "string" && value.trim()) return value.trim();
   }
   return undefined;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function stripQuotes(value: string): string {
