@@ -9,3 +9,9 @@ export {
   writeMemoryCurationState,
   type MemoryCurationSessionState,
 } from "./curation-state.js";
+export {
+  buildMemoryPromptSection,
+  MEMORY_PROMPT_SECTION_ID,
+  MEMORY_PROMPT_SECTION_PRIORITY,
+  MEMORY_PROMPT_SECTION_TITLE,
+} from "./prompt-section.js";
