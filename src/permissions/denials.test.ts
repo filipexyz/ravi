@@ -108,4 +108,39 @@ describe("permission denials", () => {
       }),
     );
   });
+
+  it("publishes denied audit events for non-agent runtime contexts", async () => {
+    delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+
+    const denial = recordAndEmitPermissionDenial({
+      subjectType: "context",
+      subjectId: "ctx_extension",
+      relation: "read",
+      objectType: "agents",
+      objectId: "list",
+      contextId: "ctx_extension",
+      reason: "permission_denied",
+      audit: {
+        type: "sdk_gateway_command",
+        agentId: null,
+        denied: "read:agents:list",
+        reason: "permission_denied",
+      },
+    });
+    await flushPermissionAuditEvents();
+
+    expect(auditEvents).toEqual([
+      {
+        topic: "ravi.audit.denied",
+        data: expect.objectContaining({
+          type: "sdk_gateway_command",
+          agentId: null,
+          denied: "read:agents:list",
+          reason: "permission_denied",
+          denialId: denial?.id,
+          dedupeKey: "audit.denied:sdk_gateway_command:-:read:agents:list:permission_denied",
+        }),
+      },
+    ]);
+  });
 });

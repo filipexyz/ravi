@@ -121,6 +121,25 @@ describe("whatsapp overlay extension compositions", () => {
     });
   });
 
+  it("propagates agent list auth errors instead of hiding them as an empty agent list", async () => {
+    const authError = Object.assign(new Error("Forbidden"), { status: 403 });
+    const client = {
+      sessions: {
+        list: async () => ({ sessions: [] }),
+      },
+      agents: {
+        list: async () => {
+          throw authError;
+        },
+      },
+    };
+
+    await expect(buildSnapshot(client, {})).rejects.toMatchObject({
+      status: 403,
+      message: "Forbidden",
+    });
+  });
+
   it("hides terminal task sessions from active and recent session lists", async () => {
     const now = Date.now();
     const client = {

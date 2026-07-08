@@ -19,7 +19,6 @@ import type {
 
 export interface StreamingHandlerOptions {
   auth: GatewayAuthConfig;
-  hasLiveAdminContext: () => boolean;
   authFailureMessage: (reason: AuthFailureReason) => string;
   streaming?: StreamingGatewayConfig;
 }
@@ -39,11 +38,6 @@ export async function handleStreamingRequest(
   }
 
   const resolved = resolveAuth(request, options.auth);
-  if (!options.hasLiveAdminContext()) {
-    return unauthorized(
-      "no admin context configured; run 'ravi daemon init-admin-key' on the daemon host before issuing gateway requests",
-    );
-  }
   if (!resolved.authenticated || !resolved.contextRecord) {
     return unauthorized(options.authFailureMessage(resolved.reason));
   }

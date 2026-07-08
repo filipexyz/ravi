@@ -131,12 +131,14 @@ export async function dispatch(
     return { response, audit: auditEmitted ? audit : null };
   }
 
-  const scopeResult = runWithContext(toolContext, () => enforceScopeCheck(cmd.scope, group, cmd.command));
-  if (!scopeResult.allowed) {
-    const response = permissionDenied(scopeResult.errorMessage);
-    const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, true, startedAt, lineage);
-    const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
-    return { response, audit: auditEmitted ? audit : null };
+  if (cmd.scope === "superadmin") {
+    const scopeResult = runWithContext(toolContext, () => enforceScopeCheck(cmd.scope, group, cmd.command));
+    if (!scopeResult.allowed) {
+      const response = permissionDenied(scopeResult.errorMessage);
+      const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, true, startedAt, lineage);
+      const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+      return { response, audit: auditEmitted ? audit : null };
+    }
   }
 
   let isError = false;

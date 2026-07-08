@@ -46,9 +46,9 @@ export interface PermissionDenial {
 
 export interface PermissionDeniedAuditEvent {
   type: string;
-  agentId: string;
-  denied: string;
-  reason: string;
+  agentId?: string | null;
+  denied?: string | null;
+  reason?: string | null;
   detail?: unknown;
   blockType?: string;
   missingPrincipals?: string[];
@@ -235,12 +235,17 @@ function normalizeText(value: string | null | undefined): string | null {
   return normalized ? normalized : null;
 }
 
-function buildAuditDeniedDedupeKey(event: { type: string; agentId: string; denied: string; reason: string }): string {
+function buildAuditDeniedDedupeKey(event: {
+  type?: string | null;
+  agentId?: string | null;
+  denied?: string | null;
+  reason?: string | null;
+}): string {
   return ["audit.denied", event.type, event.agentId, event.denied, event.reason].map(normalizeDedupePart).join(":");
 }
 
-function normalizeDedupePart(value: string): string {
-  return value.trim().replace(/\s+/g, " ").slice(0, 240);
+function normalizeDedupePart(value: string | null | undefined): string {
+  return (value ?? "-").trim().replace(/\s+/g, " ").slice(0, 240) || "-";
 }
 
 function normalizeNullableText(value: string | null | undefined): string | null {
