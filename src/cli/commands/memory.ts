@@ -596,6 +596,82 @@ const memoryGuardReturnSchema = z.object({
   dryRun: z.boolean(),
 });
 
+const memoryEnrollReturnSchema = z
+  .object({
+    enrolled: z.array(
+      z
+        .object({
+          agentId: z.string(),
+          cwd: z.string(),
+          memoryPath: z.string(),
+          memoryFileCreated: z.boolean(),
+          memoryDirCreated: z.boolean(),
+        })
+        .strict(),
+    ),
+    hook: z
+      .object({
+        name: z.string(),
+        eventName: z.literal("Stop"),
+        cadenceTurns: z.number(),
+        created: z.boolean(),
+        id: z.string().optional(),
+        skipped: z.boolean(),
+      })
+      .strict(),
+  })
+  .strict();
+
+const memoryListReturnSchema = z
+  .object({
+    agents: z.array(
+      z
+        .object({
+          agentId: z.string(),
+          cwd: z.string(),
+          memoryPath: z.string(),
+          exists: z.boolean(),
+          memoryChars: z.number(),
+          topicCount: z.number(),
+          memoryLastModified: z.number().nullable(),
+        })
+        .strict(),
+    ),
+    pagination: z
+      .object({
+        limit: z.number(),
+        offset: z.number(),
+        returned: z.number(),
+        total: z.number(),
+        hasMore: z.boolean().optional(),
+        nextOffset: z.number().nullable().optional(),
+        nextCommand: z.string().nullable().optional(),
+      })
+      .strict(),
+  })
+  .strict();
+
+const memoryShowReturnSchema = z
+  .object({
+    agentId: z.string(),
+    path: z.string(),
+    content: z.string(),
+  })
+  .strict();
+
+const memoryCurateReturnSchema = z
+  .object({
+    taskId: z.string(),
+    agentId: z.string(),
+    dryRun: z.boolean(),
+    transcriptPath: z.string(),
+  })
+  .strict();
+
 declareCommandReturns(MemoryCommands, {
   guard: memoryGuardReturnSchema,
+  enroll: memoryEnrollReturnSchema,
+  list: memoryListReturnSchema,
+  show: memoryShowReturnSchema,
+  curate: memoryCurateReturnSchema,
 });

@@ -40927,6 +40927,32 @@ export const MemoryCurateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `memory.curate`. */
+export const MemoryCurateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "taskId": {
+      "type": "string"
+    },
+    "transcriptPath": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "taskId",
+    "agentId",
+    "dryRun",
+    "transcriptPath"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `memory.enroll`. */
 export const MemoryEnrollInputSchema = {
   "additionalProperties": false,
@@ -40948,6 +40974,81 @@ export const MemoryEnrollInputSchema = {
       "type": "boolean"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `memory.enroll`. */
+export const MemoryEnrollReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "enrolled": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "memoryDirCreated": {
+            "type": "boolean"
+          },
+          "memoryFileCreated": {
+            "type": "boolean"
+          },
+          "memoryPath": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId",
+          "cwd",
+          "memoryPath",
+          "memoryFileCreated",
+          "memoryDirCreated"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "hook": {
+      "additionalProperties": false,
+      "properties": {
+        "cadenceTurns": {
+          "type": "number"
+        },
+        "created": {
+          "type": "boolean"
+        },
+        "eventName": {
+          "const": "Stop",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "skipped": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "eventName",
+        "cadenceTurns",
+        "created",
+        "skipped"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "enrolled",
+    "hook"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -41158,6 +41259,111 @@ export const MemoryListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the return shape of `memory.list`. */
+export const MemoryListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "exists": {
+            "type": "boolean"
+          },
+          "memoryChars": {
+            "type": "number"
+          },
+          "memoryLastModified": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "memoryPath": {
+            "type": "string"
+          },
+          "topicCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "agentId",
+          "cwd",
+          "memoryPath",
+          "exists",
+          "memoryChars",
+          "topicCount",
+          "memoryLastModified"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "agents",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `memory.show`. */
 export const MemoryShowInputSchema = {
   "additionalProperties": false,
@@ -41171,6 +41377,28 @@ export const MemoryShowInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `memory.show`. */
+export const MemoryShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "content": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "agentId",
+    "path",
+    "content"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 

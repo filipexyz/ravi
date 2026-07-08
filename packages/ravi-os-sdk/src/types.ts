@@ -7919,8 +7919,13 @@ export type MemoryCurateInput = {
   transcript?: string;
 };
 
-/** Return shape for `memory.curate`. (no @Returns declared) */
-export type MemoryCurateReturn = unknown;
+/** Return shape for `memory.curate`. */
+export type MemoryCurateReturn = {
+  agentId: string;
+  dryRun: boolean;
+  taskId: string;
+  transcriptPath: string;
+};
 
 /** Input shape for `memory.enroll`. */
 export type MemoryEnrollInput = {
@@ -7930,8 +7935,24 @@ export type MemoryEnrollInput = {
   skipHook?: boolean;
 };
 
-/** Return shape for `memory.enroll`. (no @Returns declared) */
-export type MemoryEnrollReturn = unknown;
+/** Return shape for `memory.enroll`. */
+export type MemoryEnrollReturn = {
+  enrolled: Array<{
+    agentId: string;
+    cwd: string;
+    memoryDirCreated: boolean;
+    memoryFileCreated: boolean;
+    memoryPath: string;
+  }>;
+  hook: {
+    cadenceTurns: number;
+    created: boolean;
+    eventName: "Stop";
+    id?: string;
+    name: string;
+    skipped: boolean;
+  };
+};
 
 /** Input shape for `memory.guard`. */
 export type MemoryGuardInput = {
@@ -7988,8 +8009,27 @@ export type MemoryListInput = {
   offset?: string;
 };
 
-/** Return shape for `memory.list`. (no @Returns declared) */
-export type MemoryListReturn = unknown;
+/** Return shape for `memory.list`. */
+export type MemoryListReturn = {
+  agents: Array<{
+    agentId: string;
+    cwd: string;
+    exists: boolean;
+    memoryChars: number;
+    memoryLastModified: number | null;
+    memoryPath: string;
+    topicCount: number;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+};
 
 /** Input shape for `memory.show`. */
 export type MemoryShowInput = {
@@ -7997,8 +8037,12 @@ export type MemoryShowInput = {
   topic?: string;
 };
 
-/** Return shape for `memory.show`. (no @Returns declared) */
-export type MemoryShowReturn = unknown;
+/** Return shape for `memory.show`. */
+export type MemoryShowReturn = {
+  agentId: string;
+  content: string;
+  path: string;
+};
 
 /** Input shape for `metrics.dates`. */
 export type MetricsDatesInput = Record<string, never>;
