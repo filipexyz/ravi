@@ -1,5 +1,7 @@
 import "reflect-metadata";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { z } from "zod";
 import { Command, CommandAccess, Group, Option } from "../decorators.js";
 import { fail } from "../context.js";
@@ -302,6 +304,155 @@ export class MemoryCommands {
       printEnrollSummary(payload);
     } else {
       console.log(JSON.stringify(payload, null, 2));
+    }
+    return payload;
+  }
+
+  @Command({
+    name: "list",
+    description:
+      "List every agent's memory footprint (index size, topic count, last modified). Useful for the operator: 'quem tem memória, quanto, quando foi última curadoria?'",
+  })
+  @CommandAccess({ kind: "read", resource: "memory", action: "list", risk: "low" })
+  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+    const rows = getAllAgents()
+      .filter((a) => a?.cwd)
+      .map((a) => {
+        const cwd = a.cwd.replace("~", homedir());
+        const memoryPath = join(cwd, "MEMORY.md");
+        const memoryDir = join(cwd, "memory");
+        let memoryChars = 0;
+        let memoryLastModified: number | null = null;
+        if (existsSync(memoryPath)) {
+          const stat = statSync(memoryPath);
+          memoryChars = stat.size;
+          memoryLastModified = stat.mtimeMs;
+        }
+        let topicCount = 0;
+        if (existsSync(memoryDir)) {
+          const entries = readdirSync(memoryDir, { withFileTypes: true });
+          topicCount = entries.filter((e) => e.isFile() && e.name.endsWith(".md")).length;
+        }
+        return {
+          agentId: a.id,
+          cwd,
+          memoryPath,
+          exists: existsSync(memoryPath),
+          memoryChars,
+          topicCount,
+          memoryLastModified,
+        };
+      });
+
+    if (asJson) {
+      console.log(JSON.stringify({ agents: rows }, null, 2));
+    } else {
+      console.log(`${rows.length} agent(s):`);
+      for (const row of rows) {
+        const modified = row.memoryLastModified ? new Date(row.memoryLastModified).toISOString() : "never";
+        const mark = row.exists ? `${row.memoryChars}c/${row.topicCount}t` : "(no MEMORY.md)";
+        console.log(`  · ${row.agentId.padEnd(32)} ${mark.padEnd(16)} last-modified ${modified}`);
+      }
+    }
+    return { agents: rows };
+  }
+
+  @Command({
+    name: "show",
+    description: "Print an agent's MEMORY.md to stdout (raw file). Fails if the agent is unknown or unenrolled.",
+  })
+  @CommandAccess({ kind: "read", resource: "memory", action: "show", risk: "low" })
+  show(
+    @Option({ flags: "--agent <id>", description: "Agent id to show memory for" }) agentId?: string,
+    @Option({ flags: "--topic <slug>", description: "Show a specific topic file under memory/ instead of the index" })
+    topic?: string,
+    @Option({ flags: "--json", description: "Wrap the file content in JSON" }) asJson?: boolean,
+  ) {
+    if (!agentId?.trim()) {
+      fail("--agent is required");
+    }
+    const agentConfig = getAgent(agentId!.trim());
+    if (!agentConfig?.cwd) {
+      fail(`Agent not found or missing cwd: ${agentId}`);
+    }
+    const cwd = agentConfig.cwd.replace("~", homedir());
+    const target = topic?.trim()
+      ? join(cwd, "memory", topic.trim().endsWith(".md") ? topic.trim() : `${topic.trim()}.md`)
+      : join(cwd, "MEMORY.md");
+    if (!existsSync(target)) {
+      fail(`Not found: ${target}`);
+    }
+    const content = readFileSync(target, "utf-8");
+    if (asJson) {
+      console.log(JSON.stringify({ agentId, path: target, content }, null, 2));
+    } else {
+      process.stdout.write(content);
+    }
+    return { agentId, path: target, content };
+  }
+
+  @Command({
+    name: "curate",
+    description:
+      "Force one curator cycle NOW for an agent, without waiting for cadence. Creates a task with profile curador-memoria and dispatches it. Useful for first-run seeding, debugging, and manual audits.",
+  })
+  @CommandAccess({ kind: "mutate", resource: "memory", action: "curate", risk: "medium" })
+  async curate(
+    @Option({ flags: "--agent <id>", description: "Agent id to curate memory for" }) agentId?: string,
+    @Option({
+      flags: "--transcript <path>",
+      description: "Path to the transcript to feed the curator (defaults to <agentCwd>/CURATOR_TRANSCRIPT.md)",
+    })
+    transcript?: string,
+    @Option({ flags: "--dry-run", description: "Task instructs the curator to propose but not persist" })
+    dryRun?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!agentId?.trim()) {
+      fail("--agent is required");
+    }
+    const agentConfig = getAgent(agentId!.trim());
+    if (!agentConfig?.cwd) {
+      fail(`Agent not found or missing cwd: ${agentId}`);
+    }
+    const cwd = agentConfig.cwd.replace("~", homedir());
+    const memoryPath = join(cwd, "MEMORY.md");
+    const memoryDir = join(cwd, "memory");
+    const transcriptPath = transcript?.trim() || join(cwd, "CURATOR_TRANSCRIPT.md");
+    if (!existsSync(transcriptPath)) {
+      fail(`Transcript not found: ${transcriptPath}`);
+    }
+
+    const { createTask, queueOrDispatchTask } = await import("../../tasks/index.js");
+    const created = createTask({
+      title: `Manual curation for ${agentConfig.id} @ ${new Date().toISOString()}`,
+      instructions: "Manual curation dispatched by `ravi memory curate` — no cadence gate applies.",
+      profileId: CURATOR_PROFILE_ID,
+      createdBy: "ravi memory curate",
+      profileInput: {
+        agent_id: agentConfig.id,
+        transcript_path: transcriptPath,
+        memory_path: memoryPath,
+        memory_dir: memoryDir,
+        cadence_turn: "0",
+        originator: "manual-curate",
+        originator_session: "cli",
+        ...(dryRun ? { dry_run: "true" } : {}),
+      },
+    });
+    await queueOrDispatchTask(created.task.id, {
+      agentId: agentConfig.id,
+      sessionName: `${created.task.id}-curator`,
+      assignedBy: "ravi memory curate",
+    });
+
+    const payload = { taskId: created.task.id, agentId: agentConfig.id, dryRun: Boolean(dryRun), transcriptPath };
+    if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else {
+      console.log(`✓ Curator dispatched: task ${created.task.id} → ${agentConfig.id}${dryRun ? " (dry-run)" : ""}`);
+      console.log(`  transcript: ${transcriptPath}`);
+      console.log(`  follow: ravi tasks show ${created.task.id}`);
     }
     return payload;
   }
