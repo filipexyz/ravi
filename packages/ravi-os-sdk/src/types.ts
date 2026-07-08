@@ -7983,7 +7983,10 @@ export type MemoryGuardReturn = {
 };
 
 /** Input shape for `memory.list`. */
-export type MemoryListInput = Record<string, never>;
+export type MemoryListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `memory.list`. (no @Returns declared) */
 export type MemoryListReturn = unknown;

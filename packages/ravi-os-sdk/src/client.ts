@@ -3761,11 +3761,14 @@ export class RaviClient {
       });
     },
     /** List every agent's memory footprint (index size, topic count, last modified). Useful for the operator: 'quem tem memória, quanto, quando foi última curadoria?' */
-    list: async (): Promise<MemoryListReturn> => {
+    list: async (options?: {
+      limit?: string;
+      offset?: string;
+    }): Promise<MemoryListReturn> => {
       return this.transport.call({
         groupSegments: ["memory"],
         command: "list",
-        body: {},
+        body: { ...(options ?? {}) },
       });
     },
     /** Print an agent's MEMORY.md to stdout (raw file). Fails if the agent is unknown or unenrolled. */

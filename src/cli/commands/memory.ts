@@ -10,6 +10,7 @@ import type { MemoryStoreKind } from "../../memory/index.js";
 import { getAgent, getAllAgents } from "../../router/index.js";
 import { dbCreateHook, dbListHooks } from "../../hooks-runtime/index.js";
 import { emitHookRefresh } from "../../hooks-runtime/index.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
 
 const CURATOR_HOOK_NAME = "memory-curator";
@@ -314,8 +315,12 @@ export class MemoryCommands {
       "List every agent's memory footprint (index size, topic count, last modified). Useful for the operator: 'quem tem memória, quanto, quando foi última curadoria?'",
   })
   @CommandAccess({ kind: "read", resource: "memory", action: "list", risk: "low" })
-  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
-    const rows = getAllAgents()
+  list(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching agents to skip (default: 0)" }) offset?: string,
+  ) {
+    const rowsAll = getAllAgents()
       .filter((a) => a?.cwd)
       .map((a) => {
         const cwd = a.cwd.replace("~", homedir());
@@ -344,17 +349,30 @@ export class MemoryCommands {
         };
       });
 
+    const page = paginateCliItems(rowsAll, { limit, offset });
+    const rows = page.items;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "memory", "list"],
+      total: page.total,
+      limit: page.limit,
+      offset: page.offset,
+      returned: rows.length,
+    });
+
     if (asJson) {
-      console.log(JSON.stringify({ agents: rows }, null, 2));
+      console.log(JSON.stringify({ agents: rows, pagination }, null, 2));
     } else {
-      console.log(`${rows.length} agent(s):`);
+      console.log(`${page.total} agent(s) — showing ${rows.length} (offset ${page.offset}, limit ${page.limit}):`);
       for (const row of rows) {
         const modified = row.memoryLastModified ? new Date(row.memoryLastModified).toISOString() : "never";
         const mark = row.exists ? `${row.memoryChars}c/${row.topicCount}t` : "(no MEMORY.md)";
         console.log(`  · ${row.agentId.padEnd(32)} ${mark.padEnd(16)} last-modified ${modified}`);
       }
+      if (pagination.nextCommand) {
+        console.log(`Next: ${pagination.nextCommand}`);
+      }
     }
-    return { agents: rows };
+    return { agents: rows, pagination };
   }
 
   @Command({

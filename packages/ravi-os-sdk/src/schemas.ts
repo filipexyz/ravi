@@ -41145,7 +41145,16 @@ export const MemoryGuardReturnSchema = {
 /** JSON Schema for the input body of `memory.list`. */
 export const MemoryListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching agents to skip (default: 0)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
