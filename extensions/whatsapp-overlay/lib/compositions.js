@@ -573,7 +573,7 @@ function normalizeSessions(result) {
 
 function listAgents(client) {
   return client?.agents?.list
-    ? client.agents.list({}).catch((error) => fallbackUnlessAuth(error, { agents: [] }))
+    ? client.agents.list({}).catch(() => ({ agents: [] }))
     : Promise.resolve({ agents: [] });
 }
 

@@ -754,10 +754,7 @@ async function postAgentTtsSettings(payload = {}) {
   if (!agentId) return { ok: false, status: 400, code: "missing_agent", error: "Missing agentId" };
   const settings = payload.settings && typeof payload.settings === "object" ? payload.settings : {};
   const { client } = await getClient();
-  const agentsResult = await client.agents.list({}).catch((error) => {
-    if (error?.status === 401 || error?.status === 403) throw error;
-    return { agents: [] };
-  });
+  const agentsResult = await client.agents.list({}).catch(() => ({ agents: [] }));
   const agents = Array.isArray(agentsResult?.agents) ? agentsResult.agents : [];
   const agent = agents.find((item) => clean(item?.id ?? item?.agentId ?? item?.name) === agentId) ?? null;
   const currentDefaults =

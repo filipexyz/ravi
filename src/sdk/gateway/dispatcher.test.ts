@@ -182,6 +182,10 @@ function executeGroup(objectId: string): ContextCapability {
   return { permission: "execute", objectType: "group", objectId, source: "test" };
 }
 
+function semanticCap(permission: string, objectType: string, objectId: string): ContextCapability {
+  return { permission, objectType, objectId, source: "test" };
+}
+
 function adminSystem(): ContextCapability {
   return { permission: "admin", objectType: "system", objectId: "*", source: "test" };
 }
@@ -364,6 +368,25 @@ describe("dispatch — scope and superadmin gating", () => {
     expect(body.reason).toContain("cannot execute");
     expect(audits.events).toHaveLength(1);
     expect(audits.events[0]?.tool).toBe("gated_ping");
+  });
+
+  it("authorizes gateway calls through command access capabilities without legacy group grants", async () => {
+    const audits = captureAudits();
+    const result = await dispatch(
+      findCmd("gated.ping"),
+      {},
+      {},
+      {
+        contextRecord: gatewayContext([semanticCap("read", "gated", "ping")], "profile-runtime"),
+        emitAudit: audits.emit,
+      },
+    );
+
+    expect(result.response.status).toBe(200);
+    expect(await result.response.json()).toEqual({ ok: true });
+    expect(audits.events).toHaveLength(1);
+    expect(audits.events[0]?.tool).toBe("gated_ping");
+    expect(audits.events[0]?.isError).toBe(false);
   });
 
   it("does not enforce runtime skill gates for API dispatches", async () => {
