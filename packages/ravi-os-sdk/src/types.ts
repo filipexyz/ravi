@@ -166,6 +166,7 @@ export type AgentsDebugReturn = ({
 /** Input shape for `agents.delete`. */
 export type AgentsDeleteInput = {
   id: string;
+  purgeMemory?: boolean;
 };
 
 /** Return shape for `agents.delete`. */
@@ -7910,6 +7911,91 @@ export type MeetingsVoiceRuntimesReturn = {
   defaultRuntimeId: string;
   recommendation: string;
 };
+
+/** Input shape for `memory.curate`. */
+export type MemoryCurateInput = {
+  agent?: string;
+  dryRun?: boolean;
+  transcript?: string;
+};
+
+/** Return shape for `memory.curate`. (no @Returns declared) */
+export type MemoryCurateReturn = unknown;
+
+/** Input shape for `memory.enroll`. */
+export type MemoryEnrollInput = {
+  agent?: string;
+  all?: boolean;
+  cadenceTurns?: string;
+  skipHook?: boolean;
+};
+
+/** Return shape for `memory.enroll`. (no @Returns declared) */
+export type MemoryEnrollReturn = unknown;
+
+/** Input shape for `memory.guard`. */
+export type MemoryGuardInput = {
+  agent?: string;
+  cadenceTurn?: string;
+  candidate?: string;
+  candidateFile?: string;
+  capChars?: string;
+  consolidationAttempt?: string;
+  consolidationMaxAttempts?: string;
+  dryRun?: boolean;
+  expectedPrior?: string;
+  hadUserCorrection?: boolean;
+  hookId?: string;
+  sessionKey?: string;
+  sessionName?: string;
+  store?: string;
+  target?: string;
+  taskId?: string;
+};
+
+/** Return shape for `memory.guard`. */
+export type MemoryGuardReturn = {
+  backupPath?: string;
+  cap: {
+    cap: number;
+    ok: boolean;
+    overflowChars: number;
+    proposedChars: number;
+  };
+  detail?: string;
+  dryRun: boolean;
+  finalChars?: number;
+  outcome: "written" | "rejected" | "drift";
+  reason?: string;
+  scans: {
+    injection: {
+      hadInjection: boolean;
+      matchCount: number;
+    };
+    secret: {
+      hadSecret: boolean;
+      isCredentialOnly: boolean;
+      matchCount: number;
+    };
+  };
+  store: "memory" | "user";
+  target: string;
+};
+
+/** Input shape for `memory.list`. */
+export type MemoryListInput = Record<string, never>;
+
+/** Return shape for `memory.list`. (no @Returns declared) */
+export type MemoryListReturn = unknown;
+
+/** Input shape for `memory.show`. */
+export type MemoryShowInput = {
+  agent?: string;
+  topic?: string;
+};
+
+/** Return shape for `memory.show`. (no @Returns declared) */
+export type MemoryShowReturn = unknown;
 
 /** Input shape for `metrics.dates`. */
 export type MetricsDatesInput = Record<string, never>;
