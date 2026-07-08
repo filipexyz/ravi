@@ -133,12 +133,6 @@ async function handleDispatchTask(
     throw new Error(`Hook ${hook.id} dispatch_task requires a profileId`);
   }
 
-  const title = resolveHookTemplate(payload.title, event).trim();
-  if (!title) {
-    log.debug("Skipping empty dispatch_task title", { hookId: hook.id });
-    return;
-  }
-
   if (typeof payload.cadenceTurns === "number" && payload.cadenceTurns > 0) {
     if (!event.sessionKey) {
       log.warn("dispatch_task cadenceTurns requires event.sessionKey; ignoring cadence", {
@@ -156,7 +150,20 @@ async function handleDispatchTask(
         });
         return;
       }
+      // Expose the counter to downstream templates as `metadata.cadenceTurn`
+      // so the profileInputJson can carry the absolute turn number (R16
+      // provenance). Merged into the event before every render below.
+      event = {
+        ...event,
+        metadata: { ...(event.metadata ?? {}), cadenceTurn: cadenceDecision.turnCount },
+      };
     }
+  }
+
+  const title = resolveHookTemplate(payload.title, event).trim();
+  if (!title) {
+    log.debug("Skipping empty dispatch_task title", { hookId: hook.id });
+    return;
   }
 
   const targetAgentId = resolveOptionalTemplate(payload.targetAgentId, event) ?? event.agentId;

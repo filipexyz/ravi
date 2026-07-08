@@ -120,6 +120,13 @@ export interface NormalizedHookEvent {
   sessionName?: string;
   sessionKey?: string;
   agentId?: string;
+  /**
+   * Working directory of the agent that owns this session — resolved from
+   * SessionEntry.agentCwd. Exposed as a template placeholder so hooks can
+   * derive per-agent paths (e.g. `{{agentCwd}}/MEMORY.md`) without knowing
+   * the agent id at hook-authoring time.
+   */
+  agentCwd?: string;
   taskId?: string;
   cwd?: string;
   workspace?: string;

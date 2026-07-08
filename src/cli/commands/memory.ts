@@ -1,11 +1,19 @@
 import "reflect-metadata";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 import { Command, CommandAccess, Group, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { applyDeterministicGuard, DEFAULT_MEMORY_CAP_CHARS } from "../../memory/index.js";
 import type { MemoryStoreKind } from "../../memory/index.js";
+import { getAgent, getAllAgents } from "../../router/index.js";
+import { dbCreateHook, dbListHooks } from "../../hooks-runtime/index.js";
+import { emitHookRefresh } from "../../hooks-runtime/index.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
+
+const CURATOR_HOOK_NAME = "memory-curator";
+const CURATOR_PROFILE_ID = "curador-memoria";
+const DEFAULT_ENROLL_CADENCE = 10;
 
 @Group({
   name: "memory",
@@ -168,6 +176,181 @@ export class MemoryCommands {
       console.log(JSON.stringify(payload, null, 2));
     }
     return payload;
+  }
+
+  @Command({
+    name: "enroll",
+    description:
+      "Provision automatic memory curation for an agent (or all agents): create MEMORY.md cold-start file + register the global `memory-curator` Stop hook that dispatches curador-memoria on cadence. Idempotent — safe to re-run after every deploy.",
+  })
+  @CommandAccess({ kind: "mutate", resource: "memory", action: "enroll", risk: "medium" })
+  async enroll(
+    @Option({
+      flags: "--agent <id>",
+      description: "Enroll a single agent id (mutually exclusive with --all)",
+    })
+    agent?: string,
+    @Option({
+      flags: "--all",
+      description: "Enroll every registered agent",
+    })
+    all?: boolean,
+    @Option({
+      flags: "--cadence-turns <n>",
+      description: `Turn cadence for the curator hook (default ${DEFAULT_ENROLL_CADENCE})`,
+    })
+    cadenceTurns?: string,
+    @Option({
+      flags: "--skip-hook",
+      description: "Only provision MEMORY.md files; skip creating the memory-curator hook",
+    })
+    skipHook?: boolean,
+    @Option({
+      flags: "--json",
+      description: "Print raw JSON result",
+    })
+    asJson?: boolean,
+  ) {
+    if (agent && all) {
+      fail("--agent and --all are mutually exclusive");
+    }
+    if (!agent && !all) {
+      fail("provide --agent <id> or --all");
+    }
+
+    const cadence = parsePositiveInt(cadenceTurns, "--cadence-turns") ?? DEFAULT_ENROLL_CADENCE;
+    if (cadence <= 0) {
+      fail("--cadence-turns must be positive");
+    }
+
+    const targets = all ? getAllAgents() : [getAgent(agent!)].filter(Boolean);
+    if (targets.length === 0) {
+      fail(agent ? `Agent not found: ${agent}` : "No agents registered");
+    }
+
+    const enrolled: Array<{
+      agentId: string;
+      cwd: string;
+      memoryPath: string;
+      memoryFileCreated: boolean;
+      memoryDirCreated: boolean;
+    }> = [];
+
+    for (const agentConfig of targets) {
+      if (!agentConfig?.cwd) continue;
+      const memoryDir = join(agentConfig.cwd, "memory");
+      const memoryPath = join(agentConfig.cwd, "MEMORY.md");
+      const memoryFileCreated = ensureMemoryFile(memoryPath, agentConfig.id);
+      const memoryDirCreated = ensureDir(memoryDir);
+      enrolled.push({
+        agentId: agentConfig.id,
+        cwd: agentConfig.cwd,
+        memoryPath,
+        memoryFileCreated,
+        memoryDirCreated,
+      });
+    }
+
+    let hookCreated = false;
+    let hookId: string | undefined;
+    const existingHooks = dbListHooks({ enabledOnly: false }).filter(
+      (h) => h.name === CURATOR_HOOK_NAME && h.eventName === "Stop" && h.actionType === "dispatch_task",
+    );
+    if (!skipHook) {
+      if (existingHooks.length === 0) {
+        const created = dbCreateHook({
+          name: CURATOR_HOOK_NAME,
+          eventName: "Stop",
+          scopeType: "global",
+          actionType: "dispatch_task",
+          actionPayload: {
+            profileId: CURATOR_PROFILE_ID,
+            title: `Curate memory for {{agentId}} after Stop turn {{sessionName}}`,
+            targetAgentId: "{{agentId}}",
+            profileInputJson: JSON.stringify({
+              agent_id: "{{agentId}}",
+              transcript_path: "{{agentCwd}}/CURATOR_TRANSCRIPT.md",
+              memory_path: "{{agentCwd}}/MEMORY.md",
+              memory_dir: "{{agentCwd}}/memory",
+              cadence_turn: "{{metadata.cadenceTurn}}",
+              originator: "memory-curator-hook",
+              originator_session: "{{sessionName}}",
+            }),
+            cadenceTurns: cadence,
+          },
+          enabled: true,
+          async: true,
+          cooldownMs: 0,
+        });
+        hookCreated = true;
+        hookId = created.id;
+        await emitHookRefresh();
+      } else {
+        hookId = existingHooks[0]!.id;
+      }
+    }
+
+    const payload = {
+      enrolled,
+      hook: {
+        name: CURATOR_HOOK_NAME,
+        eventName: "Stop" as const,
+        cadenceTurns: cadence,
+        created: hookCreated,
+        ...(hookId ? { id: hookId } : {}),
+        skipped: Boolean(skipHook),
+      },
+    };
+
+    if (asJson === false) {
+      printEnrollSummary(payload);
+    } else {
+      console.log(JSON.stringify(payload, null, 2));
+    }
+    return payload;
+  }
+}
+
+function ensureMemoryFile(memoryPath: string, agentId: string): boolean {
+  if (existsSync(memoryPath)) return false;
+  const parent = dirname(memoryPath);
+  if (!existsSync(parent)) {
+    mkdirSync(parent, { recursive: true });
+  }
+  const seed = `# ${agentId} — auto-memory\n\n## Diário\n\n`;
+  writeFileSync(memoryPath, seed, "utf-8");
+  return true;
+}
+
+function ensureDir(dirPath: string): boolean {
+  if (existsSync(dirPath)) return false;
+  mkdirSync(dirPath, { recursive: true });
+  return true;
+}
+
+function printEnrollSummary(payload: {
+  enrolled: Array<{
+    agentId: string;
+    memoryPath: string;
+    memoryFileCreated: boolean;
+    memoryDirCreated: boolean;
+  }>;
+  hook: { name: string; cadenceTurns: number; created: boolean; skipped: boolean };
+}): void {
+  console.log(`Enrolled ${payload.enrolled.length} agent(s) in deterministic memory curation.`);
+  for (const entry of payload.enrolled) {
+    const marks = [
+      entry.memoryFileCreated ? "MEMORY.md ✓ (new)" : "MEMORY.md · (exists)",
+      entry.memoryDirCreated ? "memory/ ✓ (new)" : "memory/ · (exists)",
+    ];
+    console.log(`  · ${entry.agentId}: ${marks.join(", ")} — ${entry.memoryPath}`);
+  }
+  if (payload.hook.skipped) {
+    console.log(`Hook: SKIPPED (--skip-hook)`);
+  } else if (payload.hook.created) {
+    console.log(`Hook: created ${payload.hook.name} (Stop, cadence ${payload.hook.cadenceTurns})`);
+  } else {
+    console.log(`Hook: exists ${payload.hook.name}`);
   }
 }
 

@@ -273,6 +273,56 @@ describe("hooks-runtime runner", () => {
     expect(dispatchCalls).toHaveLength(0);
   });
 
+  it("dispatch_task expands {{agentCwd}} and {{metadata.cadenceTurn}} in profileInputJson (auto-rollout template)", async () => {
+    const { getOrCreateSession, deleteSession } = await import("../router/sessions.js");
+    const sessionKey = `rollout-${Date.now()}`;
+    const session = getOrCreateSession(sessionKey, "ravi-dev", "/home/ravi/ravi-dev");
+    try {
+      const created = dbCreateHook({
+        name: "memory-curator-auto",
+        eventName: "Stop",
+        scopeType: "session",
+        scopeValue: sessionKey,
+        actionType: "dispatch_task",
+        actionPayload: {
+          profileId: "curador-memoria",
+          title: "Curate memory for {{agentId}}",
+          targetAgentId: "{{agentId}}",
+          profileInputJson: JSON.stringify({
+            agent_id: "{{agentId}}",
+            memory_path: "{{agentCwd}}/MEMORY.md",
+            memory_dir: "{{agentCwd}}/memory",
+            cadence_turn: "{{metadata.cadenceTurn}}",
+            originator_session: "{{sessionName}}",
+          }),
+          cadenceTurns: 1,
+        },
+      });
+      createdHookIds.push(created.id);
+
+      await runHookById(created.id, {
+        eventName: "Stop",
+        source: "test",
+        sessionName: session.name ?? sessionKey,
+        sessionKey,
+        agentId: "ravi-dev",
+        agentCwd: "/home/ravi/ravi-dev",
+        cwd: process.cwd(),
+      });
+
+      expect(createTaskCalls).toHaveLength(1);
+      expect(createTaskCalls[0]!.input.profileInput).toEqual({
+        agent_id: "ravi-dev",
+        memory_path: "/home/ravi/ravi-dev/MEMORY.md",
+        memory_dir: "/home/ravi/ravi-dev/memory",
+        cadence_turn: "1",
+        originator_session: session.name ?? sessionKey,
+      });
+    } finally {
+      deleteSession(sessionKey);
+    }
+  });
+
   it("R1: dispatch_task with cadenceTurns fires exactly every N events on a session", async () => {
     const { getOrCreateSession, getSession, deleteSession } = await import("../router/sessions.js");
     const sessionKey = `cadence-${Date.now()}`;
