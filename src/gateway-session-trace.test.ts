@@ -772,7 +772,7 @@ describe("Gateway session trace instrumentation", () => {
     );
   });
 
-  it("stops active presence from idle runtime status", async () => {
+  it("keeps active presence through idle runtime status", async () => {
     const { sessionName } = seedSession();
     const sendTyping = mock(async () => {});
     const renewActiveTarget = mock(async () => true);
@@ -788,9 +788,84 @@ describe("Gateway session trace instrumentation", () => {
       },
     );
 
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    renewActiveTarget.mockClear();
+    sendTyping.mockClear();
     await handleRuntimePresence(gateway, sessionName, { type: "status", status: "idle", _source: target });
 
     expect(renewActiveTarget).not.toHaveBeenCalled();
+    expect(clearActiveTarget).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "5511999999999@s.whatsapp.net",
+      false,
+    );
+  });
+
+  it("ignores raw provider terminal native events until canonical turn completion", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const renewActiveTarget = mock(async () => true);
+    const clearActiveTarget = mock(async () => {});
+    const target = makeResponse().target!;
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        getActiveTarget: () => target,
+        renewActiveTarget,
+        clearActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    renewActiveTarget.mockClear();
+    sendTyping.mockClear();
+    await handleRuntimePresence(gateway, sessionName, {
+      type: "provider.raw",
+      nativeEvent: "turn.completed",
+      _source: target,
+    });
+
+    expect(renewActiveTarget).not.toHaveBeenCalled();
+    expect(clearActiveTarget).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "5511999999999@s.whatsapp.net",
+      false,
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
+
+    expect(clearActiveTarget).toHaveBeenCalledTimes(1);
+    expect(sendTyping).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "5511999999999@s.whatsapp.net",
+      false,
+    );
+  });
+
+  it("does not repeat terminal presence stop for duplicate terminal events", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const target = makeResponse().target!;
+    let activeTarget: typeof target | undefined = target;
+    const clearActiveTarget = mock(async () => {
+      activeTarget = undefined;
+    });
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        getActiveTarget: () => activeTarget,
+        clearActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
+    sendTyping.mockClear();
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.completed", _source: target });
+
     expect(clearActiveTarget).toHaveBeenCalledTimes(1);
     expect(sendTyping).not.toHaveBeenCalled();
   });
@@ -1039,11 +1114,16 @@ describe("Gateway session trace instrumentation", () => {
 
     const presenceEvents = listSessionEvents(sessionKey).filter((event) => event.eventGroup === "presence");
     expect(clearActiveTarget).toHaveBeenCalledTimes(1);
-    expect(presenceEvents).toHaveLength(1);
+    expect(presenceEvents).toHaveLength(2);
     expect(presenceEvents[0]).toMatchObject({
       eventType: "presence.typing",
       status: "inactive",
       preview: "terminal-clear-active-target inactive",
+    });
+    expect(presenceEvents[1]).toMatchObject({
+      eventType: "presence.typing",
+      status: "inactive",
+      preview: "terminal-active-target-stop inactive",
     });
   });
 
@@ -1066,7 +1146,12 @@ describe("Gateway session trace instrumentation", () => {
     });
 
     expect(clearActiveTarget).toHaveBeenCalledTimes(1);
-    expect(sendTyping).not.toHaveBeenCalled();
+    expect(sendTyping).toHaveBeenCalledTimes(1);
+    expect(sendTyping).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "5511999999999@s.whatsapp.net",
+      false,
+    );
   });
 
   it("stops presence immediately when the response is silent", async () => {

@@ -27,7 +27,6 @@ import { logger } from "./utils/logger.js";
 import type { OmniSender } from "./omni/sender.js";
 import type { OmniConsumer } from "./omni/consumer.js";
 import { getAgentPlatformIdentity, recordOutbound } from "./contacts.js";
-import { SessionTypingTracker } from "./gateway-typing.js";
 import { assertChannelSupportsStickers } from "./channels/capabilities.js";
 import type { StickerSendEvent } from "./stickers/send.js";
 import { getSessionByName } from "./router/index.js";
@@ -124,10 +123,10 @@ export class Gateway {
   private omniConsumer: OmniConsumer;
   private emitEvent: typeof nats.emit;
   private activeSubscriptions = new Set<string>();
-  private typingTracker = new SessionTypingTracker();
   private presenceRenewedAt = new Map<string, number>();
   private activeRuntimeSessions = new Set<string>();
   private terminalRuntimeSessions = new Set<string>();
+  private terminalPresenceStopped = new Set<string>();
   private postDeliveryRenewals = new Map<string, ReturnType<typeof setTimeout>>();
   private interruptedPresenceStops = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -161,24 +160,13 @@ export class Gateway {
   async stop(): Promise<void> {
     log.info("Stopping gateway...");
     this.running = false;
-    this.typingTracker = new SessionTypingTracker();
     this.presenceRenewedAt.clear();
     this.activeRuntimeSessions.clear();
     this.terminalRuntimeSessions.clear();
+    this.terminalPresenceStopped.clear();
     this.clearPostDeliveryRenewals();
     this.clearInterruptedPresenceStops();
     log.info("Gateway stopped");
-  }
-
-  private async sendTypingIfChanged(
-    sessionName: string,
-    target: PresenceTarget,
-    active: boolean,
-    reason = "state-change",
-  ): Promise<void> {
-    if (active && this.isPresenceSuppressed(target)) return;
-    if (!this.typingTracker.shouldEmit(sessionName, active)) return;
-    await this.sendTyping(target, active, { sessionName, reason });
   }
 
   private async sendTyping(
@@ -399,6 +387,7 @@ export class Gateway {
   }
 
   private async stopPresenceForSession(sessionName: string, target?: PresenceTarget): Promise<void> {
+    const alreadyStopped = this.terminalPresenceStopped.has(sessionName);
     this.activeRuntimeSessions.delete(sessionName);
     this.terminalRuntimeSessions.add(sessionName);
     this.presenceRenewedAt.delete(sessionName);
@@ -406,6 +395,8 @@ export class Gateway {
     this.clearInterruptedPresenceStop(sessionName);
 
     const localTarget = this.omniConsumer.getActiveTarget(sessionName) as PresenceTarget | undefined;
+    if (alreadyStopped && !localTarget) return;
+
     if (localTarget) {
       await this.emitPresenceDiagnostic(sessionName, {
         active: false,
@@ -414,6 +405,8 @@ export class Gateway {
         target: localTarget,
       });
       await this.omniConsumer.clearActiveTarget(sessionName);
+      await this.sendTyping(localTarget, false, { sessionName, reason: "terminal-active-target-stop" });
+      this.terminalPresenceStopped.add(sessionName);
       if (target && !this.targetsMatch(localTarget, target)) {
         await this.sendTyping(target, false, { sessionName, reason: "terminal-fallback-stop" });
       }
@@ -421,7 +414,8 @@ export class Gateway {
     }
 
     if (target) {
-      await this.sendTypingIfChanged(sessionName, target, false, "terminal-stop");
+      await this.sendTyping(target, false, { sessionName, reason: "terminal-stop" });
+      this.terminalPresenceStopped.add(sessionName);
     }
   }
 
@@ -464,7 +458,8 @@ export class Gateway {
     }
   }
 
-  private isTerminalRuntimeEvent(type: string | undefined, status?: string, nativeEvent?: string): boolean {
+  private isTerminalRuntimeEvent(type: string | undefined, _status?: string, nativeEvent?: string): boolean {
+    if (type === "provider.raw" || type === "status") return false;
     return (
       type === "result" ||
       type === "silent" ||
@@ -472,12 +467,12 @@ export class Gateway {
       type === "turn.completed" ||
       type === "turn.failed" ||
       type === "session.timeout" ||
-      (type === "status" && status === "idle") ||
-      nativeEvent === "turn.complete" ||
-      nativeEvent === "turn.completed" ||
-      nativeEvent === "turn.failed" ||
-      nativeEvent === "turn/completed" ||
-      nativeEvent === "turn/failed"
+      (!type &&
+        (nativeEvent === "turn.complete" ||
+          nativeEvent === "turn.completed" ||
+          nativeEvent === "turn.failed" ||
+          nativeEvent === "turn/completed" ||
+          nativeEvent === "turn/failed"))
     );
   }
 
@@ -868,6 +863,7 @@ export class Gateway {
     if (this.terminalRuntimeSessions.has(sessionName)) {
       if (!this.isPresenceStartEvent(data.type, data.nativeEvent)) return;
       this.terminalRuntimeSessions.delete(sessionName);
+      this.terminalPresenceStopped.delete(sessionName);
     }
 
     this.clearInterruptedPresenceStop(sessionName);
