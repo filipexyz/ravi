@@ -31,3 +31,11 @@ export {
 } from "./curate.js";
 export { loadGoldenSetFixtures, type GoldenSetFixture } from "./golden-set.js";
 export { dedupeEntries, type DedupOptions, type DedupResult } from "./dedup.js";
+export {
+  agentMemoryPaths,
+  provisionAgentMemory,
+  purgeAgentMemory,
+  type AgentMemoryPaths,
+  type ProvisionAgentMemoryResult,
+  type PurgeAgentMemoryResult,
+} from "./enroll.js";

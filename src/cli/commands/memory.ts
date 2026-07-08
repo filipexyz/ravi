@@ -1,10 +1,9 @@
 import "reflect-metadata";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import { z } from "zod";
 import { Command, CommandAccess, Group, Option } from "../decorators.js";
 import { fail } from "../context.js";
-import { applyDeterministicGuard, DEFAULT_MEMORY_CAP_CHARS } from "../../memory/index.js";
+import { applyDeterministicGuard, DEFAULT_MEMORY_CAP_CHARS, provisionAgentMemory } from "../../memory/index.js";
 import type { MemoryStoreKind } from "../../memory/index.js";
 import { getAgent, getAllAgents } from "../../router/index.js";
 import { dbCreateHook, dbListHooks } from "../../hooks-runtime/index.js";
@@ -238,16 +237,13 @@ export class MemoryCommands {
 
     for (const agentConfig of targets) {
       if (!agentConfig?.cwd) continue;
-      const memoryDir = join(agentConfig.cwd, "memory");
-      const memoryPath = join(agentConfig.cwd, "MEMORY.md");
-      const memoryFileCreated = ensureMemoryFile(memoryPath, agentConfig.id);
-      const memoryDirCreated = ensureDir(memoryDir);
+      const provision = provisionAgentMemory(agentConfig.id, agentConfig.cwd);
       enrolled.push({
         agentId: agentConfig.id,
         cwd: agentConfig.cwd,
-        memoryPath,
-        memoryFileCreated,
-        memoryDirCreated,
+        memoryPath: provision.memoryPath,
+        memoryFileCreated: provision.memoryFileCreated,
+        memoryDirCreated: provision.memoryDirCreated,
       });
     }
 
@@ -309,23 +305,6 @@ export class MemoryCommands {
     }
     return payload;
   }
-}
-
-function ensureMemoryFile(memoryPath: string, agentId: string): boolean {
-  if (existsSync(memoryPath)) return false;
-  const parent = dirname(memoryPath);
-  if (!existsSync(parent)) {
-    mkdirSync(parent, { recursive: true });
-  }
-  const seed = `# ${agentId} — auto-memory\n\n## Diário\n\n`;
-  writeFileSync(memoryPath, seed, "utf-8");
-  return true;
-}
-
-function ensureDir(dirPath: string): boolean {
-  if (existsSync(dirPath)) return false;
-  mkdirSync(dirPath, { recursive: true });
-  return true;
 }
 
 function printEnrollSummary(payload: {

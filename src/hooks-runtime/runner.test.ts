@@ -273,6 +273,33 @@ describe("hooks-runtime runner", () => {
     expect(dispatchCalls).toHaveLength(0);
   });
 
+  it("anti-reentrancy: dispatch_task does NOT fire on a session name ending in -curator", async () => {
+    const created = dbCreateHook({
+      name: "reentry-block",
+      eventName: "Stop",
+      scopeType: "global",
+      actionType: "dispatch_task",
+      actionPayload: {
+        profileId: "curador-memoria",
+        title: "curate {{sessionName}}",
+        targetAgentId: "ravi-dev",
+      },
+    });
+    createdHookIds.push(created.id);
+
+    await runHookById(created.id, {
+      eventName: "Stop",
+      source: "test",
+      sessionName: "task-abc123-curator",
+      sessionKey: "sk-curator-abc",
+      agentId: "ravi-dev",
+      cwd: process.cwd(),
+    });
+
+    expect(createTaskCalls).toHaveLength(0);
+    expect(dispatchCalls).toHaveLength(0);
+  });
+
   it("dispatch_task expands {{agentCwd}} and {{metadata.cadenceTurn}} in profileInputJson (auto-rollout template)", async () => {
     const { getOrCreateSession, deleteSession } = await import("../router/sessions.js");
     const sessionKey = `rollout-${Date.now()}`;

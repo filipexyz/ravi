@@ -3,7 +3,7 @@ import { saveMessage } from "../db.js";
 import { advanceCurationCounter, readMemoryCurationState, writeMemoryCurationState } from "../memory/index.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { getSession, updateRuntimeProviderState } from "../router/index.js";
-import { commentTask, createTask, queueOrDispatchTask } from "../tasks/index.js";
+import { commentTask, createTask, listTasks, queueOrDispatchTask } from "../tasks/index.js";
 import { logger } from "../utils/logger.js";
 import { resolveHookTemplate } from "./template.js";
 import type {
@@ -133,6 +133,19 @@ async function handleDispatchTask(
     throw new Error(`Hook ${hook.id} dispatch_task requires a profileId`);
   }
 
+  // Anti-reentrancy: a session whose name ends in `-curator` is itself a
+  // curator task session, and its `turn.complete` MUST NOT dispatch another
+  // curator on top of it (infinite loop). Also skip when the firing session
+  // is already handling a task of the same profile.
+  if (isCuratorReentry(event, profileId.trim())) {
+    log.debug("dispatch_task anti-reentrancy: skipping curator-on-curator", {
+      hookId: hook.id,
+      sessionName: event.sessionName,
+      profileId: profileId.trim(),
+    });
+    return;
+  }
+
   if (typeof payload.cadenceTurns === "number" && payload.cadenceTurns > 0) {
     if (!event.sessionKey) {
       log.warn("dispatch_task cadenceTurns requires event.sessionKey; ignoring cadence", {
@@ -222,6 +235,24 @@ async function handleDispatchTask(
     profileId,
     targetAgentId,
   });
+}
+
+function isCuratorReentry(event: NormalizedHookEvent, profileId: string): boolean {
+  const sessionName = event.sessionName ?? "";
+  if (sessionName.endsWith("-curator")) {
+    return true;
+  }
+  if (sessionName && event.taskId) {
+    // A profile-tagged task in flight — same-profile Stop is the curator
+    // returning; do not chain another curator on top of it.
+    const activeSameProfileTasks = listTasks({ sessionName });
+    for (const task of activeSameProfileTasks) {
+      if (task.profileId === profileId && (task.status === "in_progress" || task.status === "dispatched")) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function advanceSessionCadence(sessionKey: string, cadenceTurns: number): { shouldCurate: boolean; turnCount: number } {
