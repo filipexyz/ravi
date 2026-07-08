@@ -29,6 +29,8 @@ type RuntimePresenceEventData = {
   status?: string;
   nativeEvent?: string;
   nextTurnQueued?: boolean;
+  queueSize?: number;
+  source?: NonNullable<ResponseMessage["target"]>;
   _source?: NonNullable<ResponseMessage["target"]>;
 };
 
@@ -775,6 +777,46 @@ describe("Gateway session trace instrumentation", () => {
       .interruptedPresenceStops;
     expect(interruptedStops.has(sessionName)).toBe(false);
     expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), false);
+  });
+
+  it("ignores stale terminal events while an interrupted turn replacement is starting", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const clearActiveTarget = mock(async () => {});
+    const oldTarget = makeResponse().target!;
+    const newTarget = { ...oldTarget, sourceMessageId: "inbound-2" };
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        getActiveTarget: () => oldTarget,
+        renewActiveTarget: mock(async () => true),
+        clearActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.started", _source: oldTarget });
+    await handleRuntimePresence(gateway, sessionName, {
+      type: "turn.interrupt.requested",
+      queueSize: 2,
+      _source: newTarget,
+    });
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: oldTarget });
+
+    expect(clearActiveTarget).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), false);
+
+    await handleRuntimePresence(gateway, sessionName, {
+      type: "status",
+      status: "thinking",
+      nativeEvent: "turn.started",
+      _source: newTarget,
+    });
+
+    const pendingReplacementStops = (
+      gateway as unknown as { pendingReplacementTurnStops: Map<string, unknown> }
+    ).pendingReplacementTurnStops;
+    expect(pendingReplacementStops.has(sessionName)).toBe(false);
   });
 
   it("forces presence renewal from the event source on cross-daemon interrupts", async () => {

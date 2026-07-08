@@ -1004,7 +1004,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         : {}),
     });
 
-  const nextTurnQueued = () => streaming.pendingMessages.length > 0;
+  const nextTurnQueued = () => {
+    const currentTurnPendingIds = new Set(streaming.currentTurnPendingIds ?? []);
+    if (currentTurnPendingIds.size === 0) {
+      return streaming.pendingMessages.length > 0;
+    }
+    return streaming.pendingMessages.some(
+      (message) => !message.pendingId || !currentTurnPendingIds.has(message.pendingId),
+    );
+  };
 
   const patchQueuedTurnLiveState = (skillVisibility?: RuntimeSkillVisibilitySnapshot) =>
     patchLiveState(
@@ -1878,18 +1886,22 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.currentTurnToolStarted = false;
         streaming.turnActive = false;
         clearTraceTurnState();
-        patchLiveState(
-          {
-            activity: "idle",
-            summary: "turn complete",
-            agentId: agent.id,
-            runId,
-            provider: runtimeSession.provider,
-            model,
-            source: streaming.currentSource,
-          },
-          terminalSkillVisibility,
-        );
+        if (nextTurnQueued()) {
+          patchQueuedTurnLiveState(terminalSkillVisibility);
+        } else {
+          patchLiveState(
+            {
+              activity: "idle",
+              summary: "turn complete",
+              agentId: agent.id,
+              runId,
+              provider: runtimeSession.provider,
+              model,
+              source: streaming.currentSource,
+            },
+            terminalSkillVisibility,
+          );
+        }
 
         // Signal generator to continue (it will clear or keep queue based on interrupted flag)
         signalTurnComplete();
@@ -1967,6 +1979,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             reason: internalAbortReason ?? "recoverable_interrupt_failure",
             rawEvent: event.rawEvent,
             metadata: event.metadata,
+            nextTurnQueued: nextTurnQueued(),
           });
           recordTerminalTraceOnce({
             status: "interrupted",

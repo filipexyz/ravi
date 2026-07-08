@@ -1030,6 +1030,14 @@ describe("runtime session trace instrumentation", () => {
   });
 
   it("keeps live state active and emits queued-turn metadata when interrupted with pending work", async () => {
+    const current = createQueuedRuntimeUserMessage({
+      prompt: "current prompt",
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "explicit",
+      source,
+      _agentId: AGENT_ID,
+      _runtimeProviderId: PROVIDER,
+    });
     const queued = createQueuedRuntimeUserMessage({
       prompt: "replacement prompt",
       deliveryBarrier: "after_response",
@@ -1039,7 +1047,8 @@ describe("runtime session trace instrumentation", () => {
       _runtimeProviderId: PROVIDER,
     });
     const streaming = makeStreamingSession({
-      pendingMessages: [queued],
+      pendingMessages: [current, queued],
+      currentTurnPendingIds: current.pendingId ? [current.pendingId] : [],
     });
     seedAdapterTrace(streaming, "turn-interrupted-queued");
     const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
@@ -1057,6 +1066,37 @@ describe("runtime session trace instrumentation", () => {
     expect(emitted.some((event) => event.data.type === "turn.interrupted" && event.data.nextTurnQueued === true)).toBe(
       true,
     );
+  });
+
+  it("does not treat the current pending message as queued replacement work", async () => {
+    const current = createQueuedRuntimeUserMessage({
+      prompt: "current prompt",
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "explicit",
+      source,
+      _agentId: AGENT_ID,
+      _runtimeProviderId: PROVIDER,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [current],
+      currentTurnPendingIds: current.pendingId ? [current.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-interrupted-current-only");
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(streaming, makeRuntimeSession([{ type: "turn.interrupted" }]), {
+      safeEmit: async (topic, data) => {
+        emitted.push({ topic, data });
+      },
+    });
+
+    expect(getRuntimeLiveStateForSession(makeSession())).toMatchObject({
+      activity: "idle",
+      summary: "turn interrupted",
+    });
+    expect(
+      emitted.some((event) => event.data.type === "turn.interrupted" && event.data.nextTurnQueued === true),
+    ).toBe(false);
   });
 
   it("records failed turns with error details", async () => {

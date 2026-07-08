@@ -96,6 +96,7 @@ type PresenceTarget = {
   instanceId?: string;
   chatId: string;
   threadId?: string;
+  sourceMessageId?: string;
   suppressPresence?: boolean;
 };
 type MessageDeleteRequest = {
@@ -125,10 +126,12 @@ export class Gateway {
   private activeSubscriptions = new Set<string>();
   private presenceRenewedAt = new Map<string, number>();
   private activeRuntimeSessions = new Set<string>();
+  private activeRuntimeSources = new Map<string, PresenceTarget>();
   private terminalRuntimeSessions = new Set<string>();
   private terminalPresenceStopped = new Set<string>();
   private postDeliveryRenewals = new Map<string, ReturnType<typeof setTimeout>>();
   private interruptedPresenceStops = new Map<string, ReturnType<typeof setTimeout>>();
+  private pendingReplacementTurnStops = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(options: GatewayOptions) {
     this.omniSender = options.omniSender;
@@ -162,10 +165,12 @@ export class Gateway {
     this.running = false;
     this.presenceRenewedAt.clear();
     this.activeRuntimeSessions.clear();
+    this.activeRuntimeSources.clear();
     this.terminalRuntimeSessions.clear();
     this.terminalPresenceStopped.clear();
     this.clearPostDeliveryRenewals();
     this.clearInterruptedPresenceStops();
+    this.clearPendingReplacementTurnStops();
     log.info("Gateway stopped");
   }
 
@@ -322,6 +327,19 @@ export class Gateway {
     return !!leftKey && leftKey === rightKey;
   }
 
+  private markRuntimeSessionActive(sessionName: string, target?: PresenceTarget): void {
+    this.activeRuntimeSessions.add(sessionName);
+    if (target) {
+      this.activeRuntimeSources.set(sessionName, target);
+    }
+  }
+
+  private isStaleTerminalSource(sessionName: string, target: PresenceTarget | undefined): boolean {
+    const activeSource = this.activeRuntimeSources.get(sessionName);
+    if (!target?.sourceMessageId || !activeSource?.sourceMessageId) return false;
+    return target.sourceMessageId !== activeSource.sourceMessageId && this.targetsMatch(target, activeSource);
+  }
+
   private async renewActiveTargetIfCurrent(sessionName: string, expectedTarget: PresenceTarget): Promise<boolean> {
     const activeTarget = this.omniConsumer.getActiveTarget(sessionName) as PresenceTarget | undefined;
     if (!activeTarget) return false;
@@ -366,11 +384,44 @@ export class Gateway {
     this.interruptedPresenceStops.clear();
   }
 
+  private clearPendingReplacementTurnStops(): void {
+    for (const timer of this.pendingReplacementTurnStops.values()) {
+      clearTimeout(timer);
+    }
+    this.pendingReplacementTurnStops.clear();
+  }
+
   private clearInterruptedPresenceStop(sessionName: string): void {
     const timer = this.interruptedPresenceStops.get(sessionName);
     if (!timer) return;
     clearTimeout(timer);
     this.interruptedPresenceStops.delete(sessionName);
+  }
+
+  private clearPendingReplacementTurnStop(sessionName: string): void {
+    const timer = this.pendingReplacementTurnStops.get(sessionName);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.pendingReplacementTurnStops.delete(sessionName);
+  }
+
+  private hasPendingReplacementTurn(sessionName: string): boolean {
+    return this.pendingReplacementTurnStops.has(sessionName);
+  }
+
+  private markPendingReplacementTurn(sessionName: string, target: PresenceTarget | undefined): void {
+    this.clearPendingReplacementTurnStop(sessionName);
+    this.markRuntimeSessionActive(sessionName, target);
+    const timer = setTimeout(() => {
+      this.pendingReplacementTurnStops.delete(sessionName);
+      if (!this.running) return;
+      this.activeRuntimeSessions.delete(sessionName);
+      this.stopPresenceForSession(sessionName, target).catch((error) => {
+        log.debug("Pending replacement presence cleanup failed", { sessionName, error });
+      });
+    }, INTERRUPTED_PRESENCE_GRACE_MS);
+    timer.unref?.();
+    this.pendingReplacementTurnStops.set(sessionName, timer);
   }
 
   private scheduleInterruptedPresenceStop(sessionName: string, target: PresenceTarget | undefined): void {
@@ -392,10 +443,12 @@ export class Gateway {
   private async stopPresenceForSession(sessionName: string, target?: PresenceTarget): Promise<void> {
     const alreadyStopped = this.terminalPresenceStopped.has(sessionName);
     this.activeRuntimeSessions.delete(sessionName);
+    this.activeRuntimeSources.delete(sessionName);
     this.terminalRuntimeSessions.add(sessionName);
     this.presenceRenewedAt.delete(sessionName);
     this.clearPostDeliveryRenewal(sessionName);
     this.clearInterruptedPresenceStop(sessionName);
+    this.clearPendingReplacementTurnStop(sessionName);
 
     const localTarget = this.omniConsumer.getActiveTarget(sessionName) as PresenceTarget | undefined;
     if (alreadyStopped && !localTarget) return;
@@ -818,11 +871,17 @@ export class Gateway {
           status?: string;
           nativeEvent?: string;
           nextTurnQueued?: boolean;
+          queueSize?: number;
+          source?: PresenceTarget & { sourceMessageId?: string };
           _source?: PresenceTarget & { sourceMessageId?: string };
         };
 
         const eventType = event.topic.endsWith(".stream") ? "stream.chunk" : data.type;
-        await this.handleRuntimePresenceEvent(sessionName, { ...data, type: eventType });
+        await this.handleRuntimePresenceEvent(sessionName, {
+          ...data,
+          type: eventType,
+          _source: data._source ?? data.source,
+        });
       },
     );
   }
@@ -834,11 +893,26 @@ export class Gateway {
       status?: string;
       nativeEvent?: string;
       nextTurnQueued?: boolean;
+      queueSize?: number;
+      source?: PresenceTarget & { sourceMessageId?: string };
       _source?: PresenceTarget & { sourceMessageId?: string };
     },
   ): Promise<void> {
+    if (data.type === "turn.interrupt.requested" && (data.queueSize ?? 0) > 0) {
+      if (this.isPresenceSuppressed(data._source)) return;
+      this.markPendingReplacementTurn(sessionName, data._source);
+      if (data._source) {
+        await this.forceRenewTyping(sessionName, data._source);
+      } else {
+        await this.omniConsumer.renewActiveTarget(sessionName);
+        this.presenceRenewedAt.set(sessionName, Date.now());
+      }
+      return;
+    }
+
     if (data.type === "turn.interrupted") {
-      const hasQueuedTurn = data.nextTurnQueued === true;
+      const staleTerminal = this.isStaleTerminalSource(sessionName, data._source);
+      const hasQueuedTurn = data.nextTurnQueued === true || this.hasPendingReplacementTurn(sessionName) || staleTerminal;
       if (this.terminalRuntimeSessions.has(sessionName)) {
         if (!hasQueuedTurn) return;
         this.terminalRuntimeSessions.delete(sessionName);
@@ -848,14 +922,14 @@ export class Gateway {
         await this.stopPresenceForSession(sessionName, data._source);
         return;
       }
-      if (data._source) {
+      if (data._source && !staleTerminal) {
         await this.forceRenewTyping(sessionName, data._source);
       } else {
         await this.omniConsumer.renewActiveTarget(sessionName);
       }
       if (hasQueuedTurn) {
         this.clearInterruptedPresenceStop(sessionName);
-        this.activeRuntimeSessions.add(sessionName);
+        this.markRuntimeSessionActive(sessionName, staleTerminal ? undefined : data._source);
       } else {
         this.activeRuntimeSessions.delete(sessionName);
         this.scheduleInterruptedPresenceStop(sessionName, data._source);
@@ -864,6 +938,9 @@ export class Gateway {
     }
 
     if (this.isTerminalRuntimeEvent(data.type, data.status, data.nativeEvent)) {
+      if (this.hasPendingReplacementTurn(sessionName) || this.isStaleTerminalSource(sessionName, data._source)) {
+        return;
+      }
       await this.stopPresenceForSession(sessionName, data._source);
       return;
     }
@@ -882,8 +959,11 @@ export class Gateway {
       this.terminalPresenceStopped.delete(sessionName);
     }
 
+    if (this.isPresenceStartEvent(data.type, data.nativeEvent)) {
+      this.clearPendingReplacementTurnStop(sessionName);
+    }
     this.clearInterruptedPresenceStop(sessionName);
-    this.activeRuntimeSessions.add(sessionName);
+    this.markRuntimeSessionActive(sessionName, data._source);
     await this.renewTypingForRuntimeActivity(sessionName, data);
   }
 
