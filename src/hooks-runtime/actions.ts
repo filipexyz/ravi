@@ -1,6 +1,8 @@
 import { requireDeliveryBarrier } from "../delivery-barriers.js";
 import { saveMessage } from "../db.js";
+import { advanceCurationCounter, readMemoryCurationState, writeMemoryCurationState } from "../memory/index.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
+import { getSession, updateRuntimeProviderState } from "../router/index.js";
 import { commentTask, createTask, queueOrDispatchTask } from "../tasks/index.js";
 import { logger } from "../utils/logger.js";
 import { resolveHookTemplate } from "./template.js";
@@ -137,6 +139,26 @@ async function handleDispatchTask(
     return;
   }
 
+  if (typeof payload.cadenceTurns === "number" && payload.cadenceTurns > 0) {
+    if (!event.sessionKey) {
+      log.warn("dispatch_task cadenceTurns requires event.sessionKey; ignoring cadence", {
+        hookId: hook.id,
+        cadenceTurns: payload.cadenceTurns,
+      });
+    } else {
+      const cadenceDecision = advanceSessionCadence(event.sessionKey, payload.cadenceTurns);
+      if (!cadenceDecision.shouldCurate) {
+        log.debug("dispatch_task cadence gate: skip this turn", {
+          hookId: hook.id,
+          sessionKey: event.sessionKey,
+          turnCount: cadenceDecision.turnCount,
+          cadenceTurns: payload.cadenceTurns,
+        });
+        return;
+      }
+    }
+  }
+
   const targetAgentId = resolveOptionalTemplate(payload.targetAgentId, event) ?? event.agentId;
   const instructions = resolveOptionalTemplate(payload.instructions, event);
 
@@ -193,6 +215,23 @@ async function handleDispatchTask(
     profileId,
     targetAgentId,
   });
+}
+
+function advanceSessionCadence(sessionKey: string, cadenceTurns: number): { shouldCurate: boolean; turnCount: number } {
+  const session = getSession(sessionKey);
+  if (!session) {
+    log.warn("dispatch_task cadence: session not found; treating as skip", { sessionKey });
+    return { shouldCurate: false, turnCount: 0 };
+  }
+  const current = readMemoryCurationState(session, cadenceTurns);
+  // Honor a cadence change made after the hook was persisted with a different value.
+  const withRequestedCadence = current.cadenceTurns === cadenceTurns ? current : { ...current, cadenceTurns };
+  const advanced = advanceCurationCounter(withRequestedCadence);
+  const nextParams = writeMemoryCurationState(session, advanced.next);
+  updateRuntimeProviderState(sessionKey, session.runtimeProvider, {
+    runtimeSessionParams: nextParams,
+  });
+  return { shouldCurate: advanced.shouldCurate, turnCount: advanced.next.turnCount };
 }
 
 export async function executeHookAction(hook: HookRecord, event: NormalizedHookEvent): Promise<HookExecutionResult> {

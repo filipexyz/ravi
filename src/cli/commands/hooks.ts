@@ -119,6 +119,7 @@ function buildActionPayload(
     dispatchTargetAgent?: string;
     dispatchInstructions?: string;
     dispatchProfileInput?: string;
+    dispatchCadenceTurns?: string;
   },
 ): HookActionPayload {
   switch (actionType) {
@@ -176,12 +177,21 @@ function buildActionPayload(
           fail(`--dispatch-profile-input must be valid JSON: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
+      let cadenceTurns: number | undefined;
+      if (input.dispatchCadenceTurns?.trim()) {
+        const parsed = Number.parseInt(input.dispatchCadenceTurns.trim(), 10);
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+          fail("--dispatch-cadence-turns must be a positive integer");
+        }
+        cadenceTurns = parsed;
+      }
       return {
         profileId: input.dispatchProfile.trim(),
         title: input.dispatchTitle.trim(),
         ...(input.dispatchTargetAgent?.trim() ? { targetAgentId: input.dispatchTargetAgent.trim() } : {}),
         ...(input.dispatchInstructions?.trim() ? { instructions: input.dispatchInstructions.trim() } : {}),
         ...(input.dispatchProfileInput?.trim() ? { profileInputJson: input.dispatchProfileInput.trim() } : {}),
+        ...(cadenceTurns !== undefined ? { cadenceTurns } : {}),
       };
     }
   }
@@ -366,6 +376,12 @@ export class HooksCommands {
       description: "JSON string with profile inputs for dispatch_task payload",
     })
     dispatchProfileInput?: string,
+    @Option({
+      flags: "--dispatch-cadence-turns <n>",
+      description:
+        "R1 deterministic cadence: only fire dispatch_task every N events on the session (requires event.sessionKey)",
+    })
+    dispatchCadenceTurns?: string,
   ) {
     const eventName = normalizeEventName(event);
     const actionType = normalizeActionType(action);
@@ -398,6 +414,7 @@ export class HooksCommands {
         dispatchTargetAgent,
         dispatchInstructions,
         dispatchProfileInput,
+        dispatchCadenceTurns,
       }),
       enabled: disabled !== true,
       async: asyncMode === true,

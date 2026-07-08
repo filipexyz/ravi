@@ -272,5 +272,138 @@ describe("hooks-runtime runner", () => {
     expect(createTaskCalls).toHaveLength(1);
     expect(dispatchCalls).toHaveLength(0);
   });
+
+  it("R1: dispatch_task with cadenceTurns fires exactly every N events on a session", async () => {
+    const { getOrCreateSession, getSession, deleteSession } = await import("../router/sessions.js");
+    const sessionKey = `cadence-${Date.now()}`;
+    const session = getOrCreateSession(sessionKey, "ravi-dev", process.cwd());
+    try {
+      const created = dbCreateHook({
+        name: "memory-cadence",
+        eventName: "Stop",
+        scopeType: "session",
+        scopeValue: sessionKey,
+        actionType: "dispatch_task",
+        actionPayload: {
+          profileId: "default",
+          title: "Curate memory turn {{sessionKey}}",
+          targetAgentId: "curator-agent",
+          cadenceTurns: 3,
+        },
+      });
+      createdHookIds.push(created.id);
+
+      const eventBase = {
+        eventName: "Stop" as const,
+        source: "test",
+        sessionName: session.name ?? sessionKey,
+        sessionKey,
+        agentId: "ravi-dev",
+        cwd: process.cwd(),
+      };
+
+      for (let i = 0; i < 5; i += 1) {
+        await runHookById(created.id, eventBase);
+      }
+
+      // Cadence 3: fires at turn 3 only (turns 1, 2, 4, 5 don't hit the boundary).
+      expect(createTaskCalls).toHaveLength(1);
+      expect(dispatchCalls).toHaveLength(1);
+
+      const persisted = getSession(sessionKey);
+      const curationState = persisted?.runtimeSessionParams?.memoryCuration as
+        | { turnCount?: number; lastCuratedTurn?: number; cadenceTurns?: number }
+        | undefined;
+      expect(curationState).toEqual({ turnCount: 5, lastCuratedTurn: 3, cadenceTurns: 3 });
+    } finally {
+      deleteSession(sessionKey);
+    }
+  });
+
+  it("R1b: dispatch_task cadence resume-aligned (state persisted before restart)", async () => {
+    const { getOrCreateSession, getSession, updateRuntimeProviderState, deleteSession } = await import(
+      "../router/sessions.js"
+    );
+    const sessionKey = `resume-${Date.now()}`;
+    const session = getOrCreateSession(sessionKey, "ravi-dev", process.cwd());
+    // Simulate a session persisted at turn 7 with cadence 10 (pre-restart state).
+    updateRuntimeProviderState(sessionKey, session.runtimeProvider, {
+      runtimeSessionParams: {
+        memoryCuration: { turnCount: 7, lastCuratedTurn: 0, cadenceTurns: 10 },
+      },
+    });
+
+    try {
+      const created = dbCreateHook({
+        name: "memory-resume",
+        eventName: "Stop",
+        scopeType: "session",
+        scopeValue: sessionKey,
+        actionType: "dispatch_task",
+        actionPayload: {
+          profileId: "default",
+          title: "Curate on resume",
+          targetAgentId: "curator-agent",
+          cadenceTurns: 10,
+        },
+      });
+      createdHookIds.push(created.id);
+
+      const eventBase = {
+        eventName: "Stop" as const,
+        source: "test",
+        sessionName: session.name ?? sessionKey,
+        sessionKey,
+        agentId: "ravi-dev",
+        cwd: process.cwd(),
+      };
+
+      // Two events to reach turn 9 — should NOT fire.
+      await runHookById(created.id, eventBase);
+      await runHookById(created.id, eventBase);
+      expect(createTaskCalls).toHaveLength(0);
+
+      // Third event: turn 10 (not 17). R1b: cadence phase survives restart.
+      await runHookById(created.id, eventBase);
+      expect(createTaskCalls).toHaveLength(1);
+
+      const persisted = getSession(sessionKey);
+      const curationState = persisted?.runtimeSessionParams?.memoryCuration as
+        | { turnCount?: number; lastCuratedTurn?: number }
+        | undefined;
+      expect(curationState?.turnCount).toBe(10);
+      expect(curationState?.lastCuratedTurn).toBe(10);
+    } finally {
+      deleteSession(sessionKey);
+    }
+  });
+
+  it("dispatch_task ignores cadence gate (falls back to always-fire) when sessionKey is absent", async () => {
+    const created = dbCreateHook({
+      name: "cadence-no-session",
+      eventName: "Stop",
+      scopeType: "global",
+      actionType: "dispatch_task",
+      actionPayload: {
+        profileId: "default",
+        title: "Fire anyway",
+        cadenceTurns: 3,
+      },
+    });
+    createdHookIds.push(created.id);
+
+    await runHookById(created.id, {
+      eventName: "Stop",
+      source: "test",
+      cwd: process.cwd(),
+    });
+    await runHookById(created.id, {
+      eventName: "Stop",
+      source: "test",
+      cwd: process.cwd(),
+    });
+
+    expect(createTaskCalls).toHaveLength(2);
+  });
 });
 afterAll(() => mock.restore());

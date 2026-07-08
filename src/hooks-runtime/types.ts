@@ -57,6 +57,14 @@ export interface DispatchTaskActionPayload {
   targetAgentId?: string;
   instructions?: string;
   profileInputJson?: string;
+  /**
+   * R1 — deterministic per-turn cadence. When set (>0), the handler advances
+   * a counter stored under `runtimeSessionParams.memoryCuration` on the
+   * event's session and only creates the task when
+   * `turnCount % cadenceTurns === 0`. Requires event.sessionKey; without it,
+   * cadence is ignored and the task fires every event (see runner behavior).
+   */
+  cadenceTurns?: number;
 }
 
 export type HookActionPayload =
