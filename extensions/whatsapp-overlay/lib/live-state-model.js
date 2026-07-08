@@ -113,7 +113,12 @@ function applyApprovalEvent(current, topic, data, timestamp) {
 }
 
 function nextActivity(previousActivity, kind, data) {
-  if (kind === "stream" || kind === "response") return "streaming";
+  if (kind === "stream") return "streaming";
+  if (kind === "response") {
+    return isBusyLiveActivity(previousActivity)
+      ? "streaming"
+      : previousActivity || "idle";
+  }
   if (kind === "prompt") return "thinking";
   if (kind === "tool") {
     if (data.event === "end" && data.isError) return "blocked";

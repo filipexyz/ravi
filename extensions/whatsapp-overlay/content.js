@@ -8624,14 +8624,14 @@ const SESSION_TRACE_EVENT_PRESENTERS = {
   "response.emitted": {
     kind: "response.emitted",
     category: "out",
-    activity: "streaming",
+    activity: "idle",
     label: "resposta emitida",
     detail: (event) => tracePreview(event, "saída enviada ao gateway"),
   },
   "delivery.delivered": {
     kind: "delivery.delivered",
     category: "delivery",
-    activity: "streaming",
+    activity: "idle",
     label: "entrega confirmada",
     detail: (event) => traceStatusDetail(event, "mensagem entregue"),
   },
@@ -8652,7 +8652,7 @@ const SESSION_TRACE_EVENT_PRESENTERS = {
   "turn.complete": {
     kind: "turn.complete",
     category: "runtime",
-    activity: "streaming",
+    activity: "idle",
     label: "turno concluído",
     detail: (event) => traceDurationDetail(event, "runtime finalizou"),
   },
@@ -8680,8 +8680,8 @@ const SESSION_TRACE_GROUP_PRESENTERS = {
   runtime: { category: "runtime", activity: "thinking", label: "evento de runtime" },
   adapter: { category: "tool", activity: "thinking", label: "evento do provider" },
   tool: { category: "tool", activity: "thinking", label: "evento de tool" },
-  response: { category: "out", activity: "streaming", label: "evento de resposta" },
-  delivery: { category: "delivery", activity: "streaming", label: "evento de entrega" },
+  response: { category: "out", activity: "idle", label: "evento de resposta" },
+  delivery: { category: "delivery", activity: "idle", label: "evento de entrega" },
 };
 
 const SESSION_TRACE_IGNORED_EVENT_TYPES = new Set(["presence.typing"]);

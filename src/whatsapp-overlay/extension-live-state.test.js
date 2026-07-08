@@ -61,6 +61,29 @@ describe("whatsapp overlay extension live-state model", () => {
     expect(response?.live.events?.[0]).toMatchObject({ kind: "response", detail: "feito" });
   });
 
+  it("does not reactivate an idle turn when a final response arrives after terminal state", () => {
+    const running = applyGatewayTopicEvent(undefined, {
+      topic: "ravi.session.dev.runtime",
+      timestamp: "2026-04-29T18:00:00.000Z",
+      data: { type: "prompt.received", prompt: "boa" },
+    });
+    const terminal = applyGatewayTopicEvent(running?.live, {
+      topic: "ravi.session.dev.runtime",
+      timestamp: "2026-04-29T18:00:03.000Z",
+      data: { type: "turn.complete" },
+    });
+
+    const lateResponse = applyGatewayTopicEvent(terminal?.live, {
+      topic: "ravi.session.dev.response",
+      timestamp: "2026-04-29T18:00:02.000Z",
+      data: { response: "valeu" },
+    });
+
+    expect(lateResponse?.live.activity).toBe("idle");
+    expect(lateResponse?.live.busySince).toBeUndefined();
+    expect(lateResponse?.live.summary).toBe("valeu");
+  });
+
   it("expires stale busy state back to idle", () => {
     const live = normalizeLiveState(
       {
