@@ -29973,6 +29973,10 @@ export const HooksCreateInputSchema = {
       "description": "Create hook disabled",
       "type": "boolean"
     },
+    "dispatchCadenceTurns": {
+      "description": "R1 deterministic cadence: only fire dispatch_task every N events on the session (requires event.sessionKey)",
+      "type": "string"
+    },
     "dispatchInstructions": {
       "description": "Instructions template for dispatch_task payload",
       "type": "string"
