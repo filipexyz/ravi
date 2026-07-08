@@ -1004,6 +1004,22 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         : {}),
     });
 
+  const nextTurnQueued = () => streaming.pendingMessages.length > 0;
+
+  const patchQueuedTurnLiveState = (skillVisibility?: RuntimeSkillVisibilitySnapshot) =>
+    patchLiveState(
+      {
+        activity: streaming.compacting ? "compacting" : "thinking",
+        summary: streaming.compacting ? "compacting" : "next turn queued",
+        agentId: agent.id,
+        runId,
+        provider: runtimeSession.provider,
+        model,
+        source: streaming.currentSource,
+      },
+      skillVisibility,
+    );
+
   const runtimeSkillVisibilityFromParams = (params: Record<string, unknown> | undefined) => {
     if (isRecord(params?.skillVisibility)) {
       return readSkillVisibilityFromParams(params);
@@ -1230,11 +1246,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
 
       if (event.type !== "turn.failed") {
-        await emitRuntimeEvent(
+        const runtimeEvent =
           event.type === "provider.raw"
             ? buildProviderRawRuntimeEvent(runtimeSession.provider, event.rawEvent, event.metadata)
-            : { ...event, provider: runtimeSession.provider },
-        );
+            : event.type === "turn.interrupted"
+              ? { ...event, provider: runtimeSession.provider, nextTurnQueued: nextTurnQueued() }
+              : { ...event, provider: runtimeSession.provider };
+        await emitRuntimeEvent(runtimeEvent);
       }
 
       // Track compaction status - block interrupts while compacting
@@ -1288,11 +1306,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           });
         }
 
-        const liveActivity = status === "idle" ? "idle" : streaming.compacting ? "compacting" : "thinking";
+        const shouldClearLiveState = status === "idle" && !streaming.turnActive && !nextTurnQueued();
+        const liveActivity = shouldClearLiveState ? "idle" : streaming.compacting ? "compacting" : "thinking";
         patchLiveState(
           {
             activity: liveActivity,
-            summary: status === "idle" ? "runtime idle" : streaming.compacting ? "compacting" : "runtime active",
+            summary: shouldClearLiveState ? "runtime idle" : streaming.compacting ? "compacting" : "runtime active",
             agentId: agent.id,
             runId,
             provider: runtimeSession.provider,
@@ -1902,7 +1921,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.currentTurnToolStarted = false;
         streaming.turnActive = false;
         clearTraceTurnState();
-        markRuntimeLiveIdle(sessionName, "turn interrupted");
+        if (nextTurnQueued()) {
+          patchQueuedTurnLiveState();
+        } else {
+          markRuntimeLiveIdle(sessionName, "turn interrupted");
+        }
         signalTurnComplete();
         continue;
       }
@@ -1977,7 +2000,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
         if (suppressedRecoverable) {
           const restartReason = internalAbortReason ?? "recoverable_interrupt_failure";
-          markRuntimeLiveIdle(sessionName, "turn interrupted");
+          if (nextTurnQueued()) {
+            patchQueuedTurnLiveState();
+          } else {
+            markRuntimeLiveIdle(sessionName, "turn interrupted");
+          }
           log.info("Suppressing recoverable interrupted turn failure", {
             runId,
             sessionName,

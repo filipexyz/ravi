@@ -375,9 +375,12 @@ export class Gateway {
 
   private scheduleInterruptedPresenceStop(sessionName: string, target: PresenceTarget | undefined): void {
     this.clearInterruptedPresenceStop(sessionName);
+    const scheduledAt = Date.now();
     const timer = setTimeout(() => {
       this.interruptedPresenceStops.delete(sessionName);
       if (!this.running) return;
+      const renewedAt = this.presenceRenewedAt.get(sessionName) ?? 0;
+      if (renewedAt > scheduledAt || this.activeRuntimeSessions.has(sessionName)) return;
       this.stopPresenceForSession(sessionName, target).catch((error) => {
         log.debug("Interrupted presence cleanup failed", { sessionName, error });
       });
@@ -814,6 +817,7 @@ export class Gateway {
           type?: string;
           status?: string;
           nativeEvent?: string;
+          nextTurnQueued?: boolean;
           _source?: PresenceTarget & { sourceMessageId?: string };
         };
 
@@ -829,11 +833,17 @@ export class Gateway {
       type?: string;
       status?: string;
       nativeEvent?: string;
+      nextTurnQueued?: boolean;
       _source?: PresenceTarget & { sourceMessageId?: string };
     },
   ): Promise<void> {
     if (data.type === "turn.interrupted") {
-      if (this.terminalRuntimeSessions.has(sessionName)) return;
+      const hasQueuedTurn = data.nextTurnQueued === true;
+      if (this.terminalRuntimeSessions.has(sessionName)) {
+        if (!hasQueuedTurn) return;
+        this.terminalRuntimeSessions.delete(sessionName);
+        this.terminalPresenceStopped.delete(sessionName);
+      }
       if (this.isPresenceSuppressed(data._source)) {
         await this.stopPresenceForSession(sessionName, data._source);
         return;
@@ -843,7 +853,13 @@ export class Gateway {
       } else {
         await this.omniConsumer.renewActiveTarget(sessionName);
       }
-      this.scheduleInterruptedPresenceStop(sessionName, data._source);
+      if (hasQueuedTurn) {
+        this.clearInterruptedPresenceStop(sessionName);
+        this.activeRuntimeSessions.add(sessionName);
+      } else {
+        this.activeRuntimeSessions.delete(sessionName);
+        this.scheduleInterruptedPresenceStop(sessionName, data._source);
+      }
       return;
     }
 

@@ -28,6 +28,7 @@ type RuntimePresenceEventData = {
   type?: string;
   status?: string;
   nativeEvent?: string;
+  nextTurnQueued?: boolean;
   _source?: NonNullable<ResponseMessage["target"]>;
 };
 
@@ -748,6 +749,31 @@ describe("Gateway session trace instrumentation", () => {
 
     expect(renewActiveTarget).toHaveBeenCalledTimes(1);
     expect(clearActiveTarget).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), false);
+  });
+
+  it("does not arm interrupted cleanup when a replacement turn is queued", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const target = makeResponse().target!;
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        getActiveTarget: () => target,
+        renewActiveTarget: mock(async () => true),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, {
+      type: "turn.interrupted",
+      nextTurnQueued: true,
+      _source: target,
+    });
+
+    const interruptedStops = (gateway as unknown as { interruptedPresenceStops: Map<string, unknown> })
+      .interruptedPresenceStops;
+    expect(interruptedStops.has(sessionName)).toBe(false);
     expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), false);
   });
 
