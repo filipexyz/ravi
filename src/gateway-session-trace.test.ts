@@ -668,7 +668,7 @@ describe("Gateway session trace instrumentation", () => {
     }
   });
 
-  it("renews active presence one second after a delivered non-final response", async () => {
+  it("renews active presence one second after a delivered response when runtime activity continues", async () => {
     const { sessionName } = seedSession();
     const send = mock(async () => ({ messageId: "outbound-1" }));
     const renewActiveTarget = mock(async () => true);
@@ -681,12 +681,31 @@ describe("Gateway session trace instrumentation", () => {
     await handleResponse(gateway, sessionName, makeResponse({ target }));
 
     expect(renewActiveTarget).not.toHaveBeenCalled();
+    await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: target });
     await wait(1_050);
     expect(renewActiveTarget).toHaveBeenCalledTimes(1);
     expect(sendTyping).not.toHaveBeenCalled();
   });
 
-  it("forces delayed presence renewal from the response target for non-final cross-daemon delivery", async () => {
+  it("does not renew presence from delivery alone after the response is sent", async () => {
+    const { sessionName } = seedSession();
+    const send = mock(async () => ({ messageId: "outbound-1" }));
+    const renewActiveTarget = mock(async () => true);
+    const sendTyping = mock(async () => {});
+    const target = makeResponse().target!;
+    const gateway = makeGateway(send, { getActiveTarget: () => target, renewActiveTarget, sendTyping });
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    renewActiveTarget.mockClear();
+    sendTyping.mockClear();
+    await handleResponse(gateway, sessionName, makeResponse({ target }));
+
+    await wait(1_050);
+    expect(renewActiveTarget).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), true);
+  });
+
+  it("forces delayed presence renewal from the response target when runtime activity continues cross-daemon", async () => {
     const { sessionName } = seedSession();
     const send = mock(async () => ({ messageId: "outbound-1" }));
     const renewActiveTarget = mock(async () => false);
@@ -700,6 +719,7 @@ describe("Gateway session trace instrumentation", () => {
     await handleResponse(gateway, sessionName, makeResponse({ target }));
 
     expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), true);
+    await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: target });
     await wait(1_050);
     expect(renewActiveTarget).not.toHaveBeenCalled();
     expect(sendTyping).toHaveBeenCalledWith(
@@ -726,6 +746,7 @@ describe("Gateway session trace instrumentation", () => {
     sendTyping.mockClear();
     await handleResponse(gateway, sessionName, makeResponse({ target }));
 
+    await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: target });
     await wait(1_050);
     expect(renewActiveTarget).not.toHaveBeenCalled();
     expect(sendTyping).toHaveBeenCalledWith(
@@ -758,7 +779,7 @@ describe("Gateway session trace instrumentation", () => {
     expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), true);
   });
 
-  it("renews native Slack presence after delivered native outbound while the turn is still active", async () => {
+  it("does not renew native Slack presence from delivery alone while the turn is active", async () => {
     const { sessionName } = seedSession();
     const target = makeSlackTarget();
     const gateway = makeGateway(
@@ -777,7 +798,8 @@ describe("Gateway session trace instrumentation", () => {
       target,
     });
 
-    expect(emitted).toContainEqual([
+    await wait(1_050);
+    expect(emitted).not.toContainEqual([
       "ravi.channel.presence.slack",
       expect.objectContaining({
         sessionName,
