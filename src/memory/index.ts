@@ -15,3 +15,10 @@ export {
   MEMORY_PROMPT_SECTION_PRIORITY,
   MEMORY_PROMPT_SECTION_TITLE,
 } from "./prompt-section.js";
+export {
+  emitCurationCycleEvent,
+  MEMORY_CURATION_CYCLE_TOPIC,
+  type CurationCycleTelemetry,
+  type CurationSkipReason,
+  type EmitCurationCycleOptions,
+} from "./telemetry.js";
