@@ -6,6 +6,7 @@
  */
 
 export type SessionTarget = "main" | "isolated";
+export type TriggerExecutionType = "agent" | "shell";
 export type TriggerMessageSource = "manual" | "catalog";
 
 /**
@@ -32,6 +33,11 @@ export interface Trigger {
   accountId?: string;
   topic: string;
   message: string;
+  executionType?: TriggerExecutionType;
+  shellCommand?: string;
+  shellTimeoutMs?: number;
+  shellEnvFile?: string;
+  onError?: string;
   /** Provenance for prompt formatting. Catalog templates use standardized trigger prompts. */
   messageSource?: TriggerMessageSource;
   messageTemplateId?: string | null;
@@ -62,6 +68,11 @@ export interface TriggerInput {
   accountId?: string;
   topic: string;
   message: string;
+  executionType?: TriggerExecutionType;
+  shellCommand?: string;
+  shellTimeoutMs?: number;
+  shellEnvFile?: string;
+  onError?: string;
   messageSource?: TriggerMessageSource;
   messageTemplateId?: string | null;
   session?: SessionTarget;

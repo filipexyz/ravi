@@ -376,6 +376,8 @@ function ensureArtifactSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_artifacts_task_time ON artifacts(task_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_artifacts_sha256 ON artifacts(sha256);
     CREATE INDEX IF NOT EXISTS idx_artifacts_status_time ON artifacts(status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_artifacts_updated_created_id
+      ON artifacts(updated_at DESC, created_at DESC, id DESC);
 
     CREATE TABLE IF NOT EXISTS artifact_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

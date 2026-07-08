@@ -1446,6 +1446,7 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_routes_agent ON routes(agent_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_sdk ON sessions(sdk_session_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_name ON sessions(name) WHERE name IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS permission_denials (
@@ -1588,6 +1589,17 @@ function getDb(): Database {
 
     CREATE INDEX IF NOT EXISTS idx_session_events_key_time
       ON session_events(session_key, timestamp);
+    CREATE INDEX IF NOT EXISTS idx_session_events_key_time_seq_id
+      ON session_events(session_key, timestamp, seq, id);
+    CREATE INDEX IF NOT EXISTS idx_session_events_visible_key_time_seq_id
+      ON session_events(session_key, timestamp, seq, id)
+      WHERE event_group != 'stream'
+        AND NOT (
+          event_type = 'adapter.raw'
+          OR event_type LIKE '%.stream%'
+          OR event_type LIKE '%.delta'
+          OR event_type LIKE '%provider_event%'
+        );
     CREATE INDEX IF NOT EXISTS idx_session_events_name_time
       ON session_events(session_name, timestamp);
     CREATE INDEX IF NOT EXISTS idx_session_events_run_seq
@@ -1595,6 +1607,10 @@ function getDb(): Database {
     -- Hot path: SELECT COALESCE(MAX(seq), 0) + 1 FROM session_events WHERE session_key = ?
     CREATE INDEX IF NOT EXISTS idx_session_events_key_seq
       ON session_events(session_key, seq DESC);
+    CREATE INDEX IF NOT EXISTS idx_session_events_key_id
+      ON session_events(session_key, id);
+    CREATE INDEX IF NOT EXISTS idx_session_events_key_type_id
+      ON session_events(session_key, event_type, id DESC);
     -- TTL pruning: DELETE FROM session_events WHERE timestamp < ?
     CREATE INDEX IF NOT EXISTS idx_session_events_timestamp
       ON session_events(timestamp);
@@ -1602,6 +1618,15 @@ function getDb(): Database {
       ON session_events(turn_id, seq);
     CREATE INDEX IF NOT EXISTS idx_session_events_type_time
       ON session_events(event_type, timestamp);
+    CREATE INDEX IF NOT EXISTS idx_session_events_rollup_turns
+      ON session_events(timestamp, agent_id, model, event_type)
+      WHERE event_type IN ('turn.complete', 'turn.failed', 'turn.interrupted');
+    CREATE INDEX IF NOT EXISTS idx_session_events_rollup_turns_cover
+      ON session_events(timestamp, agent_id, model, event_type, duration_ms)
+      WHERE event_type IN ('turn.complete', 'turn.failed', 'turn.interrupted');
+    CREATE INDEX IF NOT EXISTS idx_session_events_rollup_tools
+      ON session_events(timestamp, agent_id, event_type, status)
+      WHERE event_type IN ('tool.start', 'tool.end');
     CREATE INDEX IF NOT EXISTS idx_session_events_chat_time
       ON session_events(source_chat_id, timestamp);
     CREATE INDEX IF NOT EXISTS idx_session_events_contact_time
@@ -1664,6 +1689,10 @@ function getDb(): Database {
 
     CREATE INDEX IF NOT EXISTS idx_session_turns_session_time
       ON session_turns(session_key, started_at);
+    CREATE INDEX IF NOT EXISTS idx_session_turns_session_started_turn
+      ON session_turns(session_key, started_at DESC, turn_id DESC);
+    CREATE INDEX IF NOT EXISTS idx_session_turns_session_activity_started_turn
+      ON session_turns(session_key, COALESCE(completed_at, updated_at, started_at), started_at DESC, turn_id DESC);
     CREATE INDEX IF NOT EXISTS idx_session_turns_run
       ON session_turns(run_id, started_at);
 
@@ -2196,6 +2225,26 @@ function getDb(): Database {
     db.exec("ALTER TABLE triggers ADD COLUMN message_template_id TEXT");
     log.info("Added message_template_id column to triggers table");
   }
+  if (!triggerColumns.some((c) => c.name === "execution_type")) {
+    db.exec("ALTER TABLE triggers ADD COLUMN execution_type TEXT DEFAULT 'agent'");
+    log.info("Added execution_type column to triggers table");
+  }
+  if (!triggerColumns.some((c) => c.name === "shell_command")) {
+    db.exec("ALTER TABLE triggers ADD COLUMN shell_command TEXT");
+    log.info("Added shell_command column to triggers table");
+  }
+  if (!triggerColumns.some((c) => c.name === "shell_timeout_ms")) {
+    db.exec("ALTER TABLE triggers ADD COLUMN shell_timeout_ms INTEGER");
+    log.info("Added shell_timeout_ms column to triggers table");
+  }
+  if (!triggerColumns.some((c) => c.name === "shell_env_file")) {
+    db.exec("ALTER TABLE triggers ADD COLUMN shell_env_file TEXT");
+    log.info("Added shell_env_file column to triggers table");
+  }
+  if (!triggerColumns.some((c) => c.name === "on_error")) {
+    db.exec("ALTER TABLE triggers ADD COLUMN on_error TEXT");
+    log.info("Added on_error column to triggers table");
+  }
 
   // Migration: add account_id column to cron_jobs
   const cronColumns = db.prepare("PRAGMA table_info(cron_jobs)").all() as Array<{ name: string }>;
@@ -2381,6 +2430,7 @@ function getDb(): Database {
   db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_agent_kind ON contexts(agent_id, kind, created_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_session_kind ON contexts(session_key, kind, created_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_created ON contexts(created_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_kind_created ON contexts(kind, created_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_expires ON contexts(expires_at)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_expires_created ON contexts(expires_at, created_at)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_revoked_created ON contexts(revoked_at, created_at)");
@@ -7866,6 +7916,13 @@ function getTraceExportSessionEventsCursor(db: Database): number | null {
   return Number.isFinite(cursor) && cursor >= 0 ? cursor : null;
 }
 
+function hasSessionEventsAtOrBeforeCursor(db: Database, cursor: number): boolean {
+  const row = db.prepare("SELECT 1 AS found FROM session_events WHERE id <= ? LIMIT 1").get(cursor) as
+    | { found: number }
+    | undefined;
+  return Boolean(row);
+}
+
 /**
  * Delete message metadata older than 7 days.
  * Returns number of rows deleted.
@@ -7938,6 +7995,9 @@ export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
       if (traceExportCursor === null) {
         return count("SELECT COUNT(*) AS c FROM session_events WHERE timestamp < ?", now - SESSION_EVENTS_TTL_MS);
       }
+      if (!hasSessionEventsAtOrBeforeCursor(db, traceExportCursor)) {
+        return 0;
+      }
       return Number(
         (
           db
@@ -7976,6 +8036,9 @@ export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
   const deleteSessionEvents = (): number => {
     if (traceExportCursor === null) {
       return runDelete("DELETE FROM session_events WHERE timestamp < ?", now - SESSION_EVENTS_TTL_MS);
+    }
+    if (!hasSessionEventsAtOrBeforeCursor(db, traceExportCursor)) {
+      return 0;
     }
     db.prepare("DELETE FROM session_events WHERE timestamp < ? AND id <= ?").run(
       now - SESSION_EVENTS_TTL_MS,

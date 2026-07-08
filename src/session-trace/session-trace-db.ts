@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { getDb } from "../router/router-db.js";
-import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
+import { normalizeLimitOffsetPage, normalizePageLimit, type ListPage } from "../utils/pagination.js";
 import type {
   JsonValue,
   RecordSessionBlobInput,
@@ -686,6 +686,18 @@ export function listSessionEvents(sessionKey: string): SessionEventRecord[] {
   const rows = getDb()
     .prepare("SELECT * FROM session_events WHERE session_key = ? ORDER BY id ASC")
     .all(sessionKey) as SessionEventRow[];
+  return rows.map(rowToSessionEvent);
+}
+
+export function listRecentSessionEventsByType(
+  sessionKey: string,
+  eventType: string,
+  options: { limit?: number | string | null } = {},
+): SessionEventRecord[] {
+  const limit = normalizePageLimit(options.limit, { defaultLimit: 200, maxLimit: 1000 });
+  const rows = getDb()
+    .prepare("SELECT * FROM session_events WHERE session_key = ? AND event_type = ? ORDER BY id DESC LIMIT ?")
+    .all(sessionKey, eventType, limit) as SessionEventRow[];
   return rows.map(rowToSessionEvent);
 }
 

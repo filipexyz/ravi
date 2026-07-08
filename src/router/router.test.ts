@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { dbCreateAgent, dbCreateContext, dbListContexts, dbPruneContexts } from "./router-db.js";
+import { dbCreateAgent, dbCreateContext, dbListContexts, dbPruneContexts, getDb } from "./router-db.js";
 import { getOrCreateSession } from "./sessions.js";
 
 let stateDir: string | null = null;
@@ -112,5 +112,29 @@ describe("router context queries", () => {
         .map((context) => context.contextId)
         .sort(),
     ).toEqual(["active", "expired-recent"]);
+  });
+
+  it("creates trace indexes and shell trigger columns during schema bootstrap", () => {
+    const db = getDb();
+    const sessionEventIndexes = new Set(
+      (db.prepare("PRAGMA index_list(session_events)").all() as Array<{ name: string }>).map((row) => row.name),
+    );
+    const contextIndexes = new Set(
+      (db.prepare("PRAGMA index_list(contexts)").all() as Array<{ name: string }>).map((row) => row.name),
+    );
+    const triggerColumns = new Set(
+      (db.prepare("PRAGMA table_info(triggers)").all() as Array<{ name: string }>).map((row) => row.name),
+    );
+
+    expect(sessionEventIndexes).toContain("idx_session_events_key_time_seq_id");
+    expect(sessionEventIndexes).toContain("idx_session_events_visible_key_time_seq_id");
+    expect(sessionEventIndexes).toContain("idx_session_events_key_type_id");
+    expect(sessionEventIndexes).toContain("idx_session_events_rollup_turns_cover");
+    expect(contextIndexes).toContain("idx_contexts_kind_created");
+    expect(triggerColumns).toContain("execution_type");
+    expect(triggerColumns).toContain("shell_command");
+    expect(triggerColumns).toContain("shell_timeout_ms");
+    expect(triggerColumns).toContain("shell_env_file");
+    expect(triggerColumns).toContain("on_error");
   });
 });

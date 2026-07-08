@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import type { SlackBlockKitBlock } from "./block-kit.js";
 
 export interface SlackWebApiClientOptions {
   readonly appToken: string;
@@ -11,6 +12,20 @@ export interface SlackPostMessageInput {
   readonly channel: string;
   readonly text: string;
   readonly threadTs?: string;
+  readonly blocks?: readonly SlackBlockKitBlock[];
+}
+
+export interface SlackUpdateMessageInput {
+  readonly channel: string;
+  readonly ts: string;
+  readonly text: string;
+  readonly blocks?: readonly SlackBlockKitBlock[];
+}
+
+export interface SlackBlocksValidateInput {
+  readonly blocks?: readonly SlackBlockKitBlock[];
+  readonly message?: Record<string, unknown>;
+  readonly view?: Record<string, unknown>;
 }
 
 export interface SlackReactionInput {
@@ -174,6 +189,12 @@ interface SlackPostMessageResponse extends SlackApiResponse {
   readonly ts?: string;
 }
 
+export interface SlackBlocksValidateResponse extends SlackApiResponse {
+  readonly errors?: unknown[];
+  readonly warnings?: unknown[];
+  readonly response_metadata?: Record<string, unknown>;
+}
+
 interface SlackReactionResponse extends SlackApiResponse {}
 
 interface SlackAssistantThreadStatusResponse extends SlackApiResponse {}
@@ -266,6 +287,9 @@ export class SlackWebApiClient {
     if (input.threadTs) {
       body.thread_ts = input.threadTs;
     }
+    if (input.blocks) {
+      body.blocks = JSON.stringify(input.blocks);
+    }
 
     const response = await this.apiRequest<SlackPostMessageResponse>("chat.postMessage", this.botToken, body);
     if (!response.channel || !response.ts) {
@@ -278,6 +302,48 @@ export class SlackWebApiClient {
       messageId: response.ts,
       raw: response,
     };
+  }
+
+  async updateMessage(input: SlackUpdateMessageInput): Promise<SlackPostMessageResult> {
+    const body: Record<string, unknown> = {
+      channel: input.channel,
+      ts: input.ts,
+      text: input.text,
+    };
+    if (input.blocks) {
+      body.blocks = JSON.stringify(input.blocks);
+    }
+
+    const response = await this.apiRequest<SlackPostMessageResponse>("chat.update", this.botToken, body);
+    if (!response.channel || !response.ts) {
+      throw new Error("Slack chat.update did not return channel and ts");
+    }
+
+    return {
+      channel: response.channel,
+      ts: response.ts,
+      messageId: response.ts,
+      raw: response,
+    };
+  }
+
+  async blocksValidate(input: SlackBlocksValidateInput): Promise<SlackBlocksValidateResponse> {
+    const selected = [input.blocks !== undefined, input.message !== undefined, input.view !== undefined].filter(
+      Boolean,
+    );
+    if (selected.length !== 1) {
+      throw new Error("Slack blocks.validate requires exactly one of blocks, message or view");
+    }
+
+    return this.apiRequest<SlackBlocksValidateResponse>(
+      "blocks.validate",
+      this.botToken,
+      compactBody({
+        blocks: input.blocks ? JSON.stringify(input.blocks) : undefined,
+        message: input.message ? JSON.stringify(input.message) : undefined,
+        view: input.view ? JSON.stringify(input.view) : undefined,
+      }),
+    );
   }
 
   async authTest(): Promise<SlackAuthTestResponse> {

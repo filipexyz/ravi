@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { querySessionTrace } from "./query.js";
-import { recordSessionEvent } from "./session-trace-db.js";
+import { listRecentSessionEventsByType, recordSessionEvent } from "./session-trace-db.js";
 
 let stateDir: string | null = null;
 
@@ -43,5 +43,44 @@ describe("session trace query", () => {
         (event) => event.eventType,
       ),
     ).toEqual(["adapter.raw"]);
+  });
+
+  it("lists recent events by type using newest event ids first", () => {
+    recordSessionEvent({
+      sessionKey: "agent:main:trace-limit",
+      sessionName: "trace-limit",
+      agentId: "main",
+      eventType: "turn.complete",
+      eventGroup: "turn",
+      timestamp: 1000,
+      createdAt: 1000,
+      preview: "old complete",
+    });
+    recordSessionEvent({
+      sessionKey: "agent:main:trace-limit",
+      sessionName: "trace-limit",
+      agentId: "main",
+      eventType: "tool.start",
+      eventGroup: "tool",
+      timestamp: 1100,
+      createdAt: 1100,
+      preview: "tool event",
+    });
+    recordSessionEvent({
+      sessionKey: "agent:main:trace-limit",
+      sessionName: "trace-limit",
+      agentId: "main",
+      eventType: "turn.complete",
+      eventGroup: "turn",
+      timestamp: 1200,
+      createdAt: 1200,
+      preview: "newer complete",
+    });
+
+    expect(
+      listRecentSessionEventsByType("agent:main:trace-limit", "turn.complete", { limit: 2 }).map(
+        (event) => event.preview,
+      ),
+    ).toEqual(["newer complete", "old complete"]);
   });
 });

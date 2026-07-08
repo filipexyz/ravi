@@ -11,6 +11,22 @@ describe("trigger topic catalog", () => {
     );
   });
 
+  it("registers native interactive component events", () => {
+    expect(findTriggerTopicCatalogEntry("ravi.inbound.interaction")).toMatchObject({
+      id: "inbound.interaction",
+      schema: {
+        version: 1,
+        fields: expect.arrayContaining([
+          expect.objectContaining({ path: "provider", required: true }),
+          expect.objectContaining({ path: "interactionType", required: true }),
+          expect.objectContaining({ path: "userId", required: true }),
+          expect.objectContaining({ path: "actionId" }),
+          expect.objectContaining({ path: "blockId" }),
+        ]),
+      },
+    });
+  });
+
   it("warns about inferred channel reaction aliases", () => {
     expect(getTriggerTopicDiagnostic("whatsapp.*.reaction")).toMatchObject({
       level: "warning",

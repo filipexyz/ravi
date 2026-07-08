@@ -25,7 +25,7 @@ import { nats } from "./nats.js";
 import type { ResponseMessage } from "./runtime/message-types.js";
 import { configStore } from "./config-store.js";
 import { recordDeliveryTrace, recordPresenceTrace, recordResponseEmittedTrace } from "./session-trace/channel-trace.js";
-import { listSessionEvents } from "./session-trace/session-trace-db.js";
+import { listRecentSessionEventsByType } from "./session-trace/session-trace-db.js";
 import { logger } from "./utils/logger.js";
 import type { OmniSender } from "./omni/sender.js";
 import type { OmniConsumer } from "./omni/consumer.js";
@@ -201,6 +201,7 @@ export class Gateway {
   private typingTracker = new SessionTypingTracker();
   private presenceRenewedAt = new Map<string, number>();
   private activeRuntimeSessions = new Set<string>();
+  private runtimeActivitySequences = new Map<string, number>();
   private terminalRuntimeSessions = new Set<string>();
   private nativePresenceTargets = new Map<string, PresenceTarget>();
   private nativeStatusAnchors = new Map<string, PresenceTarget>();
@@ -242,6 +243,7 @@ export class Gateway {
     this.typingTracker = new SessionTypingTracker();
     this.presenceRenewedAt.clear();
     this.activeRuntimeSessions.clear();
+    this.runtimeActivitySequences.clear();
     this.terminalRuntimeSessions.clear();
     this.nativePresenceTargets.clear();
     this.nativeStatusAnchors.clear();
@@ -481,6 +483,10 @@ export class Gateway {
     return !!leftKey && leftKey === rightKey;
   }
 
+  private markRuntimeActivity(sessionName: string): void {
+    this.runtimeActivitySequences.set(sessionName, (this.runtimeActivitySequences.get(sessionName) ?? 0) + 1);
+  }
+
   private rememberNativePresenceTarget(sessionName: string, target: PresenceTarget, active: boolean): void {
     if (active) {
       this.nativePresenceTargets.set(sessionName, target);
@@ -563,10 +569,7 @@ export class Gateway {
     const session = getSessionByName(sessionName);
     if (!session) return undefined;
 
-    const events = listSessionEvents(session.sessionKey);
-    for (let index = events.length - 1; index >= 0; index -= 1) {
-      const event = events[index];
-      if (event.eventType !== "delivery.delivered") continue;
+    for (const event of listRecentSessionEventsByType(session.sessionKey, "delivery.delivered")) {
       const payload = event.payloadJson;
       if (!payload || typeof payload !== "object" || Array.isArray(payload)) continue;
 
@@ -685,6 +688,7 @@ export class Gateway {
     this.activeRuntimeSessions.delete(sessionName);
     this.terminalRuntimeSessions.add(sessionName);
     this.presenceRenewedAt.delete(sessionName);
+    this.runtimeActivitySequences.delete(sessionName);
     this.clearPostDeliveryRenewal(sessionName);
     this.clearInterruptedPresenceStop(sessionName);
 
@@ -726,16 +730,22 @@ export class Gateway {
     }
   }
 
-  private schedulePostDeliveryPresenceRenewal(sessionName: string, target: PresenceTarget): void {
+  private schedulePostDeliveryPresenceRenewal(
+    sessionName: string,
+    target: PresenceTarget,
+    reason = "post-delivery-renew",
+  ): void {
     if (this.isPresenceSuppressed(target)) return;
     if (!this.activeRuntimeSessions.has(sessionName)) return;
     if (this.terminalRuntimeSessions.has(sessionName)) return;
     this.clearPostDeliveryRenewal(sessionName);
+    const scheduledAfterActivity = this.runtimeActivitySequences.get(sessionName) ?? 0;
     const timer = setTimeout(() => {
       this.postDeliveryRenewals.delete(sessionName);
       if (!this.running || !this.activeRuntimeSessions.has(sessionName)) return;
       if (this.terminalRuntimeSessions.has(sessionName)) return;
-      this.forceRenewTyping(sessionName, target, "post-delivery-renew").catch((error) => {
+      if ((this.runtimeActivitySequences.get(sessionName) ?? 0) <= scheduledAfterActivity) return;
+      this.forceRenewTyping(sessionName, target, reason).catch((error) => {
         log.debug("Post-delivery presence renewal failed", { sessionName, error });
       });
     }, POST_DELIVERY_RENEW_DELAY_MS);
@@ -775,10 +785,7 @@ export class Gateway {
     if (this.isPresenceSuppressed(target)) return;
     const outboundTarget = withOutboundStatusAnchor(target, data);
     this.rememberNativeOutboundTurnAnchor(sessionName, outboundTarget);
-    if (!this.activeRuntimeSessions.has(sessionName)) return;
-    if (this.terminalRuntimeSessions.has(sessionName)) return;
-
-    await this.forceRenewTyping(sessionName, outboundTarget, "native-delivery-renew");
+    this.schedulePostDeliveryPresenceRenewal(sessionName, outboundTarget, "native-delivery-renew");
   }
 
   private isTerminalRuntimeEvent(type: string | undefined, status?: string, nativeEvent?: string): boolean {
@@ -1226,6 +1233,7 @@ export class Gateway {
     if (this.isPresenceSuppressed(data._source)) {
       this.activeRuntimeSessions.delete(sessionName);
       this.presenceRenewedAt.delete(sessionName);
+      this.runtimeActivitySequences.delete(sessionName);
       return;
     }
 
@@ -1240,6 +1248,7 @@ export class Gateway {
 
     this.clearInterruptedPresenceStop(sessionName);
     this.activeRuntimeSessions.add(sessionName);
+    this.markRuntimeActivity(sessionName);
     await this.renewTypingForRuntimeActivity(sessionName, data);
   }
 

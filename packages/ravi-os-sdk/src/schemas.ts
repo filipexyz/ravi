@@ -52868,6 +52868,487 @@ export const SkillsSyncReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `slack.blocks-send`. */
+export const SlackBlocksSendInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Slack channel/conversation ID",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Slack credential connection",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "file": {
+      "description": "Path to a Block Kit message JSON file",
+      "type": "string"
+    },
+    "text": {
+      "description": "Top-level fallback text for notifications/accessibility",
+      "type": "string"
+    },
+    "threadTs": {
+      "description": "Send inside a Slack thread",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel",
+    "file"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.blocks-send`. */
+export const SlackBlocksSendReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.blocks-showcase`. */
+export const SlackBlocksShowcaseInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Slack channel/conversation ID",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Slack credential connection",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "threadTs": {
+      "description": "Send inside a Slack thread",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.blocks-showcase`. */
+export const SlackBlocksShowcaseReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.blocks-update`. */
+export const SlackBlocksUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Slack channel/conversation ID",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Slack credential connection",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "file": {
+      "description": "Path to a Block Kit message JSON file",
+      "type": "string"
+    },
+    "text": {
+      "description": "Top-level fallback text for notifications/accessibility",
+      "type": "string"
+    },
+    "ts": {
+      "description": "Slack message timestamp",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel",
+    "file",
+    "ts"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.blocks-update`. */
+export const SlackBlocksUpdateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.blocks-validate`. */
+export const SlackBlocksValidateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Slack credential connection",
+      "type": "string"
+    },
+    "file": {
+      "description": "Path to a Block Kit JSON file",
+      "type": "string"
+    },
+    "target": {
+      "description": "Validation target: blocks, message or view",
+      "type": "string"
+    }
+  },
+  "required": [
+    "file"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.blocks-validate`. */
+export const SlackBlocksValidateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `slack.canvas-access-delete`. */
 export const SlackCanvasAccessDeleteInputSchema = {
   "additionalProperties": false,
@@ -55181,6 +55662,128 @@ export const SlackFilesListReturnSchema = {
     "source",
     "items",
     "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.interactions-respond`. */
+export const SlackInteractionsRespondInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Slack credential connection",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "file": {
+      "description": "Path to a JSON response payload",
+      "type": "string"
+    },
+    "responseUrlId": {
+      "description": "Opaque Slack interaction response URL handle",
+      "type": "string"
+    }
+  },
+  "required": [
+    "file",
+    "responseUrlId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.interactions-respond`. */
+export const SlackInteractionsRespondReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -62013,6 +62616,14 @@ export const TriggersAddInputSchema = {
       "description": "Cooldown between fires (e.g., 5s, 30s, 1m)",
       "type": "string"
     },
+    "envFile": {
+      "description": "Env file loaded for shell triggers",
+      "type": "string"
+    },
+    "exec": {
+      "description": "Alias for --shell",
+      "type": "string"
+    },
     "filter": {
       "description": "Filter expression (e.g. 'data.cwd == \"/path/to/workspace\"')",
       "type": "string"
@@ -62025,12 +62636,24 @@ export const TriggersAddInputSchema = {
       "description": "Trigger name",
       "type": "string"
     },
+    "onError": {
+      "description": "Error action, e.g. notify-session:<session>",
+      "type": "string"
+    },
     "replySession": {
       "description": "Override the session used for outbound delivery (defaults to caller session)",
       "type": "string"
     },
     "session": {
       "description": "Session: main or isolated (default: isolated)",
+      "type": "string"
+    },
+    "shell": {
+      "description": "Run a shell command directly without invoking an agent",
+      "type": "string"
+    },
+    "timeout": {
+      "description": "Shell timeout, e.g. 60 or 5m",
       "type": "string"
     },
     "topic": {
@@ -62377,7 +63000,7 @@ export const TriggersSetInputSchema = {
       "type": "string"
     },
     "key": {
-      "description": "Property: name, message, topic, agent, account, session, cooldown, filter, replySession",
+      "description": "Property: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, filter, replySession",
       "type": "string"
     },
     "value": {

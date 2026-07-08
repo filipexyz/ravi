@@ -1,5 +1,6 @@
 import { configStore } from "../../config-store.js";
 import { resolvePlatformIdentity } from "../../contacts.js";
+import { publish } from "../../nats.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
 import { attachChatToSession, commitMatchedRoute, listSessionSubscriptions, matchRoute } from "../../router/index.js";
 import {
@@ -24,6 +25,7 @@ import type {
 } from "../native/types.js";
 import { SlackWebApiClient } from "./client.js";
 import { resolveSlackCredentialConfigFromEnv } from "./credentials.js";
+import { storeSlackInteractionResponseUrl } from "./interactions.js";
 import {
   cleanSlackId,
   envelopeEvent,
@@ -38,6 +40,7 @@ import type { SlackNormalizedFile, SlackNormalizedMessage, SlackRoutingPolicy, S
 const log = logger.child("channels:slack");
 
 type PublishPrompt = typeof publishSessionPrompt;
+type PublishInteraction = (topic: string, payload: Record<string, unknown>) => Promise<void>;
 type WebSocketFactory = (url: string) => WebSocket;
 
 interface ProcessedSlackFile extends SlackNormalizedFile {
@@ -63,6 +66,7 @@ export interface SlackSocketModeServiceOptions {
   readonly webClient?: SlackWebApiClient;
   readonly getRouterConfig?: () => RouterConfig;
   readonly publishPrompt?: PublishPrompt;
+  readonly publishInteraction?: PublishInteraction;
   readonly openWebSocket?: WebSocketFactory;
   readonly reconnectDelayMs?: number;
 }
@@ -320,6 +324,7 @@ export class SlackSocketModeService {
   private readonly webClient: SlackWebApiClient;
   private readonly getRouterConfig: () => RouterConfig;
   private readonly publishPrompt: PublishPrompt;
+  private readonly publishInteraction: PublishInteraction;
   private readonly openWebSocket: WebSocketFactory;
   private readonly routingPolicy: SlackRoutingPolicy;
   private readonly reconnectDelayMs: number;
@@ -349,6 +354,7 @@ export class SlackSocketModeService {
       });
     this.getRouterConfig = options.getRouterConfig ?? (() => configStore.getConfig());
     this.publishPrompt = options.publishPrompt ?? publishSessionPrompt;
+    this.publishInteraction = options.publishInteraction ?? publish;
     this.openWebSocket = options.openWebSocket ?? ((url) => new WebSocket(url));
     this.reconnectDelayMs = options.reconnectDelayMs ?? 5_000;
   }
@@ -379,6 +385,12 @@ export class SlackSocketModeService {
         return "duplicate";
       }
       this.seenEnvelopeIds.add(envelopeId);
+    }
+
+    const interaction = this.normalizeInteractionEnvelope(envelope);
+    if (interaction) {
+      await this.publishInteraction("ravi.inbound.interaction", interaction);
+      return "processed";
     }
 
     const normalized = this.normalizeEnvelope(envelope);
@@ -464,6 +476,69 @@ export class SlackSocketModeService {
       eventTimeMs,
       rawEnvelope: envelope,
     };
+  }
+
+  private normalizeInteractionEnvelope(envelope: SlackSocketEnvelope): Record<string, unknown> | null {
+    const payload = envelope.payload;
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+    const record = payload as Record<string, unknown>;
+    const interactionType = stringField(record, "type");
+    if (!isSlackBlockKitInteractionType(interactionType)) return null;
+
+    const team = recordField(record, "team");
+    const user = recordField(record, "user");
+    const channel = recordField(record, "channel");
+    const container = recordField(record, "container");
+    const message = recordField(record, "message");
+    const view = recordField(record, "view");
+    const firstAction = firstRecord(record.actions);
+    const actions = Array.isArray(record.actions) ? record.actions.map(summarizeSlackInteractionAction) : [];
+    const teamId = stringField(team, "id") ?? stringField(record, "team_id");
+    const channelId = stringField(channel, "id") ?? stringField(container, "channel_id");
+    const userId = stringField(user, "id");
+    const messageTs = stringField(message, "ts") ?? stringField(container, "message_ts");
+    const responseUrl = slackInteractionResponseUrl(record);
+    const responseUrlId = responseUrl
+      ? storeSlackInteractionResponseUrl({
+          accountId: this.options.accountId,
+          envelopeId: cleanSlackId(envelope.envelope_id),
+          teamId,
+          channelId,
+          userId,
+          messageTs,
+          responseUrl,
+        })
+      : undefined;
+
+    return compactInteractionPayload({
+      provider: "slack",
+      source: "slack.socket_mode",
+      accountId: this.options.accountId,
+      instanceId: this.options.instanceId ?? this.options.accountId,
+      envelopeId: cleanSlackId(envelope.envelope_id),
+      interactionType,
+      teamId,
+      userId,
+      channelId,
+      messageTs,
+      threadTs: stringField(message, "thread_ts") ?? stringField(container, "thread_ts"),
+      triggerId: stringField(record, "trigger_id"),
+      containerType: stringField(container, "type"),
+      viewId: stringField(view, "id"),
+      viewCallbackId: stringField(view, "callback_id"),
+      actionId: stringField(firstAction, "action_id"),
+      blockId: stringField(firstAction, "block_id"),
+      actionType: stringField(firstAction, "type"),
+      value: stringField(firstAction, "value"),
+      selectedOption: selectedOptionValue(firstAction),
+      actions,
+      stateValues: view ? recordField(recordField(view, "state"), "values") : undefined,
+      responseUrlId,
+      responseUrlPresent:
+        typeof record.response_url === "string" ||
+        (Array.isArray(record.response_urls) && record.response_urls.length > 0),
+      receivedAt: Date.now(),
+    });
   }
 
   private async routeMessage(message: SlackNormalizedMessage): Promise<void> {
@@ -781,6 +856,82 @@ function resolveSlackActorIdentity(input: {
     identityConfidence: 0,
     identityProvenance: { source: "slack_socket_mode", reason: "missing_contact" },
   };
+}
+
+function isSlackBlockKitInteractionType(value: string | undefined): boolean {
+  return (
+    value === "block_actions" ||
+    value === "view_submission" ||
+    value === "view_closed" ||
+    value === "block_suggestion" ||
+    value === "shortcut" ||
+    value === "message_action"
+  );
+}
+
+function summarizeSlackInteractionAction(value: unknown): Record<string, unknown> {
+  const action = asRecord(value);
+  if (!action) return { type: "unknown" };
+  return compactInteractionPayload({
+    actionId: stringField(action, "action_id"),
+    blockId: stringField(action, "block_id"),
+    type: stringField(action, "type"),
+    value: stringField(action, "value"),
+    selectedOption: selectedOptionValue(action),
+    selectedUser: stringField(action, "selected_user"),
+    selectedChannel: stringField(action, "selected_channel"),
+    selectedConversation: stringField(action, "selected_conversation"),
+    actionTs: stringField(action, "action_ts"),
+  });
+}
+
+function selectedOptionValue(action: Record<string, unknown> | undefined): unknown {
+  if (!action) return undefined;
+  const selectedOption = recordField(action, "selected_option");
+  const selectedValue = stringField(selectedOption, "value");
+  if (selectedValue) return selectedValue;
+  const selectedOptions = Array.isArray(action.selected_options) ? action.selected_options : undefined;
+  if (!selectedOptions) return undefined;
+  return selectedOptions.map((option) => stringField(asRecord(option), "value")).filter(Boolean);
+}
+
+function slackInteractionResponseUrl(record: Record<string, unknown>): string | undefined {
+  const direct = stringField(record, "response_url");
+  if (direct) return direct;
+  const responseUrls = Array.isArray(record.response_urls) ? record.response_urls : [];
+  for (const item of responseUrls) {
+    const responseUrl = stringField(item, "response_url");
+    if (responseUrl) return responseUrl;
+  }
+  return undefined;
+}
+
+function firstRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return asRecord(value[0]);
+}
+
+function recordField(record: unknown, key: string): Record<string, unknown> | undefined {
+  const value = asRecord(record)?.[key];
+  return asRecord(value);
+}
+
+function stringField(record: unknown, key: string): string | undefined {
+  const value = asRecord(record)?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  return value as Record<string, unknown>;
+}
+
+function compactInteractionPayload(input: Record<string, unknown>): Record<string, unknown> {
+  const output: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (value !== undefined && value !== null && value !== "") output[key] = value;
+  }
+  return output;
 }
 
 function syncSlackSessionSubscription(

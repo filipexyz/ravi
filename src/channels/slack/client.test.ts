@@ -165,6 +165,63 @@ describe("Slack Web API client", () => {
     });
   });
 
+  it("sends, updates and validates Block Kit payloads through Slack Web API", async () => {
+    const calls: Array<{ method: string; init: RequestInit }> = [];
+    const fetchImpl = mock(async (url: string | URL | Request, init?: RequestInit) => {
+      const method = String(url).split("/").pop() ?? "";
+      calls.push({ method, init: init ?? {} });
+      if (method === "blocks.validate") return jsonResponse({ ok: true });
+      return jsonResponse({ ok: true, channel: "C123", ts: "1713000000.000100" });
+    }) as unknown as typeof fetch;
+    const client = new SlackWebApiClient({
+      appToken: "xapp-secret",
+      botToken: "xoxb-secret",
+      fetchImpl,
+    });
+    const blocks = [
+      {
+        type: "actions",
+        block_id: "actions",
+        elements: [
+          {
+            type: "button",
+            action_id: "approve",
+            text: { type: "plain_text", text: "Approve" },
+            value: "approve",
+          },
+        ],
+      },
+    ];
+
+    await expect(client.blocksValidate({ message: { text: "Fallback", blocks } })).resolves.toEqual({ ok: true });
+    await expect(client.postMessage({ channel: "C123", text: "Fallback", blocks })).resolves.toMatchObject({
+      channel: "C123",
+      ts: "1713000000.000100",
+    });
+    await expect(
+      client.updateMessage({ channel: "C123", ts: "1713000000.000100", text: "Updated", blocks }),
+    ).resolves.toMatchObject({
+      channel: "C123",
+      ts: "1713000000.000100",
+    });
+
+    expect(calls.map((call) => call.method)).toEqual(["blocks.validate", "chat.postMessage", "chat.update"]);
+    expect(formBody(calls[0]?.init.body)).toEqual({
+      message: JSON.stringify({ text: "Fallback", blocks }),
+    });
+    expect(formBody(calls[1]?.init.body)).toEqual({
+      channel: "C123",
+      text: "Fallback",
+      blocks: JSON.stringify(blocks),
+    });
+    expect(formBody(calls[2]?.init.body)).toEqual({
+      channel: "C123",
+      ts: "1713000000.000100",
+      text: "Updated",
+      blocks: JSON.stringify(blocks),
+    });
+  });
+
   it("calls Slack Canvas methods with JSON payloads", async () => {
     const calls: Array<{ method: string; init: RequestInit }> = [];
     const fetchImpl = mock(async (url: string | URL | Request, init?: RequestInit) => {

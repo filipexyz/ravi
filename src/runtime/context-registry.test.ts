@@ -375,10 +375,24 @@ describe("runtime context registry", () => {
       capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
       ttlMs: 60_000,
     });
+    const nonAdminBootstrap = createRuntimeContext({
+      kind: ADMIN_BOOTSTRAP_KIND,
+      agentId: TEST_AGENT_ID,
+      capabilities: [{ permission: "use", objectType: "tool", objectId: "*" }],
+      ttlMs: 60_000,
+    });
+    const expiredBootstrap = createRuntimeContext({
+      kind: ADMIN_BOOTSTRAP_KIND,
+      agentId: TEST_AGENT_ID,
+      capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
+      expiresAt: Date.now() - 1,
+    });
 
     const testAgentAdminContextIds = listLiveAdminContexts()
       .filter((context) => context.agentId === TEST_AGENT_ID)
       .map((context) => context.contextId);
     expect(testAgentAdminContextIds).toEqual([bootstrap.contextId]);
+    expect(testAgentAdminContextIds).not.toContain(nonAdminBootstrap.contextId);
+    expect(testAgentAdminContextIds).not.toContain(expiredBootstrap.contextId);
   });
 });
