@@ -29946,7 +29946,7 @@ export const HooksCreateInputSchema = {
   "additionalProperties": false,
   "properties": {
     "action": {
-      "description": "Action: inject_context, send_session_event, append_history, comment_task",
+      "description": "Action: inject_context, send_session_event, append_history, comment_task, dispatch_task",
       "type": "string"
     },
     "agent": {
@@ -29972,6 +29972,26 @@ export const HooksCreateInputSchema = {
     "disabled": {
       "description": "Create hook disabled",
       "type": "boolean"
+    },
+    "dispatchInstructions": {
+      "description": "Instructions template for dispatch_task payload",
+      "type": "string"
+    },
+    "dispatchProfile": {
+      "description": "Task profile id for dispatch_task payload",
+      "type": "string"
+    },
+    "dispatchProfileInput": {
+      "description": "JSON string with profile inputs for dispatch_task payload",
+      "type": "string"
+    },
+    "dispatchTargetAgent": {
+      "description": "Assign the dispatched task to this agent (defaults to firing agent)",
+      "type": "string"
+    },
+    "dispatchTitle": {
+      "description": "Task title template for dispatch_task payload",
+      "type": "string"
     },
     "event": {
       "description": "Event: SessionStart, PreToolUse, PostToolUse, CwdChanged, FileChanged, Stop",

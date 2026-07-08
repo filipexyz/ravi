@@ -5975,6 +5975,11 @@ export type HooksCreateInput = {
   cooldown?: string;
   dedupeKey?: string;
   disabled?: boolean;
+  dispatchInstructions?: string;
+  dispatchProfile?: string;
+  dispatchProfileInput?: string;
+  dispatchTargetAgent?: string;
+  dispatchTitle?: string;
   event?: string;
   matcher?: string;
   message?: string;
