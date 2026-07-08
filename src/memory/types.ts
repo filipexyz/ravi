@@ -31,7 +31,8 @@ export type SecretKind =
   | "private-key"
   | "oauth-token"
   | "cpf"
-  | "cnpj";
+  | "cnpj"
+  | "hardcoded-secret";
 
 export interface SecretMatch {
   kind: SecretKind;

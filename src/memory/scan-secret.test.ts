@@ -68,4 +68,22 @@ describe("scanSecret (R9b redact-at-source)", () => {
     expect(result.isCredentialOnly).toBe(false);
     expect(result.redacted).toBe("");
   });
+
+  it('detects generic hardcoded credential (`api_key = "..."`) even without a known prefix', () => {
+    const configLine = `api_key = "abcDEF123456ghiJKL789xyz"`;
+    const result = scanSecret(configLine);
+    expect(result.hasSecret).toBe(true);
+    expect(result.matches[0]!.kind).toBe("hardcoded-secret");
+    expect(result.redacted).not.toContain("abcDEF123456ghiJKL789xyz");
+    expect(result.redacted).toContain("[REDACTED:secret]");
+  });
+
+  it("detects hardcoded password / secret variants with colon or hyphenated key", () => {
+    const pwd = scanSecret(`password: "SuperSecret_ValueThatIs22Chars"`);
+    const dashKey = scanSecret(`api-key = "01234567890ABCDEFGHIJ+/="`);
+    expect(pwd.hasSecret).toBe(true);
+    expect(dashKey.hasSecret).toBe(true);
+    expect(pwd.matches[0]!.kind).toBe("hardcoded-secret");
+    expect(dashKey.matches[0]!.kind).toBe("hardcoded-secret");
+  });
 });

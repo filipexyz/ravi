@@ -26,6 +26,16 @@ const SECRET_PATTERNS: readonly SecretPattern[] = [
   { kind: "oauth-token", regex: /(?:access_token|refresh_token)=[A-Za-z0-9._-]{16,}/g },
   { kind: "cpf", regex: /\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/g },
   { kind: "cnpj", regex: /\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b/g },
+  // Generic hardcoded credential — aligned with hermes threat_patterns
+  // `hardcoded_secret`. Anchors on the key-name vocabulary rather than the
+  // value shape, so it catches configs like `api_key = "abc123..."` that the
+  // prefix-based patterns above would miss. The credential run is redacted
+  // as a whole and the leading assignment (`api_key = "`) intentionally lands
+  // in the match so the surrounding key label goes away too.
+  {
+    kind: "hardcoded-secret",
+    regex: /(?:api[_-]?key|token|secret|password)\s*[=:]\s*["'][A-Za-z0-9+/=_-]{20,}["']?/gi,
+  },
 ];
 
 const REDACTION = "[REDACTED:secret]";

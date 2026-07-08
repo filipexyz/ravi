@@ -5,6 +5,11 @@
  * human-readable so an operator can remove the entry, but the injected snapshot
  * MUST render a `[BLOCKED:injection|<category>]...[/BLOCKED]` placeholder so
  * the model never sees the raw override.
+ *
+ * Pattern library aligned with `hermes/tools/threat_patterns.py` (subset
+ * relevant to memory writes). New patterns anchor on attack-specific
+ * vocabulary or unambiguous behavior — not on bossy English — to keep false
+ * positives low on legit AGENTS.md / SKILL.md content.
  */
 
 import type { InjectionCategory, InjectionMatch, InjectionScanResult } from "./types.js";
@@ -15,16 +20,21 @@ interface InjectionPattern {
   label: string;
 }
 
+const FILLER = String.raw`(?:\w+\s+){0,8}`;
+
 const INJECTION_PATTERNS: readonly InjectionPattern[] = [
   {
     category: "prompt-override",
     label: "ignore-previous-instructions",
-    regex: /ignore\s+(?:all\s+)?previous\s+instructions?/gi,
+    regex: new RegExp(String.raw`ignore\s+${FILLER}(previous|all|above|prior)\s+${FILLER}instructions?`, "gi"),
   },
   {
     category: "prompt-override",
     label: "disregard-all-rules",
-    regex: /disregard\s+(?:all\s+)?(?:previous\s+)?rules?/gi,
+    regex: new RegExp(
+      String.raw`disregard\s+${FILLER}(your|all|any|previous)\s+${FILLER}(instructions|rules|guidelines)`,
+      "gi",
+    ),
   },
   {
     category: "prompt-override",
@@ -42,6 +52,62 @@ const INJECTION_PATTERNS: readonly InjectionPattern[] = [
     regex: /sudo\s+override/gi,
   },
   {
+    category: "prompt-override",
+    label: "system-prompt-override",
+    regex: /system\s+prompt\s+override/gi,
+  },
+  {
+    category: "prompt-override",
+    label: "role-hijack",
+    regex: new RegExp(String.raw`you\s+are\s+${FILLER}now\s+(?:a|an|the)\s+`, "gi"),
+  },
+  {
+    category: "prompt-override",
+    label: "role-pretend",
+    regex: new RegExp(String.raw`pretend\s+${FILLER}(you\s+are|to\s+be)\s+`, "gi"),
+  },
+  {
+    category: "prompt-override",
+    label: "leak-system-prompt",
+    regex: new RegExp(String.raw`output\s+${FILLER}(system|initial)\s+prompt`, "gi"),
+  },
+  {
+    category: "prompt-override",
+    label: "remove-filters",
+    regex: new RegExp(
+      String.raw`(respond|answer|reply)\s+without\s+${FILLER}(restrictions|limitations|filters|safety)`,
+      "gi",
+    ),
+  },
+  {
+    category: "prompt-override",
+    label: "fake-update",
+    regex: new RegExp(String.raw`you\s+have\s+been\s+${FILLER}(updated|upgraded|patched)\s+to`, "gi"),
+  },
+  {
+    category: "prompt-override",
+    label: "bypass-restrictions",
+    regex: new RegExp(
+      String.raw`act\s+as\s+(if|though)\s+${FILLER}you\s+${FILLER}(have\s+no|don['’]t\s+have)\s+${FILLER}(restrictions|limits|rules)`,
+      "gi",
+    ),
+  },
+  {
+    category: "prompt-override",
+    label: "html-comment-injection",
+    regex: /<!--[^>]{0,512}(?:ignore|override|system|secret|hidden)[^>]{0,512}-->/gi,
+  },
+  {
+    category: "prompt-override",
+    label: "hidden-div",
+    regex: /<\s*div\s+style\s*=\s*["'][^>]{0,2048}display\s*:\s*none/gi,
+  },
+  {
+    category: "prompt-override",
+    label: "deception-hide",
+    regex: new RegExp(String.raw`do\s+not\s+${FILLER}tell\s+${FILLER}the\s+user`, "gi"),
+  },
+  {
     category: "exfil",
     label: "email-me-the",
     regex: /email\s+me\s+the\s+(?:api\s+key|token|password|secret|credential)/gi,
@@ -57,6 +123,29 @@ const INJECTION_PATTERNS: readonly InjectionPattern[] = [
     regex: /send\s+the\s+api\s+key/gi,
   },
   {
+    category: "exfil",
+    label: "exfil-curl-secrets",
+    regex: /curl\s+[^\n]{0,2048}\$\{?\w*(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API)/gi,
+  },
+  {
+    category: "exfil",
+    label: "exfil-wget-secrets",
+    regex: /wget\s+[^\n]{0,2048}\$\{?\w*(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API)/gi,
+  },
+  {
+    category: "exfil",
+    label: "read-secrets",
+    regex: /cat\s+[^\n]{0,2048}(\.env|credentials|\.netrc|\.pgpass|\.npmrc|\.pypirc)/gi,
+  },
+  {
+    category: "exfil",
+    label: "context-exfil",
+    regex: new RegExp(
+      String.raw`(include|output|print|share)\s+${FILLER}(conversation|chat\s+history|previous\s+messages|full\s+context|entire\s+context)`,
+      "gi",
+    ),
+  },
+  {
     category: "tool-hijack",
     label: "run-bash-to",
     regex: /run\s+bash\s+to\s+/gi,
@@ -68,18 +157,49 @@ const INJECTION_PATTERNS: readonly InjectionPattern[] = [
   },
   {
     category: "tool-hijack",
-    label: "write-to-etc",
+    label: "write-to-privileged",
     regex: /write\s+to\s+\/(?:etc|root|sys|proc)/gi,
   },
+  {
+    category: "tool-hijack",
+    label: "agent-config-mod",
+    regex:
+      /(update|modify|edit|write|change|append|add\s+to)\s+[^\n]{0,2048}(?:AGENTS\.md|CLAUDE\.md|\.cursorrules|\.clinerules)/gi,
+  },
+  {
+    category: "tool-hijack",
+    label: "ssh-backdoor",
+    regex: /authorized_keys/gi,
+  },
+  {
+    category: "tool-hijack",
+    label: "ssh-access",
+    regex: /(?:\$HOME|~)\/\.ssh\b/gi,
+  },
+  {
+    category: "tool-hijack",
+    label: "env-var-unset-agent",
+    regex: /unset\s+\w*(?:CLAUDE|CODEX|HERMES|AGENT|OPENAI|ANTHROPIC|RAVI)\w*/gi,
+  },
 ];
+
+/**
+ * Invisible / bidirectional unicode used to smuggle instructions past a
+ * human reviewer. Aligned with hermes threat_patterns INVISIBLE_CHARS list.
+ * `hasInvisibleChars` returns true whenever any of these codepoints appears —
+ * the wrapper marks them so the snapshot never carries a hidden RTL override
+ * or zero-width joiner into the model context.
+ */
+const INVISIBLE_CHAR_REGEX = /[​-‍⁠⁢-⁤﻿‪-‮⁦-⁩]/g;
 
 /**
  * Scan `content` for injection patterns.
  *
  * Returns matches with byte offsets + a `wrapped` string where each match is
- * enclosed in `[BLOCKED:injection|<category>]...[/BLOCKED]`. Callers should
- * write the ORIGINAL to disk (keep-visible for HITL) and inject the WRAPPED
- * copy into the system prompt (model-facing).
+ * enclosed in `[BLOCKED:injection|<category>]...[/BLOCKED]`. Invisible /
+ * bidirectional unicode codepoints are collapsed to `[BLOCKED:injection|invisible-unicode]`
+ * so the snapshot cannot smuggle hidden text. Callers should write the
+ * ORIGINAL (post-secret-redact) to disk and inject the WRAPPED copy.
  */
 export function scanInjection(content: string): InjectionScanResult {
   if (!content) {
@@ -87,6 +207,23 @@ export function scanInjection(content: string): InjectionScanResult {
   }
 
   const matches: InjectionMatch[] = [];
+
+  const invisibleRegex = new RegExp(INVISIBLE_CHAR_REGEX.source, INVISIBLE_CHAR_REGEX.flags);
+  let invisibleMatch: RegExpExecArray | null = invisibleRegex.exec(content);
+  while (invisibleMatch !== null) {
+    matches.push({
+      category: "prompt-override",
+      pattern: "invisible-unicode",
+      startIndex: invisibleMatch.index,
+      endIndex: invisibleMatch.index + invisibleMatch[0].length,
+      excerpt: invisibleMatch[0],
+    });
+    if (invisibleRegex.lastIndex === invisibleMatch.index) {
+      invisibleRegex.lastIndex += 1;
+    }
+    invisibleMatch = invisibleRegex.exec(content);
+  }
+
   for (const pattern of INJECTION_PATTERNS) {
     const regex = new RegExp(pattern.regex.source, pattern.regex.flags);
     let match: RegExpExecArray | null = regex.exec(content);
