@@ -22,3 +22,11 @@ export {
   type CurationSkipReason,
   type EmitCurationCycleOptions,
 } from "./telemetry.js";
+export {
+  applyDeterministicGuard,
+  type ApplyGuardInput,
+  type ApplyGuardResult,
+  type GuardCandidate,
+  type GuardDecision,
+} from "./curate.js";
+export { loadGoldenSetFixtures, type GoldenSetFixture } from "./golden-set.js";
