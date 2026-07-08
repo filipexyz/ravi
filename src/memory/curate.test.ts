@@ -158,6 +158,52 @@ describe("applyDeterministicGuard — E2E deterministic pipeline", () => {
     expect(outcomes).toEqual(["rejected", "written"]);
   });
 
+  it("R11: consolidation attempt beyond max returns terminal save_skipped without scanning", async () => {
+    const target = join(dir, "MEMORY.md");
+    const result = await applyDeterministicGuard({
+      targetPath: target,
+      candidate: { content: "hypothetical" },
+      currentContent: "",
+      consolidationAttempt: 4,
+      consolidationMaxAttempts: 3,
+      telemetry: telemetryBase,
+    });
+    expect(result.decision.outcome).toBe("rejected");
+    if (result.decision.outcome === "rejected") {
+      expect(result.decision.reason).toBe("R11:consolidation-thrash");
+    }
+    expect(existsSync(target)).toBe(false);
+  });
+
+  it("R17: multiple invocations against distinct targets carry independent caps", async () => {
+    const memoryTarget = join(dir, "MEMORY.md");
+    const userTarget = join(dir, "USER.md");
+    // Memory store hit its cap; user store must still accept a write.
+    const filler = "x".repeat(80);
+    writeFileSync(memoryTarget, filler, "utf-8");
+    const memResult = await applyDeterministicGuard({
+      targetPath: memoryTarget,
+      expectedPriorContent: filler,
+      candidate: { content: "y".repeat(60) },
+      currentContent: filler,
+      capChars: 100,
+      store: "memory",
+      telemetry: telemetryBase,
+    });
+    expect(memResult.decision.outcome).toBe("rejected");
+
+    const userResult = await applyDeterministicGuard({
+      targetPath: userTarget,
+      candidate: { content: "user note\n" },
+      currentContent: "",
+      capChars: 100,
+      store: "user",
+      telemetry: telemetryBase,
+    });
+    expect(userResult.decision.outcome).toBe("written");
+    expect(readFileSync(userTarget, "utf-8")).toBe("user note\n");
+  });
+
   it("dry-run: returns the projected content without touching disk", async () => {
     const target = join(dir, "MEMORY.md");
     const result = await applyDeterministicGuard({

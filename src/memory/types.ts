@@ -74,3 +74,5 @@ export interface AtomicWriteResult {
 export const DEFAULT_MEMORY_CAP_CHARS = 8192;
 export const DEFAULT_USER_CAP_CHARS = 4096;
 export const DEFAULT_CONSOLIDATION_MAX_ATTEMPTS = 3;
+
+export type MemoryStoreKind = "memory" | "user";

@@ -20,7 +20,7 @@ import { scanInjection } from "./scan-injection.js";
 import { scanSecret } from "./scan-secret.js";
 import type { CurationSkipReason } from "./telemetry.js";
 import { emitCurationCycleEvent } from "./telemetry.js";
-import { DEFAULT_MEMORY_CAP_CHARS } from "./types.js";
+import { DEFAULT_CONSOLIDATION_MAX_ATTEMPTS, DEFAULT_MEMORY_CAP_CHARS, type MemoryStoreKind } from "./types.js";
 
 export type GuardDecision =
   | { outcome: "written"; finalContent: string; finalChars: number }
@@ -37,6 +37,19 @@ export interface ApplyGuardInput {
   candidate: GuardCandidate;
   currentContent: string;
   capChars?: number;
+  /**
+   * R17 — which store this write targets. Emitted in telemetry so downstream
+   * counts stay independent for MEMORY.md vs USER.md. Defaults to `"memory"`.
+   */
+  store?: MemoryStoreKind;
+  /**
+   * R11 — 1-indexed consolidation attempt within the current curator turn.
+   * When the caller retries after an overflow, it MUST bump this counter.
+   * Guard returns a terminal `save_skipped` (reason `R11:consolidation-thrash`)
+   * once the attempt exceeds `consolidationMaxAttempts` (default 3).
+   */
+  consolidationAttempt?: number;
+  consolidationMaxAttempts?: number;
   telemetry?: {
     agentId: string;
     cadenceTurn: number;
@@ -90,6 +103,24 @@ export interface ApplyGuardResult {
  */
 export async function applyDeterministicGuard(input: ApplyGuardInput): Promise<ApplyGuardResult> {
   const cap = input.capChars ?? DEFAULT_MEMORY_CAP_CHARS;
+  const attempt = input.consolidationAttempt ?? 1;
+  const maxAttempts = input.consolidationMaxAttempts ?? DEFAULT_CONSOLIDATION_MAX_ATTEMPTS;
+  if (attempt > maxAttempts) {
+    const result: ApplyGuardResult = {
+      decision: {
+        outcome: "rejected",
+        reason: "R11:consolidation-thrash",
+        detail: `R11: consolidation attempt ${attempt} exceeds max ${maxAttempts} — leave memory unchanged this turn`,
+      },
+      scans: {
+        secret: { hadSecret: false, isCredentialOnly: false, matchCount: 0 },
+        injection: { hadInjection: false, matchCount: 0 },
+      },
+      cap: { ok: false, proposedChars: 0, cap, overflowChars: 0 },
+    };
+    await emitTelemetry(input, result, "R11:consolidation-thrash");
+    return result;
+  }
 
   const secret = scanSecret(input.candidate.content);
   if (secret.isCredentialOnly) {
