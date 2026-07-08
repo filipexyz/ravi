@@ -127,6 +127,7 @@ export class Gateway {
   private presenceRenewedAt = new Map<string, number>();
   private activeRuntimeSessions = new Set<string>();
   private activeRuntimeSources = new Map<string, PresenceTarget>();
+  private runtimeActivitySequences = new Map<string, number>();
   private terminalRuntimeSessions = new Set<string>();
   private terminalPresenceStopped = new Set<string>();
   private postDeliveryRenewals = new Map<string, ReturnType<typeof setTimeout>>();
@@ -166,6 +167,7 @@ export class Gateway {
     this.presenceRenewedAt.clear();
     this.activeRuntimeSessions.clear();
     this.activeRuntimeSources.clear();
+    this.runtimeActivitySequences.clear();
     this.terminalRuntimeSessions.clear();
     this.terminalPresenceStopped.clear();
     this.clearPostDeliveryRenewals();
@@ -334,6 +336,12 @@ export class Gateway {
     }
   }
 
+  private markRuntimeActivity(sessionName: string): number {
+    const next = (this.runtimeActivitySequences.get(sessionName) ?? 0) + 1;
+    this.runtimeActivitySequences.set(sessionName, next);
+    return next;
+  }
+
   private isStaleTerminalSource(sessionName: string, target: PresenceTarget | undefined): boolean {
     const activeSource = this.activeRuntimeSources.get(sessionName);
     if (!target?.sourceMessageId || !activeSource?.sourceMessageId) return false;
@@ -446,6 +454,7 @@ export class Gateway {
     this.activeRuntimeSources.delete(sessionName);
     this.terminalRuntimeSessions.add(sessionName);
     this.presenceRenewedAt.delete(sessionName);
+    this.runtimeActivitySequences.delete(sessionName);
     this.clearPostDeliveryRenewal(sessionName);
     this.clearInterruptedPresenceStop(sessionName);
     this.clearPendingReplacementTurnStop(sessionName);
@@ -479,11 +488,13 @@ export class Gateway {
     if (this.isPresenceSuppressed(target)) return;
     if (!this.activeRuntimeSessions.has(sessionName)) return;
     if (this.terminalRuntimeSessions.has(sessionName)) return;
+    const scheduledAfterActivity = this.runtimeActivitySequences.get(sessionName) ?? 0;
     this.clearPostDeliveryRenewal(sessionName);
     const timer = setTimeout(() => {
       this.postDeliveryRenewals.delete(sessionName);
       if (!this.running || !this.activeRuntimeSessions.has(sessionName)) return;
       if (this.terminalRuntimeSessions.has(sessionName)) return;
+      if ((this.runtimeActivitySequences.get(sessionName) ?? 0) <= scheduledAfterActivity) return;
       this.forceRenewTyping(sessionName, target).catch((error) => {
         log.debug("Post-delivery presence renewal failed", { sessionName, error });
       });
@@ -912,7 +923,8 @@ export class Gateway {
 
     if (data.type === "turn.interrupted") {
       const staleTerminal = this.isStaleTerminalSource(sessionName, data._source);
-      const hasQueuedTurn = data.nextTurnQueued === true || this.hasPendingReplacementTurn(sessionName) || staleTerminal;
+      const hasQueuedTurn =
+        data.nextTurnQueued === true || this.hasPendingReplacementTurn(sessionName) || staleTerminal;
       if (this.terminalRuntimeSessions.has(sessionName)) {
         if (!hasQueuedTurn) return;
         this.terminalRuntimeSessions.delete(sessionName);
@@ -963,6 +975,7 @@ export class Gateway {
       this.clearPendingReplacementTurnStop(sessionName);
     }
     this.clearInterruptedPresenceStop(sessionName);
+    this.markRuntimeActivity(sessionName);
     this.markRuntimeSessionActive(sessionName, data._source);
     await this.renewTypingForRuntimeActivity(sessionName, data);
   }

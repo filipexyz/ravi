@@ -641,7 +641,7 @@ describe("Gateway session trace instrumentation", () => {
     }
   });
 
-  it("renews active presence one second after a delivered non-final response", async () => {
+  it("renews active presence after a delivered response only when runtime activity continues", async () => {
     const { sessionName } = seedSession();
     const send = mock(async () => ({ messageId: "outbound-1" }));
     const renewActiveTarget = mock(async () => true);
@@ -652,6 +652,8 @@ describe("Gateway session trace instrumentation", () => {
     await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
     renewActiveTarget.mockClear();
     await handleResponse(gateway, sessionName, makeResponse({ target }));
+    await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: target });
+    renewActiveTarget.mockClear();
 
     expect(renewActiveTarget).not.toHaveBeenCalled();
     await wait(1_050);
@@ -659,7 +661,7 @@ describe("Gateway session trace instrumentation", () => {
     expect(sendTyping).not.toHaveBeenCalled();
   });
 
-  it("forces delayed presence renewal from the response target for non-final cross-daemon delivery", async () => {
+  it("forces delayed presence renewal from the response target only when runtime activity continues", async () => {
     const { sessionName } = seedSession();
     const send = mock(async () => ({ messageId: "outbound-1" }));
     const renewActiveTarget = mock(async () => false);
@@ -671,6 +673,8 @@ describe("Gateway session trace instrumentation", () => {
     renewActiveTarget.mockClear();
     sendTyping.mockClear();
     await handleResponse(gateway, sessionName, makeResponse({ target }));
+    await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: target });
+    sendTyping.mockClear();
 
     expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), true);
     await wait(1_050);
@@ -682,7 +686,7 @@ describe("Gateway session trace instrumentation", () => {
     );
   });
 
-  it("does not renew a stale active target after a delivered non-final response", async () => {
+  it("does not renew a stale active target after a delivered response when runtime activity continues", async () => {
     const { sessionName } = seedSession();
     const send = mock(async () => ({ messageId: "outbound-1" }));
     const renewActiveTarget = mock(async () => true);
@@ -698,6 +702,8 @@ describe("Gateway session trace instrumentation", () => {
     renewActiveTarget.mockClear();
     sendTyping.mockClear();
     await handleResponse(gateway, sessionName, makeResponse({ target }));
+    await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: target });
+    sendTyping.mockClear();
 
     await wait(1_050);
     expect(renewActiveTarget).not.toHaveBeenCalled();
@@ -813,9 +819,8 @@ describe("Gateway session trace instrumentation", () => {
       _source: newTarget,
     });
 
-    const pendingReplacementStops = (
-      gateway as unknown as { pendingReplacementTurnStops: Map<string, unknown> }
-    ).pendingReplacementTurnStops;
+    const pendingReplacementStops = (gateway as unknown as { pendingReplacementTurnStops: Map<string, unknown> })
+      .pendingReplacementTurnStops;
     expect(pendingReplacementStops.has(sessionName)).toBe(false);
   });
 
@@ -1267,6 +1272,25 @@ describe("Gateway session trace instrumentation", () => {
     sendTyping.mockClear();
 
     await handleRuntimePresence(gateway, sessionName, { type: "stream.chunk", _source: target });
+
+    expect(renewActiveTarget).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), true);
+  });
+
+  it("does not renew presence from delivery alone after the response is sent", async () => {
+    const { sessionName } = seedSession();
+    const send = mock(async () => ({ messageId: "outbound-1" }));
+    const sendTyping = mock(async () => {});
+    const renewActiveTarget = mock(async () => true);
+    const target = makeResponse().target!;
+    const gateway = makeGateway(send, { sendTyping, renewActiveTarget });
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    renewActiveTarget.mockClear();
+    sendTyping.mockClear();
+
+    await handleResponse(gateway, sessionName, makeResponse({ target }));
+    await wait(1_100);
 
     expect(renewActiveTarget).not.toHaveBeenCalled();
     expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), true);
