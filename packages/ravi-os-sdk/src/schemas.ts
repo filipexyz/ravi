@@ -12484,7 +12484,7 @@ export const ChannelsRestartInputSchema = {
       "type": "boolean"
     },
     "slackConnection": {
-      "description": "Optional Slack credential connection override",
+      "description": "Optional Slack credential connection override for a single workspace",
       "type": "string"
     },
     "slackConnections": {
@@ -12767,7 +12767,7 @@ export const ChannelsStartInputSchema = {
       "type": "boolean"
     },
     "slackConnection": {
-      "description": "Optional Slack credential connection override",
+      "description": "Optional Slack credential connection override for a single workspace",
       "type": "string"
     },
     "slackConnections": {

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { ensureContactFromInbound } from "../../contacts.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { getOrCreateSession, getSessionByName, listSessionSubscriptions } from "../../router/index.js";
@@ -10,6 +10,7 @@ import {
   SlackReactionPresence,
   SlackSocketModeService,
   SlackTextDelivery,
+  createSlackNativeRuntimesFromEnv,
 } from "./socket-mode.js";
 import type { SlackSocketEnvelope } from "./types.js";
 
@@ -26,6 +27,26 @@ function seedAgent(id: string, cwd: string): void {
       `,
     )
     .run(id, id, cwd, now, now);
+}
+
+function slackInstance(input: {
+  name: string;
+  instanceId?: string;
+  defaults?: Record<string, unknown>;
+  enabled?: boolean;
+}) {
+  return {
+    name: input.name,
+    ...(input.instanceId ? { instanceId: input.instanceId } : {}),
+    channel: "slack",
+    dmPolicy: "closed" as const,
+    groupPolicy: "allowlist" as const,
+    contactIntakeMode: "off" as const,
+    enabled: input.enabled ?? true,
+    ...(input.defaults ? { defaults: input.defaults } : {}),
+    createdAt: 1,
+    updatedAt: 1,
+  };
 }
 
 describe("Slack Socket Mode routing", () => {
@@ -70,6 +91,36 @@ describe("Slack Socket Mode routing", () => {
         chatId: "C456",
       }),
     ).toBe(false);
+  });
+
+  it("discovers all configured Slack instances without connection env overrides", async () => {
+    const resolveSecret = mock(async ({ connection }: { connection: string }) => ({
+      secret: JSON.stringify({
+        appToken: `xapp-${connection}`,
+        botToken: `xoxb-${connection}`,
+      }),
+      connection: { connection },
+    }));
+
+    const runtimes = await createSlackNativeRuntimesFromEnv({} as NodeJS.ProcessEnv, {
+      resolveSecret,
+      instances: {
+        "ravi-rbbt-slack": slackInstance({
+          name: "ravi-rbbt-slack",
+          instanceId: "slack-instance-1",
+          defaults: { credentials: { slackConnection: "rbbt-secret" } },
+        }),
+        "hana-slack": slackInstance({
+          name: "hana-slack",
+          instanceId: "slack-instance-2",
+          defaults: { credentials: { slackConnection: "hana-secret" } },
+        }),
+      },
+    });
+
+    expect(resolveSecret.mock.calls.map((call) => call[0].connection)).toEqual(["hana-secret", "rbbt-secret"]);
+    expect(runtimes.map((runtime) => runtime.accountId)).toEqual(["hana-slack", "ravi-rbbt-slack"]);
+    expect(runtimes.map((runtime) => runtime.connection)).toEqual(["hana-secret", "rbbt-secret"]);
   });
 
   it("routes Slack channels through group routes and attaches the source chat for output", async () => {

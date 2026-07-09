@@ -148,7 +148,7 @@ describe("CLI command access enforcement", () => {
     expect(result.decision?.objectId).toBe("create");
   });
 
-  it("can force local operator execution for process runners even when a context key is present", () => {
+  it("does not let env force local operator execution when a context key is present", () => {
     const record = createRuntimeContext({
       kind: "cli-runtime",
       agentId: "main",
@@ -165,9 +165,9 @@ describe("CLI command access enforcement", () => {
       source: "cli",
     });
 
-    expect(result.allowed).toBe(true);
-    expect(result.decision?.providerId).toBe("operator-control");
-    expect(result.decision?.objectType).toBe("demo.items");
+    expect(result.allowed).toBe(false);
+    expect(result.errorMessage).toContain("agent:main cannot execute demo create");
+    expect(result.attempted.every((decision) => decision.providerId === "context-capabilities")).toBe(true);
   });
 
   it("ignores default credential context for direct local CLI authorization", () => {

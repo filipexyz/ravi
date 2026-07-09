@@ -52,12 +52,11 @@ describe("channels command runner env", () => {
     ).toEqual(["ravi-rbbt-slack", "hana-slack"]);
   });
 
-  it("falls back to an existing PM2 Slack connection list", () => {
+  it("does not treat an old PM2 Slack connection list as canonical config", () => {
     expect(
       chooseSlackRunnerConnections({
         env: {},
-        fallbackEnv: { RAVI_SLACK_CONNECTIONS: "ravi-rbbt-slack,hana-slack" },
       }),
-    ).toEqual(["ravi-rbbt-slack", "hana-slack"]);
+    ).toEqual([]);
   });
 });

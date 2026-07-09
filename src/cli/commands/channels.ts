@@ -155,7 +155,6 @@ export function chooseSlackRunnerConnections(input: {
   explicit?: string;
   explicitSingle?: string;
   env?: Record<string, unknown>;
-  fallbackEnv?: Record<string, unknown>;
 }): string[] {
   const explicit = listEnvValues(input.explicit);
   if (explicit.length) return explicit;
@@ -166,11 +165,7 @@ export function chooseSlackRunnerConnections(input: {
   const envConnections = listEnvValues(input.env?.RAVI_SLACK_CONNECTIONS);
   if (envConnections.length) return envConnections;
 
-  const fallbackConnections = listEnvValues(input.fallbackEnv?.RAVI_SLACK_CONNECTIONS);
-  if (fallbackConnections.length) return fallbackConnections;
-
-  const single =
-    chooseSlackRunnerConnection({ env: input.env }) ?? chooseSlackRunnerConnection({ env: input.fallbackEnv });
+  const single = chooseSlackRunnerConnection({ env: input.env });
   return single ? [single] : [];
 }
 
@@ -179,7 +174,7 @@ function buildRunnerPm2Env(
   explicitSlackConnections?: string,
 ): Record<string, string> {
   const existingPm2Env = readExistingPm2Env(CHANNELS_PM2_PROCESS_NAME);
-  const envOverrides: Record<string, string> = { RAVI_CLI_FORCE_LOCAL_OPERATOR: "1" };
+  const envOverrides: Record<string, string> = {};
 
   for (const key of RUNNER_ENV_KEYS) {
     const value = cleanEnvValue(process.env[key]) ?? cleanEnvValue(existingPm2Env[key]);
@@ -190,7 +185,6 @@ function buildRunnerPm2Env(
     explicit: explicitSlackConnections,
     explicitSingle: explicitSlackConnection,
     env: process.env,
-    fallbackEnv: existingPm2Env,
   });
   if (slackConnections.length > 1) {
     envOverrides.RAVI_SLACK_CONNECTIONS = slackConnections.join(",");
@@ -280,7 +274,10 @@ export class ChannelsCommands {
   @Returns(channelsMutationReturnSchema)
   start(
     @Option({ flags: "-b, --build", description: "Use dist bundle from source repo" }) build?: boolean,
-    @Option({ flags: "--slack-connection <name>", description: "Optional Slack credential connection override" })
+    @Option({
+      flags: "--slack-connection <name>",
+      description: "Optional Slack credential connection override for a single workspace",
+    })
     slackConnection?: string,
     @Option({
       flags: "--slack-connections <names>",
@@ -370,7 +367,10 @@ export class ChannelsCommands {
   @Returns(channelsMutationReturnSchema)
   restart(
     @Option({ flags: "-b, --build", description: "Use dist bundle from source repo" }) build?: boolean,
-    @Option({ flags: "--slack-connection <name>", description: "Optional Slack credential connection override" })
+    @Option({
+      flags: "--slack-connection <name>",
+      description: "Optional Slack credential connection override for a single workspace",
+    })
     slackConnection?: string,
     @Option({
       flags: "--slack-connections <names>",

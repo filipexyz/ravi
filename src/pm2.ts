@@ -8,7 +8,16 @@ import { execSync, spawnSync } from "node:child_process";
 
 export const PM2_PROCESS_NAME = "ravi";
 export const CHANNELS_PM2_PROCESS_NAME = "ravi-channels";
-const PM2_ENV_DENYLIST = ["RAVI_CONTEXT_KEY"] as const;
+const PM2_ENV_DENYLIST = [
+  "RAVI_CONTEXT_KEY",
+  "RAVI_SESSION_KEY",
+  "RAVI_SESSION_NAME",
+  "RAVI_AGENT_ID",
+  "RAVI_CHANNEL",
+  "RAVI_ACCOUNT_ID",
+  "RAVI_CHAT_ID",
+  "RAVI_THREAD_ID",
+] as const;
 
 export function buildPm2Env(envOverrides?: Record<string, string>): Record<string, string> {
   const env = { ...process.env, ...(envOverrides ?? {}) } as Record<string, string>;
@@ -16,6 +25,9 @@ export function buildPm2Env(envOverrides?: Record<string, string>): Record<strin
   if (envOverrides?.RAVI_SLACK_CONNECTIONS && !envOverrides.RAVI_SLACK_CONNECTION) {
     delete env.RAVI_SLACK_CONNECTION;
     delete env.RAVI_SLACK_CREDENTIAL_CONNECTION;
+  }
+  if (envOverrides?.RAVI_SLACK_CONNECTION && !envOverrides.RAVI_SLACK_CONNECTIONS) {
+    delete env.RAVI_SLACK_CONNECTIONS;
   }
   return env;
 }
