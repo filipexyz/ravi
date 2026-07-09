@@ -91,6 +91,8 @@ A task created under an older profile snapshot MUST remain explainable and resum
 
 `runtimeDefaults` MAY provide task-specific model, effort, and thinking defaults.
 
+`effort` MUST use the canonical runtime effort set `none|minimal|low|medium|high|xhigh|max|ultra`.
+
 The effective runtime MUST be resolved per field using this precedence:
 
 1. dispatch override or launch-plan override;
@@ -101,7 +103,7 @@ The effective runtime MUST be resolved per field using this precedence:
 6. global config model;
 7. runtime effort default `xhigh`.
 
-Invalid effort values MUST fall back to the runtime effort default.
+An unset effort MUST resolve to the runtime effort default `xhigh`. An unknown effort value in a CLI flag, task/dispatch override, or profile `runtimeDefaults` MUST fail clearly rather than silently falling back to the default, so invalid input is never masked.
 
 Task runtime selection MUST NOT mutate the assigned session's persistent model or thinking settings.
 

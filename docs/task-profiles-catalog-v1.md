@@ -151,7 +151,7 @@ O runtime:
 
 O modelo efetivo é resolvido por campo, sem mutar a sessão:
 
-`effort` usa `low|medium|high|xhigh`. O default é `xhigh`; qualquer valor inválido cai para esse default.
+`effort` usa `none|minimal|low|medium|high|xhigh|max|ultra`. O default é `xhigh`. Nos caminhos de CLI/task um valor fora dessa lista falha de forma clara em vez de cair silenciosamente para o default.
 
 1. `runtimeOverride` do dispatch ou launch plan
 2. `runtimeOverride` da task

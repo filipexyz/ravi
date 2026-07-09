@@ -43,6 +43,27 @@ describe("model catalog", () => {
     expect(getDefaultModelForProvider("codex", { codexCachePath: cachePath })).toBe("gpt-5.4");
   });
 
+  test("surfaces GPT-5.6 Sol/Terra/Luna models when present in the codex catalog", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-codex-models-"));
+    tempDirs.push(dir);
+    const cachePath = join(dir, "models_cache.json");
+
+    writeFileSync(
+      cachePath,
+      JSON.stringify({
+        models: [
+          { slug: "gpt-5.6-sol", display_name: "GPT-5.6 Sol", visibility: "list", priority: 0 },
+          { slug: "gpt-5.6-terra", display_name: "GPT-5.6 Terra", visibility: "list", priority: 1 },
+          { slug: "gpt-5.6-luna", display_name: "GPT-5.6 Luna", visibility: "list", priority: 2 },
+        ],
+      }),
+    );
+
+    const models = listRuntimeModels("codex", { codexCachePath: cachePath });
+    expect(models.map((model) => model.id)).toEqual(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]);
+    expect(resolvePreferredRuntimeModel("codex", "gpt-5.6-sol", { codexCachePath: cachePath })).toBe("gpt-5.6-sol");
+  });
+
   test("normalizes full claude ids to aliases", () => {
     expect(resolvePreferredRuntimeModel("claude", "claude-opus-4-6")).toBe("opus");
     expect(resolvePreferredRuntimeModel("claude", "claude-sonnet-4-6")).toBe("sonnet");

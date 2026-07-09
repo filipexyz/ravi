@@ -1011,7 +1011,7 @@ export class TaskCommands {
     tagSlugsRaw?: string[] | string,
     @Option({ flags: "--model <model>", description: "Task runtime model override" })
     model?: string,
-    @Option({ flags: "--effort <level>", description: "Runtime effort: low|medium|high|xhigh" })
+    @Option({ flags: "--effort <level>", description: "Runtime effort: none|minimal|low|medium|high|xhigh|max|ultra" })
     effort?: string,
     @Option({ flags: "--thinking <level>", description: "Runtime thinking: off|normal|verbose" })
     thinking?: string,
@@ -1749,7 +1749,7 @@ export class TaskCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--model <model>", description: "Dispatch runtime model override" })
     model?: string,
-    @Option({ flags: "--effort <level>", description: "Runtime effort: low|medium|high|xhigh" })
+    @Option({ flags: "--effort <level>", description: "Runtime effort: none|minimal|low|medium|high|xhigh|max|ultra" })
     effort?: string,
     @Option({ flags: "--thinking <level>", description: "Runtime thinking: off|normal|verbose" })
     thinking?: string,

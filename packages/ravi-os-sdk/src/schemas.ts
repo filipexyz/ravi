@@ -60030,7 +60030,7 @@ export const TasksCreateInputSchema = {
       "type": "array"
     },
     "effort": {
-      "description": "Runtime effort: low|medium|high|xhigh",
+      "description": "Runtime effort: none|minimal|low|medium|high|xhigh|max|ultra",
       "type": "string"
     },
     "input": {
@@ -60431,7 +60431,7 @@ export const TasksDispatchInputSchema = {
       "type": "string"
     },
     "effort": {
-      "description": "Runtime effort: low|medium|high|xhigh",
+      "description": "Runtime effort: none|minimal|low|medium|high|xhigh|max|ultra",
       "type": "string"
     },
     "model": {
