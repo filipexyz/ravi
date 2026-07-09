@@ -3748,6 +3748,7 @@ export class RaviClient {
       expectedPrior?: string;
       hadUserCorrection?: boolean;
       hookId?: string;
+      processedThroughMessageId?: string;
       sessionKey?: string;
       sessionName?: string;
       store?: string;

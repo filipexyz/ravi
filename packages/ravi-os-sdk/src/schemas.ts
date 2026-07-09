@@ -41100,6 +41100,10 @@ export const MemoryGuardInputSchema = {
       "description": "Originating hook id (when dispatched from a dispatch_task hook)",
       "type": "string"
     },
+    "processedThroughMessageId": {
+      "description": "R27: highest messages.id (src/db.ts) the curator read through this cycle. On a successful write, advances the session's incremental-read watermark so the NEXT cycle's CURATOR_TRANSCRIPT.md only contains rows added after it, instead of re-reading the whole session. Requires --session-key.",
+      "type": "string"
+    },
     "sessionKey": {
       "description": "Session key that originated the write; goes into telemetry for R23 audit",
       "type": "string"
