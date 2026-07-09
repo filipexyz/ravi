@@ -91,6 +91,7 @@ export interface NewSpecResult {
 
 export type SpecVerifyIssueCode =
   | "missing-checks-file"
+  | "normative-without-invariants"
   | "invariant-without-ac"
   | "ac-missing-method"
   | "dangling-check-ref"

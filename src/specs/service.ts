@@ -687,31 +687,44 @@ function checkRefToken(checkRef: string): string | null {
   return match ? match[0].toUpperCase() : null;
 }
 
-// Split the Adaptation section into bullet-item blocks and flag open decisions
-// (bare "TBD") that lack a resolution path (deadline+blocking_for or spike).
+// Split the Adaptation section into blocks (each bullet, and each blank-line
+// separated prose paragraph) and flag open "TBD" decisions that lack a resolution
+// path (deadline+blocking_for or spike). A bullet flags on any bare `TBD`; prose
+// only flags on a decision marker (`TBD:` / `TBD —` / `TBD -`) so the canonical
+// template's own guidance prose ("never a bare TBD") is not a false positive.
 function findUnresolvedAdaptations(section: string): string[] {
   if (!section.trim()) return [];
   const lines = section.split(/\r?\n/);
-  const blocks: string[] = [];
-  let current: string[] | null = null;
+  const blocks: { text: string; isBullet: boolean }[] = [];
+  let current: string[] = [];
+  let currentIsBullet = false;
+  const flush = () => {
+    if (current.length) blocks.push({ text: current.join("\n"), isBullet: currentIsBullet });
+    current = [];
+  };
   for (const line of lines) {
     if (/^\s*(?:[-*]|\d+\.)\s+/.test(line)) {
-      if (current) blocks.push(current.join("\n"));
+      flush();
       current = [line];
-    } else if (current) {
+      currentIsBullet = true;
+    } else if (line.trim() === "") {
+      flush();
+      currentIsBullet = false;
+    } else {
       current.push(line);
     }
   }
-  if (current) blocks.push(current.join("\n"));
+  flush();
 
   const unresolved: string[] = [];
   for (const block of blocks) {
-    if (!/\bTBD\b/i.test(block)) continue;
-    const lower = block.toLowerCase();
+    const hasBareTbd = block.isBullet ? /\bTBD\b/i.test(block.text) : /\bTBD\b\s*[:—-]/i.test(block.text);
+    if (!hasBareTbd) continue;
+    const lower = block.text.toLowerCase();
     const hasDeadlineContract = lower.includes("resolution_deadline") && lower.includes("blocking_for");
     const hasSpike = lower.includes("spike");
     if (!hasDeadlineContract && !hasSpike) {
-      unresolved.push(block.trim().split(/\r?\n/)[0]!.trim());
+      unresolved.push(block.text.trim().split(/\r?\n/)[0]!.trim());
     }
   }
   return unresolved;
@@ -736,6 +749,16 @@ export function verifySpec(id: string, options: VerifySpecOptions = {}): SpecVer
 
   // Non-normative specs are exempt from the Acceptance Criteria contract (F-1/F-4).
   if (spec.normative) {
+    // A normative spec MUST declare at least one numbered invariant (Rk). Surface
+    // an empty/stub spec as a warning instead of letting it pass silently (M2).
+    if (invariants.length === 0) {
+      issues.push({
+        code: "normative-without-invariants",
+        severity: "warning",
+        message: `Normative spec ${spec.id} declares no numbered invariants (Rk); it cannot be verified for traceability.`,
+      });
+    }
+
     if (invariants.length > 0 && !hasChecksFile) {
       issues.push({
         code: "missing-checks-file",
@@ -746,6 +769,20 @@ export function verifySpec(id: string, options: VerifySpecOptions = {}): SpecVer
 
     const acByInvariant = new Map<string, AcRow>();
     for (const row of acRows) acByInvariant.set(row.invariant, row);
+
+    // Reverse traceability (F-4): an AC row for an invariant that isn't declared in
+    // the Invariants section is a dangling contract — surface it instead of ignoring.
+    const invariantSet = new Set(invariants);
+    for (const row of acRows) {
+      if (!invariantSet.has(row.invariant)) {
+        issues.push({
+          code: "ac-orphan-row",
+          severity: "warning",
+          invariant: row.invariant,
+          message: `Acceptance Criteria row references ${row.invariant}, which is not declared in the Invariants section.`,
+        });
+      }
+    }
 
     // F-1/F-4: forall Rk in SPEC.Invariants: exists AC row -> exists Ck in CHECKS.
     for (const invariant of invariants) {
@@ -777,7 +814,9 @@ export function verifySpec(id: string, options: VerifySpecOptions = {}): SpecVer
           invariant: row.invariant,
           message: `Invariant ${row.invariant} has no CHECKS.md#Ck reference in its Acceptance Criteria row.`,
         });
-      } else if (!checkIds.has(token)) {
+      } else if (hasChecksFile && !checkIds.has(token)) {
+        // When CHECKS.md is absent the single missing-checks-file error already
+        // covers every row; don't emit N redundant dangling-ref errors (N1).
         issues.push({
           code: "dangling-check-ref",
           severity: "error",

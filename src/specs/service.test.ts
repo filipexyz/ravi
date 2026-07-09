@@ -222,6 +222,59 @@ describe("specs service", () => {
     expect(verifySpec("runtime", { cwd }).ok).toBe(true);
   });
 
+  it("flags a bare TBD written as prose, but not the template's guidance prose (M1)", () => {
+    const cwd = makeWorkspace();
+    createSpec({ cwd, id: "runtime", title: "Runtime", kind: "domain", full: true });
+    const path = specPath(cwd, "runtime");
+    const validAc =
+      "# Runtime\n\n## Invariants\n\n- **R1** — MUST boot.\n" +
+      "\n## Acceptance Criteria\n\n" +
+      "| Invariant | Verification Method | Check Ref | Pass Condition |\n" +
+      "|---|---|---|---|\n" +
+      "| R1 | Inspection | CHECKS.md#C1 | ok |\n";
+
+    // Prose decision marker (`TBD:` outside a bullet) must be caught.
+    rewriteBody(path, `${validAc}\n## Adaptation\n\nTBD: decide the eviction policy at runtime.\n`);
+    expect(verifySpec("runtime", { cwd }).issues.map((i) => i.code)).toContain("adaptation-unresolved");
+
+    // Guidance prose that merely mentions the word (no decision marker) must NOT flag.
+    rewriteBody(path, `${validAc}\n## Adaptation\n\nNo open decisions. Never leave a bare TBD here.\n`);
+    const clean = verifySpec("runtime", { cwd });
+    expect(clean.ok).toBe(true);
+    expect(clean.issues.map((i) => i.code)).not.toContain("adaptation-unresolved");
+  });
+
+  it("warns (not silently passes) when a normative spec declares no invariants (M2)", () => {
+    const cwd = makeWorkspace();
+    createSpec({ cwd, id: "runtime", title: "Runtime", kind: "domain" });
+    const path = specPath(cwd, "runtime");
+    rewriteBody(path, "# Runtime\n\n## Intent\n\nA normative spec with no numbered invariants.\n");
+
+    const verdict = verifySpec("runtime", { cwd });
+    const warning = verdict.issues.find((i) => i.code === "normative-without-invariants");
+    expect(warning?.severity).toBe("warning");
+    expect(verdict.ok).toBe(true); // a warning does not fail the lint
+  });
+
+  it("does not emit N redundant dangling-check-ref errors when CHECKS.md is absent (N1)", () => {
+    const cwd = makeWorkspace();
+    createSpec({ cwd, id: "runtime", title: "Runtime", kind: "domain" });
+    const path = specPath(cwd, "runtime");
+    rewriteBody(
+      path,
+      "# Runtime\n\n## Invariants\n\n- **R1** — MUST boot.\n- **R2** — MUST recover.\n" +
+        "\n## Acceptance Criteria\n\n" +
+        "| Invariant | Verification Method | Check Ref | Pass Condition |\n" +
+        "|---|---|---|---|\n" +
+        "| R1 | Inspection | CHECKS.md#C1 | ok |\n" +
+        "| R2 | Inspection | CHECKS.md#C2 | ok |\n",
+    );
+
+    const codes = verifySpec("runtime", { cwd }).issues.map((i) => i.code);
+    expect(codes.filter((c) => c === "missing-checks-file")).toHaveLength(1);
+    expect(codes).not.toContain("dangling-check-ref");
+  });
+
   it("exempts non-normative specs from the AC contract", () => {
     const cwd = makeWorkspace();
     createSpec({ cwd, id: "runtime", title: "Runtime", kind: "domain" });
