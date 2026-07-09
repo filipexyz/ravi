@@ -1179,7 +1179,9 @@ describe("RaviBot runtime guards", () => {
 
     expect(runtimeStartCalls).toHaveLength(2);
     expect(runtimeStartCalls[1]?.model).toBe("session-model");
-    expect(runtimeStartCalls[1]?.effort).toBe("xhigh");
+    // The later non-task turn carries no explicit effort, so it resolves to the
+    // runtime default (medium) — the task-scoped xhigh override does not leak.
+    expect(runtimeStartCalls[1]?.effort).toBe("medium");
     expect(runtimeStartCalls[1]?.env?.RAVI_TASK_ID).toBeUndefined();
   });
 
@@ -1755,7 +1757,9 @@ describe("RaviBot runtime guards", () => {
       onTurnComplete: null,
       starting: false,
       compacting: false,
-      currentEffort: "xhigh",
+      // Matches the runtime default effort so this delivery-barrier test does
+      // not trip the effort-change restart path (unrelated to what it asserts).
+      currentEffort: "medium",
       currentToolSafety: null,
       pendingAbort: false,
     });
@@ -1991,7 +1995,9 @@ describe("RaviBot streaming session lifecycle", () => {
       turnActive: false,
       onTurnComplete: null,
       compacting: false,
-      currentEffort: "xhigh",
+      // Matches the runtime default effort so pushing into the existing session
+      // updates the source in place instead of triggering an effort restart.
+      currentEffort: "medium",
       currentToolSafety: null,
       pendingAbort: false,
     };
