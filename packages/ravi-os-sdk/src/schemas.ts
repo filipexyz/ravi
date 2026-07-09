@@ -56752,14 +56752,14 @@ export const SpecsVerifyInputSchema = {
 
 /** JSON Schema for the return shape of `specs.verify`. */
 export const SpecsVerifyReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "id": {
       "type": "string"
     },
     "issues": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "code": {
             "type": "string"
@@ -56794,7 +56794,7 @@ export const SpecsVerifyReturnSchema = {
       "type": "boolean"
     },
     "summary": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "acRows": {
           "type": "number"

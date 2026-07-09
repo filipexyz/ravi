@@ -1176,7 +1176,7 @@ export const specVerifyReturnSchema = z
           invariant: z.string().optional(),
           message: z.string(),
         })
-        .passthrough(),
+        .strict(),
     ),
     summary: z
       .object({
@@ -1185,9 +1185,9 @@ export const specVerifyReturnSchema = z
         checks: z.number(),
         adaptationItems: z.number(),
       })
-      .passthrough(),
+      .strict(),
   })
-  .passthrough();
+  .strict();
 
 export const taskRecordReturnSchema = looseObjectSchema;
 export const taskEventReturnSchema = looseObjectSchema;

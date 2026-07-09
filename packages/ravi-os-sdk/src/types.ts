@@ -11651,7 +11651,6 @@ export type SpecsVerifyReturn = {
     invariant?: string;
     message: string;
     severity: "error" | "warning";
-    [k: string]: unknown;
   }>;
   normative: boolean;
   ok: boolean;
@@ -11660,9 +11659,7 @@ export type SpecsVerifyReturn = {
     adaptationItems: number;
     checks: number;
     invariants: number;
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `stickers.add`. */
