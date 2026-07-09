@@ -1923,6 +1923,22 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           terminalSkillVisibility,
         );
 
+        // Publish the terminal turn.complete on the session runtime subject so
+        // NATS consumers that key off turn completion fire on every normal turn
+        // — notably the `Stop` hook runner (src/hooks-runtime/runner.ts), which
+        // drives the memory-curator cadence. Without this the runtime only ever
+        // emitted `turn.interrupted` (abort) / `silent` (suppressed) to this
+        // subject, so Stop hooks never fired on a normally-completed turn.
+        // Emitted after params/message persistence above so the hook reads a
+        // fresh cadence state and a delta that includes this turn.
+        await emitRuntimeEvent({
+          type: "turn.complete",
+          provider: runtimeSession.provider,
+          sessionName,
+          reason: "turn.complete",
+          timestamp: new Date().toISOString(),
+        });
+
         // Signal generator to continue (it will clear or keep queue based on interrupted flag)
         signalTurnComplete();
         scheduleIdleSessionEviction();
