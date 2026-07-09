@@ -56735,6 +56735,99 @@ export const SpecsSyncReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `specs.verify`. */
+export const SpecsVerifyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Spec id: domain[/capability[/feature]]",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `specs.verify`. */
+export const SpecsVerifyReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "issues": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "invariant": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "message"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "normative": {
+      "type": "boolean"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "summary": {
+      "additionalProperties": false,
+      "properties": {
+        "acRows": {
+          "type": "number"
+        },
+        "adaptationItems": {
+          "type": "number"
+        },
+        "checks": {
+          "type": "number"
+        },
+        "invariants": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "invariants",
+        "acRows",
+        "checks",
+        "adaptationItems"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "normative",
+    "ok",
+    "issues",
+    "summary"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `stickers.add`. */
 export const StickersAddInputSchema = {
   "additionalProperties": false,

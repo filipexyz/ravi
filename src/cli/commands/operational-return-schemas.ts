@@ -1163,6 +1163,32 @@ export const specsSyncReturnSchema = z
   })
   .passthrough();
 
+export const specVerifyReturnSchema = z
+  .object({
+    id: z.string(),
+    normative: z.boolean(),
+    ok: z.boolean(),
+    issues: z.array(
+      z
+        .object({
+          code: z.string(),
+          severity: z.enum(["error", "warning"]),
+          invariant: z.string().optional(),
+          message: z.string(),
+        })
+        .strict(),
+    ),
+    summary: z
+      .object({
+        invariants: z.number(),
+        acRows: z.number(),
+        checks: z.number(),
+        adaptationItems: z.number(),
+      })
+      .strict(),
+  })
+  .strict();
+
 export const taskRecordReturnSchema = looseObjectSchema;
 export const taskEventReturnSchema = looseObjectSchema;
 export const taskProfileReturnSchema = looseObjectSchema;
