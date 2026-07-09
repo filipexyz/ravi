@@ -1,10 +1,15 @@
 import { describe, expect, it } from "bun:test";
-import { advanceCurationCounter, readMemoryCurationState, writeMemoryCurationState } from "./curation-state.js";
+import {
+  advanceCurationCounter,
+  markCurationMessageProcessed,
+  readMemoryCurationState,
+  writeMemoryCurationState,
+} from "./curation-state.js";
 
 describe("readMemoryCurationState (R1 / R1b resume-align)", () => {
   it("returns zero-initialized snapshot with requested cadence when state is absent", () => {
     const state = readMemoryCurationState({ runtimeSessionParams: undefined }, 10);
-    expect(state).toEqual({ turnCount: 0, lastCuratedTurn: 0, cadenceTurns: 10 });
+    expect(state).toEqual({ turnCount: 0, lastCuratedTurn: 0, cadenceTurns: 10, lastCuratedMessageId: 0 });
   });
 
   it("reads existing state from runtimeSessionParams and prefers stored cadence", () => {
@@ -16,13 +21,13 @@ describe("readMemoryCurationState (R1 / R1b resume-align)", () => {
       },
       10,
     );
-    expect(state).toEqual({ turnCount: 7, lastCuratedTurn: 0, cadenceTurns: 5 });
+    expect(state).toEqual({ turnCount: 7, lastCuratedTurn: 0, cadenceTurns: 5, lastCuratedMessageId: 0 });
   });
 
   it("R1b: preserved turnCount survives across restarts (state serialized on disk)", () => {
     const serialized = writeMemoryCurationState(
       { runtimeSessionParams: { unrelated: "keep-me" } },
-      { turnCount: 3, lastCuratedTurn: 0, cadenceTurns: 10 },
+      { turnCount: 3, lastCuratedTurn: 0, cadenceTurns: 10, lastCuratedMessageId: 0 },
     );
     // Simulate persistence + reload
     const reloaded = readMemoryCurationState({ runtimeSessionParams: serialized }, 10);
@@ -48,7 +53,7 @@ describe("readMemoryCurationState (R1 / R1b resume-align)", () => {
 
 describe("advanceCurationCounter", () => {
   it("does not fire on turns before reaching the cadence multiple", () => {
-    let state = { turnCount: 0, lastCuratedTurn: 0, cadenceTurns: 3 };
+    let state = { turnCount: 0, lastCuratedTurn: 0, cadenceTurns: 3, lastCuratedMessageId: 0 };
     const fires: number[] = [];
     for (let i = 0; i < 8; i += 1) {
       const advanced = advanceCurationCounter(state);
@@ -61,7 +66,7 @@ describe("advanceCurationCounter", () => {
   });
 
   it("fires exactly once per cadence boundary and never twice at the same turn", () => {
-    let state = { turnCount: 0, lastCuratedTurn: 0, cadenceTurns: 2 };
+    let state = { turnCount: 0, lastCuratedTurn: 0, cadenceTurns: 2, lastCuratedMessageId: 0 };
     const first = advanceCurationCounter(state);
     expect(first.shouldCurate).toBe(false);
     state = first.next;
@@ -77,7 +82,7 @@ describe("advanceCurationCounter", () => {
 
   it("resume-aligned: restart mid-cycle keeps cadence phase (fires at turn N, not N + saved)", () => {
     // Session persisted at turn 7 with cadence 10.
-    let state = { turnCount: 7, lastCuratedTurn: 0, cadenceTurns: 10 };
+    let state = { turnCount: 7, lastCuratedTurn: 0, cadenceTurns: 10, lastCuratedMessageId: 0 };
     for (let i = 0; i < 2; i += 1) {
       state = advanceCurationCounter(state).next;
     }
@@ -89,9 +94,41 @@ describe("advanceCurationCounter", () => {
   });
 
   it("clamps zero or negative cadence to 1 (fire every turn) instead of dividing by zero", () => {
-    const state = { turnCount: 0, lastCuratedTurn: 0, cadenceTurns: 0 };
+    const state = { turnCount: 0, lastCuratedTurn: 0, cadenceTurns: 0, lastCuratedMessageId: 0 };
     const fire = advanceCurationCounter(state);
     expect(fire.next.cadenceTurns).toBe(1);
     expect(fire.shouldCurate).toBe(true);
+  });
+
+  it("never advances lastCuratedMessageId on its own — only markCurationMessageProcessed moves it", () => {
+    let state = { turnCount: 0, lastCuratedTurn: 0, cadenceTurns: 2, lastCuratedMessageId: 40 };
+    state = advanceCurationCounter(state).next;
+    state = advanceCurationCounter(state).next;
+    expect(state.lastCuratedMessageId).toBe(40);
+  });
+});
+
+describe("markCurationMessageProcessed (R27 incremental transcript read)", () => {
+  it("advances lastCuratedMessageId so the next cycle only reads messages rows added after it", () => {
+    const session = {
+      runtimeSessionParams: {
+        memoryCuration: { turnCount: 10, lastCuratedTurn: 10, cadenceTurns: 10, lastCuratedMessageId: 0 },
+      },
+    };
+    const nextParams = markCurationMessageProcessed(session, 10, 137);
+    const reloaded = readMemoryCurationState({ runtimeSessionParams: nextParams }, 10);
+    expect(reloaded.lastCuratedMessageId).toBe(137);
+    expect(reloaded.turnCount).toBe(10);
+  });
+
+  it("never regresses the watermark (max, not overwrite) if called with a smaller message id", () => {
+    const session = {
+      runtimeSessionParams: {
+        memoryCuration: { turnCount: 20, lastCuratedTurn: 20, cadenceTurns: 10, lastCuratedMessageId: 200 },
+      },
+    };
+    const nextParams = markCurationMessageProcessed(session, 10, 50);
+    const reloaded = readMemoryCurationState({ runtimeSessionParams: nextParams }, 10);
+    expect(reloaded.lastCuratedMessageId).toBe(200);
   });
 });

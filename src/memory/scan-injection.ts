@@ -198,8 +198,9 @@ const INVISIBLE_CHAR_REGEX = /[​-‍⁠⁢-⁤﻿‪-‮⁦-⁩]/g;
  * Returns matches with byte offsets + a `wrapped` string where each match is
  * enclosed in `[BLOCKED:injection|<category>]...[/BLOCKED]`. Invisible /
  * bidirectional unicode codepoints are collapsed to `[BLOCKED:injection|invisible-unicode]`
- * so the snapshot cannot smuggle hidden text. Callers should write the
- * ORIGINAL (post-secret-redact) to disk and inject the WRAPPED copy.
+ * so the snapshot cannot smuggle hidden text. Callers write the WRAPPED copy
+ * to disk (R9 keep-visible: the [BLOCKED:...] markers render inline for both
+ * operator inspection and prompt safety).
  */
 export function scanInjection(content: string): InjectionScanResult {
   if (!content) {

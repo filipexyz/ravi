@@ -73,11 +73,9 @@ export function purgeAgentMemory(agentCwd: string): PurgeAgentMemoryResult {
   }
 
   if (existsSync(paths.memoryDir)) {
-    for (const entry of readdirSync(paths.memoryDir, { withFileTypes: true })) {
-      if (!entry.isFile()) continue;
-      unlinkSync(join(paths.memoryDir, entry.name));
-      topicFilesRemoved += 1;
-    }
+    // m9: rmSync(recursive) clears the whole tree — count first, then a single
+    // recursive unlink instead of per-file unlinkSync + rmSync (double I/O).
+    topicFilesRemoved = readdirSync(paths.memoryDir, { withFileTypes: true }).filter((e) => e.isFile()).length;
     rmSync(paths.memoryDir, { recursive: true, force: true });
     memoryDirDeleted = true;
   }

@@ -99,7 +99,8 @@ function migrateHooksActionTypeConstraint(db: ReturnType<typeof getDb>): void {
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
-      INSERT INTO hooks_new SELECT * FROM hooks;
+      INSERT INTO hooks_new (id, name, event_name, scope_type, scope_value, matcher, action_type, action_payload_json, enabled, async, cooldown_ms, dedupe_key, last_fired_at, last_dedupe_key, fire_count, created_at, updated_at)
+        SELECT id, name, event_name, scope_type, scope_value, matcher, action_type, action_payload_json, enabled, async, cooldown_ms, dedupe_key, last_fired_at, last_dedupe_key, fire_count, created_at, updated_at FROM hooks;
       DROP TABLE hooks;
       ALTER TABLE hooks_new RENAME TO hooks;
       CREATE INDEX IF NOT EXISTS idx_hooks_enabled ON hooks(enabled);

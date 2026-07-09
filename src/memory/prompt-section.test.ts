@@ -30,12 +30,42 @@ describe("buildMemoryPromptSection (R6 / R12 / R13)", () => {
     expect(section).toBeNull();
   });
 
-  it("R13 whole-file: content is injected verbatim (no truncation, no search)", () => {
+  it("R13 whole-file: an under-cap store is injected verbatim (no truncation)", () => {
     const raw = "# Auto Memory\n\n- user prefers bun\n- currentDate = 2026-07-05\n";
     writeFileSync(join(dir, "MEMORY.md"), raw, "utf-8");
     const section = buildMemoryPromptSection(dir);
     expect(section).not.toBeNull();
     expect(section!.content).toContain(raw.trim());
+    expect(section!.content).not.toContain("[memory truncated at read cap");
+  });
+
+  it("R13 read cap: a store larger than cap is truncated-with-marker, not injected whole", () => {
+    // 40 rows of ~30 chars each ≫ a 200-char cap.
+    const rows = Array.from({ length: 40 }, (_, i) => `- fact number ${i} padded padded padded`);
+    const raw = `# Auto Memory\n\n${rows.join("\n")}\n`;
+    writeFileSync(join(dir, "MEMORY.md"), raw, "utf-8");
+    const section = buildMemoryPromptSection(dir, { capChars: 200 });
+    expect(section).not.toBeNull();
+    // Head (index/most-salient rows) survives; tail is dropped.
+    expect(section!.content).toContain("# Auto Memory");
+    expect(section!.content).toContain("fact number 0");
+    expect(section!.content).not.toContain("fact number 39");
+    // The bounded content stays within the cap plus the truncation marker.
+    expect(section!.content).toContain("[memory truncated at read cap 200 chars");
+    expect(section!.content).toContain("Bounded to the 200-char read cap (R13)");
+  });
+
+  it("R13/R16 freshness: header carries the newest absolute date present in the store", () => {
+    const raw = "# Auto Memory\n\n- fact A (2026-06-01)\n- fact B (2026-07-08)\n- fact C (2026-05-20)\n";
+    writeFileSync(join(dir, "MEMORY.md"), raw, "utf-8");
+    const section = buildMemoryPromptSection(dir);
+    expect(section!.content).toContain("Newest entry: 2026-07-08.");
+  });
+
+  it("R13 freshness: no marker when the store carries no absolute date", () => {
+    writeFileSync(join(dir, "MEMORY.md"), "# Auto Memory\n\n- undated fact\n", "utf-8");
+    const section = buildMemoryPromptSection(dir);
+    expect(section!.content).not.toContain("Newest entry:");
   });
 
   it("R12 volatile tier: priority sits between workspace (25) and agent append (35)", () => {

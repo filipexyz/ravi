@@ -7,6 +7,7 @@ export {
   advanceCurationCounter,
   readMemoryCurationState,
   writeMemoryCurationState,
+  markCurationMessageProcessed,
   type MemoryCurationSessionState,
 } from "./curation-state.js";
 export {
@@ -31,6 +32,7 @@ export {
 } from "./curate.js";
 export { loadGoldenSetFixtures, type GoldenSetFixture } from "./golden-set.js";
 export { dedupeEntries, type DedupOptions, type DedupResult } from "./dedup.js";
+export { commitCurationWatermark, advanceWatermarkForCompletedCuratorTask } from "./watermark-commit.js";
 export {
   agentMemoryPaths,
   provisionAgentMemory,

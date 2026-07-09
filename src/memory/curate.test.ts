@@ -158,12 +158,16 @@ describe("applyDeterministicGuard — E2E deterministic pipeline", () => {
     expect(outcomes).toEqual(["rejected", "written"]);
   });
 
-  it("R11: consolidation attempt beyond max returns terminal save_skipped without scanning", async () => {
+  it("R11: consolidation exhausted with an overflow but no Diário rows to evict stays terminal", async () => {
     const target = join(dir, "MEMORY.md");
+    const current = "x".repeat(80); // no Diário table → nothing safe to evict
+    writeFileSync(target, current, "utf-8");
     const result = await applyDeterministicGuard({
       targetPath: target,
-      candidate: { content: "hypothetical" },
-      currentContent: "",
+      expectedPriorContent: current,
+      candidate: { content: "y".repeat(60) },
+      currentContent: current,
+      capChars: 100,
       consolidationAttempt: 4,
       consolidationMaxAttempts: 3,
       telemetry: telemetryBase,
@@ -172,7 +176,57 @@ describe("applyDeterministicGuard — E2E deterministic pipeline", () => {
     if (result.decision.outcome === "rejected") {
       expect(result.decision.reason).toBe("R11:consolidation-thrash");
     }
-    expect(existsSync(target)).toBe(false);
+    // Store untouched — eviction must not corrupt an index it cannot trim.
+    expect(readFileSync(target, "utf-8")).toBe(current);
+  });
+
+  it("R11: a fitting candidate on a beyond-max attempt still writes (no needless freeze)", async () => {
+    const target = join(dir, "MEMORY.md");
+    const result = await applyDeterministicGuard({
+      targetPath: target,
+      candidate: { content: "small note\n" },
+      currentContent: "",
+      consolidationAttempt: 4,
+      consolidationMaxAttempts: 3,
+      telemetry: telemetryBase,
+    });
+    expect(result.decision.outcome).toBe("written");
+    expect(readFileSync(target, "utf-8")).toBe("small note\n");
+  });
+
+  it("R11 fallback: consolidation exhausted evicts the oldest Diário row FIFO and writes", async () => {
+    const target = join(dir, "MEMORY.md");
+    // A store at the edge of cap whose only slack lives in the Diário table.
+    const current = [
+      "# Auto Memory",
+      "",
+      "## Diário",
+      "",
+      "| Data | Tópicos |",
+      "|------|---------|",
+      "| 2026-07-01 | oldest row that should be evicted first |",
+      "| 2026-07-08 | newest row that must survive |",
+    ].join("\n");
+    writeFileSync(target, current, "utf-8");
+    const capChars = current.length + 20; // room for a small addition only after a trim
+    const result = await applyDeterministicGuard({
+      targetPath: target,
+      expectedPriorContent: current,
+      candidate: { content: "new observation appended this turn" },
+      currentContent: current,
+      capChars,
+      consolidationAttempt: 4,
+      consolidationMaxAttempts: 3,
+      telemetry: telemetryBase,
+    });
+    expect(result.decision.outcome).toBe("written");
+    const onDisk = readFileSync(target, "utf-8");
+    // Oldest Diário row gone, newest kept, table structure intact.
+    expect(onDisk).not.toContain("oldest row that should be evicted first");
+    expect(onDisk).toContain("newest row that must survive");
+    expect(onDisk).toContain("| Data | Tópicos |");
+    expect(onDisk).toContain("new observation appended this turn");
+    expect(onDisk.length).toBeLessThanOrEqual(capChars);
   });
 
   it("R17: multiple invocations against distinct targets carry independent caps", async () => {

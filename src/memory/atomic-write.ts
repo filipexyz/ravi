@@ -9,7 +9,18 @@
  * file. Cold-start (R26) is a valid state: absent target ≠ drift.
  */
 
-import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import {
+  closeSync,
+  existsSync,
+  fsyncSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+  writeSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import type { AtomicWriteInput, AtomicWriteResult } from "./types.js";
 
@@ -54,9 +65,17 @@ export function atomicWrite(input: AtomicWriteInput): AtomicWriteResult {
     }
   }
 
-  const tmpName = `.${Date.now()}.${Math.random().toString(36).slice(2, 8)}.tmp`;
+  const tmpName = `.${randomUUID()}.tmp`;
   const tmpPath = join(dirname(input.targetPath), `${targetBaseName(input.targetPath)}${tmpName}`);
-  writeFileSync(tmpPath, input.newContent, "utf-8");
+  // m5: fsync the temp file before the rename so a crash between write and FS
+  // commit cannot leave a rename-visible but zero-length file after reboot.
+  const fd = openSync(tmpPath, "w");
+  try {
+    writeSync(fd, input.newContent);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
   renameSync(tmpPath, input.targetPath);
 
   return {

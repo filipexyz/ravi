@@ -16,6 +16,7 @@
 
 import { checkCap } from "./cap.js";
 import { atomicWrite } from "./atomic-write.js";
+import { evictOldestDiaryRows } from "./evict.js";
 import { scanInjection } from "./scan-injection.js";
 import { scanSecret } from "./scan-secret.js";
 import type { CurationSkipReason } from "./telemetry.js";
@@ -45,8 +46,10 @@ export interface ApplyGuardInput {
   /**
    * R11 — 1-indexed consolidation attempt within the current curator turn.
    * When the caller retries after an overflow, it MUST bump this counter.
-   * Guard returns a terminal `save_skipped` (reason `R11:consolidation-thrash`)
-   * once the attempt exceeds `consolidationMaxAttempts` (default 3).
+   * Once the attempt exceeds `consolidationMaxAttempts` (default 3) the guard
+   * stops asking the LLM to consolidate and applies the deterministic FIFO
+   * eviction fallback (R11:evicted); only a store with nothing safe to evict
+   * yields the terminal `R11:consolidation-thrash`.
    */
   consolidationAttempt?: number;
   consolidationMaxAttempts?: number;
@@ -95,8 +98,12 @@ export interface ApplyGuardResult {
  *      curator's write-back always carries the [BLOCKED:...] markers so a
  *      later prompt build cannot dodge them).
  *   3. R3 — cap check on the full projected file (current tail + new
- *      candidate). Overflow REJECTS with `R11:consolidation-thrash` — the
- *      LLM curator must consolidate before retrying.
+ *      candidate). Overflow REJECTS with `R11:consolidation-thrash` while the
+ *      curator still has consolidation attempts left. Once it exhausts
+ *      `consolidationMaxAttempts` the runtime evicts the oldest Diário rows
+ *      FIFO (R11 deterministic fallback, emits `R11:evicted`) so the store
+ *      never freezes silently; if there is nothing safe to evict it keeps the
+ *      honest terminal `R11:consolidation-thrash`.
  *   4. R10 / R26 — atomic write with drift detection. Drift returns without
  *      writing and drops a `.bak` next to the target.
  *   5. R22 — best-effort telemetry emission with the counters.
@@ -105,22 +112,6 @@ export async function applyDeterministicGuard(input: ApplyGuardInput): Promise<A
   const cap = input.capChars ?? DEFAULT_MEMORY_CAP_CHARS;
   const attempt = input.consolidationAttempt ?? 1;
   const maxAttempts = input.consolidationMaxAttempts ?? DEFAULT_CONSOLIDATION_MAX_ATTEMPTS;
-  if (attempt > maxAttempts) {
-    const result: ApplyGuardResult = {
-      decision: {
-        outcome: "rejected",
-        reason: "R11:consolidation-thrash",
-        detail: `R11: consolidation attempt ${attempt} exceeds max ${maxAttempts} — leave memory unchanged this turn`,
-      },
-      scans: {
-        secret: { hadSecret: false, isCredentialOnly: false, matchCount: 0 },
-        injection: { hadInjection: false, matchCount: 0 },
-      },
-      cap: { ok: false, proposedChars: 0, cap, overflowChars: 0 },
-    };
-    await emitTelemetry(input, result, "R11:consolidation-thrash");
-    return result;
-  }
 
   const secret = scanSecret(input.candidate.content);
   if (secret.isCredentialOnly) {
@@ -134,7 +125,10 @@ export async function applyDeterministicGuard(input: ApplyGuardInput): Promise<A
         secret: { hadSecret: true, isCredentialOnly: true, matchCount: secret.matches.length },
         injection: { hadInjection: false, matchCount: 0 },
       },
-      cap: { ok: true, proposedChars: 0, cap, overflowChars: 0 },
+      // n13: cap was not evaluated (rejected at R9b before the cap check).
+      // Report ok:false for consistency with the R11 pre-check above — never
+      // signal a passing cap for a write that never happened.
+      cap: { ok: false, proposedChars: 0, cap, overflowChars: 0 },
     };
     await emitTelemetry(input, result, "R9b:credential-rejected");
     return result;
@@ -151,61 +145,105 @@ export async function applyDeterministicGuard(input: ApplyGuardInput): Promise<A
     capChars: cap,
   });
 
+  const scans = {
+    secret: {
+      hadSecret: secret.hasSecret,
+      isCredentialOnly: false,
+      matchCount: secret.matches.length,
+    },
+    injection: { hadInjection: injection.hasInjection, matchCount: injection.matches.length },
+  } as const;
+
+  // Eviction state threads through the write path so telemetry can report the
+  // R11:evicted counter and the on-disk content reflects the trimmed store.
+  let effectiveProjected = projectedContent;
+  let effectiveVerdict = capVerdict;
+  let evictedRows = 0;
+
   if (!capVerdict.ok) {
-    const result: ApplyGuardResult = {
-      decision: {
-        outcome: "rejected",
-        reason: "R11:consolidation-thrash",
-        detail: capVerdict.reason ?? `Projected write exceeds cap ${cap} by ${capVerdict.overflowChars}`,
-      },
-      scans: {
-        secret: {
-          hadSecret: secret.hasSecret,
-          isCredentialOnly: false,
-          matchCount: secret.matches.length,
+    // While the LLM curator still has consolidation attempts left, reject and
+    // let it try to shrink its own proposal (R11 judgment path). Only once it
+    // exhausts `consolidationMaxAttempts` does the runtime take over with a
+    // deterministic FIFO eviction so the store can never freeze silently.
+    if (attempt <= maxAttempts) {
+      const result: ApplyGuardResult = {
+        decision: {
+          outcome: "rejected",
+          reason: "R11:consolidation-thrash",
+          detail: capVerdict.reason ?? `Projected write exceeds cap ${cap} by ${capVerdict.overflowChars}`,
         },
-        injection: { hadInjection: injection.hasInjection, matchCount: injection.matches.length },
-      },
-      cap: {
-        ok: false,
-        proposedChars: capVerdict.proposedChars,
-        cap: capVerdict.cap,
-        overflowChars: capVerdict.overflowChars,
-      },
-    };
-    await emitTelemetry(input, result, "R11:consolidation-thrash");
-    return result;
+        scans,
+        cap: {
+          ok: false,
+          proposedChars: capVerdict.proposedChars,
+          cap: capVerdict.cap,
+          overflowChars: capVerdict.overflowChars,
+        },
+      };
+      await emitTelemetry(input, result, "R11:consolidation-thrash");
+      return result;
+    }
+
+    const eviction = evictOldestDiaryRows(input.currentContent, capVerdict.overflowChars);
+    const evictedProjected = joinIndex(eviction.content, injectionWrapped);
+    const evictedVerdict = checkCap({
+      currentContent: eviction.content,
+      proposedContent: evictedProjected,
+      capChars: cap,
+    });
+
+    // Eviction only helps when there was a Diário table to trim AND the trim
+    // actually brings the projected write under cap. Otherwise keep the honest
+    // terminal outcome rather than corrupting the store to force a write.
+    if (eviction.evictedRows === 0 || !evictedVerdict.ok) {
+      const result: ApplyGuardResult = {
+        decision: {
+          outcome: "rejected",
+          reason: "R11:consolidation-thrash",
+          detail:
+            eviction.evictedRows === 0
+              ? `R11: consolidation exhausted (attempt ${attempt} > ${maxAttempts}) and no Diário rows to evict — leaving memory unchanged`
+              : `R11: evicted ${eviction.evictedRows} Diário row(s) but projected write still exceeds cap ${cap}`,
+        },
+        scans,
+        cap: {
+          ok: false,
+          proposedChars: capVerdict.proposedChars,
+          cap: capVerdict.cap,
+          overflowChars: capVerdict.overflowChars,
+        },
+      };
+      await emitTelemetry(input, result, "R11:consolidation-thrash");
+      return result;
+    }
+
+    effectiveProjected = evictedProjected;
+    effectiveVerdict = evictedVerdict;
+    evictedRows = eviction.evictedRows;
   }
 
   if (input.telemetry?.dryRun) {
     const result: ApplyGuardResult = {
       decision: {
         outcome: "written",
-        finalContent: projectedContent,
-        finalChars: projectedContent.length,
+        finalContent: effectiveProjected,
+        finalChars: effectiveProjected.length,
       },
-      scans: {
-        secret: {
-          hadSecret: secret.hasSecret,
-          isCredentialOnly: false,
-          matchCount: secret.matches.length,
-        },
-        injection: { hadInjection: injection.hasInjection, matchCount: injection.matches.length },
-      },
+      scans,
       cap: {
         ok: true,
-        proposedChars: capVerdict.proposedChars,
-        cap: capVerdict.cap,
+        proposedChars: effectiveVerdict.proposedChars,
+        cap: effectiveVerdict.cap,
         overflowChars: 0,
       },
     };
-    await emitTelemetry(input, result);
+    await emitTelemetry(input, result, undefined, evictedRows);
     return result;
   }
 
   const writeResult = atomicWrite({
     targetPath: input.targetPath,
-    newContent: projectedContent,
+    newContent: effectiveProjected,
     ...(input.expectedPriorContent !== undefined ? { expectedPriorContent: input.expectedPriorContent } : {}),
   });
 
@@ -216,18 +254,11 @@ export async function applyDeterministicGuard(input: ApplyGuardInput): Promise<A
         ...(writeResult.backupPath ? { backupPath: writeResult.backupPath } : {}),
         detail: writeResult.reason ?? "R10 drift refused write",
       },
-      scans: {
-        secret: {
-          hadSecret: secret.hasSecret,
-          isCredentialOnly: false,
-          matchCount: secret.matches.length,
-        },
-        injection: { hadInjection: injection.hasInjection, matchCount: injection.matches.length },
-      },
+      scans,
       cap: {
         ok: true,
-        proposedChars: capVerdict.proposedChars,
-        cap: capVerdict.cap,
+        proposedChars: effectiveVerdict.proposedChars,
+        cap: effectiveVerdict.cap,
         overflowChars: 0,
       },
     };
@@ -238,25 +269,18 @@ export async function applyDeterministicGuard(input: ApplyGuardInput): Promise<A
   const result: ApplyGuardResult = {
     decision: {
       outcome: "written",
-      finalContent: projectedContent,
+      finalContent: effectiveProjected,
       finalChars: writeResult.finalChars,
     },
-    scans: {
-      secret: {
-        hadSecret: secret.hasSecret,
-        isCredentialOnly: false,
-        matchCount: secret.matches.length,
-      },
-      injection: { hadInjection: injection.hasInjection, matchCount: injection.matches.length },
-    },
+    scans,
     cap: {
       ok: true,
-      proposedChars: capVerdict.proposedChars,
-      cap: capVerdict.cap,
+      proposedChars: effectiveVerdict.proposedChars,
+      cap: effectiveVerdict.cap,
       overflowChars: 0,
     },
   };
-  await emitTelemetry(input, result);
+  await emitTelemetry(input, result, undefined, evictedRows);
   return result;
 }
 
@@ -272,6 +296,7 @@ async function emitTelemetry(
   input: ApplyGuardInput,
   result: ApplyGuardResult,
   skipReason?: CurationSkipReason,
+  evictedRows = 0,
 ): Promise<void> {
   if (!input.telemetry) {
     return;
@@ -279,7 +304,16 @@ async function emitTelemetry(
   const saved = result.decision.outcome === "written" ? 1 : 0;
   const skipped = skipReason ? 1 : 0;
   const stagedHitl = result.decision.outcome === "drift" ? 1 : 0;
-  const skipReasons = skipReason ? { [skipReason]: 1 } : undefined;
+  // R11:evicted is an observability counter, not a skip: a successful write
+  // that had to trim the store still reports saved=1 while surfacing the trim.
+  const skipReasons: Partial<Record<CurationSkipReason, number>> = {};
+  if (skipReason) {
+    skipReasons[skipReason] = 1;
+  }
+  if (evictedRows > 0) {
+    skipReasons["R11:evicted"] = evictedRows;
+  }
+  const hasSkipReasons = Object.keys(skipReasons).length > 0;
   await emitCurationCycleEvent({
     agentId: input.telemetry.agentId,
     cadenceTurn: input.telemetry.cadenceTurn,
@@ -299,6 +333,6 @@ async function emitTelemetry(
     driftDetected: result.decision.outcome === "drift",
     capBytesLimit: result.cap.cap,
     capBytesAfter: result.decision.outcome === "written" ? result.decision.finalChars : undefined,
-    ...(skipReasons ? { skipReasons } : {}),
+    ...(hasSkipReasons ? { skipReasons } : {}),
   });
 }

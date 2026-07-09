@@ -1,5 +1,8 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { getRecentHistory } from "../db.js";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { getRecentHistory, saveMessage } from "../db.js";
 
 const actualTasksIndexModule = await import("../tasks/index.js");
 
@@ -273,6 +276,32 @@ describe("hooks-runtime runner", () => {
     expect(dispatchCalls).toHaveLength(0);
   });
 
+  it("dispatch_task does NOT create an orphan task when {{agentId}} stays unresolved", async () => {
+    const created = dbCreateHook({
+      name: "curator-unresolved-agent",
+      eventName: "Stop",
+      scopeType: "global",
+      actionType: "dispatch_task",
+      actionPayload: {
+        profileId: "curador-memoria",
+        title: "Curate memory for {{agentId}}",
+        targetAgentId: "{{agentId}}",
+      },
+    });
+    createdHookIds.push(created.id);
+
+    // Stop event from a session with no resolvable agentId (e.g. task-*-work).
+    await runHookById(created.id, {
+      eventName: "Stop",
+      source: "test",
+      sessionName: "task-020a96f3-work",
+      cwd: process.cwd(),
+    });
+
+    expect(createTaskCalls).toHaveLength(0);
+    expect(dispatchCalls).toHaveLength(0);
+  });
+
   it("anti-reentrancy: dispatch_task does NOT fire on a session name ending in -curator", async () => {
     const created = dbCreateHook({
       name: "reentry-block",
@@ -350,6 +379,95 @@ describe("hooks-runtime runner", () => {
     }
   });
 
+  it("R27: dispatch_task materializes CURATOR_TRANSCRIPT.md from the messages table, delta only", async () => {
+    // Regression: transcript_path used to point at a file nobody ever wrote —
+    // the curator had nothing real to read in production. The hook must now
+    // pull the session's own rows from `messages` (src/db.ts, source of
+    // truth) and write only what's new since the last cycle, for ANY
+    // agent/session uniformly (session_id in `messages` == sessionName).
+    const { getOrCreateSession, getSession, updateRuntimeProviderState, deleteSession } = await import(
+      "../router/sessions.js"
+    );
+    const { markCurationMessageProcessed } = await import("../memory/index.js");
+    const sessionKey = `sql-transcript-${Date.now()}`;
+    const sessionName = sessionKey;
+    const agentCwd = mkdtempSync(join(tmpdir(), "ravi-curator-transcript-"));
+    getOrCreateSession(sessionKey, "ravi-dev", agentCwd);
+
+    saveMessage(sessionName, "user", "primeira mensagem — nao deve aparecer no ciclo 2");
+    saveMessage(sessionName, "assistant", "resposta 1 — nao deve aparecer no ciclo 2");
+
+    try {
+      const created = dbCreateHook({
+        name: "memory-curator-sql",
+        eventName: "Stop",
+        scopeType: "session",
+        scopeValue: sessionKey,
+        actionType: "dispatch_task",
+        actionPayload: {
+          profileId: "curador-memoria",
+          title: "Curate memory for {{agentId}}",
+          targetAgentId: "{{agentId}}",
+          profileInputJson: JSON.stringify({
+            agent_id: "{{agentId}}",
+            transcript_path: "{{agentCwd}}/CURATOR_TRANSCRIPT.md",
+            since_message_id: "{{metadata.sinceMessageId}}",
+          }),
+          cadenceTurns: 1,
+        },
+      });
+      createdHookIds.push(created.id);
+
+      const eventBase = {
+        eventName: "Stop" as const,
+        source: "test",
+        sessionName,
+        sessionKey,
+        agentId: "ravi-dev",
+        agentCwd,
+        cwd: process.cwd(),
+      };
+
+      // Cycle 1 fires (cadence 1) — reads from message id 0, i.e. everything
+      // saved so far. transcript_path must exist and contain both messages.
+      await runHookById(created.id, eventBase);
+      const afterCycle1 = readFileSync(join(agentCwd, "CURATOR_TRANSCRIPT.md"), "utf-8");
+      expect(afterCycle1).toContain("primeira mensagem");
+      expect(afterCycle1).toContain("resposta 1");
+      expect(createTaskCalls[0]!.input.profileInput).toEqual(expect.objectContaining({ since_message_id: "0" }));
+
+      // Simulate what the real curator LLM does on a successful cycle: call
+      // `ravi memory guard --processed-through-message-id` to advance the
+      // watermark. Without this, a failed/never-completed cycle correctly
+      // leaves the watermark untouched (safe fallback) — this test covers
+      // the happy path where the curator DID finish.
+      const sessionAfterCycle1 = getSession(sessionKey);
+      expect(sessionAfterCycle1).not.toBeNull();
+      const cycle1MessageIds = (afterCycle1.match(/msg#(\d+)/g) ?? []).map((m) => Number(m.replace("msg#", "")));
+      const maxIdCycle1 = Math.max(...cycle1MessageIds);
+      const nextParams = markCurationMessageProcessed(sessionAfterCycle1!, 1, maxIdCycle1);
+      updateRuntimeProviderState(sessionKey, sessionAfterCycle1!.runtimeProvider, {
+        runtimeSessionParams: nextParams,
+        ...(sessionAfterCycle1!.providerSessionId ? { providerSessionId: sessionAfterCycle1!.providerSessionId } : {}),
+      });
+
+      // New turn happens between cycles.
+      saveMessage(sessionName, "user", "segunda mensagem — SO esta deve aparecer no ciclo 2");
+      saveMessage(sessionName, "assistant", "resposta 2 — SO esta deve aparecer no ciclo 2");
+
+      // Cycle 2 fires — must read ONLY the delta, not the whole session.
+      await runHookById(created.id, eventBase);
+      const afterCycle2 = readFileSync(join(agentCwd, "CURATOR_TRANSCRIPT.md"), "utf-8");
+      expect(afterCycle2).toContain("segunda mensagem");
+      expect(afterCycle2).toContain("resposta 2");
+      expect(afterCycle2).not.toContain("primeira mensagem");
+      expect(afterCycle2).not.toContain("resposta 1");
+    } finally {
+      deleteSession(sessionKey);
+      rmSync(agentCwd, { recursive: true, force: true });
+    }
+  });
+
   it("R1: dispatch_task with cadenceTurns fires exactly every N events on a session", async () => {
     const { getOrCreateSession, getSession, deleteSession } = await import("../router/sessions.js");
     const sessionKey = `cadence-${Date.now()}`;
@@ -389,9 +507,9 @@ describe("hooks-runtime runner", () => {
 
       const persisted = getSession(sessionKey);
       const curationState = persisted?.runtimeSessionParams?.memoryCuration as
-        | { turnCount?: number; lastCuratedTurn?: number; cadenceTurns?: number }
+        | { turnCount?: number; lastCuratedTurn?: number; cadenceTurns?: number; lastCuratedMessageId?: number }
         | undefined;
-      expect(curationState).toEqual({ turnCount: 5, lastCuratedTurn: 3, cadenceTurns: 3 });
+      expect(curationState).toEqual({ turnCount: 5, lastCuratedTurn: 3, cadenceTurns: 3, lastCuratedMessageId: 0 });
     } finally {
       deleteSession(sessionKey);
     }
@@ -450,6 +568,61 @@ describe("hooks-runtime runner", () => {
         | undefined;
       expect(curationState?.turnCount).toBe(10);
       expect(curationState?.lastCuratedTurn).toBe(10);
+    } finally {
+      deleteSession(sessionKey);
+    }
+  });
+
+  it("m11: dispatch_task cadence tick MUST NOT null out providerSessionId/runtimeSessionDisplayId", async () => {
+    // Regression: advanceSessionCadence used to call updateRuntimeProviderState
+    // with only runtimeSessionParams set. Because that helper writes
+    // sdk_session_id/runtime_session_display_id unconditionally whenever
+    // runtimeSessionParams is present, omitting providerSessionId zeroed the
+    // provider's continuity id on every cadence tick (every 10 turns) — the
+    // next turn had no id to resume from, so the runtime provider silently
+    // started a fresh conversation ("loses the thread" symptom reported by RM).
+    const { getOrCreateSession, getSession, updateRuntimeProviderState, deleteSession } = await import(
+      "../router/sessions.js"
+    );
+    const sessionKey = `provider-continuity-${Date.now()}`;
+    const session = getOrCreateSession(sessionKey, "ravi-dev", process.cwd());
+    updateRuntimeProviderState(sessionKey, session.runtimeProvider, {
+      providerSessionId: "sdk-session-must-survive-cadence",
+      runtimeSessionParams: { memoryCuration: { turnCount: 0, lastCuratedTurn: 0, cadenceTurns: 2 } },
+    });
+
+    try {
+      const created = dbCreateHook({
+        name: "memory-provider-continuity",
+        eventName: "Stop",
+        scopeType: "session",
+        scopeValue: sessionKey,
+        actionType: "dispatch_task",
+        actionPayload: {
+          profileId: "default",
+          title: "Curate turn {{sessionKey}}",
+          targetAgentId: "curator-agent",
+          cadenceTurns: 2,
+        },
+      });
+      createdHookIds.push(created.id);
+
+      const eventBase = {
+        eventName: "Stop" as const,
+        source: "test",
+        sessionName: session.name ?? sessionKey,
+        sessionKey,
+        agentId: "ravi-dev",
+        cwd: process.cwd(),
+      };
+
+      // Fires at turn 2 — the exact tick that used to null the provider id.
+      await runHookById(created.id, eventBase);
+      await runHookById(created.id, eventBase);
+      expect(createTaskCalls).toHaveLength(1);
+
+      const persisted = getSession(sessionKey);
+      expect(persisted?.providerSessionId).toBe("sdk-session-must-survive-cadence");
     } finally {
       deleteSession(sessionKey);
     }

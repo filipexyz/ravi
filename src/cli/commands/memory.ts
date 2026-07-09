@@ -1,11 +1,16 @@
 import "reflect-metadata";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
 import { Command, CommandAccess, Group, Option } from "../decorators.js";
 import { fail } from "../context.js";
-import { applyDeterministicGuard, DEFAULT_MEMORY_CAP_CHARS, provisionAgentMemory } from "../../memory/index.js";
+import {
+  applyDeterministicGuard,
+  DEFAULT_MEMORY_CAP_CHARS,
+  provisionAgentMemory,
+  commitCurationWatermark,
+} from "../../memory/index.js";
 import type { MemoryStoreKind } from "../../memory/index.js";
 import { getAgent, getAllAgents } from "../../router/index.js";
 import { dbCreateHook, dbListHooks } from "../../hooks-runtime/index.js";
@@ -85,6 +90,12 @@ export class MemoryCommands {
     })
     hookId?: string,
     @Option({
+      flags: "--processed-through-message-id <n>",
+      description:
+        "R27: highest messages.id (src/db.ts) the curator read through this cycle. On a successful write, advances the session's incremental-read watermark so the NEXT cycle's CURATOR_TRANSCRIPT.md only contains rows added after it, instead of re-reading the whole session. Requires --session-key.",
+    })
+    processedThroughMessageId?: string,
+    @Option({
       flags: "--consolidation-attempt <n>",
       description: "1-indexed attempt within the current turn; guard rejects at max (default 3)",
     })
@@ -129,6 +140,26 @@ export class MemoryCommands {
     }
 
     const targetPath = target!.trim();
+    if (!isAbsolute(targetPath)) {
+      fail("--target must be an absolute path");
+    }
+    // Defense-in-depth (M2): the guard is the enforcement layer for curator
+    // writes — the description mandates the curator LLM route every write
+    // through it. A compromised curator must not be able to read or write
+    // outside a registered agent cwd via --target, so restrict the resolved
+    // path to known agent roots before any disk read.
+    const resolvedTarget = resolve(targetPath);
+    const agentRoots = getAllAgents()
+      .map((a) => a.cwd?.replace("~", homedir()))
+      .filter((c): c is string => Boolean(c))
+      .map((c) => resolve(c));
+    const insideAgentCwd = agentRoots.some((root) => {
+      const rel = relative(root, resolvedTarget);
+      return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+    });
+    if (!insideAgentCwd) {
+      fail("--target must resolve inside a registered agent cwd");
+    }
     const currentContent = existsSync(targetPath) ? readFileSync(targetPath, "utf-8") : "";
     const expectedPriorContent = resolveExpectedPrior(expectedPriorPath, targetPath, currentContent);
 
@@ -158,6 +189,23 @@ export class MemoryCommands {
         ...(dryRun ? { dryRun: true } : {}),
       },
     });
+
+    // R27/P1: the LLM-reported watermark is now a NO-OP-SAFE FALLBACK. The
+    // authoritative advance happens in the runtime when the curator task
+    // completes (advanceWatermarkForCompletedCuratorTask via completeTask), so
+    // a proposto=0 cycle over a non-empty delta still moves the cursor. This
+    // path only nudges the watermark forward on a successful write; because the
+    // commit is monotonic (Math.max), a double-advance with the completion path
+    // is harmless. Never advances on rejected/drift.
+    const parsedProcessedMessageId = parsePositiveInt(processedThroughMessageId, "--processed-through-message-id");
+    if (
+      result.decision.outcome === "written" &&
+      !dryRun &&
+      parsedProcessedMessageId !== undefined &&
+      sessionKey?.trim()
+    ) {
+      commitCurationWatermark(sessionKey.trim(), parsedCadence || 1, parsedProcessedMessageId);
+    }
 
     const payload = {
       outcome: result.decision.outcome,
@@ -221,8 +269,8 @@ export class MemoryCommands {
     }
 
     const cadence = parsePositiveInt(cadenceTurns, "--cadence-turns") ?? DEFAULT_ENROLL_CADENCE;
-    if (cadence <= 0) {
-      fail("--cadence-turns must be positive");
+    if (cadence < 2) {
+      fail("--cadence-turns must be >= 2 (curator reentrancy protection)");
     }
 
     const targets = all ? getAllAgents() : [getAgent(agent!)].filter(Boolean);
@@ -268,7 +316,21 @@ export class MemoryCommands {
             targetAgentId: "{{agentId}}",
             profileInputJson: JSON.stringify({
               agent_id: "{{agentId}}",
+              // R27: the hook writes this file itself from the `messages` SQL
+              // table (src/hooks-runtime/actions.ts writeCuratorTranscript),
+              // containing only rows added since the last cycle — the curator
+              // never has to reach for the whole session history.
               transcript_path: "{{agentCwd}}/CURATOR_TRANSCRIPT.md",
+              since_message_id: "{{metadata.sinceMessageId}}",
+              // R27/P1: the highest messages.id materialized into this cycle's
+              // transcript. The runtime advances the session watermark to this
+              // value when the curator task COMPLETES (done) — regardless of
+              // whether the curator saved anything — so a proposto=0 cycle over
+              // a non-empty delta still moves the cursor and the delta can't
+              // re-grow forever (slow-collapse fix). The LLM-reported
+              // --processed-through-message-id path stays as a no-op-safe
+              // fallback but is no longer the only thing that advances.
+              highest_message_id: "{{metadata.highestMessageId}}",
               memory_path: "{{agentCwd}}/MEMORY.md",
               memory_dir: "{{agentCwd}}/memory",
               cadence_turn: "{{metadata.cadenceTurn}}",
@@ -568,33 +630,35 @@ function printHumanSummary(payload: {
 
 const guardOutcomeSchema = z.enum(["written", "rejected", "drift"]);
 
-const memoryGuardReturnSchema = z.object({
-  outcome: guardOutcomeSchema,
-  reason: z.string().optional(),
-  detail: z.string().optional(),
-  finalChars: z.number().optional(),
-  backupPath: z.string().optional(),
-  target: z.string(),
-  store: z.enum(["memory", "user"]),
-  scans: z.object({
-    secret: z.object({
-      hadSecret: z.boolean(),
-      isCredentialOnly: z.boolean(),
-      matchCount: z.number(),
+const memoryGuardReturnSchema = z
+  .object({
+    outcome: guardOutcomeSchema,
+    reason: z.string().optional(),
+    detail: z.string().optional(),
+    finalChars: z.number().optional(),
+    backupPath: z.string().optional(),
+    target: z.string(),
+    store: z.enum(["memory", "user"]),
+    scans: z.object({
+      secret: z.object({
+        hadSecret: z.boolean(),
+        isCredentialOnly: z.boolean(),
+        matchCount: z.number(),
+      }),
+      injection: z.object({
+        hadInjection: z.boolean(),
+        matchCount: z.number(),
+      }),
     }),
-    injection: z.object({
-      hadInjection: z.boolean(),
-      matchCount: z.number(),
+    cap: z.object({
+      ok: z.boolean(),
+      proposedChars: z.number(),
+      cap: z.number(),
+      overflowChars: z.number(),
     }),
-  }),
-  cap: z.object({
-    ok: z.boolean(),
-    proposedChars: z.number(),
-    cap: z.number(),
-    overflowChars: z.number(),
-  }),
-  dryRun: z.boolean(),
-});
+    dryRun: z.boolean(),
+  })
+  .strict();
 
 const memoryEnrollReturnSchema = z
   .object({

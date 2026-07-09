@@ -29,6 +29,7 @@ export type CurationSkipReason =
   | "R9b:credential-redacted"
   | "R10:drift-refused"
   | "R11:consolidation-thrash"
+  | "R11:evicted"
   | "R14:conflict-staged"
   | "R14:conflict-unresolved"
   | "R15:staleness-staged"
