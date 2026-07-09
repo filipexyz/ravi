@@ -24,7 +24,7 @@ describe("task runtime options", () => {
       configModel: "global-model",
     });
 
-    expect(resolved.options).toEqual({ model: "task-model", effort: "xhigh", thinking: "verbose" });
+    expect(resolved.options).toEqual({ model: "task-model", effort: "medium", thinking: "verbose" });
     expect(resolved.sources.model).toBe("task_override");
     expect(resolved.sources.effort).toBe("runtime_default");
     expect(resolved.sources.thinking).toBe("task_override");
@@ -63,9 +63,22 @@ describe("task runtime options", () => {
     expect(resolveTaskRuntimeOptions({ configModel: "global-model" }).options.model).toBe("global-model");
   });
 
-  it("uses xhigh as the default effort and falls back to it for invalid effort values", () => {
+  it("uses agent runtime defaults ahead of global defaults", () => {
+    const resolved = resolveTaskRuntimeOptions({
+      agentModel: "agent-model",
+      agentRuntimeDefaults: { effort: "high", thinking: "normal" },
+      configModel: "global-model",
+    });
+
+    expect(resolved.options).toEqual({ model: "agent-model", effort: "high", thinking: "normal" });
+    expect(resolved.sources.model).toBe("agent_default");
+    expect(resolved.sources.effort).toBe("agent_default");
+    expect(resolved.sources.thinking).toBe("agent_default");
+  });
+
+  it("uses medium as the default effort and falls back to it for invalid effort values", () => {
     const defaulted = resolveTaskRuntimeOptions({ configModel: "global-model" });
-    expect(defaulted.options.effort).toBe("xhigh");
+    expect(defaulted.options.effort).toBe("medium");
     expect(defaulted.sources.effort).toBe("runtime_default");
 
     const invalid = resolveTaskRuntimeOptions({
@@ -73,7 +86,7 @@ describe("task runtime options", () => {
       configModel: "global-model",
     });
 
-    expect(invalid.options.effort).toBe("xhigh");
+    expect(invalid.options.effort).toBe("medium");
     expect(invalid.sources.effort).toBe("task_override");
   });
 });

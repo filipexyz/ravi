@@ -303,7 +303,7 @@ describe("createClaudeRuntimeProvider", () => {
 
     expect(queryCalls).toHaveLength(1);
     expect(queryCalls[0]?.prompt).toBe("hello");
-    expect(queryCalls[0]?.options.effort).toBe("max");
+    expect(queryCalls[0]?.options.effort).toBe("medium");
     expect(queryCalls[0]?.options.pathToClaudeCodeExecutable).toBe("/opt/ravi/bin/native-runtime");
   });
 

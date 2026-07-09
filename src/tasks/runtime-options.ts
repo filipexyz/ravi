@@ -98,6 +98,7 @@ export function resolveTaskRuntimeOptions(input: {
   sessionModelOverride?: string | null;
   sessionThinkingLevel?: TaskRuntimeThinking | string | null;
   agentModel?: string | null;
+  agentRuntimeDefaults?: TaskRuntimeOptionsInput | null;
   configModel?: string | null;
 }): TaskRuntimeResolution {
   const promptOverride = normalizeTaskRuntimeOptions(input.promptOverride);
@@ -111,7 +112,11 @@ export function resolveTaskRuntimeOptions(input: {
     model: input.sessionModelOverride ?? undefined,
     ...(sessionThinking ? { thinking: sessionThinking } : {}),
   });
-  const agentOptions = normalizeTaskRuntimeOptions({ model: input.agentModel ?? undefined });
+  const agentDefaults = normalizeTaskRuntimeOptions(input.agentRuntimeDefaults);
+  const agentOptions = normalizeTaskRuntimeOptions({
+    ...(agentDefaults ?? {}),
+    model: input.agentModel ?? agentDefaults?.model,
+  });
   const configOptions = normalizeTaskRuntimeOptions({ model: input.configModel ?? undefined });
 
   const sources: Array<[TaskRuntimeOptionsSource, TaskRuntimeOptions | undefined]> = [

@@ -555,11 +555,11 @@ rl.on("line", (line) => {
     const completions = findEventsByType(events, "turn.complete");
 
     expect(calls[0]?.model).toBe("gpt-5.4");
-    expect(calls[0]?.effort).toBe("xhigh");
+    expect(calls[0]?.effort).toBe("medium");
     expect(completions[0]?.execution?.model).toBe("gpt-5.4");
   });
 
-  it("uses xhigh as the Codex effort when the requested effort is invalid", async () => {
+  it("uses medium as the Codex effort when the requested effort is invalid", async () => {
     const { calls, transport } = createMockTransport([
       () => ({
         events: (async function* () {
@@ -575,7 +575,7 @@ rl.on("line", (line) => {
 
     await collectEvents(session.events);
 
-    expect(calls[0]?.effort).toBe("xhigh");
+    expect(calls[0]?.effort).toBe("medium");
   });
 
   it("loads workspace instructions from AGENTS.md into the Codex system prompt", async () => {

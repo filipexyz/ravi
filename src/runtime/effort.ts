@@ -2,7 +2,7 @@ export const RUNTIME_EFFORT_LEVELS = ["low", "medium", "high", "xhigh"] as const
 
 export type RuntimeEffort = (typeof RUNTIME_EFFORT_LEVELS)[number];
 
-export const DEFAULT_RUNTIME_EFFORT: RuntimeEffort = "xhigh";
+export const DEFAULT_RUNTIME_EFFORT: RuntimeEffort = "medium";
 
 export type StrongestCompatibleRuntimeEffort = Exclude<RuntimeEffort, "xhigh"> | "max";
 

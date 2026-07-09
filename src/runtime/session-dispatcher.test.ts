@@ -546,7 +546,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       const activeSession = createActiveSession({
         agentId: "main",
         turnActive: true,
-        currentEffort: "xhigh",
+        currentEffort: "medium",
         currentSource: activeSource,
       });
       dispatcher.streamingSessions.set("followup-source", activeSession);
@@ -611,7 +611,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       const activeSession = createActiveSession({
         agentId: "main",
         turnActive: true,
-        currentEffort: "xhigh",
+        currentEffort: "medium",
         currentSource: activeSource,
         queryHandle: {
           provider: "codex",

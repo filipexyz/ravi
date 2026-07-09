@@ -1,6 +1,6 @@
 import type { AgentConfig, SessionEntry } from "../router/index.js";
 import { resolveTaskProfileForTask } from "../tasks/profiles.js";
-import { resolveTaskRuntimeOptions } from "../tasks/runtime-options.js";
+import { resolveTaskRuntimeOptions, type TaskRuntimeOptionsInput } from "../tasks/runtime-options.js";
 import { emitTaskEvent } from "../tasks/service.js";
 import { dbMarkTaskAcceptedForSession, dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
@@ -10,6 +10,26 @@ import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 
 const log = logger.child("runtime:task-context");
+
+function getAgentRuntimeDefaults(agent: AgentConfig): TaskRuntimeOptionsInput | undefined {
+  const defaults = agent.defaults;
+  if (!defaults) {
+    return undefined;
+  }
+
+  const runtimeDefaults: TaskRuntimeOptionsInput = {};
+  if (typeof defaults.model === "string") {
+    runtimeDefaults.model = defaults.model;
+  }
+  if (typeof defaults.effort === "string") {
+    runtimeDefaults.effort = defaults.effort;
+  }
+  if (typeof defaults.thinking === "string") {
+    runtimeDefaults.thinking = defaults.thinking;
+  }
+
+  return Object.keys(runtimeDefaults).length > 0 ? runtimeDefaults : undefined;
+}
 
 export function resolveRuntimeForPrompt(options: {
   sessionName: string;
@@ -40,7 +60,6 @@ export function resolveRuntimeForPrompt(options: {
 
   const promptOverride =
     options.prompt._observation && options.prompt._runtimeModel ? { model: options.prompt._runtimeModel } : undefined;
-
   return resolveTaskRuntimeOptions({
     promptOverride,
     task: binding?.task,
@@ -49,6 +68,7 @@ export function resolveRuntimeForPrompt(options: {
     sessionModelOverride: options.session?.modelOverride,
     sessionThinkingLevel: options.session?.thinkingLevel,
     agentModel: options.agent.model,
+    agentRuntimeDefaults: getAgentRuntimeDefaults(options.agent),
     configModel: options.configModel,
   });
 }
