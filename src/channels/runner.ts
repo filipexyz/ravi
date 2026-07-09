@@ -9,7 +9,7 @@ import {
   ensureChannelOutboundInfrastructure,
 } from "./outbound-stream.js";
 import { ChannelPresenceConsumer } from "./presence-consumer.js";
-import { createSlackNativeRuntimeFromEnv, type SlackNativeRuntime } from "./slack/index.js";
+import { createSlackNativeRuntimesFromEnv, type SlackNativeRuntime } from "./slack/index.js";
 
 const log = logger.child("channels:runner");
 
@@ -52,7 +52,7 @@ export class ChannelRunner {
   private presenceConsumer: ChannelPresenceConsumer | null = null;
   private deliveries: NativeTextDelivery[] = [];
   private presenceDeliveries: NativePresenceDelivery[] = [];
-  private slackRuntime: SlackNativeRuntime | null = null;
+  private slackRuntimes: SlackNativeRuntime[] = [];
   private adapterStatuses = new Map<string, AdapterStatus>();
 
   constructor(private readonly options: ChannelRunnerOptions = {}) {}
@@ -107,8 +107,8 @@ export class ChannelRunner {
     this.outboundConsumer = null;
     await this.presenceConsumer?.stop();
     this.presenceConsumer = null;
-    await this.slackRuntime?.socketMode.stop();
-    this.slackRuntime = null;
+    await Promise.all(this.slackRuntimes.map((runtime) => runtime.socketMode.stop()));
+    this.slackRuntimes = [];
     this.deliveries = [];
     this.presenceDeliveries = [];
     this.markAdapter("slack", "slack", "disconnected");
@@ -135,16 +135,18 @@ export class ChannelRunner {
   private async startSlack(env: NodeJS.ProcessEnv): Promise<void> {
     this.markAdapter("slack", "slack", "starting");
     try {
-      const runtime = await createSlackNativeRuntimeFromEnv(env);
-      if (!runtime) {
+      const runtimes = await createSlackNativeRuntimesFromEnv(env);
+      if (runtimes.length === 0) {
         this.markAdapter("slack", "slack", "disabled", "not_configured");
         return;
       }
 
-      this.slackRuntime = runtime;
-      this.deliveries.push(runtime.delivery);
-      this.presenceDeliveries.push(runtime.presence);
-      runtime.socketMode.start();
+      this.slackRuntimes = runtimes;
+      for (const runtime of runtimes) {
+        this.deliveries.push(runtime.delivery);
+        this.presenceDeliveries.push(runtime.presence);
+        runtime.socketMode.start();
+      }
       this.markAdapter("slack", "slack", "connected");
     } catch (error) {
       this.markAdapter("slack", "slack", "failed", error instanceof Error ? error.message : String(error));

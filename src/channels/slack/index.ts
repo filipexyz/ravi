@@ -47,6 +47,7 @@ export {
   SlackSocketModeService,
   SlackTextDelivery,
   createSlackNativeRuntimeFromEnv,
+  createSlackNativeRuntimesFromEnv,
 } from "./socket-mode.js";
 export type { SlackNativeRuntime, SlackSocketModeServiceOptions } from "./socket-mode.js";
 export type {

@@ -12486,6 +12486,10 @@ export const ChannelsRestartInputSchema = {
     "slackConnection": {
       "description": "Optional Slack credential connection override",
       "type": "string"
+    },
+    "slackConnections": {
+      "description": "Comma-separated Slack credential connections to run in one native runner",
+      "type": "string"
     }
   },
   "type": "object"
@@ -12529,6 +12533,12 @@ export const ChannelsRestartReturnSchema = {
               "type": "null"
             }
           ]
+        },
+        "slackConnections": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "slackSocketMode": {
           "type": "boolean"
@@ -12758,6 +12768,10 @@ export const ChannelsStartInputSchema = {
     "slackConnection": {
       "description": "Optional Slack credential connection override",
       "type": "string"
+    },
+    "slackConnections": {
+      "description": "Comma-separated Slack credential connections to run in one native runner",
+      "type": "string"
     }
   },
   "type": "object"
@@ -12801,6 +12815,12 @@ export const ChannelsStartReturnSchema = {
               "type": "null"
             }
           ]
+        },
+        "slackConnections": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "slackSocketMode": {
           "type": "boolean"
@@ -13252,6 +13272,12 @@ export const ChannelsStopReturnSchema = {
               "type": "null"
             }
           ]
+        },
+        "slackConnections": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "slackSocketMode": {
           "type": "boolean"

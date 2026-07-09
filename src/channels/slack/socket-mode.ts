@@ -10,6 +10,7 @@ import {
   dbUpsertChatMessage,
   dbUpsertChatParticipant,
 } from "../../router/router-db.js";
+import type { InstanceConfig } from "../../router/router-db.js";
 import type { RouterConfig } from "../../router/types.js";
 import type { MessageActorMetadata, MessageContext, MessageTarget } from "../../runtime/message-types.js";
 import { transcribeAudio } from "../../transcribe/openai.js";
@@ -24,7 +25,7 @@ import type {
   NativeTextDeliveryResult,
 } from "../native/types.js";
 import { SlackWebApiClient } from "./client.js";
-import { resolveSlackCredentialConfigFromEnv } from "./credentials.js";
+import { credentialConnectionForInstance, resolveSlackCredentialConfigFromEnv } from "./credentials.js";
 import { storeSlackInteractionResponseUrl } from "./interactions.js";
 import {
   cleanSlackId,
@@ -77,6 +78,24 @@ export interface SlackNativeRuntime {
   readonly socketMode: SlackSocketModeService;
 }
 
+interface SlackDeliveryScope {
+  readonly accountId: string;
+  readonly routeAccountId?: string;
+  readonly instanceId?: string;
+  readonly connection?: string;
+}
+
+function slackTargetMatchesScope(scope: SlackDeliveryScope | undefined, target: MessageTarget): boolean {
+  if (target.channel.toLowerCase() !== "slack") return false;
+  if (!scope) return true;
+  const ids = new Set(
+    [scope.accountId, scope.routeAccountId, scope.instanceId, scope.connection]
+      .map((item) => item?.trim())
+      .filter((item): item is string => Boolean(item)),
+  );
+  return Boolean((target.instanceId && ids.has(target.instanceId)) || (target.accountId && ids.has(target.accountId)));
+}
+
 class RecentIdCache {
   private readonly ids = new Set<string>();
   private readonly order: string[] = [];
@@ -104,10 +123,11 @@ export class SlackTextDelivery implements NativeTextDelivery {
   constructor(
     private readonly webClient: SlackWebApiClient,
     private readonly routingPolicy: SlackRoutingPolicy,
+    private readonly scope?: SlackDeliveryScope,
   ) {}
 
   supports(target: MessageTarget): boolean {
-    return target.channel.toLowerCase() === this.channelId;
+    return slackTargetMatchesScope(this.scope, target);
   }
 
   async deliverText(request: NativeTextDeliveryRequest): Promise<NativeTextDeliveryResult> {
@@ -132,10 +152,11 @@ export class SlackAssistantThreadPresence implements NativePresenceDelivery {
   constructor(
     private readonly webClient: Pick<SlackWebApiClient, "setAssistantThreadStatus">,
     private readonly options: { statusText?: string; loadingMessages?: readonly string[] } = {},
+    private readonly scope?: SlackDeliveryScope,
   ) {}
 
   supports(target: MessageTarget): boolean {
-    return target.channel.toLowerCase() === this.channelId;
+    return slackTargetMatchesScope(this.scope, target);
   }
 
   async sendPresence(request: NativePresenceDeliveryRequest): Promise<NativePresenceDeliveryResult> {
@@ -178,10 +199,11 @@ export class SlackReactionPresence implements NativePresenceDelivery {
   constructor(
     private readonly webClient: SlackWebApiClient,
     private readonly options: { reactionName?: string } = {},
+    private readonly scope?: SlackDeliveryScope,
   ) {}
 
   supports(target: MessageTarget): boolean {
-    return target.channel.toLowerCase() === this.channelId;
+    return slackTargetMatchesScope(this.scope, target);
   }
 
   async sendPresence(request: NativePresenceDeliveryRequest): Promise<NativePresenceDeliveryResult> {
@@ -984,8 +1006,12 @@ function syncSlackSessionSubscription(
 
 export async function createSlackNativeRuntimeFromEnv(
   env: NodeJS.ProcessEnv = process.env,
+  options: { instance?: InstanceConfig } = {},
 ): Promise<SlackNativeRuntime | null> {
-  const credentials = await resolveSlackCredentialConfigFromEnv(env, { instances: configStore.getConfig().instances });
+  const credentials = await resolveSlackCredentialConfigFromEnv(env, {
+    instances: configStore.getConfig().instances,
+    instance: options.instance,
+  });
   if (!credentials) {
     log.warn("Slack native runtime disabled: configure a Slack channel instance with brokered credentials");
     return null;
@@ -1005,17 +1031,26 @@ export async function createSlackNativeRuntimeFromEnv(
     routingPolicy,
     webClient,
   });
-  const delivery = new SlackTextDelivery(webClient, routingPolicy);
-  const reactionPresence = new SlackReactionPresence(webClient, {
-    reactionName: env.RAVI_SLACK_WORKING_REACTION?.trim() || "hourglass_flowing_sand",
-  });
+  const scope = slackDeliveryScopeFromCredentials(credentials);
+  const delivery = new SlackTextDelivery(webClient, routingPolicy, scope);
+  const reactionPresence = new SlackReactionPresence(
+    webClient,
+    {
+      reactionName: env.RAVI_SLACK_WORKING_REACTION?.trim() || "hourglass_flowing_sand",
+    },
+    scope,
+  );
   const reactionMode = slackReactionPresenceModeFromEnv(env.RAVI_SLACK_REACTION_PRESENCE);
   const assistantPresenceEnabled = slackAssistantPresenceEnabledFromEnv(env.RAVI_SLACK_ASSISTANT_STATUS);
   const presence = assistantPresenceEnabled
     ? new SlackPresenceStack(
-        new SlackAssistantThreadPresence(webClient, {
-          statusText: env.RAVI_SLACK_ASSISTANT_STATUS_TEXT?.trim() || "is working...",
-        }),
+        new SlackAssistantThreadPresence(
+          webClient,
+          {
+            statusText: env.RAVI_SLACK_ASSISTANT_STATUS_TEXT?.trim() || "is working...",
+          },
+          scope,
+        ),
         reactionMode === "off" ? null : reactionPresence,
         { reactionMode },
       )
@@ -1029,6 +1064,65 @@ export async function createSlackNativeRuntimeFromEnv(
     reactionPresenceMode: reactionMode,
   });
   return { delivery, presence, socketMode };
+}
+
+export async function createSlackNativeRuntimesFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<SlackNativeRuntime[]> {
+  const explicitConnections = parseSlackConnectionList(env.RAVI_SLACK_CONNECTIONS);
+  if (explicitConnections.length === 0) {
+    const runtime = await createSlackNativeRuntimeFromEnv(env);
+    return runtime ? [runtime] : [];
+  }
+
+  const instances = configStore.getConfig().instances;
+  const runtimes: SlackNativeRuntime[] = [];
+  for (const connection of explicitConnections) {
+    const instance = findSlackInstanceForConnection(instances, connection);
+    const runtime = await createSlackNativeRuntimeFromEnv({ ...env, RAVI_SLACK_CONNECTION: connection }, { instance });
+    if (runtime) runtimes.push(runtime);
+  }
+  return runtimes;
+}
+
+function parseSlackConnectionList(value: string | undefined): string[] {
+  if (!value?.trim()) return [];
+  return Array.from(
+    new Set(
+      value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function findSlackInstanceForConnection(
+  instances: Record<string, InstanceConfig> | undefined,
+  connection: string,
+): InstanceConfig | undefined {
+  return Object.values(instances ?? {}).find((instance) => {
+    if (instance.enabled === false || instance.channel !== "slack") return false;
+    return (
+      instance.name === connection ||
+      instance.instanceId === connection ||
+      credentialConnectionForInstance(instance) === connection
+    );
+  });
+}
+
+function slackDeliveryScopeFromCredentials(credentials: {
+  accountId: string;
+  routeAccountId?: string;
+  instanceId?: string;
+  connection?: string;
+}): SlackDeliveryScope {
+  return {
+    accountId: credentials.accountId,
+    routeAccountId: credentials.routeAccountId,
+    instanceId: credentials.instanceId,
+    connection: credentials.connection,
+  };
 }
 
 function slackAssistantPresenceEnabledFromEnv(value: string | undefined): boolean {

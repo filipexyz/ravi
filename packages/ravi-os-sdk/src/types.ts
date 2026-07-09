@@ -2227,6 +2227,7 @@ export type ChannelsProbeReturn = {
 export type ChannelsRestartInput = {
   build?: boolean;
   slackConnection?: string;
+  slackConnections?: string;
 };
 
 /** Return shape for `channels.restart`. */
@@ -2238,6 +2239,7 @@ export type ChannelsRestartReturn = {
   runnerEnv?: {
     consumeOutbound: string;
     slackConnection: string | null;
+    slackConnections?: string[];
     slackSocketMode: boolean;
   };
   status?: {
@@ -2277,6 +2279,7 @@ export type ChannelsRestartReturn = {
 export type ChannelsStartInput = {
   build?: boolean;
   slackConnection?: string;
+  slackConnections?: string;
 };
 
 /** Return shape for `channels.start`. */
@@ -2288,6 +2291,7 @@ export type ChannelsStartReturn = {
   runnerEnv?: {
     consumeOutbound: string;
     slackConnection: string | null;
+    slackConnections?: string[];
     slackSocketMode: boolean;
   };
   status?: {
@@ -2366,6 +2370,7 @@ export type ChannelsStopReturn = {
   runnerEnv?: {
     consumeOutbound: string;
     slackConnection: string | null;
+    slackConnections?: string[];
     slackSocketMode: boolean;
   };
   status?: {
