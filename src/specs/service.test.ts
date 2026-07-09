@@ -275,6 +275,26 @@ describe("specs service", () => {
     expect(codes).not.toContain("dangling-check-ref");
   });
 
+  it("warns on an orphan AC row for an undeclared invariant (F-4 reverse)", () => {
+    const cwd = makeWorkspace();
+    createSpec({ cwd, id: "runtime", title: "Runtime", kind: "domain", full: true });
+    const path = specPath(cwd, "runtime");
+    rewriteBody(
+      path,
+      "# Runtime\n\n## Invariants\n\n- **R1** — MUST boot.\n" +
+        "\n## Acceptance Criteria\n\n" +
+        "| Invariant | Verification Method | Check Ref | Pass Condition |\n" +
+        "|---|---|---|---|\n" +
+        "| R1 | Inspection | CHECKS.md#C1 | ok |\n" +
+        "| R7 | Inspection | CHECKS.md#C1 | ok |\n",
+    );
+
+    const verdict = verifySpec("runtime", { cwd });
+    const orphan = verdict.issues.find((i) => i.code === "ac-orphan-row");
+    expect(orphan?.invariant).toBe("R7");
+    expect(orphan?.severity).toBe("warning");
+  });
+
   it("exempts non-normative specs from the AC contract", () => {
     const cwd = makeWorkspace();
     createSpec({ cwd, id: "runtime", title: "Runtime", kind: "domain" });
