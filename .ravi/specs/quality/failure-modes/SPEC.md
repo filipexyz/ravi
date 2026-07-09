@@ -87,6 +87,46 @@ watch:
 - `cron_blind_repeated`
 - `wrong_session_context_bleed`
 
+## Cron Blindness (`cron_blind_repeated`)
+
+Recurring cron failures whose real cause is host resource pressure (disk/temp
+exhaustion) are a durable operational failure class, not a per-job flake. When
+cron shell jobs fail repeatedly with out-of-space signatures, they MUST be
+grouped under one failure mode instead of generating one task per job run.
+
+```yaml
+id: cron_blind_repeated
+title: Cron jobs repeatedly blind due to host resource pressure
+scope: runtime
+severity: high
+owner: dev
+detect:
+  sources:
+    - cron_job_state
+    - runtime_events
+  predicate: "recurring cron shell failures whose lastError/notification is classified as disk-pressure (ENOSPC / no space left on device / temp-file creation failure)"
+evidence:
+  include:
+    - cron_job_id
+    - last_status
+    - last_error
+    - disk_pressure_hint
+    - doctor_finding_ref  # runtime.disk_space_low
+dedupe:
+  key: "mode+disk_pressure+day"
+  cooldown: 24h
+action:
+  default: task
+  project: runtime
+watch:
+  default_window: 24h
+  success: "runtime.disk_space_low passing and zero disk-pressure cron failures"
+```
+
+Classification and remediation stay read-only and approval-gated: detection
+links the `runtime.disk_space_low` doctor finding and the disk-pressure hint,
+but any cleanup follows the doctor runbook under explicit human approval.
+
 ## Promotion Rule
 
 An ad hoc investigation SHOULD become a formal failure mode when it recurs, requires a repeatable investigation path, or is likely to regress.

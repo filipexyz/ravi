@@ -1,6 +1,16 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, type Dirent } from "node:fs";
-import { homedir } from "node:os";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statfsSync,
+  statSync,
+  writeFileSync,
+  type Dirent,
+} from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { SQLQueryBindings } from "bun:sqlite";
 import { checkAppManifests, discoverAppManifests } from "../../apps/service.js";
@@ -150,6 +160,17 @@ type GitInfo = {
 
 type QueryRows = <T extends Record<string, unknown>>(sql: string, params?: SQLQueryBindings[]) => T[];
 
+export interface DiskUsageStat {
+  totalBytes: number;
+  freeBytes: number;
+  deviceId?: number;
+}
+
+export interface DiskProbeResult {
+  ok: boolean;
+  error?: string;
+}
+
 type DoctorDeps = {
   inspectCliRuntimeTarget: (instanceName?: string | null) => CliRuntimeTargetSummary;
   getRaviStateDir: () => string;
@@ -193,6 +214,9 @@ type DoctorDeps = {
   homeDir: () => string;
   cwd: () => string;
   now: () => Date;
+  tempDir: () => string;
+  statDisk: (path: string) => DiskUsageStat | null;
+  probeDir: (path: string) => DiskProbeResult;
 };
 
 export interface InspectDoctorOptions {
@@ -248,7 +272,54 @@ const DEFAULT_DEPS: DoctorDeps = {
   homeDir: homedir,
   cwd: () => process.cwd(),
   now: () => new Date(),
+  tempDir: () => tmpdir(),
+  statDisk: defaultStatDisk,
+  probeDir: defaultProbeDir,
 };
+
+function defaultStatDisk(path: string): DiskUsageStat | null {
+  try {
+    const stats = statfsSync(path);
+    const blockSize = Number(stats.bsize);
+    const totalBytes = Number(stats.blocks) * blockSize;
+    const freeBytes = Number(stats.bavail) * blockSize;
+    if (!Number.isFinite(totalBytes) || !Number.isFinite(freeBytes)) return null;
+    let deviceId: number | undefined;
+    try {
+      deviceId = Number(statSync(path).dev);
+      if (!Number.isFinite(deviceId)) deviceId = undefined;
+    } catch {
+      deviceId = undefined;
+    }
+    return { totalBytes, freeBytes, ...(deviceId !== undefined ? { deviceId } : {}) };
+  } catch {
+    return null;
+  }
+}
+
+function defaultProbeDir(path: string): DiskProbeResult {
+  // Read-only smoke test: create and immediately remove a minimal temp file to
+  // confirm the directory is writable and can allocate space. Never touches
+  // pre-existing files.
+  let probe: string | undefined;
+  try {
+    probe = mkdtempSync(join(path, ".ravi-doctor-probe-"));
+    const file = join(probe, "probe");
+    writeFileSync(file, "ok");
+    rmSync(probe, { recursive: true, force: true });
+    probe = undefined;
+    return { ok: true };
+  } catch (error) {
+    if (probe) {
+      try {
+        rmSync(probe, { recursive: true, force: true });
+      } catch {
+        // best-effort cleanup
+      }
+    }
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
 
 const SEVERITY_LABEL: Record<DoctorSeverity, string> = {
   error: "ERROR",
@@ -348,6 +419,7 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
   addCheck(checks, () => buildRuntimeMatchCheck(runtimeTarget));
   addCheck(checks, () => buildDaemonCwdCheck(runtimeTarget));
   addCheck(checks, () => buildStateDirCheck(stateDir, deps));
+  addCheck(checks, () => buildDiskSpaceCheck(stateDir, deps));
   addCheck(checks, () => buildRaviDbCheck(raviDbPath, deps));
   addCheck(checks, () => buildInsightsDbCheck(insightsDbPath, deps));
   addCheck(checks, () => buildProviderCompatibilityCheck(deps));
@@ -881,6 +953,186 @@ function buildStateDirCheck(stateDir: string, deps: DoctorDeps): LegacyDoctorChe
     details: [stateDir],
     fixHint: "initialize ~/.ravi before relying on the local runtime substrate",
     data: { path: stateDir },
+  };
+}
+
+const DISK_CRITICAL_FREE_BYTES = 1 * 1024 ** 3; // 1 GiB
+const DISK_WARN_FREE_BYTES = 5 * 1024 ** 3; // 5 GiB
+const DISK_CRITICAL_PERCENT_USED = 97;
+const DISK_WARN_PERCENT_USED = 90;
+
+interface DiskTargetReport {
+  label: string;
+  path: string;
+  freeBytes: number | null;
+  totalBytes: number | null;
+  percentUsed: number | null;
+  deviceId?: number;
+  probeOk: boolean;
+  probeError?: string;
+  severity: LegacyDoctorCheckStatus;
+  reason?: string;
+}
+
+function redactHomePath(path: string, home: string): string {
+  if (home && (path === home || path.startsWith(`${home}/`))) {
+    return `~${path.slice(home.length)}`;
+  }
+  return path;
+}
+
+function formatBytes(bytes: number | null): string {
+  if (bytes === null || !Number.isFinite(bytes)) return "unknown";
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KiB", "MiB", "GiB", "TiB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(1)} ${units[unit]}`;
+}
+
+function evaluateDiskTarget(label: string, rawPath: string, deps: DoctorDeps): DiskTargetReport {
+  const home = deps.homeDir();
+  const path = redactHomePath(rawPath, home);
+
+  if (!deps.exists(rawPath)) {
+    return {
+      label,
+      path,
+      freeBytes: null,
+      totalBytes: null,
+      percentUsed: null,
+      probeOk: false,
+      probeError: "path does not exist",
+      severity: "warn",
+      reason: "path is not present yet",
+    };
+  }
+
+  const stat = deps.statDisk(rawPath);
+  const probe = deps.probeDir(rawPath);
+
+  const freeBytes = stat ? stat.freeBytes : null;
+  const totalBytes = stat ? stat.totalBytes : null;
+  const percentUsed =
+    stat && stat.totalBytes > 0 ? Math.round(((stat.totalBytes - stat.freeBytes) / stat.totalBytes) * 100) : null;
+
+  let severity: LegacyDoctorCheckStatus = "ok";
+  let reason: string | undefined;
+
+  if (!probe.ok) {
+    severity = "fail";
+    reason = `cannot create/remove a temp file (${probe.error ?? "unknown error"})`;
+  } else if (!stat) {
+    severity = "warn";
+    reason = "free space could not be measured on this platform";
+  } else if (freeBytes !== null && freeBytes < DISK_CRITICAL_FREE_BYTES) {
+    severity = "fail";
+    reason = `free space ${formatBytes(freeBytes)} is below the critical threshold ${formatBytes(DISK_CRITICAL_FREE_BYTES)}`;
+  } else if (percentUsed !== null && percentUsed >= DISK_CRITICAL_PERCENT_USED) {
+    severity = "fail";
+    reason = `usage ${percentUsed}% is at or above the critical threshold ${DISK_CRITICAL_PERCENT_USED}%`;
+  } else if (freeBytes !== null && freeBytes < DISK_WARN_FREE_BYTES) {
+    severity = "warn";
+    reason = `free space ${formatBytes(freeBytes)} is below the operational margin ${formatBytes(DISK_WARN_FREE_BYTES)}`;
+  } else if (percentUsed !== null && percentUsed >= DISK_WARN_PERCENT_USED) {
+    severity = "warn";
+    reason = `usage ${percentUsed}% is at or above the operational margin ${DISK_WARN_PERCENT_USED}%`;
+  }
+
+  return {
+    label,
+    path,
+    freeBytes,
+    totalBytes,
+    percentUsed,
+    ...(stat?.deviceId !== undefined ? { deviceId: stat.deviceId } : {}),
+    probeOk: probe.ok,
+    ...(probe.error ? { probeError: probe.error } : {}),
+    severity,
+    ...(reason ? { reason } : {}),
+  };
+}
+
+function buildDiskSpaceCheck(stateDir: string, deps: DoctorDeps): LegacyDoctorCheck {
+  const targets: Array<{ label: string; path: string }> = [
+    { label: "cwd", path: deps.cwd() },
+    { label: "temp", path: deps.tempDir() },
+    { label: "state", path: stateDir },
+  ];
+
+  const reports = targets.map((target) => evaluateDiskTarget(target.label, target.path, deps));
+
+  let worst: LegacyDoctorCheckStatus = "ok";
+  for (const report of reports) {
+    if (report.severity === "fail") worst = "fail";
+    else if (report.severity === "warn" && worst !== "fail") worst = "warn";
+  }
+
+  const details = reports.map((report) => {
+    const parts = [
+      `${report.label} (${report.path})`,
+      `free ${formatBytes(report.freeBytes)}`,
+      `used ${report.percentUsed === null ? "unknown" : `${report.percentUsed}%`}`,
+      `write-probe ${report.probeOk ? "ok" : "failed"}`,
+    ];
+    if (report.reason) parts.push(report.reason);
+    return parts.join(" · ");
+  });
+
+  const thresholds = {
+    criticalFreeBytes: DISK_CRITICAL_FREE_BYTES,
+    warnFreeBytes: DISK_WARN_FREE_BYTES,
+    criticalPercentUsed: DISK_CRITICAL_PERCENT_USED,
+    warnPercentUsed: DISK_WARN_PERCENT_USED,
+  };
+
+  const data = {
+    thresholds,
+    targets: reports.map((report) => ({
+      label: report.label,
+      path: report.path,
+      freeBytes: report.freeBytes,
+      totalBytes: report.totalBytes,
+      percentUsed: report.percentUsed,
+      ...(report.deviceId !== undefined ? { deviceId: report.deviceId } : {}),
+      writeProbeOk: report.probeOk,
+      ...(report.probeError ? { writeProbeError: report.probeError } : {}),
+      severity: report.severity,
+      ...(report.reason ? { reason: report.reason } : {}),
+    })),
+  };
+
+  if (worst === "ok") {
+    return {
+      id: "runtime.disk_space_low",
+      domain: "runtime",
+      title: "Disk and temp space",
+      status: "ok",
+      summary: "working, temp, and state directories have healthy free space and are writable",
+      details,
+      data,
+    };
+  }
+
+  const pressured = reports.filter((report) => report.severity !== "ok").map((report) => report.label);
+  return {
+    id: "runtime.disk_space_low",
+    domain: "runtime",
+    title: "Disk and temp space",
+    status: worst === "fail" ? "fail" : "warn",
+    severity: worst === "fail" ? "error" : "warn",
+    summary:
+      worst === "fail"
+        ? `disk/temp pressure detected on: ${pressured.join(", ")}`
+        : `disk/temp free space is below the operational margin on: ${pressured.join(", ")}`,
+    details,
+    fixHint:
+      "free space with an operator-approved cleanup (see .ravi/specs/doctor/RUNBOOK.md); ravi doctor never deletes files",
+    data,
   };
 }
 

@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "bun:test";
+import { classifyDiskPressureHint, isDiskPressureFailure } from "./disk-pressure.js";
 import { parseEnvFile, runShellCronCommand } from "./shell-executor.js";
 
 describe("parseEnvFile", () => {
@@ -51,5 +52,29 @@ describe("runShellCronCommand", () => {
     });
 
     expect(result.stdout).toBe("from-env");
+  });
+});
+
+describe("classifyDiskPressureHint", () => {
+  it("classifies ENOSPC failures with a disk-pressure hint", () => {
+    expect(isDiskPressureFailure("Error: ENOSPC: no space left on device, write")).toBe(true);
+    const hint = classifyDiskPressureHint("write error: ENOSPC");
+    expect(hint).toBeDefined();
+    expect(hint).toContain("ENOSPC");
+    expect(hint).toContain("ravi doctor");
+  });
+
+  it("classifies plain 'no space left on device' stderr", () => {
+    expect(classifyDiskPressureHint("bash: cannot create temp file: No space left on device")).toBeDefined();
+  });
+
+  it("classifies temp-file creation failures", () => {
+    expect(classifyDiskPressureHint("mktemp: failed to create temporary file")).toBeDefined();
+  });
+
+  it("does not classify unrelated failures", () => {
+    expect(isDiskPressureFailure("command not found: foo")).toBe(false);
+    expect(classifyDiskPressureHint("exit code 1: assertion failed")).toBeUndefined();
+    expect(classifyDiskPressureHint(null, undefined, "")).toBeUndefined();
   });
 });
