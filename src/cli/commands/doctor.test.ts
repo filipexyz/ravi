@@ -15,6 +15,8 @@ function makeTempDir(prefix: string): string {
 function makeHealthyDeps() {
   const home = makeTempDir("ravi-doctor-home-");
   const stateDir = join(home, ".ravi");
+  const tempDir = join(home, "tmp");
+  mkdirSync(tempDir, { recursive: true });
   const cwd = "/repo";
   const providerRuntimePath = join(cwd, "src", "permissions", "provider-runtime.ts");
   mkdirSync(stateDir, { recursive: true });
@@ -160,6 +162,8 @@ function makeHealthyDeps() {
     exists: (path: string) =>
       [
         stateDir,
+        tempDir,
+        cwd,
         join(stateDir, "ravi.db"),
         join(stateDir, "insights.db"),
         join(home, ".codex", "hooks.json"),
@@ -173,6 +177,9 @@ function makeHealthyDeps() {
     homeDir: () => home,
     cwd: () => cwd,
     now: () => new Date("2026-06-08T12:00:00.000Z"),
+    tempDir: () => tempDir,
+    statDisk: () => ({ totalBytes: 500 * 1024 ** 3, freeBytes: 200 * 1024 ** 3, deviceId: 66 }),
+    probeDir: () => ({ ok: true }),
   };
 }
 
@@ -200,6 +207,73 @@ describe("inspectDoctor", () => {
       "2 task automations",
     );
     expect(report.findings.every((finding) => finding.severity !== "error")).toBe(true);
+  });
+
+  it("passes the disk/temp pressure check when free space is healthy", () => {
+    const deps = makeHealthyDeps();
+    const report = inspectDoctor(deps);
+    const check = report.checks.find((item) => item.id === "runtime.disk_space_low");
+    expect(check?.status).toBe("pass");
+    expect(check?.domain).toBe("runtime");
+    expect(check?.data?.thresholds).toMatchObject({
+      criticalFreeBytes: 1 * 1024 ** 3,
+      warnFreeBytes: 5 * 1024 ** 3,
+    });
+    const targets = (check?.data?.targets ?? []) as Array<{ label: string; writeProbeOk: boolean }>;
+    expect(targets.map((t) => t.label).sort()).toEqual(["cwd", "state", "temp"]);
+    expect(targets.every((t) => t.writeProbeOk)).toBe(true);
+  });
+
+  it("warns the disk/temp pressure check when free space is below the operational margin", () => {
+    const deps = makeHealthyDeps();
+    const report = inspectDoctor({
+      ...deps,
+      statDisk: () => ({ totalBytes: 100 * 1024 ** 3, freeBytes: 4 * 1024 ** 3, deviceId: 66 }),
+    });
+    const check = report.checks.find((item) => item.id === "runtime.disk_space_low");
+    expect(check?.status).toBe("fail");
+    expect(check?.severity).toBe("warn");
+  });
+
+  it("errors the disk/temp pressure check when free space is critically low", () => {
+    const deps = makeHealthyDeps();
+    const report = inspectDoctor({
+      ...deps,
+      statDisk: () => ({ totalBytes: 100 * 1024 ** 3, freeBytes: 512 * 1024 ** 2, deviceId: 66 }),
+    });
+    const check = report.checks.find((item) => item.id === "runtime.disk_space_low");
+    expect(check?.status).toBe("fail");
+    expect(check?.severity).toBe("error");
+    expect(report.summary.errors).toBeGreaterThan(0);
+  });
+
+  it("errors the disk/temp pressure check when a directory cannot pass the write/remove smoke test", () => {
+    const deps = makeHealthyDeps();
+    const report = inspectDoctor({
+      ...deps,
+      probeDir: (path: string) =>
+        path === deps.tempDir() ? { ok: false, error: "ENOSPC: no space left on device" } : { ok: true },
+    });
+    const check = report.checks.find((item) => item.id === "runtime.disk_space_low");
+    expect(check?.status).toBe("fail");
+    expect(check?.severity).toBe("error");
+    const targets = (check?.data?.targets ?? []) as Array<{ label: string; writeProbeOk: boolean; severity: string }>;
+    expect(targets.find((t) => t.label === "temp")?.writeProbeOk).toBe(false);
+    expect(targets.find((t) => t.label === "temp")?.severity).toBe("fail");
+  });
+
+  it("redacts home-relative paths in the disk/temp pressure evidence", () => {
+    const deps = makeHealthyDeps();
+    const report = inspectDoctor(deps);
+    const check = report.checks.find((item) => item.id === "runtime.disk_space_low");
+    const targets = (check?.data?.targets ?? []) as Array<{ label: string; path: string }>;
+    expect(targets.find((t) => t.label === "state")?.path.startsWith("~/")).toBe(true);
+  });
+
+  it("returns the disk/temp pressure check under the runtime domain filter", () => {
+    const deps = makeHealthyDeps();
+    const report = inspectDoctor(deps, { domain: "runtime" });
+    expect(report.checks.some((item) => item.id === "runtime.disk_space_low")).toBe(true);
   });
 
   it("surfaces fail and warn states when critical config is missing or divergent", () => {

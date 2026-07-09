@@ -34,6 +34,60 @@ ravi doctor --domain routes --json
 2. Review `warn` findings when they affect the current workstream.
 3. Use `info` findings only for context, coverage, and snapshots.
 
+## Disk And Temp Pressure Findings (`runtime.disk_space_low`)
+
+`ravi doctor` measures free space and writability for the working directory,
+the OS temp directory, and the Ravi state dir. It is read-only: it never
+deletes, prunes, vacuums, or cleans anything. When it reports `warn`/`error`,
+free space with an operator-approved cleanup — no automated cleanup daemon or
+self-pruning is added by this check.
+
+Inspect the finding first:
+
+```bash
+ravi doctor --domain runtime --json
+```
+
+Then confirm host usage with read-only tools before touching anything:
+
+```bash
+# Where is the pressure? (per filesystem)
+df -h
+
+# Largest space consumers under the home tree (read-only survey)
+du -xhd1 "$HOME" 2>/dev/null | sort -h | tail -40
+du -xhd1 "$HOME/.ravi" 2>/dev/null | sort -h | tail -40
+```
+
+### Safe Cleanup Plan (requires explicit human approval)
+
+Every command below is destructive and MUST NOT be run automatically or by an
+agent. A human operator reviews the survey above, then decides. Prefer moving
+to cold storage over deletion when in doubt. Ravi state directories, databases,
+attachments, artifacts, worktrees, and models MUST NOT be deleted or moved as
+part of routine cleanup.
+
+Candidate, lowest-risk-first (each needs sign-off and a fresh `df -h` check
+before and after):
+
+1. Rotated/rebuildable caches outside Ravi state (package managers, build
+   caches) — safe to clear because they are regenerated on demand.
+2. Old daemon log files under `~/.ravi/logs/` once captured/rotated — review
+   before removing; keep the current log.
+3. OS temp leftovers from crashed processes in the temp dir — only files the
+   operator can attribute to dead processes.
+
+Never in scope for automated or routine cleanup: `~/.ravi/ravi.db`,
+`insights.db`, JetStream storage, artifacts, attachments, models, and agent
+working directories. Removing these loses durable operational state.
+
+After an approved cleanup, re-run `ravi doctor --domain runtime --json` to
+confirm the finding cleared.
+
+If the host is so full that validation commands themselves fail, report that
+explicitly (e.g. `df -h` shows `100%`) rather than hiding it, and escalate for
+approved manual cleanup.
+
 ## Permissions Findings
 
 If doctor reports broad or permanent grants:

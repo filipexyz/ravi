@@ -36,6 +36,7 @@ runtime.branch_drift
 runtime.dirty_worktree
 runtime.schema_missing
 runtime.migration_unverifiable
+runtime.disk_space_low
 routes.agent_missing
 routes.instance_missing
 routes.duplicate_effective_route
@@ -74,6 +75,13 @@ channels.inbound_contact_unresolved
   `permissions.local_operator_explicit`.
 - Runtime bootstrap actor/surface/admin drift emits
   `permissions.runtime_bootstrap_scope`.
+- A target (cwd/temp/state) whose free space is below the critical threshold,
+  or that fails the temp write/remove smoke test, emits `runtime.disk_space_low`
+  at `error`.
+- A target whose free space is below the operational margin emits
+  `runtime.disk_space_low` at `warn`.
+- Healthy free space and a passing smoke test on all targets emits
+  `runtime.disk_space_low` at `pass`.
 
 ## False Positive Guards
 
@@ -84,3 +92,8 @@ channels.inbound_contact_unresolved
 - Passive or archived chats MUST NOT emit active route-missing errors.
 - Zero-token cost rows MUST NOT be treated as priced token leakage.
 - Draft specs MUST NOT fail doctor by default.
+- `runtime.disk_space_low` MUST NOT delete, prune, vacuum, or mutate any
+  pre-existing file; its only write is a self-created temp probe it removes.
+- `runtime.disk_space_low` MUST NOT emit raw private paths, secrets, env
+  values, or context keys in its evidence.
+- A missing/not-yet-created target path MUST degrade to `warn`, not `error`.

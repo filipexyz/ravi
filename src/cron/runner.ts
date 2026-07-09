@@ -21,6 +21,7 @@ import {
 } from "../router/index.js";
 import { getAgent } from "../router/config.js";
 import { dbGetDueJobs, dbGetNextDueJob, dbUpdateJobState, dbDeleteCronJob, dbGetCronJob } from "./cron-db.js";
+import { classifyDiskPressureHint } from "./disk-pressure.js";
 import { calculateNextRun } from "./schedule.js";
 import { markCronSourceAsBackground, type CronPromptSource } from "./source.js";
 import { DEFAULT_CRON_SHELL_TIMEOUT_MS, runShellCronCommand, type ShellCronRunResult } from "./shell-executor.js";
@@ -216,9 +217,11 @@ export class CronRunner {
     }
     const exit = result.exitCode === null ? `signal ${result.signal ?? "unknown"}` : `exit code ${result.exitCode}`;
     const stderr = result.stderr.trim();
-    return stderr
+    const diskHint = classifyDiskPressureHint(stderr, result.stdout, result.command);
+    const base = stderr
       ? `Shell command failed with ${exit}: ${this.truncateForPrompt(stderr)}`
       : `Shell command failed with ${exit}`;
+    return diskHint ? `${base} [disk-pressure] ${diskHint}` : base;
   }
 
   private async notifyShellError(job: CronJob, result: ShellCronRunResult, errorMessage: string): Promise<void> {
@@ -239,12 +242,14 @@ export class CronRunner {
     const sessionName = resolved?.name ?? sessionRef;
     const stdout = result.stdout.trim();
     const stderr = result.stderr.trim();
+    const diskHint = classifyDiskPressureHint(stderr, result.stdout, result.command);
     const prompt = [
       `[System] Inform: [from: cron:${job.id}] Cron shell job failed.`,
       "",
       `Job: ${job.name}`,
       `Command: ${job.shellCommand ?? result.command}`,
       `Error: ${errorMessage}`,
+      diskHint ? `Disk pressure: ${diskHint}` : "",
       `Exit code: ${result.exitCode ?? "(none)"}`,
       `Signal: ${result.signal ?? "(none)"}`,
       `Duration: ${result.durationMs}ms`,
@@ -320,7 +325,9 @@ export class CronRunner {
         dbDeleteCronJob(job.id);
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
+      const rawMessage = err instanceof Error ? err.message : String(err);
+      const diskHint = classifyDiskPressureHint(rawMessage, job.shellCommand);
+      const errorMessage = diskHint ? `${rawMessage} [disk-pressure] ${diskHint}` : rawMessage;
       const nextRunAt = this.calculateFollowupRun(job, startTime);
 
       dbUpdateJobState(job.id, {
@@ -340,7 +347,7 @@ export class CronRunner {
               exitCode: null,
               signal: null,
               stdout: "",
-              stderr: errorMessage,
+              stderr: rawMessage,
               durationMs: Date.now() - startTime,
               timedOut: false,
             },

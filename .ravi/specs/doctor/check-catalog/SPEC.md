@@ -129,6 +129,7 @@ Initial checks:
 - `runtime.dirty_worktree`
 - `runtime.schema_missing`
 - `runtime.migration_unverifiable`
+- `runtime.disk_space_low`
 
 Runtime checks MUST normalize process names and known aliases before reporting
 failures. For example, renamed Omni process names MUST not be reported as
@@ -136,6 +137,57 @@ missing when the replacement process is healthy.
 
 Dirty worktree SHOULD be `info` in development contexts and `warn` or `error`
 only in release/deploy contexts.
+
+### Disk And Temp Pressure (`runtime.disk_space_low`)
+
+Recurring cron blindness has a durable operational root cause: when the host
+runs out of disk or temp space, refinement/backlog crons fail with opaque
+errors instead of a clear "out of space" signal. This check measures host
+storage availability so operators see disk pressure before crons silently
+degrade.
+
+- `id`: `runtime.disk_space_low` (domain `runtime`).
+- `defaultSeverity`: `error` on critical pressure or unusable temp/state dir,
+  `warn` on operational-margin pressure, `info`/`pass` otherwise.
+- `mode`: `local`. The check MUST remain read-only. Its only side effect is a
+  minimal write/remove smoke test of a self-created temp file that it removes
+  immediately; it MUST NOT delete, prune, vacuum, or otherwise mutate any
+  pre-existing file, cache, or state.
+
+Measured targets:
+
+- current working directory (`cwd`);
+- OS temp directory (`temp`);
+- Ravi state dir (`state`).
+
+Evidence per target MUST be bounded and sanitized:
+
+- `label` (`cwd` / `temp` / `state`), not a raw private path when avoidable;
+- `path` with the home directory redacted to `~`;
+- `freeBytes` and `totalBytes`;
+- `percentUsed`;
+- `deviceId` (mount/device) when available;
+- `writeProbeOk` — whether a minimal temp write/remove smoke check succeeded;
+- the thresholds applied.
+
+Evidence MUST NOT expose secrets, env values, context keys, or raw private
+paths.
+
+Thresholds (applied per target; worst target wins):
+
+- `error` when a target cannot create and remove a minimal temp file, or when
+  free space is below the critical threshold (`< 1 GiB` free or `>= 97%` used);
+- `warn` when free space is below the operational margin (`< 5 GiB` free or
+  `>= 90%` used);
+- `pass` otherwise.
+
+When free space cannot be measured on the platform, the target degrades to
+`warn` rather than silently passing. A target whose path does not yet exist is
+reported as `warn`, not `error`.
+
+The fix hint MUST point at the operator cleanup runbook and MUST make clear
+that `ravi doctor` never deletes files; any destructive cleanup stays behind
+explicit human approval.
 
 ## Sessions And Routes
 
