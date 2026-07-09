@@ -1,51 +1,60 @@
-## Objective
-
-<!-- Explain in 2-4 sentences what this PR changes and why it should exist. -->
-
 ## Problem
 
-<!-- List the observable problem that motivated the change. Avoid irrelevant history. -->
+<!-- What was broken, missing, ambiguous, or risky before this PR. -->
 
 - 
 
 ## Solution
 
-<!-- Describe the main technical/product decision. Focus on the new behavior. -->
+<!-- The main decision and the new behavior at the architecture/behavior level. -->
 
 - 
 
-## Practical impact
+## Changes
 
-<!-- Say who or what workflow is affected after merge. -->
-
-- 
-
-## What does NOT change
-
-<!-- Make unchanged behavior explicit to reduce review ambiguity. -->
+<!-- Concrete changes, one per line. -->
 
 - 
 
 ## Validation
 
-<!-- List commands, tests, checks, dry-runs, or real validations executed. -->
+- [ ] Unit tests
+- [ ] Integration/manual test
+- [ ] Existing CI/quality gate
+- [ ] Production or real-runtime validation, if applicable
+
+Evidence:
+- Command/result:
+- Scenario tested:
+- Expected behavior:
+- Observed behavior:
+
+## What does NOT change
+
+<!-- Unchanged behavior, stated to remove review ambiguity. -->
 
 - 
 
-## Risks
+## Risk
 
-<!-- List known risks, compatibility, migration, privacy, or edge cases. -->
+<!-- What could break, who is affected, and what this PR assumes. -->
 
 - 
 
 ## Rollback
 
-<!-- Explain how to revert or mitigate quickly if something fails in production. -->
+<!-- How to revert or mitigate quickly if it fails in production. -->
 
 - 
 
 ## Follow-ups
 
-<!-- Optional: items intentionally left outside this PR scope. -->
+<!-- Optional: work intentionally left outside this PR scope. -->
+
+- 
+
+## Notes for reviewer
+
+<!-- Optional: what the reviewer must pay attention to. -->
 
 - 

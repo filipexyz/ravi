@@ -725,12 +725,15 @@ export class AgentsCommands {
     try {
       const before = getAgent(id);
       const agentCwd = before?.cwd ? before.cwd.replace("~", homedir()) : undefined;
-      const memoryPurge =
-        purgeMemory && agentCwd
-          ? purgeAgentMemory(agentCwd)
-          : { memoryFileDeleted: false, memoryDirDeleted: false, topicFilesRemoved: 0 };
       const deleted = deleteAgent(id);
       if (deleted) {
+        // m4: purge memory only AFTER the agent row is gone. If deleteAgent
+        // fails or returns falsy, memory must stay intact — purge is
+        // irreversible and must never outrun a failed delete.
+        const memoryPurge =
+          purgeMemory && agentCwd
+            ? purgeAgentMemory(agentCwd)
+            : { memoryFileDeleted: false, memoryDirDeleted: false, topicFilesRemoved: 0 };
         const payload = {
           action: "delete" as const,
           changed: true as const,
