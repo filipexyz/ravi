@@ -11638,6 +11638,33 @@ export type SpecsSyncReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `specs.verify`. */
+export type SpecsVerifyInput = {
+  id: string;
+};
+
+/** Return shape for `specs.verify`. */
+export type SpecsVerifyReturn = {
+  id: string;
+  issues: Array<{
+    code: string;
+    invariant?: string;
+    message: string;
+    severity: "error" | "warning";
+    [k: string]: unknown;
+  }>;
+  normative: boolean;
+  ok: boolean;
+  summary: {
+    acRows: number;
+    adaptationItems: number;
+    checks: number;
+    invariants: number;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+};
+
 /** Input shape for `stickers.add`. */
 export type StickersAddInput = {
   agents?: string;

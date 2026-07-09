@@ -9,6 +9,7 @@ import {
   normalizeSpecContextMode,
   normalizeSpecKind,
   syncSpecs,
+  verifySpec,
   type SpecContextMode,
   type SpecKind,
   type SpecRecord,
@@ -18,6 +19,7 @@ import {
   specCreateReturnSchema,
   specsListReturnSchema,
   specsSyncReturnSchema,
+  specVerifyReturnSchema,
 } from "./operational-return-schemas.js";
 
 function printJson(payload: unknown): void {
@@ -153,6 +155,41 @@ export class SpecsCommands {
         }
       }
       return payload;
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  @Command({
+    name: "verify",
+    description: "Lint a spec: invariant↔check traceability + Adaptation contract",
+  })
+  @CommandAccess({ kind: "read", resource: "specs", action: "verify", risk: "low" })
+  @Returns(specVerifyReturnSchema)
+  verify(
+    @Arg("id", { description: "Spec id: domain[/capability[/feature]]" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    try {
+      const result = verifySpec(id);
+      if (asJson) {
+        printJson(result);
+      } else if (result.issues.length === 0) {
+        console.log(
+          `OK ${result.id} — ${result.summary.invariants} invariant(s), ${result.summary.acRows} AC row(s), ${result.summary.checks} check(s).`,
+        );
+      } else {
+        console.log(`${result.ok ? "OK (warnings)" : "FAILED"} ${result.id}:`);
+        for (const issue of result.issues) {
+          const scope = issue.invariant ? ` [${issue.invariant}]` : "";
+          console.log(`  ${issue.severity.toUpperCase()} ${issue.code}${scope}: ${issue.message}`);
+        }
+      }
+      if (!result.ok) {
+        const errors = result.issues.filter((issue) => issue.severity === "error").length;
+        fail(`Spec ${result.id} failed verification: ${errors} error(s).`);
+      }
+      return result;
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }

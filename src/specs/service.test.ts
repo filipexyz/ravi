@@ -4,7 +4,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { listIndexedSpecs } from "./spec-db.js";
-import { createSpec, getSpec, getSpecContext, listSpecs, syncSpecs } from "./service.js";
+import { createSpec, getSpec, getSpecContext, listSpecs, syncSpecs, verifySpec } from "./service.js";
+
+function specPath(cwd: string, id: string): string {
+  return join(cwd, ".ravi/specs", ...id.split("/"), "SPEC.md");
+}
+
+// Replace a SPEC.md body while preserving its YAML frontmatter block.
+function rewriteBody(path: string, body: string): void {
+  const content = readFileSync(path, "utf8");
+  const match = /^(---\r?\n[\s\S]*?\r?\n---\r?\n)/.exec(content);
+  writeFileSync(path, `${match ? match[1] : ""}${body}`, "utf8");
+}
 
 const tempRoots: string[] = [];
 let isolatedStateDir: string | null = null;
@@ -117,6 +128,112 @@ describe("specs service", () => {
     expect(synced.total).toBe(2);
     expect(synced.specs.map((spec) => spec.id)).toEqual(["channels", "channels/presence"]);
     expect(listIndexedSpecs(synced.rootPath).map((spec) => spec.id)).toEqual(["channels", "channels/presence"]);
+  });
+
+  it("pre-populates the canonical template with --full and passes verify out of the box", () => {
+    const cwd = makeWorkspace();
+    const result = createSpec({ cwd, id: "memory/curation/loop", title: "Curation Loop", kind: "feature", full: true });
+
+    const spec = readFileSync(result.spec.path, "utf8");
+    expect(spec).toContain("lifecycle: proposed");
+    expect(spec).toContain("implementation_status: none");
+    expect(spec).toContain("## Acceptance Criteria");
+    expect(spec).toContain("| R1 | Inspection | CHECKS.md#C1 |");
+    expect(spec).toContain("## Adaptation");
+    expect(spec).toContain("## Governance");
+
+    const why = readFileSync(join(cwd, ".ravi/specs/memory/curation/loop/WHY.md"), "utf8");
+    expect(why).toContain("## Alternatives Considered");
+    const checks = readFileSync(join(cwd, ".ravi/specs/memory/curation/loop/CHECKS.md"), "utf8");
+    expect(checks).toContain("C1");
+
+    const verdict = verifySpec("memory/curation/loop", { cwd });
+    expect(verdict.ok).toBe(true);
+    expect(verdict.issues).toEqual([]);
+    expect(verdict.summary).toMatchObject({ invariants: 1, acRows: 1, checks: 1 });
+  });
+
+  it("keeps the minimal template when --full is omitted", () => {
+    const cwd = makeWorkspace();
+    createSpec({ cwd, id: "channels", title: "Channels", kind: "domain" });
+    const spec = readFileSync(specPath(cwd, "channels"), "utf8");
+    expect(spec).not.toContain("lifecycle: proposed");
+    expect(spec).toContain("This spec MUST define at least one concrete invariant.");
+    expect(existsSync(join(cwd, ".ravi/specs/channels/CHECKS.md"))).toBe(false);
+  });
+
+  it("flags an invariant with no CHECKS.md and no AC row", () => {
+    const cwd = makeWorkspace();
+    createSpec({ cwd, id: "runtime", title: "Runtime", kind: "domain" });
+    // Non-full spec has no CHECKS.md; give it a numbered invariant and no AC row.
+    const path = specPath(cwd, "runtime");
+    rewriteBody(path, "# Runtime\n\n## Invariants\n\n- **R1** — Runtime MUST boot.\n");
+
+    const verdict = verifySpec("runtime", { cwd });
+    expect(verdict.ok).toBe(false);
+    const codes = verdict.issues.map((issue) => issue.code);
+    expect(codes).toContain("missing-checks-file");
+    expect(codes).toContain("invariant-without-ac");
+  });
+
+  it("flags dangling check refs and invalid verification methods", () => {
+    const cwd = makeWorkspace();
+    // --full creates CHECKS.md with C1 (but not C9).
+    createSpec({ cwd, id: "runtime", title: "Runtime", kind: "domain", full: true });
+    const path = specPath(cwd, "runtime");
+    // R1 valid; R2 references C9 (absent) with an unresolved method menu.
+    rewriteBody(
+      path,
+      "# Runtime\n\n## Invariants\n\n- **R1** — MUST boot.\n- **R2** — MUST recover.\n" +
+        "\n## Acceptance Criteria\n\n" +
+        "| Invariant | Verification Method | Check Ref | Pass Condition |\n" +
+        "|---|---|---|---|\n" +
+        "| R1 | Inspection | CHECKS.md#C1 | ok |\n" +
+        "| R2 | Test \\| Demonstration | CHECKS.md#C9 | ok |\n",
+    );
+
+    const verdict = verifySpec("runtime", { cwd });
+    expect(verdict.ok).toBe(false);
+    const codes = verdict.issues.map((issue) => issue.code);
+    expect(codes).toContain("dangling-check-ref");
+    expect(codes).toContain("ac-missing-method");
+  });
+
+  it("flags a bare TBD in Adaptation but accepts a resolution contract", () => {
+    const cwd = makeWorkspace();
+    createSpec({ cwd, id: "runtime", title: "Runtime", kind: "domain", full: true });
+    const path = specPath(cwd, "runtime");
+    const validAc =
+      "# Runtime\n\n## Invariants\n\n- **R1** — MUST boot.\n" +
+      "\n## Acceptance Criteria\n\n" +
+      "| Invariant | Verification Method | Check Ref | Pass Condition |\n" +
+      "|---|---|---|---|\n" +
+      "| R1 | Inspection | CHECKS.md#C1 | ok |\n";
+
+    rewriteBody(path, `${validAc}\n## Adaptation\n\n- TBD: pick the eviction policy at runtime.\n`);
+    const bare = verifySpec("runtime", { cwd });
+    expect(bare.ok).toBe(false);
+    expect(bare.issues.map((i) => i.code)).toContain("adaptation-unresolved");
+
+    rewriteBody(
+      path,
+      `${validAc}\n## Adaptation\n\n- TBD: eviction policy — resolution_deadline: 2026-08-01, blocking_for: [R1].\n`,
+    );
+    expect(verifySpec("runtime", { cwd }).ok).toBe(true);
+  });
+
+  it("exempts non-normative specs from the AC contract", () => {
+    const cwd = makeWorkspace();
+    createSpec({ cwd, id: "runtime", title: "Runtime", kind: "domain" });
+    const path = specPath(cwd, "runtime");
+    let content = readFileSync(path, "utf8").replace("normative: true", "normative: false");
+    content += "\n## Invariants\n\n- **R1** — Runtime SHOULD boot.\n";
+    writeFileSync(path, content, "utf8");
+
+    const verdict = verifySpec("runtime", { cwd });
+    expect(verdict.normative).toBe(false);
+    expect(verdict.ok).toBe(true);
+    expect(verdict.issues).toEqual([]);
   });
 
   it("rejects kind/path mismatches", () => {

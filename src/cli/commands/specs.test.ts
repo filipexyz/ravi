@@ -98,6 +98,17 @@ describe("SpecsCommands", () => {
     expect(payload).toMatchObject({ status: "synced", total: 2 });
   });
 
+  it("verifies a canonical --full spec as JSON and passes", () => {
+    makeWorkspace();
+    const commands = new SpecsCommands();
+    captureConsole(() => commands.new("memory/curation/loop", "Curation Loop", "feature", true, true));
+
+    const verified = captureConsole(() => commands.verify("memory/curation/loop", true));
+    const payload = JSON.parse(verified.output) as { id: string; ok: boolean; issues: unknown[] };
+    expect(payload).toMatchObject({ id: "memory/curation/loop", ok: true });
+    expect(payload.issues).toEqual([]);
+  });
+
   it("prints human-readable context by default", () => {
     makeWorkspace();
     const commands = new SpecsCommands();
