@@ -93,7 +93,7 @@ Fluxo:
 
 Profiles podem declarar `runtimeDefaults: { model?, effort?, thinking? }`. Esse contrato é validado no manifesto e pinado em `profile_snapshot_json`, então uma task antiga continua com os defaults que tinha no momento da criação.
 
-`effort` usa a escala canônica do Ravi: `low|medium|high|xhigh`. O default é `xhigh`; qualquer valor inválido cai para esse default.
+`effort` usa a escala canônica do Ravi: `none|minimal|low|medium|high|xhigh|max|ultra`. O default é `xhigh`. Nos caminhos de CLI/task (parsing de `--effort`, `runtimeOverride` e `runtimeDefaults` de profile) um valor fora dessa lista falha de forma clara em vez de cair silenciosamente para o default.
 
 Tasks e dispatches podem gravar `runtimeOverride` explícito via `--model`, `--effort` e `--thinking`. O override fica na task, na assignment ou no launch plan, e não usa `sessions set-model`.
 

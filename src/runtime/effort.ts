@@ -1,10 +1,21 @@
-export const RUNTIME_EFFORT_LEVELS = ["low", "medium", "high", "xhigh"] as const;
+export const RUNTIME_EFFORT_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"] as const;
 
 export type RuntimeEffort = (typeof RUNTIME_EFFORT_LEVELS)[number];
 
 export const DEFAULT_RUNTIME_EFFORT: RuntimeEffort = "xhigh";
 
-export type StrongestCompatibleRuntimeEffort = Exclude<RuntimeEffort, "xhigh"> | "max";
+export type StrongestCompatibleRuntimeEffort = "low" | "medium" | "high" | "max";
+
+const STRONGEST_COMPATIBLE_BY_EFFORT: Record<RuntimeEffort, StrongestCompatibleRuntimeEffort> = {
+  none: "low",
+  minimal: "low",
+  low: "low",
+  medium: "medium",
+  high: "high",
+  xhigh: "max",
+  max: "max",
+  ultra: "max",
+};
 
 function normalizeRuntimeString(value?: string | null): string | undefined {
   const normalized = value?.trim().toLowerCase();
@@ -15,16 +26,27 @@ export function formatRuntimeEffortLevels(): string {
   return RUNTIME_EFFORT_LEVELS.join("|");
 }
 
+export function isRuntimeEffort(value: string): value is RuntimeEffort {
+  return (RUNTIME_EFFORT_LEVELS as readonly string[]).includes(value);
+}
+
 export function normalizeRuntimeEffort(value?: string | null): RuntimeEffort | undefined {
   const normalized = normalizeRuntimeString(value);
   if (!normalized) {
     return undefined;
   }
+  return isRuntimeEffort(normalized) ? normalized : undefined;
+}
 
-  if (!RUNTIME_EFFORT_LEVELS.includes(normalized as RuntimeEffort)) {
-    return DEFAULT_RUNTIME_EFFORT;
+export function parseRuntimeEffort(value?: string | null): RuntimeEffort | undefined {
+  const normalized = normalizeRuntimeString(value);
+  if (!normalized) {
+    return undefined;
   }
-  return normalized as RuntimeEffort;
+  if (!isRuntimeEffort(normalized)) {
+    throw new Error(`Invalid runtime effort: ${value}. Use ${formatRuntimeEffortLevels()}.`);
+  }
+  return normalized;
 }
 
 export function resolveRuntimeEffort(value?: string | null): RuntimeEffort {
@@ -36,6 +58,5 @@ export function toCodexRuntimeEffort(value?: string | null): RuntimeEffort {
 }
 
 export function toStrongestCompatibleRuntimeEffort(value?: string | null): StrongestCompatibleRuntimeEffort {
-  const effort = resolveRuntimeEffort(value);
-  return effort === "xhigh" ? "max" : effort;
+  return STRONGEST_COMPATIBLE_BY_EFFORT[resolveRuntimeEffort(value)];
 }

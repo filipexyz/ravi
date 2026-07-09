@@ -290,6 +290,70 @@ rl.on("line", (line) => {
     expect(threadRequests[0]?.params.dynamicTools).toBeNull();
   });
 
+  it("passes max/ultra effort as model_reasoning_effort in app-server thread/start and thread/resume", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-effort-appserver-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "thread-requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => {
+  process.stdout.write(JSON.stringify(message) + "\\n");
+};
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && (message.method === "thread/start" || message.method === "thread/resume")) {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({
+      id: message.id,
+      result: { thread: { id: message.params.threadId ?? "thread_effort" }, model: "gpt-5.6-sol", modelProvider: "openai" },
+    });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({ jsonrpc: "2.0", method: "turn/started", params: { threadId: "thread_effort", turn: { id: "turn_effort", status: "inProgress" } } });
+    send({ jsonrpc: "2.0", method: "turn/completed", params: { threadId: "thread_effort", turn: { id: "turn_effort", status: "completed" } } });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+
+    const started = provider.startSession(makeStartRequest(["start"], { cwd, model: "gpt-5.6-sol", effort: "max" }));
+    await collectEvents(started.events);
+
+    const resumed = provider.startSession(
+      makeStartRequest(["resume"], { cwd, model: "gpt-5.6-sol", effort: "ultra", resume: "thread_prev" }),
+    );
+    await collectEvents(resumed.events);
+
+    const threadRequests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    const startRequest = threadRequests.find((request) => request.method === "thread/start");
+    const resumeRequest = threadRequests.find((request) => request.method === "thread/resume");
+
+    expect(startRequest?.params.config.model_reasoning_effort).toBe("max");
+    expect(resumeRequest?.params.config.model_reasoning_effort).toBe("ultra");
+  });
+
   it("passes Ravi runtime env to the Codex app-server process", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-env-"));
     const command = join(cwd, "fake-codex-app-server.mjs");
@@ -576,6 +640,29 @@ rl.on("line", (line) => {
     await collectEvents(session.events);
 
     expect(calls[0]?.effort).toBe("xhigh");
+  });
+
+  it.each([
+    "max",
+    "ultra",
+  ] as const)("propagates the %s effort to the mocked exec transport without renaming the model", async (effort) => {
+    const { calls, transport } = createMockTransport([
+      () => ({
+        events: (async function* () {
+          yield { type: "thread.started", thread_id: `thread_${effort}` };
+          yield { type: "turn.started" };
+          yield { type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } };
+        })(),
+      }),
+    ]);
+
+    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["hello"], { model: "gpt-5.6-sol", effort }));
+
+    await collectEvents(session.events);
+
+    expect(calls[0]?.effort).toBe(effort);
+    expect(calls[0]?.model).toBe("gpt-5.6-sol");
   });
 
   it("loads workspace instructions from AGENTS.md into the Codex system prompt", async () => {

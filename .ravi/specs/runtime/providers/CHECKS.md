@@ -11,6 +11,14 @@
 - Model-specific option normalization omits unsupported native options.
 - Adaptive-thinking-only models do not receive disabled-thinking payloads when Ravi canonical input is `thinking=off`.
 
+## Reasoning Effort Tests
+
+- Canonical effort MUST accept `max` and `ultra` and reject unknown values with a clear error before provider handoff.
+- Codex exec transport MUST pass `max`/`ultra` through as `model_reasoning_effort` and MUST NOT rename the model.
+- Codex app-server `thread/start` and `thread/resume` MUST carry `config.model_reasoning_effort` for `max`/`ultra`.
+- Any `xhigh -> max` strongest-compatible mapping MUST be covered by an explicit provider test.
+- A model with no catalog pricing entry MUST be reported as unpriced with zero cost.
+
 ## Event Normalization Tests
 
 - Native assistant text maps to `assistant.message`.

@@ -9,7 +9,7 @@ import type {
   TaskRuntimeResolution,
   TaskRuntimeThinking,
 } from "./types.js";
-import { DEFAULT_RUNTIME_EFFORT, RUNTIME_EFFORT_LEVELS, normalizeRuntimeEffort } from "../runtime/effort.js";
+import { DEFAULT_RUNTIME_EFFORT, RUNTIME_EFFORT_LEVELS, parseRuntimeEffort } from "../runtime/effort.js";
 
 export const TASK_RUNTIME_EFFORT_LEVELS = RUNTIME_EFFORT_LEVELS;
 export const TASK_RUNTIME_THINKING_LEVELS = ["off", "normal", "verbose"] as const;
@@ -26,7 +26,7 @@ function normalizeTaskRuntimeString(value?: string | null): string | undefined {
 }
 
 export function normalizeTaskRuntimeEffort(value?: string | null): TaskRuntimeEffort | undefined {
-  return normalizeRuntimeEffort(value) as TaskRuntimeEffort | undefined;
+  return parseRuntimeEffort(value) as TaskRuntimeEffort | undefined;
 }
 
 export function normalizeTaskRuntimeThinking(value?: string | null): TaskRuntimeThinking | undefined {

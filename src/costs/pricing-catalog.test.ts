@@ -89,6 +89,18 @@ describe("pricing catalog", () => {
     expect(cost.totalCost).toBe(0);
   });
 
+  it("keeps GPT-5.6 models unpriced instead of inventing fallback pricing", async () => {
+    for (const model of ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
+      const cost = await calculateCost(
+        model,
+        { inputTokens: 1_000_000, outputTokens: 1_000_000, cacheRead: 0, cacheCreation: 0 },
+        { catalog: catalog({}) },
+      );
+      expect(cost.pricingStatus).toBe("unpriced");
+      expect(cost.totalCost).toBe(0);
+    }
+  });
+
   it("fetches and caches a remote catalog", async () => {
     const root = mkdtempSync(join(tmpdir(), "ravi-pricing-test-"));
     const cachePath = join(root, "pricing.json");

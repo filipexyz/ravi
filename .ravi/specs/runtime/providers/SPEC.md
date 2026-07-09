@@ -85,6 +85,16 @@ Adaptive-thinking-only models MUST NOT receive a native disabled-thinking option
 
 Pricing and capability metadata SHOULD come from a maintained model catalog when available. Hardcoded model branches MAY be used as a short-term compatibility shim, but each branch MUST be covered by provider tests and SHOULD be replaced by model catalog data.
 
+A model that has no catalog pricing entry MUST be reported as unpriced with a zero cost, not assigned invented or family-fallback pricing.
+
+## Reasoning Effort
+
+Reasoning effort is a canonical runtime option drawn from `none|minimal|low|medium|high|xhigh|max|ultra`. It is separate from the model selector and MUST NOT be embedded in a model id.
+
+- Unsupported or unknown effort MUST fail clearly or be rejected before provider handoff; silent fallback MUST NOT mask invalid input on new CLI/task paths.
+- The Codex adapter MUST propagate `max` and `ultra` as `model_reasoning_effort` for both the exec transport and the app-server `thread/start` and `thread/resume` calls, without renaming the selected model.
+- A provider MAY map canonical effort to its strongest compatible native value (for example `xhigh -> max`) only when that mapping is covered by explicit provider tests.
+
 ## Credential Fallback
 
 Provider credential selection and fallback are governed by `runtime/providers/credential-fallback`.

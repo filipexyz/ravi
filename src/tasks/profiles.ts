@@ -4,7 +4,11 @@ import { z } from "zod";
 import { discoverPlugins } from "../plugins/index.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import systemProfilesRaw from "./profile-catalog/system-profiles.json" with { type: "json" };
-import { TASK_RUNTIME_THINKING_LEVELS, normalizeTaskRuntimeOptions } from "./runtime-options.js";
+import {
+  TASK_RUNTIME_EFFORT_LEVELS,
+  TASK_RUNTIME_THINKING_LEVELS,
+  normalizeTaskRuntimeOptions,
+} from "./runtime-options.js";
 import type {
   DispatchTaskInput,
   ResolvedTaskProfile,
@@ -119,7 +123,7 @@ const TaskProfileStateFieldDefinitionSchema = z.object({
 const TaskRuntimeDefaultsSchema = z
   .object({
     model: z.string().trim().min(1).optional(),
-    effort: z.string().trim().min(1).optional(),
+    effort: z.enum(TASK_RUNTIME_EFFORT_LEVELS).optional(),
     thinking: z.enum(TASK_RUNTIME_THINKING_LEVELS).optional(),
   })
   .strict();
