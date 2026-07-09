@@ -12486,6 +12486,10 @@ export const ChannelsRestartInputSchema = {
     "slackConnection": {
       "description": "Optional Slack credential connection override",
       "type": "string"
+    },
+    "slackConnections": {
+      "description": "Comma-separated Slack credential connections for multi-workspace native runner",
+      "type": "string"
     }
   },
   "type": "object"
@@ -12530,6 +12534,12 @@ export const ChannelsRestartReturnSchema = {
             }
           ]
         },
+        "slackConnections": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "slackSocketMode": {
           "type": "boolean"
         }
@@ -12537,6 +12547,7 @@ export const ChannelsRestartReturnSchema = {
       "required": [
         "slackSocketMode",
         "slackConnection",
+        "slackConnections",
         "consumeOutbound"
       ],
       "type": "object"
@@ -12758,6 +12769,10 @@ export const ChannelsStartInputSchema = {
     "slackConnection": {
       "description": "Optional Slack credential connection override",
       "type": "string"
+    },
+    "slackConnections": {
+      "description": "Comma-separated Slack credential connections for multi-workspace native runner",
+      "type": "string"
     }
   },
   "type": "object"
@@ -12802,6 +12817,12 @@ export const ChannelsStartReturnSchema = {
             }
           ]
         },
+        "slackConnections": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "slackSocketMode": {
           "type": "boolean"
         }
@@ -12809,6 +12830,7 @@ export const ChannelsStartReturnSchema = {
       "required": [
         "slackSocketMode",
         "slackConnection",
+        "slackConnections",
         "consumeOutbound"
       ],
       "type": "object"
@@ -13253,6 +13275,12 @@ export const ChannelsStopReturnSchema = {
             }
           ]
         },
+        "slackConnections": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "slackSocketMode": {
           "type": "boolean"
         }
@@ -13260,6 +13288,7 @@ export const ChannelsStopReturnSchema = {
       "required": [
         "slackSocketMode",
         "slackConnection",
+        "slackConnections",
         "consumeOutbound"
       ],
       "type": "object"

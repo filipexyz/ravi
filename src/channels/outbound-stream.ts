@@ -112,10 +112,21 @@ export async function ensureChannelOutboundConsumer(existingJsm?: JetStreamManag
   const jsm = existingJsm ?? (await getNats().jetstreamManager());
 
   try {
-    await jsm.consumers.info(CHANNEL_OUTBOUND_STREAM, CHANNEL_OUTBOUND_CONSUMER);
-    log.debug("Channel outbound consumer already exists", { consumerName: CHANNEL_OUTBOUND_CONSUMER });
-    return;
-  } catch {
+    const consumerInfo = await jsm.consumers.info(CHANNEL_OUTBOUND_STREAM, CHANNEL_OUTBOUND_CONSUMER);
+    const streamInfo = await jsm.streams.info(CHANNEL_OUTBOUND_STREAM);
+    if (isStaleChannelOutboundConsumer(consumerInfo, streamInfo)) {
+      log.warn("Deleting stale channel outbound consumer", {
+        consumerName: CHANNEL_OUTBOUND_CONSUMER,
+        consumerStreamSeq: maxConsumerStreamSeq(consumerInfo),
+        streamLastSeq: streamLastSeq(streamInfo),
+      });
+      await jsm.consumers.delete(CHANNEL_OUTBOUND_STREAM, CHANNEL_OUTBOUND_CONSUMER);
+    } else {
+      log.debug("Channel outbound consumer already exists", { consumerName: CHANNEL_OUTBOUND_CONSUMER });
+      return;
+    }
+  } catch (err) {
+    if (!isNotFoundError(err)) throw err;
     // Consumer does not exist yet.
   }
 
@@ -136,6 +147,39 @@ export async function ensureChannelOutboundConsumer(existingJsm?: JetStreamManag
     consumerName: CHANNEL_OUTBOUND_CONSUMER,
     ack_wait_s: 300,
   });
+}
+
+function isStaleChannelOutboundConsumer(consumerInfo: unknown, streamInfo: unknown): boolean {
+  const consumerSeq = maxConsumerStreamSeq(consumerInfo);
+  const lastSeq = streamLastSeq(streamInfo);
+  return consumerSeq > 0 && lastSeq >= 0 && consumerSeq > lastSeq;
+}
+
+function maxConsumerStreamSeq(info: unknown): number {
+  const record = info as {
+    ack_floor?: { stream_seq?: unknown };
+    delivered?: { stream_seq?: unknown };
+  };
+  return Math.max(toNumber(record.ack_floor?.stream_seq), toNumber(record.delivered?.stream_seq));
+}
+
+function streamLastSeq(info: unknown): number {
+  const record = info as { state?: { last_seq?: unknown } };
+  return toNumber(record.state?.last_seq, -1);
+}
+
+function toNumber(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+function isNotFoundError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /not found|not exist|404/i.test(message);
 }
 
 export async function ensureChannelOutboundInfrastructure(existingJsm?: JetStreamManager): Promise<void> {

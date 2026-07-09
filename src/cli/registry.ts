@@ -12,6 +12,7 @@ import {
   getArgsMetadata,
   getOptionsMetadata,
   getScopeMetadata,
+  getCliOnlyMetadata,
   type CommandAccessOptions,
   type CommandMetadata,
   type ScopeType,
@@ -110,11 +111,20 @@ export function registerCommands(program: CommanderCommand, classes: CommandClas
 
     // Resolve scope: command-level > group-level > "admin" (fail-secure default)
     const scopeMap = getScopeMetadata(cls);
+    const cliOnlySet = getCliOnlyMetadata(cls);
     const commandAccessMap = getCommandAccessMetadata(cls);
 
     for (const cmdMeta of commandsMeta) {
       const effectiveScope: ScopeType = scopeMap.get(cmdMeta.method) ?? groupMeta.scope ?? "admin";
-      registerCommand(group, instance, cmdMeta, toolGroupName, effectiveScope, commandAccessMap.get(cmdMeta.method));
+      registerCommand(
+        group,
+        instance,
+        cmdMeta,
+        toolGroupName,
+        effectiveScope,
+        commandAccessMap.get(cmdMeta.method),
+        cliOnlySet.has(cmdMeta.method),
+      );
     }
   }
 }
@@ -126,6 +136,7 @@ function registerCommand(
   groupName: string,
   scope: ScopeType,
   access: CommandAccessOptions | undefined,
+  cliOnly: boolean,
 ): void {
   // A command can also be an intermediate group when it has nested subcommands:
   // e.g. `ravi crm account <id>` and `ravi crm account create ...`.
@@ -235,13 +246,18 @@ function registerCommand(
       return;
     }
 
-    // Scope enforcement (before method execution)
-    const scopeResult = enforceScopeCheck(scope, groupName, cmdMeta.name);
-    if (!scopeResult.allowed) {
-      console.error(scopeResult.errorMessage);
-      // Drain NATS before exiting so audit events are flushed
-      const { flushAuditAndExit } = await import("../permissions/scope.js");
-      await flushAuditAndExit(1);
+    // Scope enforcement (before method execution). Long-lived process runners are
+    // `@CliOnly()` and may be launched by PM2 without an interactive operator
+    // context; they still pass the semantic CommandAccess gate above.
+    const skipLegacyScope = cliOnly && process.env.RAVI_CLI_FORCE_LOCAL_OPERATOR === "1";
+    if (!skipLegacyScope) {
+      const scopeResult = enforceScopeCheck(scope, groupName, cmdMeta.name);
+      if (!scopeResult.allowed) {
+        console.error(scopeResult.errorMessage);
+        // Drain NATS before exiting so audit events are flushed
+        const { flushAuditAndExit } = await import("../permissions/scope.js");
+        await flushAuditAndExit(1);
+      }
     }
 
     // Execute and emit single event with input + output

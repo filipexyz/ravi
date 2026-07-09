@@ -795,6 +795,7 @@ export class RaviClient {
     restart: async (options?: {
       build?: boolean;
       slackConnection?: string;
+      slackConnections?: string;
     }): Promise<ChannelsRestartReturn> => {
       return this.transport.call({
         groupSegments: ["channels"],
@@ -806,6 +807,7 @@ export class RaviClient {
     start: async (options?: {
       build?: boolean;
       slackConnection?: string;
+      slackConnections?: string;
     }): Promise<ChannelsStartReturn> => {
       return this.transport.call({
         groupSegments: ["channels"],

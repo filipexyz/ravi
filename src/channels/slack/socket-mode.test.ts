@@ -9,6 +9,7 @@ import {
   SlackPresenceStack,
   SlackReactionPresence,
   SlackSocketModeService,
+  SlackTextDelivery,
 } from "./socket-mode.js";
 import type { SlackSocketEnvelope } from "./types.js";
 
@@ -43,6 +44,32 @@ describe("Slack Socket Mode routing", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("scopes native text delivery to the configured Slack workspace", () => {
+    const delivery = new SlackTextDelivery({} as never, {} as never, {
+      accountId: "ravi-rbbt-slack",
+      routeAccountId: "ravi-rbbt-slack",
+      instanceId: "0bc9635c-1ee9-42e3-9112-95be9cdb0334",
+      connection: "ravi-rbbt-slack",
+    });
+
+    expect(
+      delivery.supports({
+        channel: "slack",
+        accountId: "0bc9635c-1ee9-42e3-9112-95be9cdb0334",
+        instanceId: "0bc9635c-1ee9-42e3-9112-95be9cdb0334",
+        chatId: "C123",
+      }),
+    ).toBe(true);
+    expect(
+      delivery.supports({
+        channel: "slack",
+        accountId: "hana-slack",
+        instanceId: "hana-slack",
+        chatId: "C456",
+      }),
+    ).toBe(false);
   });
 
   it("routes Slack channels through group routes and attaches the source chat for output", async () => {

@@ -31,6 +31,7 @@ const ACCESS: CommandAccessOptions = {
 let stateDir: string | null = null;
 let previousEnv: Partial<Record<(typeof RAVI_RUNTIME_CONTEXT_ENV_KEYS)[number], string>> = {};
 let previousCredentialsPath: string | undefined;
+let previousForceLocalOperator: string | undefined;
 let auditEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
 
 function context(capabilities: ContextRecord["capabilities"]): ContextRecord {
@@ -50,6 +51,7 @@ describe("CLI command access enforcement", () => {
     stateDir = await createIsolatedRaviState("ravi-cli-command-access-test-");
     previousEnv = {};
     previousCredentialsPath = process.env.RAVI_CREDENTIALS_PATH;
+    previousForceLocalOperator = process.env.RAVI_CLI_FORCE_LOCAL_OPERATOR;
     auditEvents = [];
     setPermissionAuditPublisherForTest(async (topic, data) => {
       auditEvents.push({ topic, data });
@@ -60,6 +62,7 @@ describe("CLI command access enforcement", () => {
       }
       delete process.env[key];
     }
+    delete process.env.RAVI_CLI_FORCE_LOCAL_OPERATOR;
   });
 
   afterEach(async () => {
@@ -77,6 +80,12 @@ describe("CLI command access enforcement", () => {
       process.env.RAVI_CREDENTIALS_PATH = previousCredentialsPath;
     }
     previousCredentialsPath = undefined;
+    if (previousForceLocalOperator === undefined) {
+      delete process.env.RAVI_CLI_FORCE_LOCAL_OPERATOR;
+    } else {
+      process.env.RAVI_CLI_FORCE_LOCAL_OPERATOR = previousForceLocalOperator;
+    }
+    previousForceLocalOperator = undefined;
     setPermissionAuditPublisherForTest();
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
@@ -137,6 +146,28 @@ describe("CLI command access enforcement", () => {
     expect(result.decision?.permission).toBe("mutate");
     expect(result.decision?.objectType).toBe("demo.items");
     expect(result.decision?.objectId).toBe("create");
+  });
+
+  it("can force local operator execution for process runners even when a context key is present", () => {
+    const record = createRuntimeContext({
+      kind: "cli-runtime",
+      agentId: "main",
+      capabilities: [],
+      ttlMs: 0,
+    });
+    process.env.RAVI_CONTEXT_KEY = record.contextKey;
+    process.env.RAVI_CLI_FORCE_LOCAL_OPERATOR = "1";
+
+    const result = enforceCliCommandAccess({
+      group: "demo",
+      command: "create",
+      access: ACCESS,
+      source: "cli",
+    });
+
+    expect(result.allowed).toBe(true);
+    expect(result.decision?.providerId).toBe("operator-control");
+    expect(result.decision?.objectType).toBe("demo.items");
   });
 
   it("ignores default credential context for direct local CLI authorization", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { chooseSlackRunnerConnection } from "./channels.js";
+import { chooseSlackRunnerConnection, chooseSlackRunnerConnections } from "./channels.js";
 
 describe("channels command runner env", () => {
   it("uses an explicit Slack connection first", () => {
@@ -33,5 +33,31 @@ describe("channels command runner env", () => {
         env: {},
       }),
     ).toBeUndefined();
+  });
+
+  it("preserves multiple Slack runner connections from env", () => {
+    expect(
+      chooseSlackRunnerConnections({
+        env: { RAVI_SLACK_CONNECTIONS: "ravi-rbbt-slack, hana-slack" },
+      }),
+    ).toEqual(["ravi-rbbt-slack", "hana-slack"]);
+  });
+
+  it("prefers explicit multiple Slack runner connections over single env fallback", () => {
+    expect(
+      chooseSlackRunnerConnections({
+        explicit: "ravi-rbbt-slack,hana-slack",
+        env: { RAVI_SLACK_CONNECTION: "other" },
+      }),
+    ).toEqual(["ravi-rbbt-slack", "hana-slack"]);
+  });
+
+  it("falls back to an existing PM2 Slack connection list", () => {
+    expect(
+      chooseSlackRunnerConnections({
+        env: {},
+        fallbackEnv: { RAVI_SLACK_CONNECTIONS: "ravi-rbbt-slack,hana-slack" },
+      }),
+    ).toEqual(["ravi-rbbt-slack", "hana-slack"]);
   });
 });

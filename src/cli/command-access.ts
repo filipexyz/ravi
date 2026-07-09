@@ -120,7 +120,8 @@ function resolveCommandAccessAuthority(
   | { allowed: true; label: string; request: Pick<PermissionProviderRequest, "context" | "subject" | "localOperator"> }
   | { allowed: false; errorMessage: string } {
   const ctx = getContext();
-  const useRuntimeContext = source !== "cli" || Boolean(process.env[RAVI_CONTEXT_KEY_ENV]);
+  const forceLocalOperator = source === "cli" && process.env.RAVI_CLI_FORCE_LOCAL_OPERATOR === "1";
+  const useRuntimeContext = !forceLocalOperator && (source !== "cli" || Boolean(process.env[RAVI_CONTEXT_KEY_ENV]));
   if (useRuntimeContext && ctx?.context) {
     const agentId = ctx.agentId ?? ctx.context.agentId;
     const context: CapabilityContextLike = {
