@@ -36,7 +36,13 @@ import {
   slackRoutingPolicyFromEnv,
   slackTsToMs,
 } from "./routing.js";
-import type { SlackNormalizedFile, SlackNormalizedMessage, SlackRoutingPolicy, SlackSocketEnvelope } from "./types.js";
+import type {
+  SlackEventPayload,
+  SlackNormalizedFile,
+  SlackNormalizedMessage,
+  SlackRoutingPolicy,
+  SlackSocketEnvelope,
+} from "./types.js";
 
 const log = logger.child("channels:slack");
 
@@ -415,7 +421,7 @@ export class SlackSocketModeService {
       return "processed";
     }
 
-    const normalized = this.normalizeEnvelope(envelope);
+    const normalized = await this.normalizeEnvelope(envelope);
     if (!normalized) return "ignored";
 
     await this.routeMessage(normalized);
@@ -467,8 +473,8 @@ export class SlackSocketModeService {
     });
   }
 
-  private normalizeEnvelope(envelope: SlackSocketEnvelope): SlackNormalizedMessage | null {
-    const event = envelopeEvent(envelope);
+  private async normalizeEnvelope(envelope: SlackSocketEnvelope): Promise<SlackNormalizedMessage | null> {
+    const event = await this.resolveMessageEvent(envelopeEvent(envelope));
     if (!event || shouldIgnoreSlackMessageEvent(event)) return null;
 
     const channelId = cleanSlackId(event.channel);
@@ -498,6 +504,47 @@ export class SlackSocketModeService {
       eventTimeMs,
       rawEnvelope: envelope,
     };
+  }
+
+  private async resolveMessageEvent(event: SlackEventPayload | undefined): Promise<SlackEventPayload | undefined> {
+    if (!event || event.type !== "message" || event.subtype !== "message_replied") return event;
+
+    const channel = cleanSlackId(event.channel);
+    const parent = recordField(event, "message");
+    const threadTs = stringField(parent, "thread_ts") ?? stringField(parent, "ts") ?? cleanSlackId(event.thread_ts);
+    const latestReplyTs =
+      stringField(event, "latest_reply") ?? stringField(parent, "latest_reply") ?? latestReplyTsFromParent(parent);
+    if (!channel || !threadTs || !latestReplyTs) return undefined;
+
+    try {
+      const replies = await this.webClient.conversationsReplies({
+        channel,
+        ts: threadTs,
+        oldest: latestReplyTs,
+        latest: latestReplyTs,
+        inclusive: true,
+        limit: 10,
+      });
+      const reply = selectSlackThreadReply(replies.messages, threadTs, latestReplyTs);
+      if (!reply) return undefined;
+      return {
+        ...reply,
+        type: stringField(reply, "type") ?? "message",
+        channel,
+        channel_type: cleanSlackId(event.channel_type) ?? stringField(parent, "channel_type") ?? "channel",
+        thread_ts: stringField(reply, "thread_ts") ?? threadTs,
+        team: stringField(reply, "team") ?? cleanSlackId(event.team),
+      };
+    } catch (error) {
+      log.warn("Failed to fetch Slack thread reply", {
+        accountId: this.options.accountId,
+        channel,
+        threadTs,
+        latestReplyTs,
+        error,
+      });
+      return undefined;
+    }
   }
 
   private normalizeInteractionEnvelope(envelope: SlackSocketEnvelope): Record<string, unknown> | null {
@@ -931,6 +978,32 @@ function slackInteractionResponseUrl(record: Record<string, unknown>): string | 
 function firstRecord(value: unknown): Record<string, unknown> | undefined {
   if (!Array.isArray(value)) return undefined;
   return asRecord(value[0]);
+}
+
+function latestReplyTsFromParent(parent: Record<string, unknown> | undefined): string | undefined {
+  const replies = Array.isArray(parent?.replies) ? parent.replies : [];
+  for (let index = replies.length - 1; index >= 0; index -= 1) {
+    const ts = stringField(replies[index], "ts");
+    if (ts) return ts;
+  }
+  return undefined;
+}
+
+function selectSlackThreadReply(
+  messages: readonly unknown[] | undefined,
+  threadTs: string,
+  latestReplyTs: string,
+): Record<string, unknown> | undefined {
+  const records = (messages ?? [])
+    .map(asRecord)
+    .filter((message): message is Record<string, unknown> => Boolean(message));
+  return (
+    records.find((message) => stringField(message, "ts") === latestReplyTs) ??
+    records
+      .slice()
+      .reverse()
+      .find((message) => stringField(message, "thread_ts") === threadTs && stringField(message, "ts") !== threadTs)
+  );
 }
 
 function recordField(record: unknown, key: string): Record<string, unknown> | undefined {

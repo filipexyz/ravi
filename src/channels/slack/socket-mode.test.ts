@@ -331,6 +331,112 @@ describe("Slack Socket Mode routing", () => {
     ]);
   });
 
+  it("routes Slack message_replied updates by fetching the latest thread reply", async () => {
+    getOrCreateSession("ravi-hil", "ravi-hil", "/tmp/ravi-hil", { name: "ravi-hil" });
+    const config: RouterConfig = {
+      agents: {
+        "ravi-hil": {
+          id: "ravi-hil",
+          cwd: "/tmp/ravi-hil",
+          dmScope: "per-peer",
+        },
+      },
+      routes: [
+        {
+          pattern: "group:C123",
+          accountId: "ravi-rbbt-slack",
+          agent: "ravi-hil",
+          session: "ravi-hil",
+          priority: 100,
+          policy: "open",
+          channel: "slack",
+        },
+      ],
+      defaultAgent: "ravi-hil",
+      defaultDmScope: "per-peer",
+      accountAgents: { "ravi-rbbt-slack": "ravi-hil" },
+      instanceToAccount: {},
+      instances: {},
+    };
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "ravi-rbbt-slack",
+      routeAccountId: "ravi-rbbt-slack",
+      instanceId: "slack-instance-1",
+      getRouterConfig: () => config,
+      publishPrompt: async (sessionName, payload) => {
+        published.push({ sessionName, payload });
+      },
+      webClient: {
+        conversationsReplies: async (input: Record<string, unknown>) => {
+          expect(input).toMatchObject({
+            channel: "C123",
+            ts: "1713000000.000100",
+            oldest: "1713000040.000300",
+            latest: "1713000040.000300",
+            inclusive: true,
+          });
+          return {
+            ok: true,
+            messages: [
+              {
+                type: "message",
+                user: "U999",
+                text: "root",
+                ts: "1713000000.000100",
+                thread_ts: "1713000000.000100",
+              },
+              {
+                type: "message",
+                user: "U123",
+                text: "responde esse fio",
+                ts: "1713000040.000300",
+                thread_ts: "1713000000.000100",
+              },
+            ],
+          };
+        },
+      } as never,
+    });
+
+    await service.handleEnvelope({
+      envelope_id: "env-message-replied-1",
+      payload: {
+        team_id: "T1",
+        event_id: "EvReplyUpdate1",
+        event_time: 1_713_000_040,
+        event: {
+          type: "message",
+          subtype: "message_replied",
+          channel: "C123",
+          channel_type: "channel",
+          ts: "1713000040.000400",
+          message: {
+            type: "message",
+            user: "U999",
+            text: "root",
+            ts: "1713000000.000100",
+            thread_ts: "1713000000.000100",
+            latest_reply: "1713000040.000300",
+            replies: [{ user: "U123", ts: "1713000040.000300" }],
+          },
+        },
+      },
+    });
+
+    expect(published).toHaveLength(1);
+    expect(published[0]?.sessionName).toBe("ravi-hil-t-1713000000000100");
+    expect(String(published[0]?.payload.prompt)).toContain("responde esse fio");
+    expect(published[0]?.payload.source).toMatchObject({
+      channel: "slack",
+      chatId: "C123",
+      threadId: "1713000000.000100",
+      sourceMessageId: "1713000040.000300",
+    });
+  });
+
   it("uses a temporary Slack reaction as the native working presence indicator", async () => {
     const calls: Array<{ method: string; input: Record<string, unknown> }> = [];
     const presence = new SlackReactionPresence(

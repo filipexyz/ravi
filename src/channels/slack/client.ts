@@ -89,6 +89,10 @@ export interface SlackConversationHistoryInput {
   readonly inclusive?: boolean;
 }
 
+export interface SlackConversationRepliesInput extends SlackConversationHistoryInput {
+  readonly ts: string;
+}
+
 export interface SlackConversationMembersInput {
   readonly channel: string;
   readonly limit?: number;
@@ -217,6 +221,8 @@ export interface SlackConversationHistoryResponse extends SlackApiResponse {
   readonly has_more?: boolean;
   readonly response_metadata?: SlackCursorPaging;
 }
+
+export interface SlackConversationRepliesResponse extends SlackConversationHistoryResponse {}
 
 export interface SlackConversationMembersResponse extends SlackApiResponse {
   readonly members?: string[];
@@ -421,6 +427,22 @@ export class SlackWebApiClient {
       this.botToken,
       compactBody({
         channel: input.channel,
+        limit: input.limit,
+        cursor: input.cursor,
+        latest: input.latest,
+        oldest: input.oldest,
+        inclusive: input.inclusive,
+      }),
+    );
+  }
+
+  async conversationsReplies(input: SlackConversationRepliesInput): Promise<SlackConversationRepliesResponse> {
+    return this.apiRequest<SlackConversationRepliesResponse>(
+      "conversations.replies",
+      this.botToken,
+      compactBody({
+        channel: input.channel,
+        ts: input.ts,
         limit: input.limit,
         cursor: input.cursor,
         latest: input.latest,
