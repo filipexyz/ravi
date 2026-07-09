@@ -1329,10 +1329,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           });
         }
 
+        const liveActivity = status === "idle" ? "idle" : streaming.compacting ? "compacting" : "thinking";
         patchLiveState(
           {
-            activity: streaming.compacting ? "compacting" : "thinking",
-            summary: streaming.compacting ? "compacting" : "runtime active",
+            activity: liveActivity,
+            summary: status === "idle" ? "runtime idle" : streaming.compacting ? "compacting" : "runtime active",
             agentId: agent.id,
             runId,
             provider: runtimeSession.provider,
