@@ -631,6 +631,10 @@ export const AgentsCreateInputSchema = {
       "description": "Runtime model selector",
       "type": "string"
     },
+    "modelPreset": {
+      "description": "Reference a runtime model preset (mutually exclusive with --model)",
+      "type": "string"
+    },
     "provider": {
       "description": "Runtime provider id",
       "type": "string"
@@ -47815,6 +47819,908 @@ export const RuntimeCredentialsStatusReturnSchema = {
   "required": [
     "credential",
     "health"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.presets.create`. */
+export const RuntimePresetsCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "description": "Human-readable description",
+      "type": "string"
+    },
+    "disabled": {
+      "description": "Create in the disabled state",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Stable preset id/slug",
+      "type": "string"
+    },
+    "model": {
+      "description": "Model selector",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Runtime provider id (immutable)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.presets.create`. */
+export const RuntimePresetsCreateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "create",
+        "set-model",
+        "enable",
+        "disable",
+        "delete"
+      ],
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "preset": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "model",
+        "description",
+        "enabled",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "dryRun",
+    "preset"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.presets.delete`. */
+export const RuntimePresetsDeleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dryRun": {
+      "description": "Preview without persisting",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Preset id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.presets.delete`. */
+export const RuntimePresetsDeleteReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "create",
+        "set-model",
+        "enable",
+        "disable",
+        "delete"
+      ],
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "preset": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "model",
+        "description",
+        "enabled",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "dryRun",
+    "preset"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.presets.disable`. */
+export const RuntimePresetsDisableInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dryRun": {
+      "description": "Preview without persisting or bumping the version",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Preset id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.presets.disable`. */
+export const RuntimePresetsDisableReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "create",
+        "set-model",
+        "enable",
+        "disable",
+        "delete"
+      ],
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "preset": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "model",
+        "description",
+        "enabled",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "dryRun",
+    "preset"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.presets.enable`. */
+export const RuntimePresetsEnableInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dryRun": {
+      "description": "Preview without persisting or bumping the version",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Preset id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.presets.enable`. */
+export const RuntimePresetsEnableReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "create",
+        "set-model",
+        "enable",
+        "disable",
+        "delete"
+      ],
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "preset": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "model",
+        "description",
+        "enabled",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "dryRun",
+    "preset"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.presets.impact`. */
+export const RuntimePresetsImpactInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Preset id",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of agents to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.presets.impact`. */
+export const RuntimePresetsImpactReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "effectiveModel": {
+            "type": "string"
+          },
+          "modelSource": {
+            "const": "agent_preset",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "shadowingSessions": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "agentId",
+          "name",
+          "provider",
+          "effectiveModel",
+          "modelSource",
+          "shadowingSessions"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "correctionCommand": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "limit": {
+      "type": "number"
+    },
+    "model": {
+      "type": "string"
+    },
+    "offset": {
+      "type": "number"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "presetId": {
+      "type": "string"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "referenced": {
+      "type": "boolean"
+    },
+    "referencingAgentsTotal": {
+      "type": "number"
+    },
+    "shadowingSessionsTotal": {
+      "type": "number"
+    },
+    "version": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "presetId",
+    "version",
+    "provider",
+    "model",
+    "enabled",
+    "referencingAgentsTotal",
+    "shadowingSessionsTotal",
+    "agents",
+    "limit",
+    "offset",
+    "referenced",
+    "correctionCommand",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.presets.list`. */
+export const RuntimePresetsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "disabled": {
+      "description": "Only disabled presets",
+      "type": "boolean"
+    },
+    "enabled": {
+      "description": "Only enabled presets",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of presets to skip (default: 0)",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Filter by provider",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.presets.list`. */
+export const RuntimePresetsListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "presets": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "model",
+          "description",
+          "enabled",
+          "version",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "presets"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.presets.set`. */
+export const RuntimePresetsSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dryRun": {
+      "description": "Preview without persisting or bumping the version",
+      "type": "boolean"
+    },
+    "field": {
+      "description": "Field to set (model)",
+      "type": "string"
+    },
+    "id": {
+      "description": "Preset id",
+      "type": "string"
+    },
+    "value": {
+      "description": "New value",
+      "type": "string"
+    }
+  },
+  "required": [
+    "field",
+    "id",
+    "value"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.presets.set`. */
+export const RuntimePresetsSetReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "create",
+        "set-model",
+        "enable",
+        "disable",
+        "delete"
+      ],
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "preset": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "model",
+        "description",
+        "enabled",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "dryRun",
+    "preset"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.presets.show`. */
+export const RuntimePresetsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Preset id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.presets.show`. */
+export const RuntimePresetsShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "preset": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "model",
+        "description",
+        "enabled",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "referencingAgentsTotal": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "preset",
+    "referencingAgentsTotal"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

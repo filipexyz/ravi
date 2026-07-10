@@ -114,6 +114,7 @@ export type AgentsCreateInput = {
   cwd: string;
   id: string;
   model?: string;
+  modelPreset?: string;
   provider?: string;
 };
 
@@ -9655,6 +9656,218 @@ export type RuntimeCredentialsStatusReturn = {
   credential: Record<string, unknown>;
   health: (Record<string, unknown>) | null;
   [k: string]: unknown;
+};
+
+/** Input shape for `runtime.presets.create`. */
+export type RuntimePresetsCreateInput = {
+  description?: string;
+  disabled?: boolean;
+  id: string;
+  model?: string;
+  provider?: string;
+};
+
+/** Return shape for `runtime.presets.create`. */
+export type RuntimePresetsCreateReturn = {
+  action: "create" | "set-model" | "enable" | "disable" | "delete";
+  changed: boolean;
+  dryRun: boolean;
+  preset: {
+    createdAt: number;
+    description: string | null;
+    enabled: boolean;
+    id: string;
+    model: string;
+    provider: string;
+    updatedAt: number;
+    version: number;
+  };
+};
+
+/** Input shape for `runtime.presets.delete`. */
+export type RuntimePresetsDeleteInput = {
+  dryRun?: boolean;
+  id: string;
+};
+
+/** Return shape for `runtime.presets.delete`. */
+export type RuntimePresetsDeleteReturn = {
+  action: "create" | "set-model" | "enable" | "disable" | "delete";
+  changed: boolean;
+  dryRun: boolean;
+  preset: {
+    createdAt: number;
+    description: string | null;
+    enabled: boolean;
+    id: string;
+    model: string;
+    provider: string;
+    updatedAt: number;
+    version: number;
+  };
+};
+
+/** Input shape for `runtime.presets.disable`. */
+export type RuntimePresetsDisableInput = {
+  dryRun?: boolean;
+  id: string;
+};
+
+/** Return shape for `runtime.presets.disable`. */
+export type RuntimePresetsDisableReturn = {
+  action: "create" | "set-model" | "enable" | "disable" | "delete";
+  changed: boolean;
+  dryRun: boolean;
+  preset: {
+    createdAt: number;
+    description: string | null;
+    enabled: boolean;
+    id: string;
+    model: string;
+    provider: string;
+    updatedAt: number;
+    version: number;
+  };
+};
+
+/** Input shape for `runtime.presets.enable`. */
+export type RuntimePresetsEnableInput = {
+  dryRun?: boolean;
+  id: string;
+};
+
+/** Return shape for `runtime.presets.enable`. */
+export type RuntimePresetsEnableReturn = {
+  action: "create" | "set-model" | "enable" | "disable" | "delete";
+  changed: boolean;
+  dryRun: boolean;
+  preset: {
+    createdAt: number;
+    description: string | null;
+    enabled: boolean;
+    id: string;
+    model: string;
+    provider: string;
+    updatedAt: number;
+    version: number;
+  };
+};
+
+/** Input shape for `runtime.presets.impact`. */
+export type RuntimePresetsImpactInput = {
+  id: string;
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `runtime.presets.impact`. */
+export type RuntimePresetsImpactReturn = {
+  agents: Array<{
+    agentId: string;
+    effectiveModel: string;
+    modelSource: "agent_preset";
+    name: string | null;
+    provider: string;
+    shadowingSessions: number;
+  }>;
+  correctionCommand: string | null;
+  enabled: boolean;
+  limit: number;
+  model: string;
+  offset: number;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  presetId: string;
+  provider: string;
+  referenced: boolean;
+  referencingAgentsTotal: number;
+  shadowingSessionsTotal: number;
+  version: number;
+};
+
+/** Input shape for `runtime.presets.list`. */
+export type RuntimePresetsListInput = {
+  disabled?: boolean;
+  enabled?: boolean;
+  limit?: string;
+  offset?: string;
+  provider?: string;
+};
+
+/** Return shape for `runtime.presets.list`. */
+export type RuntimePresetsListReturn = {
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  presets: Array<{
+    createdAt: number;
+    description: string | null;
+    enabled: boolean;
+    id: string;
+    model: string;
+    provider: string;
+    updatedAt: number;
+    version: number;
+  }>;
+  total: number;
+};
+
+/** Input shape for `runtime.presets.set`. */
+export type RuntimePresetsSetInput = {
+  dryRun?: boolean;
+  field: string;
+  id: string;
+  value: string;
+};
+
+/** Return shape for `runtime.presets.set`. */
+export type RuntimePresetsSetReturn = {
+  action: "create" | "set-model" | "enable" | "disable" | "delete";
+  changed: boolean;
+  dryRun: boolean;
+  preset: {
+    createdAt: number;
+    description: string | null;
+    enabled: boolean;
+    id: string;
+    model: string;
+    provider: string;
+    updatedAt: number;
+    version: number;
+  };
+};
+
+/** Input shape for `runtime.presets.show`. */
+export type RuntimePresetsShowInput = {
+  id: string;
+};
+
+/** Return shape for `runtime.presets.show`. */
+export type RuntimePresetsShowReturn = {
+  preset: {
+    createdAt: number;
+    description: string | null;
+    enabled: boolean;
+    id: string;
+    model: string;
+    provider: string;
+    updatedAt: number;
+    version: number;
+  };
+  referencingAgentsTotal: number;
 };
 
 /** Input shape for `sdk.client.check`. */
