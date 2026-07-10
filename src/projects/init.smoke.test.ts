@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { createRuntimeContext } from "../runtime/context-registry.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState, withoutRaviRuntimeContextEnv } from "../test/ravi-state.js";
 
 const PROJECT_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 
 let stateDir: string | null = null;
+let contextKey: string | null = null;
 
 setDefaultTimeout(20_000);
 
@@ -15,6 +17,7 @@ function runCli(args: string[]): { stdout: string; stderr: string } {
     env: {
       ...withoutRaviRuntimeContextEnv(),
       ...(stateDir ? { RAVI_STATE_DIR: stateDir } : {}),
+      ...(contextKey ? { RAVI_CONTEXT_KEY: contextKey } : {}),
       NO_COLOR: "1",
     },
     encoding: "utf8",
@@ -46,11 +49,19 @@ function runCli(args: string[]): { stdout: string; stderr: string } {
 describe("project init smoke", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-project-init-smoke-");
+    contextKey = createRuntimeContext({
+      kind: "test-runtime",
+      agentId: "main",
+      ttlMs: 0,
+      capabilities: [{ permission: "execute", objectType: "group", objectId: "*" }],
+      metadata: { test: "project-init-smoke" },
+    }).contextKey;
   });
 
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+    contextKey = null;
   });
 
   it("initializes a project through the CLI with a canonical workflow template", () => {

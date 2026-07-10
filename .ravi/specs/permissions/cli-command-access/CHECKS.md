@@ -32,8 +32,9 @@ capability: cli-command-access
 - Legacy `execute:group:<group>_<command>` and `execute:group:<group>` MUST
   remain covered by tests while migration is active, but new docs and agent
   recommendations SHOULD use semantic `read/mutate` capabilities.
-- Missing subject/context MUST deny unless `localOperator=true`.
-- Runtime execution MUST NOT use direct local operator fallback.
+- Missing subject/context MUST deny unless direct CLI command metadata is marked
+  as first-run bootstrap or local-project maintenance.
+- Runtime execution MUST NOT use unauthenticated local fallback.
 - Provider requests generated from CLI commands MUST include command group,
   command name, access metadata, canonical principals, and selected redacted
   input only.
@@ -49,8 +50,9 @@ capability: cli-command-access
 - commands whose `@Scope("open")` conflicts with high/destructive risk;
 - commands whose metadata marks `kind: "read"` but whose name/action is likely
   mutating;
-- commands whose metadata allows local operator for high/destructive risk
-  without an explicit confirmation requirement.
+- commands whose metadata marks high/destructive commands as bootstrap.
+- commands whose metadata marks runtime-state commands as local-project
+  maintenance.
 
 The production target is:
 
@@ -70,5 +72,5 @@ permissions.command_access.open_high_risk = 0
 - Add command-access tests proving semantic `read/mutate` capabilities allow,
   semantic resource wildcard allows, dotted transition alias allows, and legacy
   `execute:group` fallback still works.
-- Add operator-control tests proving direct terminal mode is explicit and never
-  used for runtime contexts.
+- Add bootstrap/local-project tests proving direct terminal exceptions are
+  explicit, limited to CLI source, and never used for runtime contexts.

@@ -18,13 +18,19 @@ mock.module("../decorators.js", () => ({
   Returns: Object.assign(() => () => {}, { binary: () => () => {} }),
   Arg: () => () => {},
   Option: () => () => {},
+  getGroupMetadata: () => undefined,
+  getCommandsMetadata: () => [],
+  getArgsMetadata: () => [],
+  getOptionsMetadata: () => [],
+  getScopeMetadata: () => new Map(),
+  getCommandAccessMetadata: () => new Map(),
+  getReturnsMetadata: () => new Map(),
+  getReturnsBinaryMetadata: () => new Set(),
+  getCliOnlyMetadata: () => new Set(),
 }));
 
 mock.module("../../permissions/provider-registry.js", () => ({
-  getConfiguredPermissionProviders: () => [
-    { id: "operator-control", version: "operator-control/local-v1", required: true },
-    { id: "context-capabilities", version: "snapshot/v1", required: true },
-  ],
+  getConfiguredPermissionProviders: () => [{ id: "context-capabilities", version: "snapshot/v1", required: true }],
   getConfiguredCapabilityMaterializers: () => [
     { id: "runtime-bootstrap", version: "bootstrap/v1", required: true },
     { id: "agent-default-capabilities", version: "agent-defaults/v1", required: true },
@@ -34,17 +40,12 @@ mock.module("../../permissions/provider-registry.js", () => ({
 }));
 
 mock.module("../../permissions/provider-runtime.js", () => ({
-  authorizePermission: (request: {
-    localOperator?: boolean;
-    permission: string;
-    objectType: string;
-    objectId: string;
-  }) => ({
-    decision: request.localOperator ? "allow" : "deny",
-    allowed: request.localOperator === true,
-    providerId: request.localOperator ? "operator-control" : "provider-runtime",
-    providerVersion: request.localOperator ? "operator-control/local-v1" : "runtime",
-    reasonCode: request.localOperator ? "operator_control_local_allow" : "no_permission_provider_configured",
+  authorizePermission: (request: { permission: string; objectType: string; objectId: string }) => ({
+    decision: "deny",
+    allowed: false,
+    providerId: "provider-runtime",
+    providerVersion: "runtime",
+    reasonCode: "no_permission_provider_configured",
     permission: request.permission,
     objectType: request.objectType,
     objectId: request.objectId,
@@ -76,7 +77,7 @@ describe("PermissionsCommands provider-runtime surface", () => {
     expect(payload).toMatchObject({
       status: "provider-runtime",
       mutationCommands: { enabled: true },
-      authorizationProviders: [{ id: "operator-control" }, { id: "context-capabilities" }],
+      authorizationProviders: [{ id: "context-capabilities" }],
       capabilityMaterializers: [
         { id: "runtime-bootstrap" },
         { id: "agent-default-capabilities" },
@@ -88,13 +89,10 @@ describe("PermissionsCommands provider-runtime surface", () => {
 
   it("checks permissions through provider-runtime only", () => {
     const commands = new PermissionsCommands();
-    const denied = commands.check("execute", "group", "agents", undefined, true);
-    const allowed = commands.check("execute", "group", "agents", true, true);
+    const denied = commands.check("execute", "group", "agents", true);
 
     expect(denied.allowed).toBe(false);
     expect(denied.decision.providerId).toBe("provider-runtime");
-    expect(allowed.allowed).toBe(true);
-    expect(allowed.decision.providerId).toBe("operator-control");
   });
 
   it("suggests matching provider-owned permission tags for denied checks", () => {
@@ -111,7 +109,7 @@ describe("PermissionsCommands provider-runtime surface", () => {
     });
 
     const commands = new PermissionsCommands();
-    const denied = commands.check("mutate", "image", "generate", undefined, true);
+    const denied = commands.check("mutate", "image", "generate", true);
 
     expect(denied.allowed).toBe(false);
     expect(denied.guidance).toMatchObject({

@@ -4028,7 +4028,6 @@ export class RaviClient {
     },
     /** Evaluate a provider-runtime permission request */
     check: async (options?: {
-      localOperator?: boolean;
       objectId?: string;
       objectType?: string;
       permission?: string;

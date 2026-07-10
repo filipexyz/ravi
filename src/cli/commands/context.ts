@@ -984,7 +984,7 @@ export class ContextCredentialsCommands {
   }
 
   @Command({ name: "add", description: "Add a runtime context-key to the local credentials store" })
-  @CommandAccess({ kind: "mutate", resource: "context.credentials", action: "add", risk: "medium" })
+  @CommandAccess({ kind: "mutate", resource: "context.credentials", action: "add", risk: "medium", bootstrap: true })
   add(
     @Arg("contextKey", { description: "Runtime context-key (rctx_*)" }) contextKey: string,
     @Option({ flags: "--label <label>", description: "Human label (defaults to hostname)" }) label?: string,

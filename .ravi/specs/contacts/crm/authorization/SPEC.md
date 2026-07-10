@@ -91,4 +91,5 @@ ownership fields alone.
   hidden contacts.
 - A runtime agent cannot read tasks, facts, or activities whose backing
   contacts are hidden.
-- CRM reads remain available to direct local operator CLI.
+- CRM reads require a resolved runtime principal with the matching visibility
+  grant.

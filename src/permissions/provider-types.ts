@@ -26,7 +26,8 @@ export interface PermissionProviderCommandAccess {
   resourceId?: string;
   input?: string[];
   redactions?: string[];
-  localOperator?: boolean;
+  bootstrap?: boolean;
+  localProject?: boolean;
   requiresConfirmation?: boolean;
   notes?: string;
 }
@@ -55,13 +56,6 @@ export interface PermissionProviderCapabilityOptions {
 
 export interface PermissionProviderRequest {
   requestId?: string;
-  /**
-   * Explicit operator-control local request.
-   *
-   * Missing subject/context/capabilities is not enough to imply operator
-   * authority; callers must opt in deliberately.
-   */
-  localOperator?: boolean;
   subject?: PermissionProviderSubject | null;
   context?: CapabilityContextLike | null;
   capabilities?: ContextCapability[] | null;

@@ -1,7 +1,7 @@
 import { getContext } from "../cli/context.js";
 import { buildAuditContextProvenance } from "../permissions/audit-provenance.js";
 import { recordAndEmitPermissionDenial } from "../permissions/denials.js";
-import { agentCan, canWithCapabilityContext, localOperatorCan } from "../permissions/provider-runtime.js";
+import { agentCan, canWithCapabilityContext } from "../permissions/provider-runtime.js";
 import { normalizeAppId } from "./service.js";
 import type { RaviAppCheckResult, RaviAppManifestRecord } from "./types.js";
 
@@ -16,7 +16,7 @@ export function canExecuteApp(appId: string): boolean {
 export function canAccessApp(appId: string, relation: "use" | "execute"): boolean {
   const normalizedAppId = normalizeAppId(appId);
   const ctx = getContext();
-  if (!ctx?.agentId) return localOperatorCan(relation, "app", normalizedAppId);
+  if (!ctx?.agentId) return false;
 
   return ctx.context
     ? canWithCapabilityContext(

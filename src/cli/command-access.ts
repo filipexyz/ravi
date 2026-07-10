@@ -43,7 +43,15 @@ export function enforceCliCommandAccess(input: CliCommandAccessInput): CliComman
   }
   const inputWithAccess: CliCommandAccessInput & { access: CommandAccessOptions } = { ...input, access: input.access };
 
-  const authority = resolveCommandAccessAuthority(input.source, inputWithAccess.access);
+  if (isUnauthenticatedLocalCliCommand(inputWithAccess)) {
+    return {
+      allowed: true,
+      errorMessage: "",
+      attempted: [],
+    };
+  }
+
+  const authority = resolveCommandAccessAuthority(input.source);
   if (!authority.allowed) {
     return {
       allowed: false,
@@ -113,15 +121,19 @@ export function buildCliCommandOperation(input: CliCommandAccessInput): Permissi
   };
 }
 
+function isUnauthenticatedLocalCliCommand(input: CliCommandAccessInput & { access: CommandAccessOptions }): boolean {
+  if (input.source !== "cli") return false;
+  if (!input.access.bootstrap && !input.access.localProject) return false;
+  return !getContext()?.context;
+}
+
 function resolveCommandAccessAuthority(
   source: CliCommandAccessSource,
-  access: CommandAccessOptions,
 ):
-  | { allowed: true; label: string; request: Pick<PermissionProviderRequest, "context" | "subject" | "localOperator"> }
+  | { allowed: true; label: string; request: Pick<PermissionProviderRequest, "context" | "subject"> }
   | { allowed: false; errorMessage: string } {
   const ctx = getContext();
-  const useRuntimeContext = source !== "cli" || Boolean(process.env[RAVI_CONTEXT_KEY_ENV]);
-  if (useRuntimeContext && ctx?.context) {
+  if (ctx?.context) {
     const agentId = ctx.agentId ?? ctx.context.agentId;
     const context: CapabilityContextLike = {
       ...ctx.context,
@@ -134,24 +146,12 @@ function resolveCommandAccessAuthority(
     };
   }
 
-  if (source !== "cli") {
-    return {
-      allowed: false,
-      errorMessage: "Permission denied: command execution requires a resolved runtime principal",
-    };
-  }
-
-  if (access.localOperator === false) {
-    return {
-      allowed: false,
-      errorMessage: "Permission denied: local operator is not allowed for this command",
-    };
-  }
-
   return {
-    allowed: true,
-    label: "local operator",
-    request: { localOperator: true },
+    allowed: false,
+    errorMessage:
+      source === "cli"
+        ? `Permission denied: direct CLI command execution requires ${RAVI_CONTEXT_KEY_ENV} or a default runtime credential`
+        : "Permission denied: command execution requires a resolved runtime principal",
   };
 }
 
@@ -323,7 +323,7 @@ function commandAccessCapability(access: CommandAccessOptions): AuthorizationCap
 function subjectFromAuthorityLabel(authorityLabel: string): { type: string; id: string } | undefined {
   const [type, ...idParts] = authorityLabel.split(":");
   const id = idParts.join(":");
-  if (!type || !id || authorityLabel === "local operator") return undefined;
+  if (!type || !id) return undefined;
   return { type, id };
 }
 
@@ -337,7 +337,8 @@ function normalizeAccess(access: CommandAccessOptions): PermissionProviderComman
     ...(access.resourceId ? { resourceId: access.resourceId } : {}),
     ...(access.input ? { input: access.input } : {}),
     ...(access.redactions ? { redactions: access.redactions } : {}),
-    ...(access.localOperator != null ? { localOperator: access.localOperator } : {}),
+    ...(access.bootstrap != null ? { bootstrap: access.bootstrap } : {}),
+    ...(access.localProject != null ? { localProject: access.localProject } : {}),
     ...(access.requiresConfirmation != null ? { requiresConfirmation: access.requiresConfirmation } : {}),
     ...(access.notes ? { notes: access.notes } : {}),
   };

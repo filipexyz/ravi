@@ -176,7 +176,6 @@ WARN
 
 INFO
 - permissions.provider_runtime_default_chain: default provider chain matches contract
-- permissions.local_operator_explicit: missing-principal authorization fails closed
 - permissions.runtime_bootstrap_scope: runtime bootstrap excludes actor/surface/admin authority
 - sdk.returns: 561 public commands, 0 missing returns
 ```

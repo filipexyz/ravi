@@ -978,7 +978,7 @@ ANTHROPIC_API_KEY=
     name: "init-admin-key",
     description: "Bootstrap the admin runtime context-key. Refuses to run if any live admin context already exists.",
   })
-  @CommandAccess({ kind: "mutate", resource: "daemon", action: "init-admin-key", risk: "medium" })
+  @CommandAccess({ kind: "mutate", resource: "daemon", action: "init-admin-key", risk: "medium", bootstrap: true })
   @Returns(daemonInitAdminKeyReturnSchema)
   initAdminKey(
     @Option({ flags: "--label <name>", description: "Label for the bootstrap context (default: hostname)" })

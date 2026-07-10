@@ -88,15 +88,6 @@ export function agentCan(
   }).allowed;
 }
 
-export function localOperatorCan(permission: string, objectType: string, objectId: string): boolean {
-  return authorizePermission({
-    localOperator: true,
-    permission,
-    objectType,
-    objectId,
-  }).allowed;
-}
-
 function getScopedContext(agentId: string): CapabilityContextLike | undefined {
   const ctx = getContext();
   if (!ctx?.context) return undefined;

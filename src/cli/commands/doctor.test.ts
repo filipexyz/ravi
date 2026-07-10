@@ -94,7 +94,7 @@ function makeHealthyDeps() {
       ] as any,
     getRuntimeCompatibilityIssues: () => [],
     listRegisteredRuntimeProviderIds: () => ["codex", "claude"] as any,
-    getConfiguredPermissionProviders: () => [{ id: "operator-control" }, { id: "context-capabilities" }] as any,
+    getConfiguredPermissionProviders: () => [{ id: "context-capabilities" }] as any,
     getConfiguredCapabilityMaterializers: () =>
       [
         { id: "runtime-bootstrap" },
@@ -103,7 +103,6 @@ function makeHealthyDeps() {
         { id: "contact-policy-permissions" },
       ] as any,
     authorizePermission: () => ({ allowed: false, reasonCode: "missing_subject" }) as any,
-    localOperatorCan: () => true,
     materializeSubjectCapabilities: (subjectType: string, subjectId: string) =>
       subjectType === "agent" && subjectId === "main"
         ? [{ permission: "view", objectType: "agent", objectId: "*" }]

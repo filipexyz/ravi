@@ -70,8 +70,8 @@ Regras:
 - `runtime-bootstrap`, `agent-default-capabilities`,
   `agent-identity-permissions` e `contact-policy-permissions` são os
   materializers padrão.
-- `operator-control` é o authorization provider explícito para operador local;
-  ele não materializa capabilities de agent e não autoriza execução de tools.
+- Execução local direta precisa de `RAVI_CONTEXT_KEY` ou credential runtime
+  default; o Ravi não infere autoridade de operador pelo terminal local.
 - O contexto efetivo de um turno externo usa `authorityMode=agent-identity`:
   capabilities do executor agent projetadas em
   `agent_identity:<agent>:<compartment>`, intersectadas com turn caps quando
@@ -98,7 +98,6 @@ Exemplos:
 ravi permissions materialize --subject-type agent --subject-id main --json
 ravi permissions materialize --subject-type agent_identity --subject-id <agent-id>:chat:<chat-id> --json
 ravi permissions materialize --subject-type contact --subject-id <contact-id> --json
-ravi permissions check --permission view --object-type agent --object-id worker --local-operator
 ravi permissions resolve <denial-id>
 ravi permissions allow image-generation --to agent:image-agent --capabilities mutate:image:generate
 ravi tags show permission-family --json

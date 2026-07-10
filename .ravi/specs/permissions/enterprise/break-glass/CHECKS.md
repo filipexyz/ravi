@@ -17,10 +17,9 @@ feature: break-glass
   the resolved principal is `operator:<id>` in the scope context.
 - `agentCan(undefined, …)` does NOT return allow purely from a missing
   `agentId`; it fails closed.
-- A no-subject/no-context provider-runtime request is denied unless it
-  explicitly requests operator-control authorization.
-- Explicit operator-control authorization is exercised through the provider
-  runtime facade and never through a hidden caller branch.
+- A no-subject/no-context provider-runtime request is denied.
+- No local operator authorization provider is registered or exercised through a
+  hidden caller branch.
 - A break-glass authority mutation records `operator:<id>` on the provider-owned
   audit event.
 - A break-glass mutation with no auditable sink available is REFUSED (audit is a
@@ -41,7 +40,8 @@ feature: break-glass
 ## Doctor
 
 - `ravi doctor` reports whether no-agent/no-context authorization is fail-closed
-  and whether explicit operator-control authorization works.
+  and whether any local operator authorization provider is unexpectedly
+  registered.
 - A check reports any privileged operator credential without an expiry as an
   informational finding (prefer time-bound operator privilege).
 

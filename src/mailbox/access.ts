@@ -1,4 +1,4 @@
-import { agentCan, canWithCapabilityContext, localOperatorCan } from "../permissions/provider-runtime.js";
+import { agentCan, canWithCapabilityContext } from "../permissions/provider-runtime.js";
 import { getScopeContext, type ScopeContext } from "../permissions/scope.js";
 import type { MailMailbox } from "./types.js";
 
@@ -15,7 +15,7 @@ export function canUseMailMailbox(
   permission: MailboxPermission,
   mailbox: Pick<MailMailbox, "id" | "address" | "normalizedAddress">,
 ): boolean {
-  if (!ctx.agentId) return localOperatorCan(permission, "mailbox", mailbox.id);
+  if (!ctx.agentId) return false;
   return (
     scopeCan(ctx, permission, "mailbox", mailbox.id) ||
     scopeCan(ctx, permission, "mailbox", mailbox.normalizedAddress) ||
@@ -24,7 +24,7 @@ export function canUseMailMailbox(
 }
 
 export function canUseAnyMailbox(ctx: MailScopeContext, permission: MailboxPermission): boolean {
-  if (!ctx.agentId) return localOperatorCan(permission, "mailbox", "*");
+  if (!ctx.agentId) return false;
   return scopeCan(ctx, permission, "mailbox", "*");
 }
 
@@ -33,12 +33,12 @@ export function canUseMailProvider(
   permission: MailProviderPermission,
   provider: string,
 ): boolean {
-  if (!ctx.agentId) return localOperatorCan(permission, "mail-provider", provider);
+  if (!ctx.agentId) return false;
   return scopeCan(ctx, permission, "mail-provider", provider) || scopeCan(ctx, permission, "mail-provider", "*");
 }
 
 function scopeCan(ctx: MailScopeContext, permission: string, objectType: string, objectId: string): boolean {
-  if (!ctx.agentId) return localOperatorCan(permission, objectType, objectId);
+  if (!ctx.agentId) return false;
   if (ctx.context) {
     return canWithCapabilityContext(
       { ...ctx.context, agentId: ctx.context.agentId ?? ctx.agentId },

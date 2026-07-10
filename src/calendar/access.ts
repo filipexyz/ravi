@@ -2,7 +2,6 @@ import {
   agentCan,
   authorizePermission,
   canWithCapabilityContext,
-  localOperatorCan,
   type PermissionProvider,
 } from "../permissions/provider-runtime.js";
 import { parseAuthorityPrincipal } from "../permissions/delegation.js";
@@ -28,7 +27,7 @@ export function canUseCalendar(
   permission: CalendarPermission,
   calendar: Pick<CalendarCalendar, "id" | "name" | "providerCalendarId" | "visibility" | "ownerType" | "ownerId">,
 ): boolean {
-  if (!ctx.agentId) return localOperatorCan(permission, "calendar", calendar.id);
+  if (!ctx.agentId) return false;
   if (calendarScopeSubjects(ctx).some((subject) => calendarSubjectOwnsCalendar(subject, calendar))) return true;
   if (
     calendar.visibility === "public" &&
@@ -46,7 +45,7 @@ export function canUseCalendar(
 }
 
 export function canUseAnyCalendar(ctx: CalendarScopeContext, permission: CalendarPermission): boolean {
-  if (!ctx.agentId) return localOperatorCan(permission, "calendar", "*");
+  if (!ctx.agentId) return false;
   return scopeCan(ctx, permission, "calendar", "*");
 }
 
@@ -55,7 +54,7 @@ export function canUseCalendarProvider(
   permission: CalendarProviderPermission,
   provider: string,
 ): boolean {
-  if (!ctx.agentId) return localOperatorCan(permission, "calendar-provider", provider);
+  if (!ctx.agentId) return false;
   return (
     scopeCan(ctx, permission, "calendar-provider", provider) || scopeCan(ctx, permission, "calendar-provider", "*")
   );
@@ -115,7 +114,7 @@ function hasDetailCalendarAccess(
 }
 
 function scopeCan(ctx: CalendarScopeContext, permission: string, objectType: string, objectId: string): boolean {
-  if (!ctx.agentId) return localOperatorCan(permission, objectType, objectId);
+  if (!ctx.agentId) return false;
   if (ctx.context) {
     return canWithCapabilityContext(
       { ...ctx.context, agentId: ctx.context.agentId ?? ctx.agentId },
@@ -133,7 +132,7 @@ function canWithCalendarMembershipProvider(
   calendar: Pick<CalendarCalendar, "id" | "name" | "providerCalendarId">,
 ): boolean {
   const subjects = calendarScopeSubjects(ctx);
-  if (subjects.length === 0 && !ctx.agentId) return localOperatorCan(permission, "calendar", calendar.id);
+  if (subjects.length === 0 && !ctx.agentId) return false;
   return subjects.some(
     (subject) =>
       authorizePermission(

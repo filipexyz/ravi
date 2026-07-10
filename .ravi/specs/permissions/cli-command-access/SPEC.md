@@ -76,8 +76,11 @@ Optional fields:
   permission request after redaction.
 - `redactions`: command-specific input fields that MUST be redacted before
   provider execution or audit.
-- `localOperator`: whether direct local CLI with no principal may request the
-  explicit `operator-control` provider path.
+- `bootstrap`: whether direct local CLI with no principal may run a first-run
+  credential bootstrap command without provider authorization.
+- `localProject`: whether direct local CLI with no principal may run a
+  deterministic source-tree maintenance command, such as SDK/OpenAPI codegen,
+  without provider authorization.
 - `notes`: short human-readable operator note for doctor/review output.
 
 ## Relationship To `@Scope`
@@ -108,7 +111,8 @@ The registry entry MUST include:
 - `access.resource`
 - `access.action`
 - `access.risk`
-- optional context, resource-id, input, redaction, and operator-control metadata
+- optional context, resource-id, input, redaction, bootstrap, local-project, and
+  confirmation metadata
 
 Commands marked `@CliOnly` MAY omit `@CommandAccess` when they are strictly
 interactive, streaming, process-local, or not exposed to remote/tool execution.
@@ -180,21 +184,26 @@ Rules:
 - `read:<resource>.<action>:*` MUST NOT be documented as the canonical shape.
   The canonical shape is `read:<resource>:<action>`.
 
-## Local Operator
+## Local Bootstrap
 
-Direct terminal use without a resolved runtime principal MAY be authorized by
-the explicit `operator-control` provider only when the command metadata allows
-that path.
+Direct terminal use without a resolved runtime principal MUST deny by default.
+It MAY run only when the command metadata marks the command as first-run
+bootstrap or local source-tree maintenance.
 
 Rules:
 
-- Local operator authorization MUST be explicit.
-- Missing subject/context MUST fail closed unless the request carries
-  `localOperator=true`.
-- Commands with `risk: "high"` or `risk: "destructive"` SHOULD require an
-  explicit local confirmation flag even in local operator mode.
+- Bootstrap metadata MUST be explicit and limited to creating or importing
+  runtime credentials.
+- Bootstrap commands MUST NOT be exposed through tool or gateway execution.
+- Local-project metadata MUST be explicit and limited to deterministic
+  repository maintenance commands that do not read or mutate Ravi runtime state,
+  such as SDK/OpenAPI generation and drift checks.
+- Local-project commands MUST NOT be exposed through tool or gateway execution
+  without a resolved runtime principal.
+- Commands with `risk: "high"` or `risk: "destructive"` MUST NOT use bootstrap
+  metadata.
 - Runtime execution with `agentId`, `RAVI_CONTEXT_KEY`, or a scoped context
-  MUST NOT silently fall back to local operator.
+  MUST NOT silently fall back to local authority.
 
 ## Risk Semantics
 
@@ -251,7 +260,9 @@ lacks `@CommandAccess` MUST fail the relevant quality gate.
 - CLI command authorization accepts semantic `read/mutate` capabilities derived
   from `@CommandAccess` and uses legacy `execute:group` capabilities only as a
   compatibility fallback.
-- Direct local CLI without principal uses explicit operator-control mode only.
+- Direct local CLI without principal fails closed except for explicitly marked
+  first-run credential bootstrap commands and deterministic local-project
+  maintenance commands.
 - `ravi doctor --domain permissions` reports missing command access metadata
   and can distinguish missing metadata from intentionally read-only commands.
 - Adding a new public mutating command without `@CommandAccess` fails tests or

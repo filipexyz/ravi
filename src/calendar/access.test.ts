@@ -57,10 +57,10 @@ describe("calendar access gate", () => {
     stateDir = null;
   });
 
-  it("allows everything for a direct operator with no agent principal", () => {
-    expect(canUseCalendar({}, "write", calendar())).toBe(true);
-    expect(canUseAnyCalendar({}, "read")).toBe(true);
-    expect(canUseCalendarProvider({}, "sync", "google")).toBe(true);
+  it("denies private calendar access when no runtime principal exists", () => {
+    expect(canUseCalendar({}, "write", calendar())).toBe(false);
+    expect(canUseAnyCalendar({}, "read")).toBe(false);
+    expect(canUseCalendarProvider({}, "sync", "google")).toBe(false);
   });
 
   it("denies a private calendar with no grant (fail closed)", () => {

@@ -11,7 +11,6 @@ capabilities:
   - profiles
   - tag-policy
   - runtime-context
-  - operator-control
   - least-privilege
   - explain
   - production-readiness
@@ -49,7 +48,6 @@ core. Ravi core MUST NOT embed a native permission graph as policy.
 
 Authorization providers:
 
-- `operator-control`
 - `context-capabilities`
 
 Capability materializers:
@@ -94,11 +92,14 @@ for recurring user/workflow access because it updates the agent identity in one
 explainable plan. Contact/user profile changes are legacy/user-overlay unless a
 future policy explicitly uses them for invocation eligibility.
 
-`operator-control` is the explicit operator authorization provider for local
-management actions. It MUST NOT be used as agent tool authority and MUST NOT
-materialize agent capabilities. The current CLI compatibility flag
-`--local-operator` MAY continue to request this path, but provider ids,
-diagnostics, doctor checks, and specs MUST name the provider `operator-control`.
+Direct local management MUST resolve through a runtime context-key or a default
+runtime credential. Ravi core MUST NOT infer operator authority from the local
+terminal. First-run bootstrap commands MAY run without a resolved principal only
+when their command access metadata marks them as bootstrap and the command body
+performs its own narrow guard, such as creating/importing the initial runtime
+credential. Deterministic source-tree maintenance commands MAY run without a
+resolved principal only when their command access metadata marks them as
+local-project and they do not read or mutate Ravi runtime state.
 
 ## Agent-Facing Authorization UX
 
@@ -205,10 +206,11 @@ Canonical visibility capabilities:
 - Contact reads require explicit contact-read capabilities or contact-policy
   provider output.
 
-Direct local CLI execution without a resolved principal MAY remain an explicit
-operator-control path requested by compatibility metadata such as
-`localOperator=true`. Runtime execution with an agent context MUST NOT use
-local discovery as an authorization bypass.
+Direct local CLI execution without a resolved principal MUST fail closed, except
+for explicitly marked bootstrap commands that create/import runtime credentials
+and explicitly marked local-project commands that maintain source-generated
+artifacts. Runtime execution with an agent context MUST NOT use local discovery
+as an authorization bypass.
 
 ## Agent Visibility Migration
 

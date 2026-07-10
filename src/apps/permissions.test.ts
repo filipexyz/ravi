@@ -71,9 +71,9 @@ describe("app permission gate", () => {
     }
   });
 
-  it("allows everything for a direct operator with no agent principal", () => {
-    expect(canUseApp("apps")).toBe(true);
-    expect(canExecuteApp("apps")).toBe(true);
+  it("denies access when no runtime principal exists", () => {
+    expect(canUseApp("apps")).toBe(false);
+    expect(canExecuteApp("apps")).toBe(false);
   });
 
   it("denies an agent with no app grant (fail closed)", () => {

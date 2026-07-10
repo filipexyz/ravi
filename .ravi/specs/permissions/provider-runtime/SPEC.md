@@ -40,7 +40,6 @@ provider-owned subject configuration.
 
 Required authorization providers:
 
-- `operator-control`: explicit local operator control path.
 - `context-capabilities`: checks already materialized runtime snapshots.
 
 Required capability materializers:
@@ -71,29 +70,27 @@ Required capability materializers:
   gates them.
 - Denial resolution for `authorityMode=agent-identity` MUST apply recurring
   capability to `agent:<executorAgentId>`, not to `contact:<actorId>`.
-- Direct local management MAY be allowed only through the explicit
-  `operator-control` provider.
-- `operator-control` MUST support local requests only when the caller
-  deliberately sets `localOperator=true`; missing subject/context is never
-  enough to infer operator authority.
-- `operator-control` MUST NOT materialize runtime capabilities for agents,
+- Direct local management MUST use a resolved runtime context-key or default
+  runtime credential.
+- A no-subject/no-context provider-runtime authorization request MUST deny.
+- First-run bootstrap and local-project maintenance are not provider
+  authorization. They are narrow direct-CLI command metadata exceptions for
+  creating/importing runtime credentials or maintaining deterministic generated
+  source artifacts, and they MUST NOT materialize capabilities for agents,
   contacts, chats, automations, sessions, or apps.
-- A no-subject/no-context request without explicit operator-control intent MUST
-  deny.
 - Resource discovery is authorization. List/show/search surfaces MUST filter by
   provider-runtime visibility capabilities.
 - Provider errors, timeouts, malformed output, and required provider denials
   MUST fail closed.
 
-## Operator Control Boundary
+## Operator Boundary
 
-`operator-control` is a provider-runtime control-plane branch for operator
-actions such as inspecting decisions, resolving denials, and applying
-provider-owned profiles. It is not part of the agent identity execution branch.
+Operator actions such as inspecting decisions, resolving denials, and applying
+provider-owned profiles must run as an authenticated runtime principal. They are
+not part of the agent identity execution branch.
 
-The local implementation is intentionally narrow. A future remote management
-plane MAY add an authenticated operator identity provider, but MUST keep the
-same separation:
+A future remote management plane MAY add an authenticated operator identity
+provider, but MUST keep the same separation:
 
 - operator authorization decides whether the human/operator can manage policy;
 - agent identity authorization decides whether a runtime action may execute;

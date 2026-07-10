@@ -236,7 +236,7 @@ function registerCommand(
     }
 
     // Scope enforcement (before method execution)
-    const scopeResult = enforceScopeCheck(scope, groupName, cmdMeta.name);
+    const scopeResult = enforceScopeCheck(scope, groupName, cmdMeta.name, { source: "cli", access });
     if (!scopeResult.allowed) {
       console.error(scopeResult.errorMessage);
       // Drain NATS before exiting so audit events are flushed

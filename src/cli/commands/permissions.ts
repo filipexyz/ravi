@@ -238,15 +238,12 @@ export class PermissionsCommands {
     @Option({ flags: "--permission <permission>", description: "Permission/relation to check" }) permission?: string,
     @Option({ flags: "--object-type <type>", description: "Object type" }) objectType?: string,
     @Option({ flags: "--object-id <id>", description: "Object id" }) objectId?: string,
-    @Option({ flags: "--local-operator", description: "Evaluate through explicit operator-control local path" })
-    localOperator?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const normalizedPermission = requiredOption(permission, "--permission");
     const normalizedObjectType = requiredOption(objectType, "--object-type");
     const normalizedObjectId = requiredOption(objectId, "--object-id");
     const decision = authorizePermission({
-      ...(localOperator === true ? { localOperator: true } : {}),
       permission: normalizedPermission,
       objectType: normalizedObjectType,
       objectId: normalizedObjectId,

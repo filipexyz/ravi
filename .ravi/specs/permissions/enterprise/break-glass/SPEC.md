@@ -69,20 +69,16 @@ removed.
   or broad provider-owned capability changes) SHOULD require a reason and MAY
   require a second-operator approval or be time-bound; above a configured
   blast-radius threshold approval MUST be required.
-- Operator privilege MUST be revocable and time-bindable like any other grant;
-  a standing all-powerful local operator is a configuration, not the default for
-  enterprise mode.
-- A compatibility mode MAY exist for local single-operator development, but it
-  MUST still route through the explicit `operator-control` provider and MUST be
-  visible in `ravi doctor`. It MUST NOT revive hidden `!agentId` allow branches.
+- Operator privilege MUST be revocable and time-bindable like any other grant.
+- Local single-operator development MUST still use a resolved runtime
+  credential. It MUST NOT revive hidden `!agentId` allow branches.
 
 ## Operator Resolution
 
 - The runtime MUST resolve an operator principal from the operator credential
   before treating a no-agent invocation as authorized.
-- Resolution order SHOULD be: explicit operator token/credential → bound OS/admin
-  identity → explicit `operator-control` provider request for
-  development/bootstrap only.
+- Resolution order SHOULD be: explicit operator token/credential → bound
+  OS/admin identity → first-run credential bootstrap command for bootstrap only.
 - An invocation with no resolvable operator and no agent principal MUST be
   denied for authority-bearing actions, while non-authoritative read/help paths
   MAY remain available.
@@ -92,8 +88,8 @@ removed.
 ## Enforcement Changes
 
 - `agentCan(undefined, …)` MUST return deny. `enforceScopeCheck` and other
-  no-agent gates MUST consult an explicit operator-control/operator path
-  instead of returning allow purely on missing `agentId`.
+  no-agent gates MUST consult an authenticated operator path instead of
+  returning allow purely on missing `agentId`.
 - Provider-owned authority mutation MUST require an authenticated operator in
   enterprise mode and MUST record the operator on each mutation audit event.
 - Recovery from an incident that revokes all agent admin MUST remain possible
@@ -112,6 +108,6 @@ removed.
   approval and records operator + reason + blast radius.
 - Traces and `ravi.audit.*` distinguish break-glass (operator) from delegated
   (actor) authority.
-- With enterprise mode off, any local operator workflow still uses explicit
-  operator-control authorization and `ravi doctor` verifies that no implicit
-  no-principal bypass is active.
+- With enterprise mode off, direct local management still requires a runtime
+  credential and `ravi doctor` verifies that no implicit no-principal bypass is
+  active.

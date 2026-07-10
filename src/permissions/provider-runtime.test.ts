@@ -13,7 +13,6 @@ import {
   canWithCapabilities,
   canWithCapabilityContext,
   can,
-  localOperatorCan,
   materializeSubjectCapabilities,
 } from "./provider-runtime.js";
 import { ensureAgentCanViewAgent, ensureAgentCanViewAllAgents } from "./agent-default-capabilities-provider.js";
@@ -30,7 +29,7 @@ describe("Permission Provider Runtime", () => {
     stateDir = null;
   });
 
-  it("does not infer local operator authority from a missing subject", () => {
+  it("does not infer authority from a missing subject", () => {
     const decision = authorizePermission({
       permission: "execute",
       objectType: "group",
@@ -41,23 +40,6 @@ describe("Permission Provider Runtime", () => {
     expect(decision.providerId).toBe("provider-runtime");
     expect(decision.reasonCode).toBe("no_permission_provider_configured");
     expect(agentCan(undefined, "execute", "group", "daemon")).toBe(false);
-  });
-
-  it("keeps explicit direct operator calls in the operator-control provider", () => {
-    const decision = authorizePermission({
-      localOperator: true,
-      permission: "execute",
-      objectType: "group",
-      objectId: "daemon",
-    });
-
-    expect(decision.allowed).toBe(true);
-    expect(decision.providerId).toBe("operator-control");
-    expect(decision.reasonCode).toBe("operator_control_local_allow");
-    expect(decision.evidence).toEqual([{ kind: "operator-control", mode: "local" }]);
-    expect(decision.requestId).toBeString();
-    expect(decision.durationMs).toBeGreaterThanOrEqual(0);
-    expect(localOperatorCan("execute", "group", "daemon")).toBe(true);
   });
 
   it("does not authorize direct subject checks without a provider-owned context", () => {
@@ -373,7 +355,7 @@ describe("Permission Provider Runtime", () => {
     expect(denied).toBe(false);
   });
 
-  it("does not treat an empty subject as a local operator", () => {
+  it("does not treat an empty subject as implicit authority", () => {
     const decision = authorizePermission({
       subject: { type: "agent", id: "" },
       permission: "execute",
@@ -453,10 +435,7 @@ describe("Permission Provider Runtime boundaries", () => {
   });
 
   it("keeps provider-owned config behind the materializer chain", () => {
-    expect(getConfiguredPermissionProviders().map((provider) => provider.id)).toEqual([
-      "operator-control",
-      "context-capabilities",
-    ]);
+    expect(getConfiguredPermissionProviders().map((provider) => provider.id)).toEqual(["context-capabilities"]);
     expect(getConfiguredCapabilityMaterializers().map((provider) => provider.id)).toEqual([
       "runtime-bootstrap",
       "agent-default-capabilities",

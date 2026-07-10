@@ -42,7 +42,8 @@ export interface CommandAccessOptions {
   resourceId?: string;
   input?: string[];
   redactions?: string[];
-  localOperator?: boolean;
+  bootstrap?: boolean;
+  localProject?: boolean;
   requiresConfirmation?: boolean;
   notes?: string;
 }

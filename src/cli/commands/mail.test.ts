@@ -3,6 +3,8 @@ import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import type { CloudCredentials } from "../../cloud-auth/types.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { listMailMailboxes, listMailMessages } from "../../mailbox/index.js";
+import type { ContextCapability, ContextRecord } from "../../router/router-db.js";
+import { runWithContext } from "../context.js";
 import {
   MailAccountsCommands,
   MailCommands,
@@ -49,8 +51,8 @@ describe("mail CLI commands", () => {
     );
     const accountPayload = JSON.parse(accountOutput);
 
-    const { output: mailboxOutput } = await captureConsole(() =>
-      mailboxes.create("Luis@Ravi.Bot", "acct_1", "Luis", "primary", "remote_box_1", true, true),
+    const { output: mailboxOutput } = await runWithMailAccess(() =>
+      captureConsole(() => mailboxes.create("Luis@Ravi.Bot", "acct_1", "Luis", "primary", "remote_box_1", true, true)),
     );
     const mailboxPayload = JSON.parse(mailboxOutput);
 
@@ -65,22 +67,24 @@ describe("mail CLI commands", () => {
     const messages = new MailMessagesCommands();
 
     await captureConsole(() => accounts.create("ravi-mail", "acct_1", undefined, undefined, true));
-    await captureConsole(() =>
-      mailboxes.create("luis@ravi.bot", "acct_1", undefined, undefined, undefined, true, true),
+    await runWithMailAccess(() =>
+      captureConsole(() => mailboxes.create("luis@ravi.bot", "acct_1", undefined, undefined, undefined, true, true)),
     );
 
-    const { output } = await captureConsole(() =>
-      messages.importMessage(
-        "luis@ravi.bot",
-        "alice@example.com",
-        "luis@ravi.bot",
-        "Hello",
-        "Local body",
-        "ravi-mail",
-        "remote_msg_1",
-        "remote_thr_1",
-        "<msg-1@ravi.bot>",
-        true,
+    const { output } = await runWithMailAccess(() =>
+      captureConsole(() =>
+        messages.importMessage(
+          "luis@ravi.bot",
+          "alice@example.com",
+          "luis@ravi.bot",
+          "Hello",
+          "Local body",
+          "ravi-mail",
+          "remote_msg_1",
+          "remote_thr_1",
+          "<msg-1@ravi.bot>",
+          true,
+        ),
       ),
     );
     const payload = JSON.parse(output);
@@ -90,8 +94,8 @@ describe("mail CLI commands", () => {
     expect(payload.inboxItem.sourceDomain).toBe("mail");
     expect(payload.inboxCreated).toBe(true);
 
-    const { output: listOutput } = await captureConsole(() =>
-      messages.list("luis@ravi.bot", undefined, undefined, true, undefined, undefined, true),
+    const { output: listOutput } = await runWithMailAccess(() =>
+      captureConsole(() => messages.list("luis@ravi.bot", undefined, undefined, true, undefined, undefined, true)),
     );
     const listPayload = JSON.parse(listOutput);
     expect(listPayload.messages).toHaveLength(1);
@@ -107,18 +111,18 @@ describe("mail CLI commands", () => {
     const outbox = new MailOutboxCommands();
 
     await captureConsole(() => accounts.create("ravi-mail", "acct_1", undefined, undefined, true));
-    await captureConsole(() =>
-      mailboxes.create("luis@ravi.bot", "acct_1", undefined, undefined, undefined, true, true),
+    await runWithMailAccess(() =>
+      captureConsole(() => mailboxes.create("luis@ravi.bot", "acct_1", undefined, undefined, undefined, true, true)),
     );
 
-    const { output } = await captureConsole(() =>
-      mail.send("bob@example.com", "Subject", "Body", "luis@ravi.bot", "idem-1", true),
+    const { output } = await runWithMailAccess(() =>
+      captureConsole(() => mail.send("bob@example.com", "Subject", "Body", "luis@ravi.bot", "idem-1", true)),
     );
     const payload = JSON.parse(output);
-    const { output: statusOutput } = await captureConsole(() => outbox.status(true));
+    const { output: statusOutput } = await runWithMailAccess(() => captureConsole(() => outbox.status(true)));
     const statusPayload = JSON.parse(statusOutput);
-    const { output: outboxOutput } = await captureConsole(() =>
-      outbox.list(undefined, "luis@ravi.bot", undefined, true),
+    const { output: outboxOutput } = await runWithMailAccess(() =>
+      captureConsole(() => outbox.list(undefined, "luis@ravi.bot", undefined, true)),
     );
     const outboxPayload = JSON.parse(outboxOutput);
 
@@ -139,30 +143,36 @@ describe("mail CLI commands", () => {
     const threads = new MailThreadsCommands();
 
     await captureConsole(() => accounts.create("ravi-mail", "acct_1", undefined, undefined, true));
-    await captureConsole(() =>
-      mailboxes.create("luis@ravi.bot", "acct_1", undefined, undefined, undefined, true, true),
+    await runWithMailAccess(() =>
+      captureConsole(() => mailboxes.create("luis@ravi.bot", "acct_1", undefined, undefined, undefined, true, true)),
     );
-    const { output: importOutput } = await captureConsole(() =>
-      messages.importMessage(
-        "luis@ravi.bot",
-        "alice@example.com",
-        "luis@ravi.bot",
-        "Question",
-        "Can you help?",
-        "ravi-mail",
-        "remote_msg_1",
-        undefined,
-        "<msg-1@example.com>",
-        true,
+    const { output: importOutput } = await runWithMailAccess(() =>
+      captureConsole(() =>
+        messages.importMessage(
+          "luis@ravi.bot",
+          "alice@example.com",
+          "luis@ravi.bot",
+          "Question",
+          "Can you help?",
+          "ravi-mail",
+          "remote_msg_1",
+          undefined,
+          "<msg-1@example.com>",
+          true,
+        ),
       ),
     );
     const imported = JSON.parse(importOutput);
 
-    const { output: replyOutput } = await captureConsole(() =>
-      mail.reply(imported.message.id, "Yes.", undefined, undefined, undefined, undefined, undefined, "reply-1", true),
+    const { output: replyOutput } = await runWithMailAccess(() =>
+      captureConsole(() =>
+        mail.reply(imported.message.id, "Yes.", undefined, undefined, undefined, undefined, undefined, "reply-1", true),
+      ),
     );
     const reply = JSON.parse(replyOutput);
-    const { output: threadOutput } = await captureConsole(() => threads.read(imported.message.threadId, true, true));
+    const { output: threadOutput } = await runWithMailAccess(() =>
+      captureConsole(() => threads.read(imported.message.threadId, true, true)),
+    );
     const thread = JSON.parse(threadOutput);
 
     expect(reply.outbox.operation).toBe("reply");
@@ -205,7 +215,7 @@ describe("mail CLI commands", () => {
     const accounts = new MailAccountsCommands({ client, readCredentials: makeReadCredentials() });
 
     await captureConsole(() => accounts.create("ravi-mail", "acct_1", undefined, undefined, true));
-    const { output } = await captureConsole(() => accounts.sync("acct_1", true, true));
+    const { output } = await runWithMailAccess(() => captureConsole(() => accounts.sync("acct_1", true, true)));
     const payload = JSON.parse(output);
     const mailboxes = listMailMailboxes();
     const messages = listMailMessages();
@@ -273,6 +283,28 @@ async function captureConsole<T>(run: () => T | Promise<T>): Promise<{ output: s
   } finally {
     console.log = originalLog;
   }
+}
+
+function cap(permission: string, objectType: string, objectId: string): ContextCapability {
+  return { permission, objectType, objectId, source: "test" };
+}
+
+function mailContext(): ContextRecord {
+  return {
+    kind: "test-runtime",
+    agentId: "mail-agent",
+    capabilities: [
+      cap("manage", "mailbox", "*"),
+      cap("read", "mailbox", "*"),
+      cap("search", "mailbox", "*"),
+      cap("send", "mailbox", "*"),
+      cap("sync", "mail-provider", "ravi-mail"),
+    ],
+  } as ContextRecord;
+}
+
+function runWithMailAccess<T>(fn: () => T): T {
+  return runWithContext({ agentId: "mail-agent", context: mailContext() }, fn);
 }
 
 function makeClient(

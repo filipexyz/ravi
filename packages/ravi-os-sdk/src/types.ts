@@ -8438,7 +8438,6 @@ export type PermissionsAllowReturn = {
 
 /** Input shape for `permissions.check`. */
 export type PermissionsCheckInput = {
-  localOperator?: boolean;
   objectId?: string;
   objectType?: string;
   permission?: string;

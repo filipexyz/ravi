@@ -143,6 +143,15 @@ mock.module("../decorators.js", () => ({
   Returns: Object.assign(() => () => {}, { binary: () => () => {} }),
   Arg: () => () => {},
   Option: () => () => {},
+  getGroupMetadata: () => undefined,
+  getCommandsMetadata: () => [],
+  getArgsMetadata: () => [],
+  getOptionsMetadata: () => [],
+  getScopeMetadata: () => new Map(),
+  getCommandAccessMetadata: () => new Map(),
+  getReturnsMetadata: () => new Map(),
+  getReturnsBinaryMetadata: () => new Set(),
+  getCliOnlyMetadata: () => new Set(),
 }));
 
 mock.module("../context.js", () => ({

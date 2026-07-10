@@ -84,7 +84,6 @@ Initial checks:
 - `permissions.command_mutation_without_permission`
 - `permissions.provider_runtime_default_chain`
 - `permissions.provider_runtime_boundaries`
-- `permissions.local_operator_explicit`
 - `permissions.runtime_bootstrap_scope`
 
 The command registry SHOULD expose explicit metadata for:
@@ -101,8 +100,8 @@ solely from a name heuristic.
 
 Retired permission storage drift belongs to migration tooling, not the default
 doctor permissions domain. The default doctor MUST validate the active
-Permission Provider Runtime chain, boundary invariants, explicit
-operator-control semantics, and runtime bootstrap scope.
+Permission Provider Runtime chain, boundary invariants, absence of local
+operator authorization drift, and runtime bootstrap scope.
 
 ## Costs
 

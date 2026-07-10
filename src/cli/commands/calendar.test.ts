@@ -61,6 +61,7 @@ describe("calendar CLI commands", () => {
       accounts.create("local", "acct_1", "Local Calendar", undefined, true),
     );
     const accountPayload = JSON.parse(accountOutput);
+    process.env.RAVI_AGENT_ID = "main";
     const { output: calendarOutput } = await captureConsole(() =>
       calendars.create(
         "Luis",
@@ -93,6 +94,7 @@ describe("calendar CLI commands", () => {
     const outbox = new CalendarOutboxCommands();
 
     await captureConsole(() => accounts.create("local", "acct_1", undefined, undefined, true));
+    process.env.RAVI_AGENT_ID = "main";
     const { output: calendarOutput } = await captureConsole(() =>
       calendars.create(
         "Luis",
@@ -160,6 +162,7 @@ describe("calendar CLI commands", () => {
     const calendar = new CalendarCommands();
 
     await captureConsole(() => accounts.create("local", "acct_1", undefined, undefined, true));
+    process.env.RAVI_AGENT_ID = "owner";
     const { output: calendarOutput } = await captureConsole(() =>
       calendars.create(
         "Private",
@@ -230,6 +233,7 @@ describe("calendar CLI commands", () => {
     const events = new CalendarEventsCommands();
 
     await captureConsole(() => accounts.create("local", "acct_1", undefined, undefined, true));
+    process.env.RAVI_AGENT_ID = "owner";
     const { output: calendarOutput } = await captureConsole(() =>
       calendars.create(
         "Team",
@@ -289,6 +293,7 @@ describe("calendar CLI commands", () => {
     const events = new CalendarEventsCommands();
 
     await captureConsole(() => accounts.create("local", "acct_1", undefined, undefined, true));
+    process.env.RAVI_AGENT_ID = "main";
     const { output: calendarOutput } = await captureConsole(() =>
       calendars.create(
         "Ops",

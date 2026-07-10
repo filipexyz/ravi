@@ -339,7 +339,7 @@ Rules:
 - Providers do not mutate another provider's grants or policy state.
 - Providers do not bypass required provider-runtime decisions equivalent to
   `use/execute app:<id>`.
-- Providers do not authorize direct local operator break-glass behavior.
+- Providers do not authorize unauthenticated local break-glass behavior.
 - Providers MUST NOT depend on natural-language prompt annotations for identity.
 - Providers MUST NOT scrape chat history to infer authority when structured
   actor/resource metadata is available.

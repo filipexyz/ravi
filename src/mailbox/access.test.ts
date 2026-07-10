@@ -44,11 +44,11 @@ describe("mailbox Permission Provider Runtime access", () => {
     stateDir = null;
   });
 
-  it("allows direct CLI but requires explicit mailbox grants for agents", () => {
+  it("requires explicit mailbox grants and denies missing principals", () => {
     const account = createMailAccount({ provider: "ravi-mail" });
     const mailbox = createMailMailbox({ accountId: account.id, address: "Luis@Ravi.Bot", isDefault: true });
 
-    expect(canUseMailMailbox(getMailScopeContext(), "read", mailbox)).toBe(true);
+    expect(canUseMailMailbox(getMailScopeContext(), "read", mailbox)).toBe(false);
 
     process.env.RAVI_AGENT_ID = "mail-agent";
     expect(canUseMailMailbox(getMailScopeContext(), "read", mailbox)).toBe(false);

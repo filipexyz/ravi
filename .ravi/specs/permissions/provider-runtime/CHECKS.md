@@ -11,11 +11,9 @@
 
 ## Runtime Checks
 
-- No-subject/no-context without `localOperator=true` denies.
-- Explicit local operator allows through the `operator-control` provider.
-- `operator-control` appears before `context-capabilities` in the default
-  authorization provider chain.
-- `operator-control` has no capability materializer.
+- No-subject/no-context provider-runtime requests deny.
+- The default authorization provider chain contains only `context-capabilities`.
+- No local operator authorization provider or materializer is registered.
 - Context snapshots authorize only through `context-capabilities`.
 - Agent runtime config materializes through `agent-default-capabilities`.
 - Agent identity materializes through `agent-identity-permissions`.

@@ -6,13 +6,13 @@
  */
 
 import { getContext } from "../cli/context.js";
-import { agentCan, canWithCapabilityContext, localOperatorCan } from "./provider-runtime.js";
+import { agentCan, canWithCapabilityContext } from "./provider-runtime.js";
 import { emitPermissionDeniedAudit, flushPermissionAuditEvents, recordPermissionDenial } from "./denials.js";
 import { buildAuditContextProvenance } from "./audit-provenance.js";
 import { closeNats } from "../nats.js";
 import type { ContextRecord, ContextSource } from "../router/router-db.js";
 import type { SessionEntry } from "../router/types.js";
-import type { ScopeType } from "../cli/decorators.js";
+import type { CommandAccessOptions, ScopeType } from "../cli/decorators.js";
 
 /**
  * Flush pending audit events and exit the process.
@@ -284,12 +284,11 @@ export function getScopeContext(): ScopeContext {
 
 /**
  * Check if scope enforcement is active.
- * Returns false (no enforcement) when:
- * - Explicit operator-control authorization is available
- * - Agent is superadmin (has admin relation)
+ * Returns false (no enforcement) when the resolved principal is superadmin.
+ * Missing principals fail closed.
  */
 export function isScopeEnforced(ctx: ScopeContext): boolean {
-  if (!ctx.agentId) return !localOperatorCan("admin", "system", "*");
+  if (!ctx.agentId) return true;
   return !scopeCan(ctx, "admin", "system", "*");
 }
 
@@ -302,7 +301,7 @@ function scopeCan(ctx: ScopeContext, permission: string, objectType: string, obj
       objectId,
     );
   }
-  if (!ctx.agentId) return localOperatorCan(permission, objectType, objectId);
+  if (!ctx.agentId) return false;
   return agentCan(ctx.agentId, permission, objectType, objectId);
 }
 
@@ -314,12 +313,11 @@ function scopeCan(ctx: ScopeContext, permission: string, objectType: string, obj
  * Check if the current context can access a target session.
  *
  * Access is allowed when:
- * 1. No agent context (CLI direct) → explicit operator-control access
- * 2. Target is the agent's own session
- * 3. Agent has 'access' relation on session:<target> (including wildcards)
+ * 1. Target is the agent's own session
+ * 2. Agent has 'access' relation on session:<target> (including wildcards)
  */
 export function canAccessSession(ctx: ScopeContext, targetNameOrKey: string): boolean {
-  if (!ctx.agentId) return localOperatorCan("access", "session", targetNameOrKey);
+  if (!ctx.agentId) return false;
 
   // Own session
   if (ctx.sessionName && ctx.sessionName === targetNameOrKey) return true;
@@ -332,7 +330,7 @@ export function canAccessSession(ctx: ScopeContext, targetNameOrKey: string): bo
  * Filter a list of sessions to only those accessible by the current context.
  */
 export function filterAccessibleSessions(ctx: ScopeContext, sessions: SessionEntry[]): SessionEntry[] {
-  if (!ctx.agentId) return sessions;
+  if (!ctx.agentId) return [];
 
   return sessions.filter((s) => {
     const name = s.name ?? s.sessionKey;
@@ -344,12 +342,11 @@ export function filterAccessibleSessions(ctx: ScopeContext, sessions: SessionEnt
  * Check if the current context can modify a session (reset/delete/rename).
  *
  * Allowed when:
- * 1. No agent context → explicit operator-control modify
- * 2. Target is own session
- * 3. Agent has 'modify' relation on session:<target>
+ * 1. Target is own session
+ * 2. Agent has 'modify' relation on session:<target>
  */
 export function canModifySession(ctx: ScopeContext, targetNameOrKey: string): boolean {
-  if (!ctx.agentId) return localOperatorCan("modify", "session", targetNameOrKey);
+  if (!ctx.agentId) return false;
 
   // Own session
   if (ctx.sessionName && ctx.sessionName === targetNameOrKey) return true;
@@ -372,7 +369,7 @@ export function canAccessContact(
   _agentConfig?: unknown,
   contactSessions?: { agentId: string }[],
 ): boolean {
-  if (!ctx.agentId) return localOperatorCan("access", "contact", contact.id);
+  if (!ctx.agentId) return false;
 
   // write_contacts implies read
   if (scopeCan(ctx, "write_contacts", "system", "*")) return true;
@@ -401,12 +398,11 @@ export function canAccessContact(
  * Check if the current context can view a specific agent.
  *
  * Allowed when:
- * 1. No agent context (CLI direct) → explicit operator-control access
- * 2. Agent is viewing itself
- * 3. Agent has 'view' relation on agent:<targetId>
+ * 1. Agent is viewing itself
+ * 2. Agent has 'view' relation on agent:<targetId>
  */
 export function canViewAgent(ctx: ScopeContext, targetAgentId: string): boolean {
-  if (!ctx.agentId) return localOperatorCan("access", "agent", targetAgentId);
+  if (!ctx.agentId) return false;
 
   // Own agent
   if (ctx.agentId === targetAgentId) return true;
@@ -418,7 +414,7 @@ export function canViewAgent(ctx: ScopeContext, targetAgentId: string): boolean 
  * Filter a list of agents to only those visible by the current context.
  */
 export function filterVisibleAgents<T extends { id: string }>(ctx: ScopeContext, agents: T[]): T[] {
-  if (!ctx.agentId) return agents;
+  if (!ctx.agentId) return [];
 
   return agents.filter((a) => canViewAgent(ctx, a.id));
 }
@@ -439,7 +435,7 @@ export function canWriteContacts(ctx: ScopeContext): boolean {
  * Ownership is checked directly (agent_id match), not via relations.
  */
 export function canAccessResource(ctx: ScopeContext, resourceAgentId: string | undefined): boolean {
-  if (!ctx.agentId) return localOperatorCan("access", "agent", resourceAgentId ?? "*");
+  if (!ctx.agentId) return false;
 
   // Superadmin
   if (scopeCan(ctx, "admin", "system", "*")) return true;
@@ -467,6 +463,10 @@ export function enforceScopeCheck(
   scope: ScopeType,
   groupName?: string,
   commandName?: string,
+  options?: {
+    source?: "cli" | "tool" | "gateway";
+    access?: CommandAccessOptions;
+  },
 ): {
   allowed: boolean;
   errorMessage: string;
@@ -479,10 +479,12 @@ export function enforceScopeCheck(
 
   if (scope === "open") {
     if (!ctx.agentId) {
-      const allowed = localOperatorCan("execute", "group", groupName ?? "*");
+      if (allowsUnauthenticatedLocalOpenScope(options)) {
+        return { allowed: true, errorMessage: "" };
+      }
       return {
-        allowed,
-        errorMessage: allowed ? "" : `Permission denied: local operator cannot execute group:${groupName ?? "*"}`,
+        allowed: false,
+        errorMessage: `Permission denied: missing runtime principal cannot execute group:${groupName ?? "*"}`,
       };
     }
     const groupAllowed = scopeCan(ctx, "execute", "group", groupName ?? "*");
@@ -607,4 +609,12 @@ export function enforceScopeCheck(
         errorMessage: `Permission denied: agent:${ctx.agentId} — unknown scope "${scope}"`,
       };
   }
+}
+
+function allowsUnauthenticatedLocalOpenScope(options?: {
+  source?: "cli" | "tool" | "gateway";
+  access?: CommandAccessOptions;
+}): boolean {
+  if (options?.source !== "cli") return false;
+  return Boolean(options.access?.bootstrap || options.access?.localProject);
 }

@@ -216,7 +216,7 @@ function buildHandler(
     }
 
     // Scope enforcement (before method execution)
-    const scopeResult = enforceScopeCheck(scope, group, command);
+    const scopeResult = enforceScopeCheck(scope, group, command, { source: "tool", access });
     if (!scopeResult.allowed) {
       return {
         content: [{ type: "text", text: scopeResult.errorMessage }],

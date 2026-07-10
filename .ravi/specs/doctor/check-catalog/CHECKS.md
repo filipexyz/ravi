@@ -24,7 +24,6 @@ permissions.command_mutation_unclassified
 permissions.command_mutation_without_permission
 permissions.provider_runtime_default_chain
 permissions.provider_runtime_boundaries
-permissions.local_operator_explicit
 permissions.runtime_bootstrap_scope
 costs.pricing_unpriced_usage
 costs.pricing_catalog_stale
@@ -71,8 +70,6 @@ channels.inbound_contact_unresolved
   `permissions.provider_runtime_default_chain`.
 - Provider runtime boundary drift emits
   `permissions.provider_runtime_boundaries`.
-- Hidden operator-control authorization drift emits
-  `permissions.local_operator_explicit`.
 - Runtime bootstrap actor/surface/admin drift emits
   `permissions.runtime_bootstrap_scope`.
 - A target (cwd/temp/state) whose free space is below the critical threshold,

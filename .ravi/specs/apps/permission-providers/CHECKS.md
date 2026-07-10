@@ -46,8 +46,8 @@ ravi specs sync --json
   non-mutating operations.
 - Provider allow cannot bypass missing provider-equivalent `execute app:<id>` for
   mutating operations.
-- Direct local operator execution remains break-glass only when no runtime
-  principal/context exists.
+- Direct local execution without a runtime principal/context remains denied
+  except for explicitly marked credential bootstrap commands.
 - The operation referenced by `permissions.provider.operation` cannot be invoked
   directly as an ordinary app operation.
 - App help/guide surfaces do not advertise the reserved provider operation as a

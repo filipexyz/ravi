@@ -21,7 +21,6 @@ import {
 import {
   authorizePermission,
   canWithCapabilities,
-  localOperatorCan,
   materializeSubjectCapabilities,
 } from "../../permissions/provider-runtime.js";
 import { inspectAgentInstructionFiles, type AgentInstructionState } from "../../runtime/agent-instructions.js";
@@ -193,7 +192,6 @@ type DoctorDeps = {
   getConfiguredPermissionProviders: typeof getConfiguredPermissionProviders;
   getConfiguredCapabilityMaterializers: typeof getConfiguredCapabilityMaterializers;
   authorizePermission: typeof authorizePermission;
-  localOperatorCan: typeof localOperatorCan;
   materializeSubjectCapabilities: typeof materializeSubjectCapabilities;
   checkAppManifests: typeof checkAppManifests;
   discoverAppManifests: typeof discoverAppManifests;
@@ -245,7 +243,6 @@ const DEFAULT_DEPS: DoctorDeps = {
   getConfiguredPermissionProviders,
   getConfiguredCapabilityMaterializers,
   authorizePermission,
-  localOperatorCan,
   materializeSubjectCapabilities,
   checkAppManifests,
   discoverAppManifests,
@@ -543,7 +540,6 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
   addCheck(checks, () => buildCliMutationMetadataCheck(deps));
   addCheck(checks, () => buildPermissionProviderRuntimeChainCheck(deps));
   addCheck(checks, () => buildPermissionProviderRuntimeBoundaryCheck(deps));
-  addCheck(checks, () => buildPermissionLocalOperatorExplicitCheck(deps));
   addCheck(checks, () => buildPermissionBootstrapScopeCheck(deps));
   addCheck(checks, () => buildPermissionAgentIdentityReadinessCheck(deps));
   const filtered = filterChecksByDomain(checks, options.domain);
@@ -2148,7 +2144,7 @@ function isLikelyMutatingCommand(fullName: string): boolean {
 function buildPermissionProviderRuntimeChainCheck(deps: DoctorDeps): LegacyDoctorCheck {
   const authorizationProviders = deps.getConfiguredPermissionProviders().map((provider) => provider.id);
   const capabilityMaterializers = deps.getConfiguredCapabilityMaterializers().map((provider) => provider.id);
-  const expectedAuthorization = ["operator-control", "context-capabilities"];
+  const expectedAuthorization = ["context-capabilities"];
   const expectedMaterializers = [
     "runtime-bootstrap",
     "agent-default-capabilities",
@@ -2230,48 +2226,6 @@ function buildPermissionProviderRuntimeBoundaryCheck(deps: DoctorDeps): LegacyDo
     status: "ok",
     summary: "provider-runtime facade is isolated from native engines and provider storage internals",
     data: { enginePresent: false },
-  };
-}
-
-function buildPermissionLocalOperatorExplicitCheck(deps: DoctorDeps): LegacyDoctorCheck {
-  const implicit = deps.authorizePermission({
-    permission: "admin",
-    objectType: "system",
-    objectId: "*",
-  });
-  const explicitAllowed = deps.localOperatorCan("admin", "system", "*");
-
-  if (implicit.allowed || !explicitAllowed) {
-    return {
-      id: "permissions.local_operator_explicit",
-      domain: "permissions",
-      title: "Explicit operator-control authorization",
-      status: "fail",
-      severity: "error",
-      summary: "operator-control authorization is not explicit and fail-closed",
-      details: [
-        `implicit no-subject decision: ${implicit.allowed ? "allowed" : "denied"} (${implicit.reasonCode})`,
-        `explicit operator-control decision: ${explicitAllowed ? "allowed" : "denied"}`,
-      ],
-      fixHint: "missing subject/context requests must deny; direct local CLI must opt into localOperator explicitly",
-      data: {
-        implicitAllowed: implicit.allowed,
-        implicitReasonCode: implicit.reasonCode,
-        explicitAllowed,
-      },
-    };
-  }
-
-  return {
-    id: "permissions.local_operator_explicit",
-    domain: "permissions",
-    title: "Explicit operator-control authorization",
-    status: "ok",
-    summary: "missing subject/context denies unless the caller explicitly requests operator-control mode",
-    data: {
-      implicitAllowed: false,
-      explicitAllowed: true,
-    },
   };
 }
 

@@ -43225,10 +43225,6 @@ export const PermissionsAllowReturnSchema = {
 export const PermissionsCheckInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "localOperator": {
-      "description": "Evaluate through explicit operator-control local path",
-      "type": "boolean"
-    },
     "objectId": {
       "description": "Object id",
       "type": "string"

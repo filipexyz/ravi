@@ -85,6 +85,16 @@ function contextWithCapabilities(capabilities: ContextCapability[]): ContextReco
   } as ContextRecord;
 }
 
+function runWithAppUse<T>(appId: string, fn: () => T): T {
+  return runWithContext(
+    {
+      agentId: "app-agent",
+      context: contextWithCapabilities([{ permission: "use", objectType: "app", objectId: appId, source: "test" }]),
+    },
+    fn,
+  );
+}
+
 async function captureJsonAsync(fn: () => Promise<unknown>): Promise<unknown> {
   const originalLog = console.log;
   const logs: string[] = [];
@@ -125,20 +135,20 @@ describe("AppsCommands", () => {
     makeRepo();
     const commands = new AppsCommands();
 
-    const list = captureJson(() => commands.list(undefined, true)) as {
+    const list = runWithAppUse("apps", () => captureJson(() => commands.list(undefined, true))) as {
       total: number;
       apps: Array<{ id: string; valid: boolean; interfaceNames: string[] }>;
     };
     expect(list.total).toBe(1);
     expect(list.apps[0]).toMatchObject({ id: "apps", valid: true, interfaceNames: ["cli", "sdk"] });
 
-    const show = captureJson(() => commands.show("apps", true)) as {
+    const show = runWithAppUse("apps", () => captureJson(() => commands.show("apps", true))) as {
       app: { id: string; manifest: { schema: string } };
     };
     expect(show.app.id).toBe("apps");
     expect(show.app.manifest.schema).toBe("ravi.app/v1");
 
-    const check = captureJson(() => commands.check("apps", true)) as {
+    const check = runWithAppUse("apps", () => captureJson(() => commands.check("apps", true))) as {
       ok: boolean;
       checked: number;
       results: Array<{ id: string; ok: boolean }>;
@@ -207,7 +217,7 @@ describe("AppsCommands", () => {
       "ravi skills show ravi-system-apps --json",
     );
 
-    const prompts = captureJson(() => commands.prompts("apps", true)) as {
+    const prompts = runWithAppUse("apps", () => captureJson(() => commands.prompts("apps", true))) as {
       appId: string;
       app: { id: string };
       prompts: Array<{ id: string; prompt: string }>;
@@ -299,7 +309,7 @@ describe("AppsCommands", () => {
     };
     expect(manifest).toMatchObject({ id: "music", skills: ["ravi-system-music"] });
 
-    const check = captureJson(() => commands.check("music", true)) as {
+    const check = runWithAppUse("music", () => captureJson(() => commands.check("music", true))) as {
       ok: boolean;
       results: Array<{ id: string; ok: boolean; errors: string[] }>;
     };
@@ -328,7 +338,9 @@ describe("AppsCommands", () => {
     expect(nested.skill).toBe("ravi-system-console-control");
     expect(existsSync(nested.manifestPath)).toBe(true);
 
-    const nestedCheck = captureJson(() => commands.check("console/control", true)) as {
+    const nestedCheck = runWithAppUse("console/control", () =>
+      captureJson(() => commands.check("console/control", true)),
+    ) as {
       ok: boolean;
       results: Array<{ id: string; ok: boolean; errors: string[]; warnings: string[] }>;
     };
@@ -478,7 +490,7 @@ exit 1
     expect(created.files.map((file) => file.action)).toEqual(["created", "created", "created"]);
     expect(existsSync(created.manifestPath)).toBe(true);
 
-    const check = captureJson(() => commands.check("fake-app", true)) as {
+    const check = runWithAppUse("fake-app", () => captureJson(() => commands.check("fake-app", true))) as {
       ok: boolean;
       results: Array<{ id: string; errors: string[] }>;
     };
@@ -540,7 +552,9 @@ exit 1
       ),
     );
 
-    const check = (await captureJsonAsync(() => commands.run("music", "check", [], true))) as {
+    const check = (await runWithAppUse("music", () =>
+      captureJsonAsync(() => commands.run("music", "check", [], true)),
+    )) as {
       ok: boolean;
       appId: string;
       operationId: string;

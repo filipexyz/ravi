@@ -40,8 +40,8 @@ An agent is not a human user, contact, chat, route, or permission profile.
 - Agent grants MUST NOT become ambient authority for every contact or chat that
   can speak to the agent.
 - An agent MAY see itself.
-- Viewing another agent MUST require `view agent:<target-agent>` unless the
-  command is direct local operator CLI with no resolved principal.
+- Viewing another agent MUST require `view agent:<target-agent>` or a resolved
+  runtime credential with equivalent authority.
 - Agent list/show/picker/route-selection surfaces MUST filter by agent
   visibility.
 - Hidden agents SHOULD appear missing on direct lookup.

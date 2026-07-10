@@ -142,8 +142,8 @@ describe("Scope Isolation", () => {
   // --------------------------------------------------------------------------
 
   describe("isScopeEnforced", () => {
-    it("not enforced when no agentId", () => {
-      expect(isScopeEnforced({})).toBe(false);
+    it("enforced when no agentId", () => {
+      expect(isScopeEnforced({})).toBe(true);
     });
 
     it("not enforced for superadmin", () => {
@@ -160,8 +160,41 @@ describe("Scope Isolation", () => {
   // --------------------------------------------------------------------------
 
   describe("enforceScopeCheck", () => {
-    it("allows open scope for direct CLI without an agent principal", () => {
-      expect(enforceScopeCheck("open", "apps", "list").allowed).toBe(true);
+    it("denies open scope for direct CLI without an agent principal", () => {
+      const result = enforceScopeCheck("open", "apps", "list");
+      expect(result.allowed).toBe(false);
+      expect(result.errorMessage).toContain("missing runtime principal");
+    });
+
+    it("allows explicit local project CLI commands through open scope without an agent principal", () => {
+      const result = enforceScopeCheck("open", "sdk_client", "check", {
+        source: "cli",
+        access: {
+          kind: "read",
+          resource: "sdk.client",
+          action: "check",
+          risk: "low",
+          localProject: true,
+        },
+      });
+
+      expect(result.allowed).toBe(true);
+    });
+
+    it("does not allow local project scope bypass from tool execution", () => {
+      const result = enforceScopeCheck("open", "sdk_client", "check", {
+        source: "tool",
+        access: {
+          kind: "read",
+          resource: "sdk.client",
+          action: "check",
+          risk: "low",
+          localProject: true,
+        },
+      });
+
+      expect(result.allowed).toBe(false);
+      expect(result.errorMessage).toContain("missing runtime principal");
     });
 
     it("requires an explicit group grant for open scope in agent context", () => {
@@ -187,12 +220,10 @@ describe("Scope Isolation", () => {
       expect(runWithContext(context, () => enforceScopeCheck("admin", "agents", "create").allowed)).toBe(true);
     });
 
-    it("allows superadmin commands for a direct operator even when no agent holds admin", () => {
-      // Break-glass recovery: an incident that revokes every agent's admin must
-      // not lock out the operator CLI. With no agent principal, superadmin-scoped
-      // recovery commands stay allowed through the explicit operator-control path.
+    it("denies superadmin commands without a runtime principal", () => {
       const result = enforceScopeCheck("superadmin", "permissions", "grant");
-      expect(result.allowed).toBe(true);
+      expect(result.allowed).toBe(false);
+      expect(result.errorMessage).toContain("requires admin on system:*");
     });
 
     it("denies superadmin commands for a non-admin agent principal", () => {
@@ -531,8 +562,8 @@ describe("Scope Isolation", () => {
   // --------------------------------------------------------------------------
 
   describe("canAccessSession", () => {
-    it("allows when no agentId (CLI direct)", () => {
-      expect(canAccessSession({}, "any-session")).toBe(true);
+    it("denies when no agentId", () => {
+      expect(canAccessSession({}, "any-session")).toBe(false);
     });
 
     it("allows own session by name", () => {
@@ -570,9 +601,9 @@ describe("Scope Isolation", () => {
       { name: "test-bar", sessionKey: "agent:test:test-bar" },
     ];
 
-    it("returns all when no agentId", () => {
+    it("returns none when no agentId", () => {
       const result = filterAccessibleSessions({}, sessions as any);
-      expect(result).toHaveLength(4);
+      expect(result).toHaveLength(0);
     });
 
     it("filters to accessible sessions only", () => {
@@ -616,8 +647,8 @@ describe("Scope Isolation", () => {
   describe("canAccessContact", () => {
     const contact = { id: "abc123", tags: ["vip", "lead"] };
 
-    it("allows when no agentId", () => {
-      expect(canAccessContact({}, contact)).toBe(true);
+    it("denies when no agentId", () => {
+      expect(canAccessContact({}, contact)).toBe(false);
     });
 
     it("allows with write_contacts", () => {
@@ -684,8 +715,8 @@ describe("Scope Isolation", () => {
   // --------------------------------------------------------------------------
 
   describe("canAccessResource", () => {
-    it("allows when no agentId", () => {
-      expect(canAccessResource({}, "any")).toBe(true);
+    it("denies when no agentId", () => {
+      expect(canAccessResource({}, "any")).toBe(false);
     });
 
     it("allows superadmin", () => {

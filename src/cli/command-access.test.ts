@@ -122,7 +122,7 @@ describe("CLI command access enforcement", () => {
     expect(operation.input).not.toHaveProperty("ignored");
   });
 
-  it("allows explicit local operator execution when no runtime principal exists", () => {
+  it("denies direct CLI execution when no runtime principal exists", () => {
     process.env.RAVI_AGENT_ID = "ambient-agent";
 
     const result = enforceCliCommandAccess({
@@ -132,18 +132,16 @@ describe("CLI command access enforcement", () => {
       source: "cli",
     });
 
-    expect(result.allowed).toBe(true);
-    expect(result.decision?.providerId).toBe("operator-control");
-    expect(result.decision?.permission).toBe("mutate");
-    expect(result.decision?.objectType).toBe("demo.items");
-    expect(result.decision?.objectId).toBe("create");
+    expect(result.allowed).toBe(false);
+    expect(result.errorMessage).toContain("direct CLI command execution requires RAVI_CONTEXT_KEY");
+    expect(result.attempted).toEqual([]);
   });
 
-  it("ignores default credential context for direct local CLI authorization", () => {
+  it("authorizes direct CLI execution through a default runtime credential", () => {
     const record = createRuntimeContext({
       kind: "cli-runtime",
       agentId: "main",
-      capabilities: [],
+      capabilities: [{ permission: "mutate", objectType: "demo.items", objectId: "create" }],
       ttlMs: 0,
     });
     const credentialsPath = join(stateDir!, "credentials.json");
@@ -173,10 +171,84 @@ describe("CLI command access enforcement", () => {
     });
 
     expect(result.allowed).toBe(true);
-    expect(result.decision?.providerId).toBe("operator-control");
+    expect(result.decision?.providerId).toBe("context-capabilities");
     expect(result.decision?.permission).toBe("mutate");
     expect(result.decision?.objectType).toBe("demo.items");
     expect(result.decision?.objectId).toBe("create");
+  });
+
+  it("allows explicitly marked bootstrap commands without a runtime principal", () => {
+    const result = enforceCliCommandAccess({
+      group: "daemon",
+      command: "init-admin-key",
+      access: {
+        kind: "mutate",
+        resource: "daemon",
+        action: "init-admin-key",
+        risk: "medium",
+        bootstrap: true,
+      },
+      source: "cli",
+    });
+
+    expect(result.allowed).toBe(true);
+    expect(result.attempted).toEqual([]);
+  });
+
+  it("does not allow bootstrap metadata outside direct CLI execution", () => {
+    const result = enforceCliCommandAccess({
+      group: "daemon",
+      command: "init-admin-key",
+      access: {
+        kind: "mutate",
+        resource: "daemon",
+        action: "init-admin-key",
+        risk: "medium",
+        bootstrap: true,
+      },
+      source: "tool",
+    });
+
+    expect(result.allowed).toBe(false);
+    expect(result.errorMessage).toContain("requires a resolved runtime principal");
+    expect(result.attempted).toEqual([]);
+  });
+
+  it("allows explicitly marked local project commands without a runtime principal", () => {
+    const result = enforceCliCommandAccess({
+      group: "sdk.client",
+      command: "check",
+      access: {
+        kind: "read",
+        resource: "sdk.client",
+        action: "check",
+        risk: "low",
+        localProject: true,
+      },
+      source: "cli",
+    });
+
+    expect(result.allowed).toBe(true);
+    expect(result.attempted).toEqual([]);
+  });
+
+  it("does not allow local project metadata outside direct CLI execution", () => {
+    const result = enforceCliCommandAccess({
+      group: "sdk.client",
+      command: "check",
+      access: {
+        kind: "read",
+        resource: "sdk.client",
+        action: "check",
+        risk: "low",
+        localProject: true,
+      },
+      source: "gateway",
+    });
+
+    expect(result.allowed).toBe(false);
+    expect(result.errorMessage).toContain("requires a resolved runtime principal");
+    expect(result.attempted).toEqual([]);
   });
 
   it("does not allow tool or gateway execution without a resolved runtime principal", () => {
@@ -194,19 +266,6 @@ describe("CLI command access enforcement", () => {
       expect(result.errorMessage).toContain("requires a resolved runtime principal");
       expect(result.attempted).toEqual([]);
     }
-  });
-
-  it("respects commands that disallow local operator fallback", () => {
-    const result = enforceCliCommandAccess({
-      group: "demo",
-      command: "create",
-      access: { ...ACCESS, localOperator: false },
-      source: "cli",
-    });
-
-    expect(result.allowed).toBe(false);
-    expect(result.errorMessage).toContain("local operator is not allowed");
-    expect(result.attempted).toEqual([]);
   });
 
   it("authorizes runtime contexts through semantic command capabilities first", () => {
