@@ -143,10 +143,7 @@ export function createRuntimeModelPreset(input: CreateRuntimeModelPresetInput): 
 
   const existing = getRuntimeModelPreset(id);
   if (existing) {
-    throw new RuntimeModelPresetError(
-      `Model preset already exists: ${id}.`,
-      `ravi runtime presets show ${id}`,
-    );
+    throw new RuntimeModelPresetError(`Model preset already exists: ${id}.`, `ravi runtime presets show ${id}`);
   }
 
   executeWrite(
@@ -175,10 +172,7 @@ export function getRuntimeModelPreset(id: string): RuntimeModelPreset | null {
 export function requireRuntimeModelPreset(id: string): RuntimeModelPreset {
   const preset = getRuntimeModelPreset(id);
   if (!preset) {
-    throw new RuntimeModelPresetError(
-      `Model preset not found: ${id}.`,
-      "ravi runtime presets list",
-    );
+    throw new RuntimeModelPresetError(`Model preset not found: ${id}.`, "ravi runtime presets list");
   }
   return preset;
 }
@@ -202,9 +196,7 @@ export function listRuntimeModelPresets(options: ListRuntimeModelPresetsOptions 
     | { total: number }
     | undefined;
   const rows = db
-    .prepare(
-      `SELECT * FROM runtime_model_presets ${whereSql} ORDER BY id ASC LIMIT ? OFFSET ?`,
-    )
+    .prepare(`SELECT * FROM runtime_model_presets ${whereSql} ORDER BY id ASC LIMIT ? OFFSET ?`)
     .all(...params, limit, offset) as RuntimeModelPresetRow[];
   return {
     items: rows.map(rowToPreset),
@@ -232,9 +224,11 @@ export function setRuntimeModelPresetModel(
   executeWrite(
     getDb(),
     (db) => {
-      db.prepare(
-        "UPDATE runtime_model_presets SET model = ?, version = version + 1, updated_at = ? WHERE id = ?",
-      ).run(nextModel, now, preset.id);
+      db.prepare("UPDATE runtime_model_presets SET model = ?, version = version + 1, updated_at = ? WHERE id = ?").run(
+        nextModel,
+        now,
+        preset.id,
+      );
     },
     { label: "runtime-model-preset-set-model" },
   );
@@ -305,9 +299,7 @@ export function getRuntimeModelPresetImpact(
     | undefined;
   const referencingAgentsTotal = totalRow?.total ?? 0;
   const agentRows = db
-    .prepare(
-      "SELECT id, name FROM agents WHERE model_preset_id = ? ORDER BY id ASC LIMIT ? OFFSET ?",
-    )
+    .prepare("SELECT id, name FROM agents WHERE model_preset_id = ? ORDER BY id ASC LIMIT ? OFFSET ?")
     .all(preset.id, limit, offset) as Array<{ id: string; name: string | null }>;
 
   const shadowingRow = db
