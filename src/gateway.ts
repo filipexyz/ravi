@@ -30,7 +30,6 @@ import { logger } from "./utils/logger.js";
 import type { OmniSender } from "./omni/sender.js";
 import type { OmniConsumer } from "./omni/consumer.js";
 import { getAgentPlatformIdentity, recordOutbound } from "./contacts.js";
-import { SessionTypingTracker } from "./gateway-typing.js";
 import { assertChannelSupportsStickers } from "./channels/capabilities.js";
 import { buildChannelOutboundJobFromResponse, publishChannelOutboundJob } from "./channels/outbound-stream.js";
 import { subjectForChannelPresence } from "./channels/presence-consumer.js";
@@ -198,7 +197,6 @@ export class Gateway {
   private omniConsumer: OmniConsumer;
   private emitEvent: typeof nats.emit;
   private activeSubscriptions = new Set<string>();
-  private typingTracker = new SessionTypingTracker();
   private presenceRenewedAt = new Map<string, number>();
   private activeRuntimeSessions = new Set<string>();
   private runtimeActivitySequences = new Map<string, number>();
@@ -206,6 +204,7 @@ export class Gateway {
   private nativePresenceTargets = new Map<string, PresenceTarget>();
   private nativeStatusAnchors = new Map<string, PresenceTarget>();
   private nativePresenceTurns = new Map<string, NativePresenceTurnState>();
+  private terminalPresenceStopped = new Set<string>();
   private postDeliveryRenewals = new Map<string, ReturnType<typeof setTimeout>>();
   private interruptedPresenceStops = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -240,7 +239,6 @@ export class Gateway {
   async stop(): Promise<void> {
     log.info("Stopping gateway...");
     this.running = false;
-    this.typingTracker = new SessionTypingTracker();
     this.presenceRenewedAt.clear();
     this.activeRuntimeSessions.clear();
     this.runtimeActivitySequences.clear();
@@ -248,20 +246,10 @@ export class Gateway {
     this.nativePresenceTargets.clear();
     this.nativeStatusAnchors.clear();
     this.nativePresenceTurns.clear();
+    this.terminalPresenceStopped.clear();
     this.clearPostDeliveryRenewals();
     this.clearInterruptedPresenceStops();
     log.info("Gateway stopped");
-  }
-
-  private async sendTypingIfChanged(
-    sessionName: string,
-    target: PresenceTarget,
-    active: boolean,
-    reason = "state-change",
-  ): Promise<void> {
-    if (active && this.isPresenceSuppressed(target)) return;
-    if (!this.typingTracker.shouldEmit(sessionName, active)) return;
-    await this.sendTyping(target, active, { sessionName, reason });
   }
 
   private async sendTyping(
@@ -685,6 +673,7 @@ export class Gateway {
   }
 
   private async stopPresenceForSession(sessionName: string, target?: PresenceTarget): Promise<void> {
+    const alreadyStopped = this.terminalPresenceStopped.has(sessionName);
     this.activeRuntimeSessions.delete(sessionName);
     this.terminalRuntimeSessions.add(sessionName);
     this.presenceRenewedAt.delete(sessionName);
@@ -700,6 +689,8 @@ export class Gateway {
       turnState.terminal = true;
     }
     const localTarget = this.omniConsumer.getActiveTarget(sessionName) as PresenceTarget | undefined;
+    if (alreadyStopped && !localTarget) return;
+
     if (localTarget) {
       const localStopTarget = this.shouldUseNativePresence(localTarget)
         ? (this.runtimePresenceTarget(sessionName, localTarget) ?? localTarget)
@@ -707,26 +698,25 @@ export class Gateway {
       if (this.shouldUseNativePresence(localStopTarget)) {
         await this.sendTyping(localStopTarget, false, { sessionName, reason: "terminal-clear-active-target" });
       } else {
-        await this.emitPresenceDiagnostic(sessionName, {
-          active: false,
-          status: "inactive",
-          reason: "terminal-clear-active-target",
-          target: localStopTarget,
-        });
+        await this.sendTyping(localStopTarget, false, { sessionName, reason: "terminal-clear-active-target" });
       }
       await this.omniConsumer.clearActiveTarget(sessionName);
+      this.terminalPresenceStopped.add(sessionName);
       if (preferredTarget && !this.targetsMatch(localStopTarget, preferredTarget)) {
         await this.sendTyping(preferredTarget, false, { sessionName, reason: "terminal-fallback-stop" });
       }
       return;
     }
 
+    if (alreadyStopped) return;
+
     if (preferredTarget) {
       if (this.shouldUseNativePresence(preferredTarget)) {
         await this.sendTyping(preferredTarget, false, { sessionName, reason: "terminal-stop" });
       } else {
-        await this.sendTypingIfChanged(sessionName, preferredTarget, false, "terminal-stop");
+        await this.sendTyping(preferredTarget, false, { sessionName, reason: "terminal-stop" });
       }
+      this.terminalPresenceStopped.add(sessionName);
     }
   }
 
@@ -788,7 +778,8 @@ export class Gateway {
     this.schedulePostDeliveryPresenceRenewal(sessionName, outboundTarget, "native-delivery-renew");
   }
 
-  private isTerminalRuntimeEvent(type: string | undefined, status?: string, nativeEvent?: string): boolean {
+  private isTerminalRuntimeEvent(type: string | undefined, _status?: string, nativeEvent?: string): boolean {
+    if (type === "provider.raw" || type === "status") return false;
     return (
       type === "result" ||
       type === "silent" ||
@@ -796,12 +787,12 @@ export class Gateway {
       type === "turn.completed" ||
       type === "turn.failed" ||
       type === "session.timeout" ||
-      (type === "status" && status === "idle") ||
-      nativeEvent === "turn.complete" ||
-      nativeEvent === "turn.completed" ||
-      nativeEvent === "turn.failed" ||
-      nativeEvent === "turn/completed" ||
-      nativeEvent === "turn/failed"
+      (!type &&
+        (nativeEvent === "turn.complete" ||
+          nativeEvent === "turn.completed" ||
+          nativeEvent === "turn.failed" ||
+          nativeEvent === "turn/completed" ||
+          nativeEvent === "turn/failed"))
     );
   }
 
@@ -1240,6 +1231,7 @@ export class Gateway {
     if (this.terminalRuntimeSessions.has(sessionName)) {
       if (!this.isPresenceStartEvent(data.type, data.nativeEvent)) return;
       this.terminalRuntimeSessions.delete(sessionName);
+      this.terminalPresenceStopped.delete(sessionName);
     }
 
     if (data._source && this.isPresenceStartEvent(data.type, data.nativeEvent)) {

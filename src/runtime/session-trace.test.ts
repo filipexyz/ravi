@@ -795,6 +795,29 @@ describe("runtime session trace instrumentation", () => {
     expect(streaming.turnActive).toBe(false);
   });
 
+  it("clears live busy state when the provider emits idle status", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming);
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "status",
+          status: "idle",
+        },
+      ]),
+    );
+
+    const live = getRuntimeLiveStateForSession(makeSession());
+    expect(live).toMatchObject({
+      activity: "idle",
+      summary: "runtime idle",
+    });
+    expect(live?.busySince).toBeUndefined();
+    expect(live?.toolName).toBeUndefined();
+  });
+
   it("clears compaction at terminal boundaries even without an idle status", async () => {
     const streaming = makeStreamingSession();
     seedAdapterTrace(streaming);
