@@ -31,6 +31,12 @@
 - Native usage maps to `RuntimeUsage`.
 - Native session/thread id maps to `RuntimeSessionState`.
 
+## Shell Hard-Safety Tests
+
+- Command execution routed through host services denies every `UNCONDITIONAL_BLOCKS` executable under wildcard and `admin system:*` contexts (`src/runtime/host-services.test.ts`).
+- Dangerous patterns deny under wildcard/admin with the stable `blockType`.
+- Safe commands (`git status`) remain approved under wildcard/admin.
+
 ## Negative Tests Needed
 
 - Provider emits tool failure then no terminal event.

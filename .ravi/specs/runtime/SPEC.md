@@ -7,6 +7,7 @@ capabilities:
   - dispatch
   - provider-contract
   - host-services
+  - shell-safety
   - event-loop
   - session-continuity
   - context-keys
@@ -75,6 +76,7 @@ The runtime abstraction exists so new execution engines can be added without cop
 - User prompts MUST be saved before provider handoff; assistant messages MUST be saved only after a non-interrupted terminal turn.
 - Tool start/end lifecycle MUST be recorded through canonical `tool.started` and `tool.completed` events.
 - Runtime permissions MUST flow through Ravi host services or host hooks. Providers MUST NOT create a parallel permission model.
+- Shell hard-safety (see `runtime/shell-safety`) MUST be evaluated before and independently of capability authorization in both the SDK Bash hook and runtime host services. Dangerous patterns and `UNCONDITIONAL_BLOCKS` executables MUST deny under any grant, including `execute executable:*`, `admin system:*`, and `full-access`.
 - `adapter.request` trace MUST be recorded before provider handoff, including prompt hashes, system prompt hashes, model, provider, resume/fork state, delivery barrier, source, and capability summary.
 - Runtime pool backpressure MUST be represented as its own dispatch state. A session waiting for a pool slot MUST NOT be reported as an in-flight cold start until a slot has actually been reserved.
 - Dispatch trace rows MUST use the canonical `session_key` when a session row exists. `session_name` MAY be included as a secondary lookup field, but MUST NOT replace the canonical key.

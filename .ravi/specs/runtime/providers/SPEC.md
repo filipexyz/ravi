@@ -210,6 +210,7 @@ Before implementing the Pi adapter, Ravi SHOULD harden these generic runtime sur
 - Provider adapters MUST NOT emit channel messages directly.
 - Provider adapters MUST NOT mutate Ravi tasks or sessions directly, except through canonical terminal state returned to the host event loop.
 - Provider adapters MUST NOT bypass Ravi permission policy.
+- Provider adapters MUST NOT bypass shell hard-safety (`runtime/shell-safety`). Command execution routed through Ravi host services is classified before capability authorization, and no provider-native or wildcard/admin authority may run a dangerous pattern or an `UNCONDITIONAL_BLOCKS` executable.
 - Provider adapters MUST NOT require provider-specific branches outside registry, model catalog, or provider-local files.
 - Provider adapters MUST NOT send native model options that are incompatible with the selected model.
 - Provider adapters MUST include enough metadata for trace correlation: provider, native event, thread id when available, turn id when available, item id when available.

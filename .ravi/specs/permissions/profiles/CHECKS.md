@@ -41,6 +41,12 @@ capability: profiles
 - The installed `ravi-system-permissions-manager` skill MUST teach agents to
   materialize/check first, ask for provider-owned profiles/tags for recurring
   access, and avoid `full-access` except break-glass.
+- A `full-access` / `admin system:*` context MUST still be denied a dangerous
+  pattern and every `UNCONDITIONAL_BLOCKS` executable by shell hard-safety in
+  both the SDK Bash hook and runtime host services
+  (`src/bash/hook.test.ts`, `src/runtime/host-services.test.ts`), and that denial
+  MUST NOT create a resolvable `permission_denials` row or recommend a
+  profile/full-access grant.
 
 ## Commands
 
@@ -49,4 +55,5 @@ bun test src/permissions/provider-runtime.test.ts
 bun test src/permissions/delegation.test.ts
 bun test src/cli/commands/agents.test.ts
 bun test src/cli/commands/permissions.test.ts src/cli/command-access.test.ts src/approval/service.test.ts
+bun test src/bash/hook.test.ts src/runtime/host-services.test.ts
 ```

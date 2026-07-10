@@ -477,6 +477,8 @@ mock.module("./heartbeat/index.js", () => ({
 
 mock.module("./bash/index.js", () => ({
   checkDangerousPatterns: () => ({ safe: true }),
+  classifyShellHardSafety: () => ({ safe: true, parsed: { success: true, executables: [] } }),
+  shellHardSafetyAuditDenied: () => "command_policy:unconditional_block:unknown",
   createBashPermissionHook: () => ({
     matcher: "Bash",
     hooks: [async () => ({})],

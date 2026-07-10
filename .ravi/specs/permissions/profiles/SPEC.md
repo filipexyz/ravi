@@ -71,6 +71,10 @@ for creating a new profile, not the normal approval interface.
   provider consumes it for invocation eligibility.
 - A profile assignment to a chat/surface is compartment policy or constraint;
   a missing chat profile MUST NOT zero agent identity authority.
+- No profile — including `full-access` — may satisfy shell hard-safety
+  (`runtime/shell-safety`). `full-access` widens capability authorization but MUST
+  NOT allow a dangerous pattern or an `UNCONDITIONAL_BLOCKS` executable, and a
+  hard-safety denial MUST NOT recommend `full-access` as remediation.
 
 ## Canonical Relations
 

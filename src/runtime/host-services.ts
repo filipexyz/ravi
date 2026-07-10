@@ -5,16 +5,15 @@ import { logger } from "../utils/logger.js";
 
 const log = logger.child("runtime:host-services");
 import {
-  checkDangerousPatterns,
+  classifyShellHardSafety,
   emitBashDeniedAudit,
   evaluateBashPermission,
-  parseBashCommand,
-  UNCONDITIONAL_BLOCKS,
+  shellHardSafetyAuditDenied,
 } from "../bash/index.js";
 import { nats } from "../nats.js";
 import { authorizeRuntimeContext, requestPollAnswer, type ApprovalTarget } from "../approval/service.js";
 import { buildAuditContextProvenance } from "../permissions/audit-provenance.js";
-import { emitPermissionDeniedAudit, recordAndEmitPermissionDenial } from "../permissions/denials.js";
+import { emitPermissionDeniedAudit } from "../permissions/denials.js";
 import { agentCan, canWithCapabilityContext, isDelegatedAuthorityContext } from "../permissions/provider-runtime.js";
 import type { ContextRecord } from "../router/index.js";
 import type {
@@ -36,6 +35,8 @@ import type {
 import { evaluateRuntimeCommandSkillGate, evaluateRuntimeToolSkillGate } from "./skill-gate.js";
 
 const RUNTIME_BUILTIN_EXECUTABLES = new Set(["ravi"]);
+// Keep hard-safety audit payloads bounded — never emit the full command line.
+const HARD_SAFETY_AUDIT_COMMAND_MAX_LENGTH = 200;
 let cachedRuntimeDynamicTools: ExportedTool[] | null = null;
 let cachedRuntimeDynamicToolSpecs: RuntimeDynamicToolSpec[] | null = null;
 
@@ -155,41 +156,6 @@ function emitRuntimePolicyDenied(
       ...(provenance ? { context: provenance } : {}),
     },
     ...(provenance ? { context: provenance } : {}),
-  });
-}
-
-function recordRuntimeExecutablePolicyDenied(
-  options: RuntimeAuditOptions,
-  input: {
-    executable: string;
-    reason: string;
-    command: string;
-    blockType: string;
-  },
-): void {
-  const provenance = buildAuditContextProvenance({ context: options.context });
-  recordAndEmitPermissionDenial({
-    subjectType: "agent",
-    subjectId: options.agentId,
-    agentId: options.agentId,
-    sessionKey: options.context.sessionKey,
-    sessionName: options.context.sessionName ?? options.sessionName,
-    contextId: options.context.contextId,
-    relation: "execute",
-    objectType: "executable",
-    objectId: input.executable,
-    reason: input.reason,
-    command: input.command,
-    detail: provenance ? { context: provenance } : undefined,
-    audit: {
-      type: "executable",
-      agentId: options.agentId,
-      denied: input.executable,
-      reason: input.reason,
-      command: input.command,
-      blockType: input.blockType,
-      ...(provenance ? { context: provenance } : {}),
-    },
   });
 }
 
@@ -447,28 +413,35 @@ async function authorizeRuntimeCommandExecution(
     return { approved: false, reason: preliminary.reason ?? "Command denied by Ravi policy." };
   }
 
-  const dangerous = checkDangerousPatterns(command);
-  if (!dangerous.safe) {
+  // Shell hard-safety is evaluated before and independently of any Ravi
+  // capability authorization. A hard-safety denial is a policy decision, so it
+  // is audited through policy audit only and never creates a resolvable
+  // permission_denials row or recommends a grant.
+  const hardSafety = classifyShellHardSafety(command);
+  if (!hardSafety.safe && hardSafety.blockType) {
+    const reason = hardSafety.reason ?? "Command denied by Ravi hard-safety policy.";
     emitRuntimePolicyDenied(options, {
       type: "executable",
-      denied: "command_policy:dangerous_pattern",
-      reason: dangerous.reason ?? "Command denied by Ravi policy.",
-      command,
-      blockType: "runtime_command_dangerous_pattern",
+      denied: shellHardSafetyAuditDenied(hardSafety),
+      reason,
+      command: command.slice(0, HARD_SAFETY_AUDIT_COMMAND_MAX_LENGTH),
+      blockType: hardSafety.blockType,
+      ...(hardSafety.executable ? { detail: { executable: hardSafety.executable } } : {}),
     });
-    return { approved: false, reason: dangerous.reason ?? "Command denied by Ravi policy." };
+    return { approved: false, reason };
   }
 
-  const parsed = parseBashCommand(command);
-  if (!parsed.success) {
+  const parsed = hardSafety.parsed;
+  if (!parsed || !parsed.success) {
+    const reason = hardSafety.parseError ?? parsed?.error ?? "Failed to parse command for approval.";
     emitRuntimePolicyDenied(options, {
       type: "executable",
       denied: "command_policy:parse_error",
-      reason: parsed.error ?? "Failed to parse command for approval.",
+      reason,
       command,
       blockType: "runtime_command_parse_error",
     });
-    return { approved: false, reason: parsed.error ?? "Failed to parse command for approval." };
+    return { approved: false, reason };
   }
 
   let inherited = true;
@@ -489,16 +462,7 @@ async function authorizeRuntimeCommandExecution(
 
   if (!canWithCapabilityContext(options.context, "execute", "executable", "*")) {
     for (const executable of parsed.executables) {
-      if (UNCONDITIONAL_BLOCKS.has(executable)) {
-        const reason = `${executable} is blocked by Ravi command policy.`;
-        recordRuntimeExecutablePolicyDenied(options, {
-          executable,
-          reason,
-          command,
-          blockType: "runtime_executable_unconditional_block",
-        });
-        return { approved: false, reason };
-      }
+      // Unconditional blocks are already denied by hard-safety above.
       if (RUNTIME_BUILTIN_EXECUTABLES.has(executable)) {
         continue;
       }

@@ -4,6 +4,7 @@ import { listPermissionDenials } from "../permissions/denials.js";
 import type { ContextCapability, ContextRecord } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { createBashPermissionHook, createToolPermissionHook, evaluateBashPermission } from "./hook.js";
+import { UNCONDITIONAL_BLOCKS } from "./parser.js";
 
 function makeToolContext(agentId: string, capabilities: ContextCapability[], kind = "test-runtime"): ToolContext {
   const context: ContextRecord = {
@@ -195,6 +196,104 @@ describe("createBashPermissionHook", () => {
       });
 
       expect(decision.allowed).toBe(false);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Shell hard-safety (evaluated before wildcard/admin authorization)
+  // --------------------------------------------------------------------------
+
+  describe("shell hard-safety", () => {
+    const authorityContexts: Array<{ label: string; capabilities: ContextCapability[] }> = [
+      {
+        label: "specific executable grant",
+        // A specific grant for the executable itself must still be denied.
+        capabilities: [],
+      },
+      {
+        label: "wildcard executable grant",
+        capabilities: [{ permission: "execute", objectType: "executable", objectId: "*" }],
+      },
+      {
+        label: "admin system:*",
+        capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
+      },
+    ];
+
+    for (const executable of UNCONDITIONAL_BLOCKS) {
+      for (const authority of authorityContexts) {
+        const capabilities =
+          authority.label === "specific executable grant"
+            ? [{ permission: "execute", objectType: "executable", objectId: executable } as ContextCapability]
+            : authority.capabilities;
+
+        it(`denies '${executable}' under ${authority.label}`, async () => {
+          const result = await callBashHook(
+            `${executable} -c 'echo hi'`,
+            "test",
+            makeToolContext("test", capabilities),
+          );
+          expect(isDenied(result)).toBe(true);
+          expect(getDenyReason(result)).toContain(executable);
+        });
+      }
+    }
+
+    it("denies dangerous patterns under wildcard executable grant", async () => {
+      const result = await callBashHook(
+        "echo $(whoami)",
+        "test",
+        makeToolContext("test", [{ permission: "execute", objectType: "executable", objectId: "*" }]),
+      );
+      expect(isDenied(result)).toBe(true);
+      expect(getDenyReason(result)).toContain("command substitution");
+    });
+
+    it("denies dangerous patterns under admin system:*", async () => {
+      const result = await callBashHook(
+        "echo `whoami`",
+        "test",
+        makeToolContext("test", [{ permission: "admin", objectType: "system", objectId: "*" }]),
+      );
+      expect(isDenied(result)).toBe(true);
+    });
+
+    it("allows safe commands under wildcard executable grant", async () => {
+      const result = await callBashHook(
+        "git status",
+        "test",
+        makeToolContext("test", [{ permission: "execute", objectType: "executable", objectId: "*" }]),
+      );
+      expect(isDenied(result)).toBe(false);
+    });
+
+    it("allows another safe command under admin system:*", async () => {
+      const result = await callBashHook(
+        "ls -la",
+        "test",
+        makeToolContext("test", [{ permission: "admin", objectType: "system", objectId: "*" }]),
+      );
+      expect(isDenied(result)).toBe(false);
+    });
+
+    it("does not create a resolvable permission_denials row for a hard-safety block", async () => {
+      await callBashHook(
+        "bash -c 'echo hi'",
+        "test",
+        makeToolContext("test", [{ permission: "execute", objectType: "executable", objectId: "*" }]),
+      );
+      expect(listPermissionDenials({ subjectType: "agent", subjectId: "test", resolved: false })).toEqual([]);
+    });
+
+    it("reports the hard-safety block through the decision blockType", () => {
+      const decision = evaluateBashPermission("bash -c 'echo hi'", {
+        agentId: "test",
+        kind: "test-runtime",
+        capabilities: [{ permission: "execute", objectType: "executable", objectId: "*" }],
+      });
+      expect(decision.allowed).toBe(false);
+      expect(decision.denialType).toBe("hard_safety");
+      expect(decision.blockType).toBe("runtime_executable_unconditional_block");
     });
   });
 

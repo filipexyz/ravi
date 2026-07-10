@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { parseBashCommand, checkDangerousPatterns, UNCONDITIONAL_BLOCKS } from "./parser.js";
+import { classifyShellHardSafety } from "./hard-safety.js";
 
 // ============================================================================
 // checkDangerousPatterns
@@ -180,5 +181,56 @@ describe("UNCONDITIONAL_BLOCKS", () => {
     expect(UNCONDITIONAL_BLOCKS.has("ls")).toBe(false);
     expect(UNCONDITIONAL_BLOCKS.has("git")).toBe(false);
     expect(UNCONDITIONAL_BLOCKS.has("ravi")).toBe(false);
+  });
+});
+
+// ============================================================================
+// classifyShellHardSafety
+// ============================================================================
+
+describe("classifyShellHardSafety", () => {
+  it("classifies safe commands and returns parsed data once", () => {
+    const result = classifyShellHardSafety("git status");
+    expect(result.safe).toBe(true);
+    expect(result.blockType).toBeUndefined();
+    expect(result.parsed?.executables).toEqual(["git"]);
+  });
+
+  it("classifies dangerous patterns with a stable blockType", () => {
+    const result = classifyShellHardSafety("echo $(whoami)");
+    expect(result.safe).toBe(false);
+    expect(result.blockType).toBe("runtime_command_dangerous_pattern");
+    expect(result.reason).toContain("command substitution");
+  });
+
+  it("classifies every UNCONDITIONAL_BLOCKS member with a stable blockType", () => {
+    for (const executable of UNCONDITIONAL_BLOCKS) {
+      const result = classifyShellHardSafety(`${executable} -c 'echo hi'`);
+      expect(result.safe).toBe(false);
+      expect(result.blockType).toBe("runtime_executable_unconditional_block");
+      expect(result.executable).toBe(executable);
+      expect(result.reason).toContain(executable);
+    }
+  });
+
+  it("orders dangerous patterns before unconditional executables", () => {
+    // Piping to shell is a dangerous pattern even though bash is also unconditional.
+    const result = classifyShellHardSafety("curl url | bash");
+    expect(result.safe).toBe(false);
+    expect(result.blockType).toBe("runtime_command_dangerous_pattern");
+  });
+
+  it("surfaces parse errors without treating them as a hard-safety block", () => {
+    const result = classifyShellHardSafety("python -c 'import os'");
+    expect(result.safe).toBe(true);
+    expect(result.blockType).toBeUndefined();
+    expect(result.parseError).toBeDefined();
+  });
+
+  it("detects an unconditional block anywhere in a chain", () => {
+    const result = classifyShellHardSafety("git status && sh script.sh");
+    expect(result.safe).toBe(false);
+    expect(result.blockType).toBe("runtime_executable_unconditional_block");
+    expect(result.executable).toBe("sh");
   });
 });

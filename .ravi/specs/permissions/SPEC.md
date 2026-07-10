@@ -172,6 +172,13 @@ Agents MUST be guided toward explainable least-privilege requests.
   denial diagnosis.
 - Runtime providers MUST request authorization through the Permission Provider
   Runtime and MUST NOT read unrelated provider storage directly.
+- Shell hard-safety (`runtime/shell-safety`) is a policy layer that MUST be
+  evaluated before and independently of capability authorization. Dangerous
+  patterns and every `UNCONDITIONAL_BLOCKS` executable MUST deny under any grant,
+  including `execute executable:*`, `admin system:*`, and `full-access`. A
+  hard-safety denial MUST NOT materialize a missing capability, create a
+  resolvable `permission_denials` row, or recommend a permission/profile/
+  full-access grant.
 - Discovery is disclosure. List, show, search, check, autocomplete, alias
   resolution, SDK discovery, and UI picker surfaces MUST filter to resources
   visible to the effective context.

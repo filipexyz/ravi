@@ -13,7 +13,12 @@
  * enforceScopeCheck() in the CLI process, not here.
  */
 
-import { checkDangerousPatterns, parseBashCommand, UNCONDITIONAL_BLOCKS } from "./parser.js";
+import { parseBashCommand } from "./parser.js";
+import {
+  classifyShellHardSafety,
+  shellHardSafetyAuditDenied,
+  type ShellHardSafetyClassification,
+} from "./hard-safety.js";
 import { logger } from "../utils/logger.js";
 import { getScopeContext } from "../permissions/scope.js";
 import {
@@ -39,6 +44,7 @@ function buildBashDeniedAuditEvent(
   denied: string;
   reason: string;
   detail?: string;
+  blockType?: string;
   context?: AuditContextProvenance;
 } | null {
   if (decision.allowed || !decision.denialType) {
@@ -49,6 +55,18 @@ function buildBashDeniedAuditEvent(
   const detail = command.slice(0, 200);
   const provenance = buildAuditContextProvenance(ctx);
   const contextFields = provenance ? { context: provenance } : {};
+
+  if (decision.denialType === "hard_safety" && decision.hardSafety) {
+    return {
+      type: "executable",
+      agentId: resolvedAgentId,
+      denied: shellHardSafetyAuditDenied(decision.hardSafety),
+      reason: decision.reason ?? "Command denied by Ravi hard-safety policy.",
+      detail,
+      blockType: decision.hardSafety.blockType,
+      ...contextFields,
+    };
+  }
 
   if (decision.denialType === "env_spoofing") {
     return {
@@ -201,7 +219,9 @@ export interface BashPermissionContext {
 export interface BashPermissionDecision {
   allowed: boolean;
   reason?: string;
-  denialType?: "env_spoofing" | "executable" | "session_scope";
+  denialType?: "env_spoofing" | "executable" | "session_scope" | "hard_safety";
+  blockType?: ShellHardSafetyClassification["blockType"];
+  hardSafety?: ShellHardSafetyClassification;
   toolName?: string | null;
   deniedCapabilities?: Array<{ relation: string; objectType: string; objectId: string }>;
 }
@@ -263,17 +283,30 @@ function isSuperadminContext(ctx: BashPermissionContext): boolean {
 function checkExecutablePermissionsForContext(
   command: string,
   ctx: BashPermissionContext,
-): { allowed: boolean; reason?: string; deniedCapabilities?: BashPermissionDecision["deniedCapabilities"] } {
+): {
+  allowed: boolean;
+  reason?: string;
+  hardSafety?: ShellHardSafetyClassification;
+  deniedCapabilities?: BashPermissionDecision["deniedCapabilities"];
+} {
+  // Hard-safety policy is evaluated first, before and independently of any
+  // capability authorization (including wildcard/admin). It can never be
+  // satisfied by a grant.
+  const hardSafety = classifyShellHardSafety(command);
+  if (!hardSafety.safe && hardSafety.blockType) {
+    return { allowed: false, reason: hardSafety.reason, hardSafety };
+  }
+
+  // Parse errors are not hard-safety denials; preserve existing handling.
+  if (hardSafety.parseError) {
+    return { allowed: false, reason: hardSafety.parseError };
+  }
+
   if (canWithBashContext(ctx, "execute", "executable", "*")) {
     return { allowed: true };
   }
 
-  const patternCheck = checkDangerousPatterns(command);
-  if (!patternCheck.safe) {
-    return { allowed: false, reason: patternCheck.reason };
-  }
-
-  const parsed = parseBashCommand(command);
+  const parsed = hardSafety.parsed ?? parseBashCommand(command);
   if (!parsed.success) {
     return { allowed: false, reason: parsed.error || "Failed to parse command" };
   }
@@ -282,11 +315,6 @@ function checkExecutablePermissionsForContext(
   const blocked: string[] = [];
 
   for (const exec of parsed.executables) {
-    if (UNCONDITIONAL_BLOCKS.has(exec)) {
-      blocked.push(exec);
-      continue;
-    }
-
     if (BUILTIN_EXECUTABLES.has(exec)) continue;
 
     if (!canWithBashContext(ctx, "execute", "executable", exec)) {
@@ -370,7 +398,9 @@ function recordAndEmitBashPermissionDenial(
   agentId?: string,
 ): void {
   if (decision.allowed) return;
-  if (decision.denialType === "env_spoofing") {
+  // Hard-safety denials are a policy decision, not a missing capability. They
+  // MUST NOT create a resolvable permission_denials row or recommend a grant.
+  if (decision.denialType === "env_spoofing" || decision.denialType === "hard_safety") {
     emitBashDeniedAudit(command, decision, agentId, ctx);
     return;
   }
@@ -419,6 +449,15 @@ export function evaluateBashPermission(command: string, ctx: BashPermissionConte
 
   const execResult = checkExecutablePermissionsForContext(command, ctx);
   if (!execResult.allowed) {
+    if (execResult.hardSafety) {
+      return {
+        allowed: false,
+        reason: execResult.reason,
+        denialType: "hard_safety",
+        blockType: execResult.hardSafety.blockType,
+        hardSafety: execResult.hardSafety,
+      };
+    }
     return {
       allowed: false,
       reason: execResult.reason,
@@ -480,6 +519,17 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
       log.warn("Env spoofing blocked", {
         command: command.slice(0, 200),
         reason: decision.reason,
+      });
+      recordAndEmitBashPermissionDenial(command, decision, bashContext, agentId);
+
+      return buildPreToolUseDenyResult(decision.reason!);
+    }
+
+    if (!decision.allowed && decision.denialType === "hard_safety") {
+      log.warn("Hard-safety policy blocked", {
+        command: command.slice(0, 200),
+        reason: decision.reason,
+        blockType: decision.blockType,
       });
       recordAndEmitBashPermissionDenial(command, decision, bashContext, agentId);
 
