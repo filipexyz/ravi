@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { dbCreateAgent, dbCreateContext, dbListContexts, dbPruneContexts, getDb } from "./router-db.js";
+import {
+  dbCreateAgent,
+  dbCreateContext,
+  dbGetChannel,
+  dbListContexts,
+  dbPruneContexts,
+  dbUpdateChannel,
+  dbUpsertChannel,
+  getDb,
+} from "./router-db.js";
 import { getOrCreateSession } from "./sessions.js";
 
 let stateDir: string | null = null;
@@ -136,5 +145,29 @@ describe("router context queries", () => {
     expect(triggerColumns).toContain("shell_timeout_ms");
     expect(triggerColumns).toContain("shell_env_file");
     expect(triggerColumns).toContain("on_error");
+  });
+
+  it("persists native channel credential connection references through router schema bootstrap", () => {
+    const db = getDb();
+    const channelColumns = new Set(
+      (db.prepare("PRAGMA table_info(channels)").all() as Array<{ name: string }>).map((row) => row.name),
+    );
+    expect(channelColumns).toContain("provider");
+    expect(channelColumns).toContain("credential_connection");
+
+    const created = dbUpsertChannel({
+      name: "ravi-rbbt-slack",
+      provider: "slack",
+      credentialConnection: "rbbt-secret",
+    });
+    expect(created.credentialConnection).toBe("rbbt-secret");
+
+    const preserved = dbUpdateChannel("ravi-rbbt-slack", { enabled: false });
+    expect(preserved.enabled).toBe(false);
+    expect(preserved.credentialConnection).toBe("rbbt-secret");
+
+    const cleared = dbUpdateChannel("ravi-rbbt-slack", { credentialConnection: null });
+    expect(cleared.credentialConnection).toBeUndefined();
+    expect(dbGetChannel("ravi-rbbt-slack")?.provider).toBe("slack");
   });
 });

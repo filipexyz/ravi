@@ -12379,6 +12379,338 @@ export const CalendarsShowReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `channels.create`. */
+export const ChannelsCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "credentialConnection": {
+      "description": "Credential Manager connection id",
+      "type": "string"
+    },
+    "name": {
+      "description": "Channel config name",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Channel provider, e.g. slack",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `channels.create`. */
+export const ChannelsCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "channel": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "type": "number"
+        },
+        "credentialConnection": {
+          "type": "string"
+        },
+        "defaults": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "deletedAt": {
+          "type": "number"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "provider",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "channel",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `channels.list`. */
+export const ChannelsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching channels to skip (default: 0)",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Filter by provider, e.g. slack",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `channels.list`. */
+export const ChannelsListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "channels": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "credentialConnection": {
+            "type": "string"
+          },
+          "defaults": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "deletedAt": {
+            "type": "number"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "provider",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "credentialConnection": {
+            "type": "string"
+          },
+          "defaults": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "deletedAt": {
+            "type": "number"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "provider",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "channels",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `channels.probe`. */
 export const ChannelsProbeInputSchema = {
   "additionalProperties": false,
@@ -12482,14 +12814,6 @@ export const ChannelsRestartInputSchema = {
     "build": {
       "description": "Use dist bundle from source repo",
       "type": "boolean"
-    },
-    "slackConnection": {
-      "description": "Optional Slack credential connection override for a single workspace",
-      "type": "string"
-    },
-    "slackConnections": {
-      "description": "Comma-separated Slack credential connections for multi-workspace native runner",
-      "type": "string"
     }
   },
   "type": "object"
@@ -12524,30 +12848,12 @@ export const ChannelsRestartReturnSchema = {
         "consumeOutbound": {
           "type": "string"
         },
-        "slackConnection": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "slackConnections": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "slackSocketMode": {
           "type": "boolean"
         }
       },
       "required": [
         "slackSocketMode",
-        "slackConnection",
-        "slackConnections",
         "consumeOutbound"
       ],
       "type": "object"
@@ -12758,6 +13064,225 @@ export const ChannelsRestartReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `channels.set`. */
+export const ChannelsSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "description": "Property key: provider|enabled|credentialConnection|defaults",
+      "type": "string"
+    },
+    "name": {
+      "description": "Channel config name",
+      "type": "string"
+    },
+    "value": {
+      "description": "Property value, or '-' to clear nullable fields",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key",
+    "name",
+    "value"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `channels.set`. */
+export const ChannelsSetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "channel": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "type": "number"
+        },
+        "credentialConnection": {
+          "type": "string"
+        },
+        "defaults": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "deletedAt": {
+          "type": "number"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "provider",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "channel",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `channels.show`. */
+export const ChannelsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "description": "Channel config name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `channels.show`. */
+export const ChannelsShowReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "createdAt": {
+      "type": "number"
+    },
+    "credentialConnection": {
+      "type": "string"
+    },
+    "defaults": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "deletedAt": {
+      "type": "number"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "name": {
+      "type": "string"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "updatedAt": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "name",
+    "provider",
+    "createdAt",
+    "updatedAt"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `channels.start`. */
 export const ChannelsStartInputSchema = {
   "additionalProperties": false,
@@ -12765,14 +13290,6 @@ export const ChannelsStartInputSchema = {
     "build": {
       "description": "Use dist bundle from source repo",
       "type": "boolean"
-    },
-    "slackConnection": {
-      "description": "Optional Slack credential connection override for a single workspace",
-      "type": "string"
-    },
-    "slackConnections": {
-      "description": "Comma-separated Slack credential connections for multi-workspace native runner",
-      "type": "string"
     }
   },
   "type": "object"
@@ -12807,30 +13324,12 @@ export const ChannelsStartReturnSchema = {
         "consumeOutbound": {
           "type": "string"
         },
-        "slackConnection": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "slackConnections": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "slackSocketMode": {
           "type": "boolean"
         }
       },
       "required": [
         "slackSocketMode",
-        "slackConnection",
-        "slackConnections",
         "consumeOutbound"
       ],
       "type": "object"
@@ -13265,30 +13764,12 @@ export const ChannelsStopReturnSchema = {
         "consumeOutbound": {
           "type": "string"
         },
-        "slackConnection": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "slackConnections": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "slackSocketMode": {
           "type": "boolean"
         }
       },
       "required": [
         "slackSocketMode",
-        "slackConnection",
-        "slackConnections",
         "consumeOutbound"
       ],
       "type": "object"
@@ -52905,10 +53386,6 @@ export const SlackBlocksSendInputSchema = {
       "description": "Slack channel/conversation ID",
       "type": "string"
     },
-    "connection": {
-      "description": "Slack credential connection",
-      "type": "string"
-    },
     "execute": {
       "description": "Perform the mutation; default is dry-run",
       "type": "boolean"
@@ -53035,10 +53512,6 @@ export const SlackBlocksShowcaseInputSchema = {
       "description": "Slack channel/conversation ID",
       "type": "string"
     },
-    "connection": {
-      "description": "Slack credential connection",
-      "type": "string"
-    },
     "execute": {
       "description": "Perform the mutation; default is dry-run",
       "type": "boolean"
@@ -53154,10 +53627,6 @@ export const SlackBlocksUpdateInputSchema = {
   "properties": {
     "channel": {
       "description": "Slack channel/conversation ID",
-      "type": "string"
-    },
-    "connection": {
-      "description": "Slack credential connection",
       "type": "string"
     },
     "execute": {
@@ -53283,8 +53752,8 @@ export const SlackBlocksUpdateReturnSchema = {
 export const SlackBlocksValidateInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "connection": {
-      "description": "Slack credential connection",
+    "channel": {
+      "description": "Ravi channel config",
       "type": "string"
     },
     "file": {
@@ -53386,12 +53855,12 @@ export const SlackCanvasAccessDeleteInputSchema = {
       "description": "Slack canvas ID",
       "type": "string"
     },
-    "channels": {
-      "description": "Comma-separated Slack channel IDs",
+    "channel": {
+      "description": "Ravi channel config",
       "type": "string"
     },
-    "connection": {
-      "description": "Slack credential connection",
+    "channels": {
+      "description": "Comma-separated Slack channel IDs",
       "type": "string"
     },
     "execute": {
@@ -53515,12 +53984,12 @@ export const SlackCanvasAccessSetInputSchema = {
       "description": "Slack canvas ID",
       "type": "string"
     },
-    "channels": {
-      "description": "Comma-separated Slack channel IDs",
+    "channel": {
+      "description": "Ravi channel config",
       "type": "string"
     },
-    "connection": {
-      "description": "Slack credential connection",
+    "channels": {
+      "description": "Comma-separated Slack channel IDs",
       "type": "string"
     },
     "execute": {
@@ -53646,11 +54115,7 @@ export const SlackCanvasArtifactPublishInputSchema = {
       "type": "string"
     },
     "channel": {
-      "description": "Create/reuse a channel canvas for this Slack channel",
-      "type": "string"
-    },
-    "connection": {
-      "description": "Slack credential connection",
+      "description": "Ravi channel config",
       "type": "string"
     },
     "execute": {
@@ -53660,6 +54125,10 @@ export const SlackCanvasArtifactPublishInputSchema = {
     "skipRefresh": {
       "description": "Do not refresh the artifact from its source file before publishing",
       "type": "boolean"
+    },
+    "slackChannel": {
+      "description": "Create/reuse a channel canvas for this Slack channel",
+      "type": "string"
     },
     "title": {
       "description": "Canvas title",
@@ -53860,10 +54329,6 @@ export const SlackCanvasChannelCreateInputSchema = {
       "description": "Slack channel/conversation ID",
       "type": "string"
     },
-    "connection": {
-      "description": "Slack credential connection",
-      "type": "string"
-    },
     "ensure": {
       "description": "Return existing channel canvas when it already exists",
       "type": "boolean"
@@ -53997,10 +54462,6 @@ export const SlackCanvasChannelShowcaseInputSchema = {
       "description": "Slack channel/conversation ID",
       "type": "string"
     },
-    "connection": {
-      "description": "Slack credential connection",
-      "type": "string"
-    },
     "execute": {
       "description": "Perform the mutation; default is dry-run",
       "type": "boolean"
@@ -54119,11 +54580,7 @@ export const SlackCanvasCreateInputSchema = {
       "type": "string"
     },
     "channel": {
-      "description": "Optional Slack channel tab target",
-      "type": "string"
-    },
-    "connection": {
-      "description": "Slack credential connection",
+      "description": "Ravi channel config",
       "type": "string"
     },
     "execute": {
@@ -54141,6 +54598,10 @@ export const SlackCanvasCreateInputSchema = {
     "skipRefresh": {
       "description": "Do not refresh the artifact from its source file before publishing",
       "type": "boolean"
+    },
+    "slackChannel": {
+      "description": "Optional Slack channel tab target",
+      "type": "string"
     },
     "title": {
       "description": "Canvas title",
@@ -54252,8 +54713,8 @@ export const SlackCanvasDeleteInputSchema = {
       "description": "Slack canvas ID",
       "type": "string"
     },
-    "connection": {
-      "description": "Slack credential connection",
+    "channel": {
+      "description": "Ravi channel config",
       "type": "string"
     },
     "execute": {
@@ -54373,8 +54834,8 @@ export const SlackCanvasEditInputSchema = {
       "description": "Slack canvas ID",
       "type": "string"
     },
-    "connection": {
-      "description": "Slack credential connection",
+    "channel": {
+      "description": "Ravi channel config",
       "type": "string"
     },
     "execute": {
@@ -54515,8 +54976,8 @@ export const SlackCanvasSectionsLookupInputSchema = {
       "description": "Slack canvas ID",
       "type": "string"
     },
-    "connection": {
-      "description": "Slack credential connection",
+    "channel": {
+      "description": "Ravi channel config",
       "type": "string"
     },
     "containsText": {
@@ -54663,16 +55124,16 @@ export const SlackCanvasShowcaseInputSchema = {
       "type": "string"
     },
     "channel": {
-      "description": "Slack channel/conversation ID for the showcase context",
-      "type": "string"
-    },
-    "connection": {
-      "description": "Slack credential connection",
+      "description": "Ravi channel config",
       "type": "string"
     },
     "execute": {
       "description": "Perform the mutation; default is dry-run",
       "type": "boolean"
+    },
+    "slackChannel": {
+      "description": "Slack channel/conversation ID for the showcase context",
+      "type": "string"
     },
     "title": {
       "description": "Canvas title",
@@ -54783,8 +55244,8 @@ export const SlackCanvasShowcaseReturnSchema = {
 export const SlackChannelsCreateInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "connection": {
-      "description": "Slack credential connection",
+    "channel": {
+      "description": "Ravi channel config",
       "type": "string"
     },
     "execute": {
@@ -54906,10 +55367,6 @@ export const SlackChannelsHistoryInputSchema = {
   "properties": {
     "channel": {
       "description": "Slack channel/conversation ID",
-      "type": "string"
-    },
-    "connection": {
-      "description": "Slack credential connection",
       "type": "string"
     },
     "cursor": {
@@ -55066,10 +55523,6 @@ export const SlackChannelsInfoInputSchema = {
     "channel": {
       "description": "Slack channel/conversation ID",
       "type": "string"
-    },
-    "connection": {
-      "description": "Slack credential connection",
-      "type": "string"
     }
   },
   "required": [
@@ -55160,10 +55613,6 @@ export const SlackChannelsInviteInputSchema = {
   "properties": {
     "channel": {
       "description": "Slack channel/conversation ID",
-      "type": "string"
-    },
-    "connection": {
-      "description": "Slack credential connection",
       "type": "string"
     },
     "execute": {
@@ -55280,8 +55729,8 @@ export const SlackChannelsInviteReturnSchema = {
 export const SlackChannelsListInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "connection": {
-      "description": "Slack credential connection",
+    "channel": {
+      "description": "Ravi channel config",
       "type": "string"
     },
     "cursor": {
@@ -55433,10 +55882,6 @@ export const SlackChannelsRenameInputSchema = {
       "description": "Slack channel/conversation ID",
       "type": "string"
     },
-    "connection": {
-      "description": "Slack credential connection",
-      "type": "string"
-    },
     "execute": {
       "description": "Perform the mutation; default is dry-run",
       "type": "boolean"
@@ -55552,11 +55997,7 @@ export const SlackFilesListInputSchema = {
   "additionalProperties": false,
   "properties": {
     "channel": {
-      "description": "Restrict to a Slack channel/conversation ID",
-      "type": "string"
-    },
-    "connection": {
-      "description": "Slack credential connection",
+      "description": "Ravi channel config",
       "type": "string"
     },
     "cursor": {
@@ -55566,6 +56007,10 @@ export const SlackFilesListInputSchema = {
     "limit": {
       "default": "20",
       "description": "Page size",
+      "type": "string"
+    },
+    "slackChannel": {
+      "description": "Restrict to a Slack channel/conversation ID",
       "type": "string"
     },
     "user": {
@@ -55699,8 +56144,8 @@ export const SlackFilesListReturnSchema = {
 export const SlackInteractionsRespondInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "connection": {
-      "description": "Slack credential connection",
+    "channel": {
+      "description": "Ravi channel config",
       "type": "string"
     },
     "execute": {
@@ -55823,10 +56268,6 @@ export const SlackMembersListInputSchema = {
   "properties": {
     "channel": {
       "description": "Slack channel/conversation ID",
-      "type": "string"
-    },
-    "connection": {
-      "description": "Slack credential connection",
       "type": "string"
     },
     "cursor": {
@@ -55972,10 +56413,6 @@ export const SlackMessagesInspectInputSchema = {
       "description": "Slack channel/conversation ID",
       "type": "string"
     },
-    "connection": {
-      "description": "Slack credential connection",
-      "type": "string"
-    },
     "ts": {
       "description": "Slack message timestamp",
       "type": "string"
@@ -56070,10 +56507,6 @@ export const SlackMessagesReplayInputSchema = {
   "properties": {
     "channel": {
       "description": "Slack channel/conversation ID",
-      "type": "string"
-    },
-    "connection": {
-      "description": "Slack credential connection",
       "type": "string"
     },
     "execute": {
@@ -56198,10 +56631,6 @@ export const SlackMessagesSendInputSchema = {
       "description": "Slack channel/conversation ID",
       "type": "string"
     },
-    "connection": {
-      "description": "Slack credential connection",
-      "type": "string"
-    },
     "execute": {
       "description": "Perform the mutation; default is dry-run",
       "type": "boolean"
@@ -56320,8 +56749,8 @@ export const SlackMessagesSendReturnSchema = {
 export const SlackPermissionsListInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "connection": {
-      "description": "Slack credential connection",
+    "channel": {
+      "description": "Ravi channel config",
       "type": "string"
     }
   },
@@ -56408,8 +56837,8 @@ export const SlackPermissionsListReturnSchema = {
 export const SlackTopologyInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "connection": {
-      "description": "Slack credential connection",
+    "channel": {
+      "description": "Ravi channel config",
       "type": "string"
     },
     "cursor": {

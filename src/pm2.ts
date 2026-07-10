@@ -17,18 +17,14 @@ const PM2_ENV_DENYLIST = [
   "RAVI_ACCOUNT_ID",
   "RAVI_CHAT_ID",
   "RAVI_THREAD_ID",
+  "RAVI_SLACK_CONNECTION",
+  "RAVI_SLACK_CONNECTIONS",
+  "RAVI_SLACK_CREDENTIAL_CONNECTION",
 ] as const;
 
 export function buildPm2Env(envOverrides?: Record<string, string>): Record<string, string> {
   const env = { ...process.env, ...(envOverrides ?? {}) } as Record<string, string>;
   for (const key of PM2_ENV_DENYLIST) delete env[key];
-  if (envOverrides?.RAVI_SLACK_CONNECTIONS && !envOverrides.RAVI_SLACK_CONNECTION) {
-    delete env.RAVI_SLACK_CONNECTION;
-    delete env.RAVI_SLACK_CREDENTIAL_CONNECTION;
-  }
-  if (envOverrides?.RAVI_SLACK_CONNECTION && !envOverrides.RAVI_SLACK_CONNECTIONS) {
-    delete env.RAVI_SLACK_CONNECTIONS;
-  }
   return env;
 }
 

@@ -3,9 +3,10 @@
 ## Local Smoke
 
 1. Add a Slack connection through `ravi credentials`.
-2. Register or update the Slack channel instance in Ravi.
-   - Preferred: credential connection id equals the instance name.
-   - Alternative: set instance defaults with `{"slackCredentialConnection":"<connection>"}`.
+2. Register or update the Slack channel config in Ravi.
+   - Set the explicit credential binding:
+     `ravi channels set <slack-channel> credentialConnection <connection>`.
+   - The provider is inferred from `provider=slack`; only the connection id is stored.
 3. Start `ravi channels run` / `ravi channels start` when the native runner owns adapters, or restart the compatibility daemon while that path exists.
    Slack native uses Socket Mode by definition; there is no separate mode flag.
 4. Send a DM or channel message to the Slack app.
@@ -13,7 +14,8 @@
 
 ## Debug
 
-- No connection: check the Slack instance and `ravi credentials connections show`.
+- No connection: check `ravi channels show <slack-channel>` and
+  `ravi credentials connections show --provider slack --connection <id>`.
 - No inbound: check Socket Mode logs and Slack app event subscriptions.
 - Wrong thread: check `RAVI_SLACK_SUBSCRIPTION_SCOPE`, `RAVI_SLACK_THREAD_REPLY_MODE`, `RAVI_SLACK_ROOT_REPLY_MODE`.
 - Duplicate response: check duplicate runner processes and Socket Mode lock.

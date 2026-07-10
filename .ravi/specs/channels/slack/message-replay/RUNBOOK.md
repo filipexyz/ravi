@@ -14,7 +14,7 @@ normative: true
 ## Inspect
 
 ```bash
-ravi slack messages-inspect C123 1783266325.132679 --connection ravi-rbbt-slack --json
+ravi slack messages-inspect C123 1783266325.132679 --channel ravi-rbbt-slack --json
 ```
 
 Use quando precisar diferenciar:
@@ -28,19 +28,19 @@ Use quando precisar diferenciar:
 Dry-run:
 
 ```bash
-ravi slack messages-replay C123 1783266325.132679 --connection ravi-rbbt-slack --json
+ravi slack messages-replay C123 1783266325.132679 --channel ravi-rbbt-slack --json
 ```
 
 Executar:
 
 ```bash
-ravi slack messages-replay C123 1783266325.132679 --connection ravi-rbbt-slack --execute --json
+ravi slack messages-replay C123 1783266325.132679 --channel ravi-rbbt-slack --execute --json
 ```
 
 Forçar duplicata operacional:
 
 ```bash
-ravi slack messages-replay C123 1783266325.132679 --connection ravi-rbbt-slack --force --execute --json
+ravi slack messages-replay C123 1783266325.132679 --channel ravi-rbbt-slack --force --execute --json
 ```
 
 ## Critérios

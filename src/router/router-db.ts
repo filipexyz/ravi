@@ -115,6 +115,14 @@ export const InstanceInputSchema = z.object({
   defaultContactTags: z.array(z.string()).optional(),
 });
 
+export const ChannelInputSchema = z.object({
+  name: z.string().min(1),
+  provider: z.string().min(1),
+  enabled: z.boolean().default(true),
+  credentialConnection: z.string().min(1).optional(),
+  defaults: z.record(z.string(), z.unknown()).optional(),
+});
+
 // ============================================================================
 // Row Types
 // ============================================================================
@@ -180,6 +188,17 @@ interface InstanceRow {
   enabled: number | null;
   defaults: string | null;
   default_contact_tags: string | null;
+  created_at: number;
+  updated_at: number;
+  deleted_at: number | null;
+}
+
+interface ChannelRow {
+  name: string;
+  provider: string;
+  enabled: number | null;
+  credential_connection: string | null;
+  defaults: string | null;
   created_at: number;
   updated_at: number;
   deleted_at: number | null;
@@ -370,6 +389,17 @@ export interface InstanceConfig {
   enabled?: boolean;
   defaults?: Record<string, unknown>;
   defaultContactTags?: string[];
+  createdAt: number;
+  updatedAt: number;
+  deletedAt?: number;
+}
+
+export interface ChannelConfig {
+  name: string;
+  provider: string;
+  enabled?: boolean;
+  credentialConnection?: string;
+  defaults?: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
@@ -1847,6 +1877,17 @@ function getDb(): Database {
       updated_at   INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS channels (
+      name         TEXT PRIMARY KEY,
+      provider     TEXT NOT NULL,
+      enabled      INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+      credential_connection TEXT,
+      defaults     TEXT,
+      created_at   INTEGER NOT NULL,
+      updated_at   INTEGER NOT NULL,
+      deleted_at   INTEGER
+    );
+
     CREATE TABLE IF NOT EXISTS contexts (
       context_id TEXT PRIMARY KEY,
       context_key TEXT NOT NULL UNIQUE,
@@ -2351,6 +2392,10 @@ function getDb(): Database {
   );
   ensureColumn(db, "instances", "defaults", "TEXT");
   ensureColumn(db, "instances", "default_contact_tags", "TEXT");
+  ensureColumn(db, "channels", "enabled", "INTEGER NOT NULL DEFAULT 1");
+  ensureColumn(db, "channels", "credential_connection", "TEXT");
+  ensureColumn(db, "channels", "defaults", "TEXT");
+  ensureColumn(db, "channels", "deleted_at", "INTEGER");
 
   const contextColumns = db.prepare("PRAGMA table_info(contexts)").all() as Array<{ name: string }>;
   if (contextColumns.length > 0 && !contextColumns.some((c) => c.name === "context_id")) {
@@ -4352,6 +4397,12 @@ interface PreparedStatements {
   listInstances: Statement;
   deleteInstance: Statement;
   updateInstance: Statement;
+  // Channels
+  upsertChannel: Statement;
+  getChannelByName: Statement;
+  listChannels: Statement;
+  updateChannel: Statement;
+  softDeleteChannel: Statement;
   // Contexts
   insertContext: Statement;
   getContextById: Statement;
@@ -4589,6 +4640,32 @@ function getStatements(): PreparedStatements {
         updated_at   = ?
       WHERE name = ?
     `),
+    // Channels
+    upsertChannel: database.prepare(`
+      INSERT INTO channels (
+        name, provider, enabled, credential_connection, defaults, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(name) DO UPDATE SET
+        provider = excluded.provider,
+        enabled = excluded.enabled,
+        credential_connection = excluded.credential_connection,
+        defaults = excluded.defaults,
+        updated_at = excluded.updated_at,
+        deleted_at = NULL
+    `),
+    getChannelByName: database.prepare("SELECT * FROM channels WHERE name = ? AND deleted_at IS NULL"),
+    listChannels: database.prepare("SELECT * FROM channels WHERE deleted_at IS NULL ORDER BY name"),
+    updateChannel: database.prepare(`
+      UPDATE channels SET
+        provider = ?,
+        enabled = ?,
+        credential_connection = ?,
+        defaults = ?,
+        updated_at = ?
+      WHERE name = ? AND deleted_at IS NULL
+    `),
+    softDeleteChannel: database.prepare("UPDATE channels SET deleted_at = ? WHERE name = ? AND deleted_at IS NULL"),
     // Contexts
     insertContext: database.prepare(`
       INSERT INTO contexts (
@@ -4764,6 +4841,26 @@ function rowToInstance(row: InstanceRow): InstanceConfig {
       }
     } catch {
       // Ignore invalid tag payload to avoid breaking instance listing.
+    }
+  }
+  if (row.deleted_at) result.deletedAt = row.deleted_at;
+  return result;
+}
+
+function rowToChannel(row: ChannelRow): ChannelConfig {
+  const result: ChannelConfig = {
+    name: row.name,
+    provider: row.provider,
+    enabled: row.enabled !== 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+  if (row.credential_connection) result.credentialConnection = row.credential_connection;
+  if (row.defaults) {
+    try {
+      result.defaults = JSON.parse(row.defaults);
+    } catch {
+      // Ignore invalid JSON so a bad defaults blob does not break channel listing.
     }
   }
   if (row.deleted_at) result.deletedAt = row.deleted_at;
@@ -7218,6 +7315,83 @@ export function dbUpdateInstance(
   );
   log.info("Updated instance", { name, ...updates });
   return dbGetInstance(name)!;
+}
+
+// ============================================================================
+// Channel CRUD
+// ============================================================================
+
+export function dbUpsertChannel(input: z.input<typeof ChannelInputSchema>): ChannelConfig {
+  const validated = ChannelInputSchema.parse(input);
+  const s = getStatements();
+  const now = Date.now();
+  s.upsertChannel.run(
+    validated.name,
+    validated.provider,
+    validated.enabled ? 1 : 0,
+    validated.credentialConnection ?? null,
+    validated.defaults ? JSON.stringify(validated.defaults) : null,
+    now,
+    now,
+  );
+  log.info("Upserted channel", { name: validated.name, provider: validated.provider });
+  return dbGetChannel(validated.name)!;
+}
+
+export function dbGetChannel(name: string): ChannelConfig | null {
+  const s = getStatements();
+  const row = s.getChannelByName.get(name) as ChannelRow | undefined;
+  return row ? rowToChannel(row) : null;
+}
+
+export function dbListChannels(): ChannelConfig[] {
+  const s = getStatements();
+  const rows = s.listChannels.all() as ChannelRow[];
+  return rows.map(rowToChannel);
+}
+
+export function dbUpdateChannel(
+  name: string,
+  updates: Partial<Omit<ChannelConfig, "name" | "createdAt" | "updatedAt" | "credentialConnection" | "defaults">> & {
+    credentialConnection?: string | null;
+    defaults?: Record<string, unknown> | null;
+  },
+): ChannelConfig {
+  const s = getStatements();
+  const row = s.getChannelByName.get(name) as ChannelRow | undefined;
+  if (!row) throw new Error(`Channel not found: ${name}`);
+  const now = Date.now();
+  s.updateChannel.run(
+    updates.provider ?? row.provider,
+    updates.enabled !== undefined ? (updates.enabled ? 1 : 0) : (row.enabled ?? 1),
+    updates.credentialConnection !== undefined ? (updates.credentialConnection ?? null) : row.credential_connection,
+    updates.defaults !== undefined ? (updates.defaults ? JSON.stringify(updates.defaults) : null) : row.defaults,
+    now,
+    name,
+  );
+  log.info("Updated channel", { name, ...updates });
+  return dbGetChannel(name)!;
+}
+
+export function dbDeleteChannel(name: string): boolean {
+  const s = getStatements();
+  const channel = dbGetChannel(name);
+  if (!channel) return false;
+  const now = Date.now();
+  s.softDeleteChannel.run(now, name);
+  if (getDbChanges() > 0) {
+    s.insertAuditLog.run(
+      "channel.deleted",
+      "channel",
+      name,
+      JSON.stringify(channel),
+      process.env.USER ?? "daemon",
+      now,
+    );
+    log.info("Soft-deleted channel", { name });
+    return true;
+  }
+  return false;
 }
 
 /**

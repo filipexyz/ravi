@@ -6,6 +6,8 @@ import "reflect-metadata";
 import { spawnSync } from "node:child_process";
 import { z } from "zod";
 import { ChannelRunner, runChannelRunnerFromEnv } from "../../channels/runner.js";
+import { getCredentialConnection } from "../../credentials/index.js";
+import { nats } from "../../nats.js";
 import {
   CHANNELS_PM2_PROCESS_NAME,
   buildPm2Env,
@@ -15,9 +17,11 @@ import {
   isPm2ProcessRunning,
   runPm2,
 } from "../../pm2.js";
-import { CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { dbGetChannel, dbListChannels, dbUpdateChannel, dbUpsertChannel } from "../../router/router-db.js";
+import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
-import { jsonObjectSchema } from "../return-schemas.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
+import { jsonObjectSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
 import { resolveDaemonRuntimeTarget, type DaemonRuntimeTarget } from "./daemon.js";
 
 const pm2ProcessReturnSchema = z
@@ -52,8 +56,6 @@ const runtimeTargetReturnSchema = z
 const runnerEnvReturnSchema = z
   .object({
     slackSocketMode: z.boolean(),
-    slackConnection: z.string().nullable(),
-    slackConnections: z.array(z.string()),
     consumeOutbound: z.string(),
   })
   .strict();
@@ -80,8 +82,65 @@ const channelsRunStatusReturnSchema = z
   })
   .strict();
 
+const channelConfigReturnSchema = z
+  .object({
+    name: z.string(),
+    provider: z.string(),
+    enabled: z.boolean().optional(),
+    credentialConnection: z.string().optional(),
+    defaults: jsonObjectSchema.optional(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+    deletedAt: z.number().optional(),
+  })
+  .strict();
+
+const channelsListReturnSchema = z
+  .object({
+    total: z.number(),
+    pagination: strictCliOffsetPaginationSchema,
+    channels: z.array(channelConfigReturnSchema),
+    items: z.array(channelConfigReturnSchema),
+  })
+  .strict();
+
+const channelMutationReturnSchema = z
+  .object({
+    status: z.string(),
+    channel: channelConfigReturnSchema,
+    changedCount: z.number(),
+  })
+  .strict();
+
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+function emitConfigChanged() {
+  nats.emit("ravi.config.changed", {}).catch(() => {});
+}
+
+function requireCredentialConnectionForChannel(provider: string, connection: string): void {
+  const record = getCredentialConnection(provider, connection);
+  if (!record) {
+    fail(
+      `Credential connection not found: ${provider}:${connection}. Add it with: ravi credentials connections add --provider ${provider} --connection ${connection}`,
+    );
+  }
+  if (record.status !== "active") {
+    fail(`Credential connection is not active: ${provider}:${connection}`);
+  }
+}
+
+function parseEnabledValue(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (["true", "1", "on", "open", "enabled"].includes(normalized)) return true;
+  if (["false", "0", "off", "closed", "disabled"].includes(normalized)) return false;
+  fail(`Invalid enabled value: ${value}. Valid: true, false`);
+}
+
+function isClearValue(value: string): boolean {
+  return ["-", "null", "none", "undefined", ""].includes(value.trim().toLowerCase());
 }
 
 const RUNNER_ENV_KEYS = [
@@ -129,50 +188,7 @@ function readExistingPm2Env(processName: string): Record<string, unknown> {
   }
 }
 
-export function chooseSlackRunnerConnection(input: {
-  explicit?: string;
-  env?: Record<string, unknown>;
-}): string | undefined {
-  const explicit = cleanEnvValue(input.explicit);
-  if (explicit) return explicit;
-
-  const envConnection =
-    cleanEnvValue(input.env?.RAVI_SLACK_CONNECTION) ?? cleanEnvValue(input.env?.RAVI_SLACK_CREDENTIAL_CONNECTION);
-  if (envConnection) return envConnection;
-
-  return undefined;
-}
-
-function listEnvValues(value: unknown): string[] {
-  if (typeof value !== "string") return [];
-  return value
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean);
-}
-
-export function chooseSlackRunnerConnections(input: {
-  explicit?: string;
-  explicitSingle?: string;
-  env?: Record<string, unknown>;
-}): string[] {
-  const explicit = listEnvValues(input.explicit);
-  if (explicit.length) return explicit;
-
-  const explicitSingle = cleanEnvValue(input.explicitSingle);
-  if (explicitSingle) return [explicitSingle];
-
-  const envConnections = listEnvValues(input.env?.RAVI_SLACK_CONNECTIONS);
-  if (envConnections.length) return envConnections;
-
-  const single = chooseSlackRunnerConnection({ env: input.env });
-  return single ? [single] : [];
-}
-
-function buildRunnerPm2Env(
-  explicitSlackConnection?: string,
-  explicitSlackConnections?: string,
-): Record<string, string> {
+export function buildRunnerPm2Env(): Record<string, string> {
   const existingPm2Env = readExistingPm2Env(CHANNELS_PM2_PROCESS_NAME);
   const envOverrides: Record<string, string> = {};
 
@@ -181,29 +197,12 @@ function buildRunnerPm2Env(
     if (value) envOverrides[key] = value;
   }
 
-  const slackConnections = chooseSlackRunnerConnections({
-    explicit: explicitSlackConnections,
-    explicitSingle: explicitSlackConnection,
-    env: process.env,
-  });
-  if (slackConnections.length > 1) {
-    envOverrides.RAVI_SLACK_CONNECTIONS = slackConnections.join(",");
-    delete envOverrides.RAVI_SLACK_CONNECTION;
-    delete envOverrides.RAVI_SLACK_CREDENTIAL_CONNECTION;
-  } else if (slackConnections.length === 1) {
-    envOverrides.RAVI_SLACK_CONNECTION = slackConnections[0]!;
-  }
-
   return envOverrides;
 }
 
 function publicRunnerEnv(envOverrides: Record<string, string>): Record<string, unknown> {
-  const slackConnections = listEnvValues(envOverrides.RAVI_SLACK_CONNECTIONS);
-  const slackConnection = envOverrides.RAVI_SLACK_CONNECTION ?? null;
   return {
     slackSocketMode: true,
-    slackConnection,
-    slackConnections: slackConnections.length ? slackConnections : slackConnection ? [slackConnection] : [],
     consumeOutbound: envOverrides.RAVI_CHANNELS_CONSUME_OUTBOUND ?? "default",
   };
 }
@@ -269,21 +268,154 @@ function requireRuntimeTarget(build?: boolean): DaemonRuntimeTarget {
   scope: "admin",
 })
 export class ChannelsCommands {
+  @Command({ name: "list", description: "List configured native channels" })
+  @CommandAccess({ kind: "read", resource: "channels", action: "list", risk: "low" })
+  @Returns(channelsListReturnSchema)
+  list(
+    @Option({ flags: "--provider <provider>", description: "Filter by provider, e.g. slack" }) provider?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching channels to skip (default: 0)" }) offset?: string,
+  ) {
+    const providerFilter = provider?.trim();
+    const channels = dbListChannels().filter((channel) => !providerFilter || channel.provider === providerFilter);
+    const page = paginateCliItems(channels, { limit, offset });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "channels", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+      options: [providerFilter ? "--provider" : null, providerFilter],
+    });
+    const payload = {
+      total: page.total,
+      pagination,
+      channels: page.items,
+      items: page.items,
+    };
+    if (asJson) printJson(payload);
+    else if (page.total === 0) {
+      console.log("No channels configured.");
+    } else {
+      for (const channel of page.items) {
+        const credential = channel.credentialConnection ? ` credential=${channel.credentialConnection}` : "";
+        const status = channel.enabled === false ? "disabled" : "enabled";
+        console.log(`${channel.name} (${channel.provider}, ${status})${credential}`);
+      }
+      console.log(
+        `\nTotal: ${page.total} channels (${page.items.length} returned, limit ${page.limit}, offset ${page.offset})`,
+      );
+      if (pagination.nextCommand) {
+        console.log("Next page:");
+        console.log(`  ${pagination.nextCommand}`);
+      }
+    }
+    return payload;
+  }
+
+  @Command({ name: "show", description: "Show one configured native channel" })
+  @CommandAccess({ kind: "read", resource: "channels", action: "show", risk: "low" })
+  @Returns(channelConfigReturnSchema)
+  show(
+    @Arg("name", { description: "Channel config name" }) name: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const channel = dbGetChannel(name);
+    if (!channel) fail(`Channel not found: ${name}`);
+    if (asJson) printJson(channel);
+    else {
+      console.log(`Channel: ${channel.name}`);
+      console.log(`  provider: ${channel.provider}`);
+      console.log(`  enabled: ${channel.enabled === false ? "false" : "true"}`);
+      console.log(`  credentialConnection: ${channel.credentialConnection ?? "(not set)"}`);
+    }
+    return channel;
+  }
+
+  @Command({ name: "create", description: "Create or update a native channel config" })
+  @CommandAccess({ kind: "mutate", resource: "channels", action: "create", risk: "medium" })
+  @Returns(channelMutationReturnSchema)
+  create(
+    @Arg("name", { description: "Channel config name" }) name: string,
+    @Option({ flags: "--provider <provider>", description: "Channel provider, e.g. slack" }) provider?: string,
+    @Option({ flags: "--credential-connection <id>", description: "Credential Manager connection id" })
+    credentialConnection?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const resolvedProvider = provider?.trim();
+    if (!resolvedProvider) fail("Missing --provider <provider>");
+    const connection = credentialConnection?.trim();
+    if (connection) requireCredentialConnectionForChannel(resolvedProvider, connection);
+    const channel = dbUpsertChannel({
+      name,
+      provider: resolvedProvider,
+      credentialConnection: connection || undefined,
+    });
+    emitConfigChanged();
+    const payload = { status: "created", channel, changedCount: 1 };
+    if (asJson) printJson(payload);
+    else console.log(`Channel configured: ${channel.name} (${channel.provider})`);
+    return payload;
+  }
+
+  @Command({ name: "set", description: "Set a native channel config property" })
+  @CommandAccess({ kind: "mutate", resource: "channels", action: "set", risk: "medium" })
+  @Returns(channelMutationReturnSchema)
+  set(
+    @Arg("name", { description: "Channel config name" }) name: string,
+    @Arg("key", { description: "Property key: provider|enabled|credentialConnection|defaults" }) key: string,
+    @Arg("value", { description: "Property value, or '-' to clear nullable fields" }) value: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const existing = dbGetChannel(name);
+    if (!existing) fail(`Channel not found: ${name}`);
+    const clear = isClearValue(value);
+    if (key === "provider") {
+      if (clear) fail("provider cannot be cleared");
+      dbUpdateChannel(name, { provider: value.trim() });
+    } else if (key === "enabled") {
+      if (clear) fail("enabled cannot be cleared");
+      dbUpdateChannel(name, { enabled: parseEnabledValue(value) });
+    } else if (key === "credentialConnection") {
+      if (clear) {
+        dbUpdateChannel(name, { credentialConnection: null });
+      } else {
+        const connection = value.trim();
+        if (!connection) fail("credentialConnection cannot be empty");
+        requireCredentialConnectionForChannel(existing.provider, connection);
+        dbUpdateChannel(name, { credentialConnection: connection });
+      }
+    } else if (key === "defaults") {
+      if (clear) {
+        dbUpdateChannel(name, { defaults: null });
+      } else {
+        try {
+          const parsed = JSON.parse(value) as unknown;
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+            fail(`defaults must be a JSON object, e.g. '{"subscriptionScope":"chat_and_thread"}'`);
+          }
+          dbUpdateChannel(name, { defaults: parsed as Record<string, unknown> });
+        } catch {
+          fail(`defaults must be valid JSON object, e.g. '{"subscriptionScope":"chat_and_thread"}'`);
+        }
+      }
+    } else {
+      fail("Invalid key. Valid: provider, enabled, credentialConnection, defaults");
+    }
+    emitConfigChanged();
+    const channel = dbGetChannel(name)!;
+    const payload = { status: "updated", channel, changedCount: 1 };
+    if (asJson) printJson(payload);
+    else console.log(`Channel updated: ${channel.name}`);
+    return payload;
+  }
+
   @Command({ name: "start", description: "Start the channel runner via PM2" })
   @CommandAccess({ kind: "mutate", resource: "channels", action: "start", risk: "high" })
   @Returns(channelsMutationReturnSchema)
   start(
     @Option({ flags: "-b, --build", description: "Use dist bundle from source repo" }) build?: boolean,
-    @Option({
-      flags: "--slack-connection <name>",
-      description: "Optional Slack credential connection override for a single workspace",
-    })
-    slackConnection?: string,
-    @Option({
-      flags: "--slack-connections <names>",
-      description: "Comma-separated Slack credential connections for multi-workspace native runner",
-    })
-    slackConnections?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     requirePm2();
@@ -302,7 +434,7 @@ export class ChannelsCommands {
 
     const target = requireRuntimeTarget(build);
     const args = ["start", "bun", "--name", CHANNELS_PM2_PROCESS_NAME, "--", target.bundlePath, "channels", "run"];
-    const runnerEnv = buildRunnerPm2Env(slackConnection, slackConnections);
+    const runnerEnv = buildRunnerPm2Env();
     const { status } = asJson
       ? runPm2Quiet(args, { cwd: target.cwd, envOverrides: runnerEnv })
       : runPm2(args, runnerEnv, { cwd: target.cwd });
@@ -367,20 +499,10 @@ export class ChannelsCommands {
   @Returns(channelsMutationReturnSchema)
   restart(
     @Option({ flags: "-b, --build", description: "Use dist bundle from source repo" }) build?: boolean,
-    @Option({
-      flags: "--slack-connection <name>",
-      description: "Optional Slack credential connection override for a single workspace",
-    })
-    slackConnection?: string,
-    @Option({
-      flags: "--slack-connections <names>",
-      description: "Comma-separated Slack credential connections for multi-workspace native runner",
-    })
-    slackConnections?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     requirePm2();
-    const runnerEnv = buildRunnerPm2Env(slackConnection, slackConnections);
+    const runnerEnv = buildRunnerPm2Env();
 
     if (isPm2ProcessRunning(CHANNELS_PM2_PROCESS_NAME)) {
       const stopped = asJson

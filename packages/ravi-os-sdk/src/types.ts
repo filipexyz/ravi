@@ -2211,6 +2211,70 @@ export type CalendarsShowReturn = {
   }>;
 };
 
+/** Input shape for `channels.create`. */
+export type ChannelsCreateInput = {
+  credentialConnection?: string;
+  name: string;
+  provider?: string;
+};
+
+/** Return shape for `channels.create`. */
+export type ChannelsCreateReturn = {
+  changedCount: number;
+  channel: {
+    createdAt: number;
+    credentialConnection?: string;
+    defaults?: Record<string, unknown>;
+    deletedAt?: number;
+    enabled?: boolean;
+    name: string;
+    provider: string;
+    updatedAt: number;
+  };
+  status: string;
+};
+
+/** Input shape for `channels.list`. */
+export type ChannelsListInput = {
+  limit?: string;
+  offset?: string;
+  provider?: string;
+};
+
+/** Return shape for `channels.list`. */
+export type ChannelsListReturn = {
+  channels: Array<{
+    createdAt: number;
+    credentialConnection?: string;
+    defaults?: Record<string, unknown>;
+    deletedAt?: number;
+    enabled?: boolean;
+    name: string;
+    provider: string;
+    updatedAt: number;
+  }>;
+  items: Array<{
+    createdAt: number;
+    credentialConnection?: string;
+    defaults?: Record<string, unknown>;
+    deletedAt?: number;
+    enabled?: boolean;
+    name: string;
+    provider: string;
+    updatedAt: number;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  total: number;
+};
+
 /** Input shape for `channels.probe`. */
 export type ChannelsProbeInput = Record<string, never>;
 
@@ -2226,8 +2290,6 @@ export type ChannelsProbeReturn = {
 /** Input shape for `channels.restart`. */
 export type ChannelsRestartInput = {
   build?: boolean;
-  slackConnection?: string;
-  slackConnections?: string;
 };
 
 /** Return shape for `channels.restart`. */
@@ -2238,8 +2300,6 @@ export type ChannelsRestartReturn = {
   reason?: string;
   runnerEnv?: {
     consumeOutbound: string;
-    slackConnection: string | null;
-    slackConnections: string[];
     slackSocketMode: boolean;
   };
   status?: {
@@ -2275,11 +2335,49 @@ export type ChannelsRestartReturn = {
   };
 };
 
+/** Input shape for `channels.set`. */
+export type ChannelsSetInput = {
+  key: string;
+  name: string;
+  value: string;
+};
+
+/** Return shape for `channels.set`. */
+export type ChannelsSetReturn = {
+  changedCount: number;
+  channel: {
+    createdAt: number;
+    credentialConnection?: string;
+    defaults?: Record<string, unknown>;
+    deletedAt?: number;
+    enabled?: boolean;
+    name: string;
+    provider: string;
+    updatedAt: number;
+  };
+  status: string;
+};
+
+/** Input shape for `channels.show`. */
+export type ChannelsShowInput = {
+  name: string;
+};
+
+/** Return shape for `channels.show`. */
+export type ChannelsShowReturn = {
+  createdAt: number;
+  credentialConnection?: string;
+  defaults?: Record<string, unknown>;
+  deletedAt?: number;
+  enabled?: boolean;
+  name: string;
+  provider: string;
+  updatedAt: number;
+};
+
 /** Input shape for `channels.start`. */
 export type ChannelsStartInput = {
   build?: boolean;
-  slackConnection?: string;
-  slackConnections?: string;
 };
 
 /** Return shape for `channels.start`. */
@@ -2290,8 +2388,6 @@ export type ChannelsStartReturn = {
   reason?: string;
   runnerEnv?: {
     consumeOutbound: string;
-    slackConnection: string | null;
-    slackConnections: string[];
     slackSocketMode: boolean;
   };
   status?: {
@@ -2369,8 +2465,6 @@ export type ChannelsStopReturn = {
   reason?: string;
   runnerEnv?: {
     consumeOutbound: string;
-    slackConnection: string | null;
-    slackConnections: string[];
     slackSocketMode: boolean;
   };
   status?: {
@@ -10952,7 +11046,6 @@ export type SkillsSyncReturn = {
 /** Input shape for `slack.blocks-send`. */
 export type SlackBlocksSendInput = {
   channel: string;
-  connection?: string;
   execute?: boolean;
   file: string;
   text?: string;
@@ -10975,7 +11068,6 @@ export type SlackBlocksSendReturn = {
 /** Input shape for `slack.blocks-showcase`. */
 export type SlackBlocksShowcaseInput = {
   channel: string;
-  connection?: string;
   execute?: boolean;
   threadTs?: string;
 };
@@ -10996,7 +11088,6 @@ export type SlackBlocksShowcaseReturn = {
 /** Input shape for `slack.blocks-update`. */
 export type SlackBlocksUpdateInput = {
   channel: string;
-  connection?: string;
   execute?: boolean;
   file: string;
   text?: string;
@@ -11018,7 +11109,7 @@ export type SlackBlocksUpdateReturn = {
 
 /** Input shape for `slack.blocks-validate`. */
 export type SlackBlocksValidateInput = {
-  connection?: string;
+  channel?: string;
   file: string;
   target?: string;
 };
@@ -11036,8 +11127,8 @@ export type SlackBlocksValidateReturn = {
 /** Input shape for `slack.canvas-access-delete`. */
 export type SlackCanvasAccessDeleteInput = {
   canvas: string;
+  channel?: string;
   channels?: string;
-  connection?: string;
   execute?: boolean;
   users?: string;
 };
@@ -11059,8 +11150,8 @@ export type SlackCanvasAccessDeleteReturn = {
 export type SlackCanvasAccessSetInput = {
   access: string;
   canvas: string;
+  channel?: string;
   channels?: string;
-  connection?: string;
   execute?: boolean;
   users?: string;
 };
@@ -11083,9 +11174,9 @@ export type SlackCanvasArtifactPublishInput = {
   artifactOrFile: string;
   canvas?: string;
   channel?: string;
-  connection?: string;
   execute?: boolean;
   skipRefresh?: boolean;
+  slackChannel?: string;
   title?: string;
 };
 
@@ -11118,7 +11209,6 @@ export type SlackCanvasArtifactStatusReturn = {
 export type SlackCanvasChannelCreateInput = {
   artifact?: string;
   channel: string;
-  connection?: string;
   ensure?: boolean;
   execute?: boolean;
   markdown?: string;
@@ -11143,7 +11233,6 @@ export type SlackCanvasChannelCreateReturn = {
 /** Input shape for `slack.canvas-channel-showcase`. */
 export type SlackCanvasChannelShowcaseInput = {
   channel: string;
-  connection?: string;
   execute?: boolean;
   title?: string;
 };
@@ -11165,11 +11254,11 @@ export type SlackCanvasChannelShowcaseReturn = {
 export type SlackCanvasCreateInput = {
   artifact?: string;
   channel?: string;
-  connection?: string;
   execute?: boolean;
   markdown?: string;
   markdownFile?: string;
   skipRefresh?: boolean;
+  slackChannel?: string;
   title?: string;
 };
 
@@ -11189,7 +11278,7 @@ export type SlackCanvasCreateReturn = {
 /** Input shape for `slack.canvas-delete`. */
 export type SlackCanvasDeleteInput = {
   canvas: string;
-  connection?: string;
+  channel?: string;
   execute?: boolean;
 };
 
@@ -11210,7 +11299,7 @@ export type SlackCanvasDeleteReturn = {
 export type SlackCanvasEditInput = {
   artifact?: string;
   canvas: string;
-  connection?: string;
+  channel?: string;
   execute?: boolean;
   markdown?: string;
   markdownFile?: string;
@@ -11236,7 +11325,7 @@ export type SlackCanvasEditReturn = {
 /** Input shape for `slack.canvas-sections-lookup`. */
 export type SlackCanvasSectionsLookupInput = {
   canvas: string;
-  connection?: string;
+  channel?: string;
   containsText?: string;
   sectionTypes?: string;
 };
@@ -11261,8 +11350,8 @@ export type SlackCanvasSectionsLookupReturn = {
 export type SlackCanvasShowcaseInput = {
   canvas: string;
   channel?: string;
-  connection?: string;
   execute?: boolean;
+  slackChannel?: string;
   title?: string;
 };
 
@@ -11281,7 +11370,7 @@ export type SlackCanvasShowcaseReturn = {
 
 /** Input shape for `slack.channels-create`. */
 export type SlackChannelsCreateInput = {
-  connection?: string;
+  channel?: string;
   execute?: boolean;
   name: string;
   private?: boolean;
@@ -11303,7 +11392,6 @@ export type SlackChannelsCreateReturn = {
 /** Input shape for `slack.channels-history`. */
 export type SlackChannelsHistoryInput = {
   channel: string;
-  connection?: string;
   cursor?: string;
   inclusive?: boolean;
   latest?: string;
@@ -11330,7 +11418,6 @@ export type SlackChannelsHistoryReturn = {
 /** Input shape for `slack.channels-info`. */
 export type SlackChannelsInfoInput = {
   channel: string;
-  connection?: string;
 };
 
 /** Return shape for `slack.channels-info`. */
@@ -11346,7 +11433,6 @@ export type SlackChannelsInfoReturn = {
 /** Input shape for `slack.channels-invite`. */
 export type SlackChannelsInviteInput = {
   channel: string;
-  connection?: string;
   execute?: boolean;
   users: string;
 };
@@ -11366,7 +11452,7 @@ export type SlackChannelsInviteReturn = {
 
 /** Input shape for `slack.channels-list`. */
 export type SlackChannelsListInput = {
-  connection?: string;
+  channel?: string;
   cursor?: string;
   includeArchived?: boolean;
   limit?: string;
@@ -11392,7 +11478,6 @@ export type SlackChannelsListReturn = {
 /** Input shape for `slack.channels-rename`. */
 export type SlackChannelsRenameInput = {
   channel: string;
-  connection?: string;
   execute?: boolean;
   name: string;
 };
@@ -11413,9 +11498,9 @@ export type SlackChannelsRenameReturn = {
 /** Input shape for `slack.files-list`. */
 export type SlackFilesListInput = {
   channel?: string;
-  connection?: string;
   cursor?: string;
   limit?: string;
+  slackChannel?: string;
   user?: string;
 };
 
@@ -11437,7 +11522,7 @@ export type SlackFilesListReturn = {
 
 /** Input shape for `slack.interactions-respond`. */
 export type SlackInteractionsRespondInput = {
-  connection?: string;
+  channel?: string;
   execute?: boolean;
   file: string;
   responseUrlId: string;
@@ -11459,7 +11544,6 @@ export type SlackInteractionsRespondReturn = {
 /** Input shape for `slack.members-list`. */
 export type SlackMembersListInput = {
   channel: string;
-  connection?: string;
   cursor?: string;
   limit?: string;
 };
@@ -11483,7 +11567,6 @@ export type SlackMembersListReturn = {
 /** Input shape for `slack.messages-inspect`. */
 export type SlackMessagesInspectInput = {
   channel: string;
-  connection?: string;
   ts: string;
 };
 
@@ -11500,7 +11583,6 @@ export type SlackMessagesInspectReturn = {
 /** Input shape for `slack.messages-replay`. */
 export type SlackMessagesReplayInput = {
   channel: string;
-  connection?: string;
   execute?: boolean;
   force?: boolean;
   ts: string;
@@ -11522,7 +11604,6 @@ export type SlackMessagesReplayReturn = {
 /** Input shape for `slack.messages-send`. */
 export type SlackMessagesSendInput = {
   channel: string;
-  connection?: string;
   execute?: boolean;
   text: string;
   threadTs?: string;
@@ -11543,7 +11624,7 @@ export type SlackMessagesSendReturn = {
 
 /** Input shape for `slack.permissions-list`. */
 export type SlackPermissionsListInput = {
-  connection?: string;
+  channel?: string;
 };
 
 /** Return shape for `slack.permissions-list`. */
@@ -11558,7 +11639,7 @@ export type SlackPermissionsListReturn = {
 
 /** Input shape for `slack.topology`. */
 export type SlackTopologyInput = {
-  connection?: string;
+  channel?: string;
   cursor?: string;
   includeArchived?: boolean;
   limit?: string;

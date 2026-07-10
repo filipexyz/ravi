@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { ensureContactFromInbound } from "../../contacts.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { getOrCreateSession, getSessionByName, listSessionSubscriptions } from "../../router/index.js";
-import { dbFindChatMessage, dbGetChat, dbUpsertInstance, getDb } from "../../router/router-db.js";
+import { dbFindChatMessage, dbGetChat, getDb } from "../../router/router-db.js";
 import type { RouterConfig } from "../../router/types.js";
 import {
   SlackAssistantThreadPresence,
@@ -29,21 +29,12 @@ function seedAgent(id: string, cwd: string): void {
     .run(id, id, cwd, now, now);
 }
 
-function slackInstance(input: {
-  name: string;
-  instanceId?: string;
-  defaults?: Record<string, unknown>;
-  enabled?: boolean;
-}) {
+function slackChannel(input: { name: string; credentialConnection?: string; enabled?: boolean }) {
   return {
     name: input.name,
-    ...(input.instanceId ? { instanceId: input.instanceId } : {}),
-    channel: "slack",
-    dmPolicy: "closed" as const,
-    groupPolicy: "allowlist" as const,
-    contactIntakeMode: "off" as const,
+    provider: "slack",
     enabled: input.enabled ?? true,
-    ...(input.defaults ? { defaults: input.defaults } : {}),
+    ...(input.credentialConnection ? { credentialConnection: input.credentialConnection } : {}),
     createdAt: 1,
     updatedAt: 1,
   };
@@ -53,13 +44,6 @@ describe("Slack Socket Mode routing", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-slack-socket-mode-");
     seedAgent("ravi-hil", "/tmp/ravi-hil");
-    dbUpsertInstance({
-      name: "ravi-rbbt-slack",
-      instanceId: "slack-instance-1",
-      channel: "slack",
-      agent: "ravi-hil",
-      groupPolicy: "allowlist",
-    });
   });
 
   afterEach(async () => {
@@ -93,7 +77,7 @@ describe("Slack Socket Mode routing", () => {
     ).toBe(false);
   });
 
-  it("discovers all configured Slack instances without connection env overrides", async () => {
+  it("discovers all configured Slack channels without connection env overrides", async () => {
     const resolveSecret = mock(async ({ connection }: { connection: string }) => ({
       secret: JSON.stringify({
         appToken: `xapp-${connection}`,
@@ -104,16 +88,14 @@ describe("Slack Socket Mode routing", () => {
 
     const runtimes = await createSlackNativeRuntimesFromEnv({} as NodeJS.ProcessEnv, {
       resolveSecret,
-      instances: {
-        "ravi-rbbt-slack": slackInstance({
+      channels: {
+        "ravi-rbbt-slack": slackChannel({
           name: "ravi-rbbt-slack",
-          instanceId: "slack-instance-1",
-          defaults: { credentials: { slackConnection: "rbbt-secret" } },
+          credentialConnection: "rbbt-secret",
         }),
-        "hana-slack": slackInstance({
+        "hana-slack": slackChannel({
           name: "hana-slack",
-          instanceId: "slack-instance-2",
-          defaults: { credentials: { slackConnection: "hana-secret" } },
+          credentialConnection: "hana-secret",
         }),
       },
     });

@@ -26,11 +26,16 @@ normative: true
    - `use:credential:<provider>:<connection>`
    - `execute:<provider>:<action>`
 8. The broker MUST support local Keychain and production Vault-compatible refs.
-9. Env credentials MAY be used only as explicit local smoke-test fallback.
-10. Channel instances are the authority for selecting channel credentials.
-    The default credential connection id SHOULD match the Ravi instance name.
-    Instance defaults MAY override this with `slackCredentialConnection` or
-    `credentials.slackConnection`.
+9. Env credentials MUST NOT be used by native channel runners or channel CLIs.
+10. Channel configs are the authority for selecting channel credentials.
+    Each native channel that needs provider credentials MUST store an explicit
+    `credentialConnection` reference on its Ravi channel config.
+11. The credential provider is inferred from the channel config provider
+    (`slack`, `whatsapp`, etc.); channel configuration stores only the
+    connection id.
+12. Ravi MUST NOT infer a credential connection from channel names and MUST
+    NOT use provider-specific JSON such as `slackCredentialConnection` or
+    `credentials.slackConnection` in channel defaults.
 
 ## Slack Secret Shape
 
@@ -43,7 +48,8 @@ For the first native Slack implementation, a Slack connection secret SHOULD be a
 }
 ```
 
-The broker MAY also accept env-like text for local migration:
+The broker MAY also accept env-like text as the stored secret value for local
+migration:
 
 ```text
 SLACK_APP_TOKEN=xapp-...

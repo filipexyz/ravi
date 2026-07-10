@@ -1,6 +1,6 @@
 # Slack Topology Checks
 
-- `ravi slack topology --connection <connection> --json` returns `channels`.
+- `ravi slack topology --channel <slack-channel> --json` returns `channels`.
 - Topology output does not expose `sections`, `sectionIds`, `customSidebarSections` or Slack `usergroups.*` as grouping data.
 - Route metadata is read-only and does not create new sessions.
 - A route with `session` reports `routeSession` separately from Slack channel identity.
