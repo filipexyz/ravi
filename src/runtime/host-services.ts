@@ -15,7 +15,13 @@ import { nats } from "../nats.js";
 import { authorizeRuntimeContext, requestPollAnswer, type ApprovalTarget } from "../approval/service.js";
 import { buildAuditContextProvenance } from "../permissions/audit-provenance.js";
 import { emitPermissionDeniedAudit, recordAndEmitPermissionDenial } from "../permissions/denials.js";
-import { agentCan, canWithCapabilityContext, isDelegatedAuthorityContext } from "../permissions/provider-runtime.js";
+import {
+  agentCan,
+  canWithCapabilities,
+  canWithCapabilityContext,
+  isDelegatedAuthorityContext,
+  materializeSubjectCapabilities,
+} from "../permissions/provider-runtime.js";
 import type { ContextRecord } from "../router/index.js";
 import type {
   RuntimeApprovalResult,
@@ -51,27 +57,61 @@ export interface RuntimeHostServicesOptions {
   onSkillGatePersisted?: (skillVisibility: RuntimeSkillVisibilitySnapshot) => void;
 }
 
+function agentHasMaterializedCapability(
+  agentId: string,
+  permission: string,
+  objectType: string,
+  objectId: string,
+): boolean {
+  return canWithCapabilities(materializeSubjectCapabilities("agent", agentId), permission, objectType, objectId);
+}
+
+function capabilitySnapshotHasUnrestrictedToolExecution(capabilities: ContextRecord["capabilities"]): boolean {
+  return (
+    canWithCapabilities(capabilities, "admin", "system", "*") ||
+    (canWithCapabilities(capabilities, "use", "tool", "*") &&
+      canWithCapabilities(capabilities, "execute", "executable", "*"))
+  );
+}
+
+function capabilitySnapshotHasUnrestrictedToolSurface(capabilities: ContextRecord["capabilities"]): boolean {
+  return (
+    canWithCapabilities(capabilities, "admin", "system", "*") || canWithCapabilities(capabilities, "use", "tool", "*")
+  );
+}
+
 function hasUnrestrictedToolExecution(agentId: string): boolean {
   return (
     agentCan(agentId, "admin", "system", "*") ||
-    (agentCan(agentId, "use", "tool", "*") && agentCan(agentId, "execute", "executable", "*"))
+    agentHasMaterializedCapability(agentId, "admin", "system", "*") ||
+    ((agentCan(agentId, "use", "tool", "*") || agentHasMaterializedCapability(agentId, "use", "tool", "*")) &&
+      (agentCan(agentId, "execute", "executable", "*") ||
+        agentHasMaterializedCapability(agentId, "execute", "executable", "*")))
   );
 }
 
 function hasUnrestrictedToolSurface(agentId: string): boolean {
-  return agentCan(agentId, "admin", "system", "*") || agentCan(agentId, "use", "tool", "*");
+  return (
+    agentCan(agentId, "admin", "system", "*") ||
+    agentHasMaterializedCapability(agentId, "admin", "system", "*") ||
+    agentCan(agentId, "use", "tool", "*") ||
+    agentHasMaterializedCapability(agentId, "use", "tool", "*")
+  );
 }
 
 export function getRuntimeToolAccessMode(
   capabilities: RuntimeCapabilities,
   agentId: string,
-  context?: Pick<ContextRecord, "kind" | "metadata">,
+  context?: Pick<ContextRecord, "kind" | "metadata" | "capabilities">,
 ): RuntimeToolAccessMode {
+  const accessRequirement = capabilities.tools?.accessRequirement ?? capabilities.toolAccessRequirement;
   if (context && isDelegatedAuthorityContext(context)) {
-    return "restricted";
+    if (accessRequirement === "tool_surface") {
+      return capabilitySnapshotHasUnrestrictedToolSurface(context.capabilities) ? "unrestricted" : "restricted";
+    }
+    return capabilitySnapshotHasUnrestrictedToolExecution(context.capabilities) ? "unrestricted" : "restricted";
   }
 
-  const accessRequirement = capabilities.tools?.accessRequirement ?? capabilities.toolAccessRequirement;
   if (accessRequirement === "tool_surface") {
     return hasUnrestrictedToolSurface(agentId) ? "unrestricted" : "restricted";
   }

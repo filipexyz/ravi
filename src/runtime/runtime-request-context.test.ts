@@ -41,6 +41,25 @@ describe("runtime request context authority", () => {
     stateDir = null;
   });
 
+  it("treats agent runtime full-access defaults as unrestricted tool access", () => {
+    dbCreateAgent({ id: "pi-agent", cwd: "/tmp/pi-agent" });
+    dbUpdateAgent("pi-agent", { defaults: { runtimePermissions: { profile: "full-access" } } });
+
+    expect(getRuntimeToolAccessMode({} as Parameters<typeof getRuntimeToolAccessMode>[0], "pi-agent")).toBe(
+      "unrestricted",
+    );
+  });
+
+  it("treats full-access agent identity turn contexts as unrestricted tool access", () => {
+    expect(
+      getRuntimeToolAccessMode({} as Parameters<typeof getRuntimeToolAccessMode>[0], "pi-agent", {
+        kind: "turn-runtime",
+        capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
+        metadata: { authorityMode: "agent-identity" },
+      }),
+    ).toBe("unrestricted");
+  });
+
   it("uses agent identity authority by default when the env var is unset", () => {
     const previous = process.env.RAVI_TURN_SCOPED_AUTHORITY;
     delete process.env.RAVI_TURN_SCOPED_AUTHORITY;
