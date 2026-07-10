@@ -8,6 +8,7 @@ import { z } from "zod";
 import { ChannelRunner, runChannelRunnerFromEnv } from "../../channels/runner.js";
 import {
   CHANNELS_PM2_PROCESS_NAME,
+  buildPm2Env,
   getPm2Process,
   getPm2Processes,
   isPm2Available,
@@ -52,6 +53,7 @@ const runnerEnvReturnSchema = z
   .object({
     slackSocketMode: z.boolean(),
     slackConnection: z.string().nullable(),
+    slackConnections: z.array(z.string()),
     consumeOutbound: z.string(),
   })
   .strict();
@@ -98,7 +100,7 @@ function runPm2Quiet(
     stdio: ["ignore", "pipe", "pipe"],
     encoding: "utf-8",
     cwd: options.cwd,
-    env: { ...process.env, ...options.envOverrides } as Record<string, string>,
+    env: buildPm2Env(options.envOverrides),
   });
   return { status: result.status ?? 1 };
 }
@@ -141,7 +143,36 @@ export function chooseSlackRunnerConnection(input: {
   return undefined;
 }
 
-function buildRunnerPm2Env(explicitSlackConnection?: string): Record<string, string> {
+function listEnvValues(value: unknown): string[] {
+  if (typeof value !== "string") return [];
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+export function chooseSlackRunnerConnections(input: {
+  explicit?: string;
+  explicitSingle?: string;
+  env?: Record<string, unknown>;
+}): string[] {
+  const explicit = listEnvValues(input.explicit);
+  if (explicit.length) return explicit;
+
+  const explicitSingle = cleanEnvValue(input.explicitSingle);
+  if (explicitSingle) return [explicitSingle];
+
+  const envConnections = listEnvValues(input.env?.RAVI_SLACK_CONNECTIONS);
+  if (envConnections.length) return envConnections;
+
+  const single = chooseSlackRunnerConnection({ env: input.env });
+  return single ? [single] : [];
+}
+
+function buildRunnerPm2Env(
+  explicitSlackConnection?: string,
+  explicitSlackConnections?: string,
+): Record<string, string> {
   const existingPm2Env = readExistingPm2Env(CHANNELS_PM2_PROCESS_NAME);
   const envOverrides: Record<string, string> = {};
 
@@ -150,18 +181,29 @@ function buildRunnerPm2Env(explicitSlackConnection?: string): Record<string, str
     if (value) envOverrides[key] = value;
   }
 
-  const slackConnection = chooseSlackRunnerConnection({ explicit: explicitSlackConnection, env: process.env });
-  if (slackConnection) {
-    envOverrides.RAVI_SLACK_CONNECTION = slackConnection;
+  const slackConnections = chooseSlackRunnerConnections({
+    explicit: explicitSlackConnections,
+    explicitSingle: explicitSlackConnection,
+    env: process.env,
+  });
+  if (slackConnections.length > 1) {
+    envOverrides.RAVI_SLACK_CONNECTIONS = slackConnections.join(",");
+    delete envOverrides.RAVI_SLACK_CONNECTION;
+    delete envOverrides.RAVI_SLACK_CREDENTIAL_CONNECTION;
+  } else if (slackConnections.length === 1) {
+    envOverrides.RAVI_SLACK_CONNECTION = slackConnections[0]!;
   }
 
   return envOverrides;
 }
 
 function publicRunnerEnv(envOverrides: Record<string, string>): Record<string, unknown> {
+  const slackConnections = listEnvValues(envOverrides.RAVI_SLACK_CONNECTIONS);
+  const slackConnection = envOverrides.RAVI_SLACK_CONNECTION ?? null;
   return {
     slackSocketMode: true,
-    slackConnection: envOverrides.RAVI_SLACK_CONNECTION ?? null,
+    slackConnection,
+    slackConnections: slackConnections.length ? slackConnections : slackConnection ? [slackConnection] : [],
     consumeOutbound: envOverrides.RAVI_CHANNELS_CONSUME_OUTBOUND ?? "default",
   };
 }
@@ -232,8 +274,16 @@ export class ChannelsCommands {
   @Returns(channelsMutationReturnSchema)
   start(
     @Option({ flags: "-b, --build", description: "Use dist bundle from source repo" }) build?: boolean,
-    @Option({ flags: "--slack-connection <name>", description: "Optional Slack credential connection override" })
+    @Option({
+      flags: "--slack-connection <name>",
+      description: "Optional Slack credential connection override for a single workspace",
+    })
     slackConnection?: string,
+    @Option({
+      flags: "--slack-connections <names>",
+      description: "Comma-separated Slack credential connections for multi-workspace native runner",
+    })
+    slackConnections?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     requirePm2();
@@ -252,7 +302,7 @@ export class ChannelsCommands {
 
     const target = requireRuntimeTarget(build);
     const args = ["start", "bun", "--name", CHANNELS_PM2_PROCESS_NAME, "--", target.bundlePath, "channels", "run"];
-    const runnerEnv = buildRunnerPm2Env(slackConnection);
+    const runnerEnv = buildRunnerPm2Env(slackConnection, slackConnections);
     const { status } = asJson
       ? runPm2Quiet(args, { cwd: target.cwd, envOverrides: runnerEnv })
       : runPm2(args, runnerEnv, { cwd: target.cwd });
@@ -317,12 +367,20 @@ export class ChannelsCommands {
   @Returns(channelsMutationReturnSchema)
   restart(
     @Option({ flags: "-b, --build", description: "Use dist bundle from source repo" }) build?: boolean,
-    @Option({ flags: "--slack-connection <name>", description: "Optional Slack credential connection override" })
+    @Option({
+      flags: "--slack-connection <name>",
+      description: "Optional Slack credential connection override for a single workspace",
+    })
     slackConnection?: string,
+    @Option({
+      flags: "--slack-connections <names>",
+      description: "Comma-separated Slack credential connections for multi-workspace native runner",
+    })
+    slackConnections?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     requirePm2();
-    const runnerEnv = buildRunnerPm2Env(slackConnection);
+    const runnerEnv = buildRunnerPm2Env(slackConnection, slackConnections);
 
     if (isPm2ProcessRunning(CHANNELS_PM2_PROCESS_NAME)) {
       const stopped = asJson

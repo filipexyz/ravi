@@ -235,7 +235,7 @@ function registerCommand(
       return;
     }
 
-    // Scope enforcement (before method execution)
+    // Scope enforcement (before method execution).
     const scopeResult = enforceScopeCheck(scope, groupName, cmdMeta.name);
     if (!scopeResult.allowed) {
       console.error(scopeResult.errorMessage);

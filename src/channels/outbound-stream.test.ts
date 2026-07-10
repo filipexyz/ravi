@@ -191,6 +191,26 @@ describe("channel outbound JetStream infrastructure", () => {
       durable_name: CHANNEL_OUTBOUND_CONSUMER,
     });
   });
+
+  it("recreates a stale consumer when its sequence is ahead of the stream", async () => {
+    const consumerDelete = mock(async () => true);
+    const consumerAdd = mock(async () => ({}));
+    currentJsm = makeChannelOutboundJsm({
+      streams: {
+        info: mock(async () => ({ state: { last_seq: 6 } })),
+      },
+      consumers: {
+        info: mock(async () => ({ ack_floor: { stream_seq: 618 }, delivered: { stream_seq: 618 } })),
+        delete: consumerDelete,
+        add: consumerAdd,
+      },
+    });
+
+    await ensureChannelOutboundConsumer(currentJsm as never);
+
+    expect(consumerDelete).toHaveBeenCalledWith(CHANNEL_OUTBOUND_STREAM, CHANNEL_OUTBOUND_CONSUMER);
+    expect(consumerAdd).toHaveBeenCalledTimes(1);
+  });
 });
 
 function makeChannelOutboundJsm(overrides: ChannelOutboundJsmOverrides = {}): ChannelOutboundJsm {
@@ -203,6 +223,7 @@ function makeChannelOutboundJsm(overrides: ChannelOutboundJsmOverrides = {}): Ch
     consumers: {
       info: mock(async () => ({})),
       add: mock(async () => ({})),
+      delete: mock(async () => true),
       ...(overrides.consumers ?? {}),
     },
   };
@@ -216,6 +237,7 @@ interface ChannelOutboundJsm {
   consumers: {
     info: ReturnType<typeof mock>;
     add: ReturnType<typeof mock>;
+    delete: ReturnType<typeof mock>;
   };
 }
 
