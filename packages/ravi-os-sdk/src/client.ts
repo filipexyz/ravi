@@ -3,7 +3,7 @@
 // Drift is detected by `ravi sdk client check` (CI).
 
 import type { Transport } from "./transport/types.js";
-import type { AdaptersListReturn, AdaptersShowReturn, AgentsCreateReturn, AgentsDebounceReturn, AgentsDebugReturn, AgentsDeleteReturn, AgentsListReturn, AgentsPermissionsReturn, AgentsResetReturn, AgentsSessionReturn, AgentsSetReturn, AgentsShowReturn, AgentsSpecModeReturn, AgentsSyncInstructionsReturn, AppsCheckReturn, AppsDeleteReturn, AppsGuideReturn, AppsImportCliReturn, AppsListReturn, AppsPromptsReturn, AppsRunReturn, AppsScaffoldReturn, AppsShowReturn, ArtifactsArchiveReturn, ArtifactsAttachReturn, ArtifactsBlobReturn, ArtifactsCreateReturn, ArtifactsEventReturn, ArtifactsEventsReturn, ArtifactsListReturn, ArtifactsPublishReturn, ArtifactsReleaseActivateReturn, ArtifactsRestoreReturn, ArtifactsShowReturn, ArtifactsSnapshotReturn, ArtifactsUpdateReturn, ArtifactsVersionReturn, ArtifactsVersionsReturn, AudioBlobReturn, AudioGenerateReturn, AudioPendingReturn, AudioTtsReturn, AudioVoicesReturn, BridgesCreateReturn, BridgesListReturn, BridgesRevokeReturn, CalendarsAvailabilityReturn, CalendarsCreateReturn, CalendarsDisableReturn, CalendarsEventsCancelReturn, CalendarsEventsCreateReturn, CalendarsEventsListReturn, CalendarsEventsReadReturn, CalendarsEventsRespondReturn, CalendarsEventsUpdateReturn, CalendarsListReturn, CalendarsShareReturn, CalendarsShowReturn, ChannelsProbeReturn, ChannelsRestartReturn, ChannelsStartReturn, ChannelsStatusReturn, ChannelsStopReturn, ChatsBackfillProviderTimestampsReturn, ChatsListReturn, ChatsListsAddReturn, ChatsListsCreateReturn, ChatsListsDeltaReturn, ChatsListsListReturn, ChatsListsMarkReadReturn, ChatsListsMembersReturn, ChatsListsRecomputeReturn, ChatsListsRemoveReturn, ChatsReadReturn, CloudProjectsCreateReturn, CloudProjectsListReturn, CloudScopeClearReturn, CloudScopeExplainReturn, CloudScopeSetReturn, CloudScopeShowReturn, CommandsListReturn, CommandsRunReturn, CommandsShowReturn, CommandsValidateReturn, ConnectorsListReturn, ConnectorsRevokeReturn, ConnectorsShowReturn, ContactsActivityReturn, ContactsAddReturn, ContactsAllowReturn, ContactsApproveReturn, ContactsBackfillReturn, ContactsBlockReturn, ContactsCheckReturn, ContactsDuplicatesReturn, ContactsFindReturn, ContactsGetReturn, ContactsInfoReturn, ContactsLinkReturn, ContactsListReturn, ContactsMergeReturn, ContactsMessagesReturn, ContactsMetadataListReturn, ContactsMetadataRemoveReturn, ContactsMetadataSetReturn, ContactsNoteReturn, ContactsPendingReturn, ContactsProfileReturn, ContactsRemoveReturn, ContactsSessionsReturn, ContactsSetReturn, ContactsTagReturn, ContactsTimelineReturn, ContactsUnlinkReturn, ContactsUntagReturn, ContextAuthorizeReturn, ContextCapabilitiesReturn, ContextCheckReturn, ContextCleanupAgentRuntimeReturn, ContextCodexBashHookReturn, ContextCredentialsAddReturn, ContextCredentialsListReturn, ContextCredentialsRemoveReturn, ContextCredentialsSetDefaultReturn, ContextInfoReturn, ContextIssueReturn, ContextLineageReturn, ContextListReturn, ContextPruneReturn, ContextRevokeReturn, ContextVisibilityReturn, ContextWhoamiReturn, CostsAgentReturn, CostsAgentsReturn, CostsPricingReturn, CostsSessionReturn, CostsSummaryReturn, CostsTopSessionsReturn, CredentialsConnectionsDisableReturn, CredentialsConnectionsEnableReturn, CredentialsConnectionsListReturn, CredentialsConnectionsShowReturn, CredentialsPoliciesExplainReturn, CrmAccountCreateReturn, CrmAccountLinkContactReturn, CrmAccountReturn, CrmAccountShowReturn, CrmBoardReturn, CrmContactReturn, CrmContactSetReturn, CrmContactShowReturn, CrmContactsReturn, CrmFactConfirmReturn, CrmFactListReturn, CrmFactProposeReturn, CrmFactRejectReturn, CrmNextReturn, CrmOpportunityContactsReturn, CrmOpportunityCreateReturn, CrmOpportunityLinkContactReturn, CrmOpportunityMoveReturn, CrmOpportunityReturn, CrmOpportunityShowReturn, CrmPipelineCreateReturn, CrmPipelineListReturn, CrmPipelinePolicyHitlCheckReturn, CrmPipelinePolicySendWindowCheckReturn, CrmPipelineReviewReturn, CrmPipelineSetReturn, CrmPipelineShowReturn, CrmPipelineStageAddReturn, CrmPipelineStageArchiveReturn, CrmPipelineStageListReturn, CrmPipelineStageSetReturn, CrmPipelineStageShowReturn, CrmPipelineStageTopicAddReturn, CrmPipelineStageTopicArchiveReturn, CrmPipelineStageTopicSetReturn, CrmPipelineStageTopicsReturn, CrmPipelineValidateReturn, CrmTaskCancelReturn, CrmTaskCreateReturn, CrmTaskDoneReturn, CrmTaskListReturn, CrmTaskShowReturn, CrmTaskSnoozeReturn, CronAddReturn, CronDisableReturn, CronEnableReturn, CronListReturn, CronRmReturn, CronRunReturn, CronSetReturn, CronShowReturn, DaemonEnvReturn, DaemonInitAdminKeyReturn, DaemonInstallReturn, DaemonLogsReturn, DaemonRestartReturn, DaemonStartReturn, DaemonStatusReturn, DaemonStopReturn, DaemonUninstallReturn, DevinAuthCheckReturn, DevinSessionsArchiveReturn, DevinSessionsAttachmentsReturn, DevinSessionsCreateReturn, DevinSessionsInsightsReturn, DevinSessionsListReturn, DevinSessionsMessagesReturn, DevinSessionsSendReturn, DevinSessionsShowReturn, DevinSessionsSyncReturn, DevinSessionsTerminateReturn, EvalRunReturn, FeedbackSendReturn, GmailListReturn, GmailReadReturn, HeartbeatDisableReturn, HeartbeatEnableReturn, HeartbeatSetReturn, HeartbeatShowReturn, HeartbeatStatusReturn, HeartbeatTriggerReturn, HooksCreateReturn, HooksDisableReturn, HooksEnableReturn, HooksListReturn, HooksRmReturn, HooksShowReturn, HooksTestReturn, ImageAtlasSplitReturn, ImageGenerateReturn, InboxArchiveReturn, InboxDisableReturn, InboxDoneReturn, InboxEnableReturn, InboxItemsReturn, InboxListReturn, InboxPollReturn, InboxReadReturn, InboxReplayReturn, InboxSnoozeReturn, InboxSourcesReturn, InboxStatusReturn, InsightsCreateReturn, InsightsListReturn, InsightsSearchReturn, InsightsShowReturn, InstancesCreateReturn, InstancesDeleteReturn, InstancesDeletedReturn, InstancesDisableReturn, InstancesDisconnectReturn, InstancesEnableReturn, InstancesGetReturn, InstancesListReturn, InstancesPendingApproveReturn, InstancesPendingListReturn, InstancesPendingRejectReturn, InstancesRestoreReturn, InstancesRoutesAddReturn, InstancesRoutesDeletedReturn, InstancesRoutesListReturn, InstancesRoutesRemoveReturn, InstancesRoutesRestoreReturn, InstancesRoutesSetReturn, InstancesRoutesShowReturn, InstancesSetReturn, InstancesShowReturn, InstancesStatusReturn, InstancesTargetReturn, MailAccountsCreateReturn, MailAccountsListReturn, MailAccountsSyncReturn, MailDomainsCreateReturn, MailDomainsListReturn, MailMailboxesCreateReturn, MailMailboxesDisableReturn, MailMailboxesListReturn, MailMailboxesShowReturn, MailMessagesImportReturn, MailMessagesListReturn, MailMessagesReadReturn, MailMessagesSearchReturn, MailOutboxInspectReturn, MailOutboxListReturn, MailOutboxRetryReturn, MailOutboxStatusReturn, MailProvidersListReturn, MailProvidersRaviMailMailboxesCreateReturn, MailProvidersRaviMailMailboxesDisableReturn, MailProvidersRaviMailMailboxesListReturn, MailProvidersRaviMailMailboxesShowReturn, MailProvidersRaviMailMessagesListReturn, MailProvidersRaviMailMessagesReadReturn, MailProvidersRaviMailMessagesShowReturn, MailProvidersRaviMailSendReturn, MailReplyReturn, MailSendReturn, MailThreadsReadReturn, MediaSendReturn, MeetingsFinalizeReturn, MeetingsProfilesInitReturn, MeetingsProfilesListReturn, MeetingsProfilesShowReturn, MeetingsProfilesValidateReturn, MeetingsVoiceRuntimesReturn, MetricsDatesReturn, MetricsRollupReturn, MetricsShowReturn, ObserversListReturn, ObserversProfilesInitReturn, ObserversProfilesListReturn, ObserversProfilesPreviewReturn, ObserversProfilesShowReturn, ObserversProfilesValidateReturn, ObserversRefreshReturn, ObserversRulesDisableReturn, ObserversRulesEnableReturn, ObserversRulesExplainReturn, ObserversRulesListReturn, ObserversRulesRmReturn, ObserversRulesSetReturn, ObserversRulesShowReturn, ObserversRulesValidateReturn, ObserversShowReturn, PagesCreateReturn, PagesDomainsReturn, PagesListReturn, PagesPublishReturn, PagesPublishedReturn, PagesUpdateReturn, PagesVisibilityReturn, PermissionsAllowReturn, PermissionsCheckReturn, PermissionsMaterializeReturn, PermissionsResolveReturn, PermissionsStatusReturn, ProjectsCreateReturn, ProjectsFixturesSeedReturn, ProjectsInitReturn, ProjectsLinkReturn, ProjectsListReturn, ProjectsNextReturn, ProjectsResourcesAddReturn, ProjectsResourcesImportReturn, ProjectsResourcesListReturn, ProjectsResourcesShowReturn, ProjectsShowReturn, ProjectsStatusReturn, ProjectsTasksAttachReturn, ProjectsTasksCreateReturn, ProjectsTasksDispatchReturn, ProjectsUpdateReturn, ProjectsWorkflowsAttachReturn, ProjectsWorkflowsStartReturn, ProxCallsCancelReturn, ProxCallsEventsReturn, ProxCallsProfilesConfigureReturn, ProxCallsProfilesListReturn, ProxCallsProfilesShowReturn, ProxCallsRequestReturn, ProxCallsRulesReturn, ProxCallsShowReturn, ProxCallsToolsBindReturn, ProxCallsToolsConfigureReturn, ProxCallsToolsCreateReturn, ProxCallsToolsListReturn, ProxCallsToolsRunReturn, ProxCallsToolsRunsReturn, ProxCallsToolsShowReturn, ProxCallsToolsUnbindReturn, ProxCallsTranscriptReturn, ProxCallsVoiceAgentsBindToolReturn, ProxCallsVoiceAgentsConfigureReturn, ProxCallsVoiceAgentsCreateReturn, ProxCallsVoiceAgentsListReturn, ProxCallsVoiceAgentsShowReturn, ProxCallsVoiceAgentsSyncReturn, ProxCallsVoiceAgentsUnbindToolReturn, ReactSendReturn, RoutesExplainReturn, RoutesListReturn, RoutesShowReturn, RulesImportReturn, RulesSourcesReturn, RuntimeCredentialsAddReturn, RuntimeCredentialsClassifyReturn, RuntimeCredentialsDisableReturn, RuntimeCredentialsEnableReturn, RuntimeCredentialsImportReturn, RuntimeCredentialsListReturn, RuntimeCredentialsRefreshReturn, RuntimeCredentialsResetHealthReturn, RuntimeCredentialsSelectReturn, RuntimeCredentialsStatusReturn, SdkClientCheckReturn, SdkClientGenerateReturn, SdkOpenapiCheckReturn, SdkOpenapiEmitReturn, SdkSwiftCheckReturn, SdkSwiftGenerateReturn, SelfChatReturn, SelfContextReturn, SelfExplainReturn, SelfKnowledgeReturn, SelfPermissionsReturn, SelfRecentReturn, SelfRouteReturn, SelfWhoamiReturn, SessionsActionsReturn, SessionsAnswerReturn, SessionsAskReturn, SessionsAttachReturn, SessionsDeleteMessageReturn, SessionsDeleteReturn, SessionsDetachReturn, SessionsEditMessageReturn, SessionsExecuteReturn, SessionsExtendReturn, SessionsFollowupsAddReturn, SessionsFollowupsInspectReturn, SessionsFollowupsListReturn, SessionsFollowupsPauseReturn, SessionsFollowupsResumeReturn, SessionsFollowupsRetryReturn, SessionsFollowupsRunReturn, SessionsFollowupsRunsReturn, SessionsFollowupsSnoozeReturn, SessionsFollowupsUpdateReturn, SessionsGoalReturn, SessionsInfoReturn, SessionsInformReturn, SessionsKeepReturn, SessionsListReturn, SessionsMuteReturn, SessionsPruneReturn, SessionsReadReturn, SessionsRenameReturn, SessionsResetReturn, SessionsRuntimeFollowUpReturn, SessionsRuntimeForkReturn, SessionsRuntimeInterruptReturn, SessionsRuntimeListReturn, SessionsRuntimeReadReturn, SessionsRuntimeRollbackReturn, SessionsRuntimeSteerReturn, SessionsSendReturn, SessionsSetDisplayReturn, SessionsSetModelReturn, SessionsSetThinkingReturn, SessionsSetTtlReturn, SessionsSubscriptionsReturn, SessionsTraceReturn, SessionsUnmuteReturn, SessionsVisibilityReturn, SettingsDeleteReturn, SettingsGetReturn, SettingsListReturn, SettingsSetReturn, SkillGatesDisableReturn, SkillGatesEnableReturn, SkillGatesListReturn, SkillGatesResetReturn, SkillGatesRmReturn, SkillGatesSetReturn, SkillGatesShowReturn, SkillsInstallReturn, SkillsListReturn, SkillsShowReturn, SkillsSyncReturn, SlackBlocksSendReturn, SlackBlocksShowcaseReturn, SlackBlocksUpdateReturn, SlackBlocksValidateReturn, SlackCanvasAccessDeleteReturn, SlackCanvasAccessSetReturn, SlackCanvasArtifactPublishReturn, SlackCanvasArtifactStatusReturn, SlackCanvasChannelCreateReturn, SlackCanvasChannelShowcaseReturn, SlackCanvasCreateReturn, SlackCanvasDeleteReturn, SlackCanvasEditReturn, SlackCanvasSectionsLookupReturn, SlackCanvasShowcaseReturn, SlackChannelsCreateReturn, SlackChannelsHistoryReturn, SlackChannelsInfoReturn, SlackChannelsInviteReturn, SlackChannelsListReturn, SlackChannelsRenameReturn, SlackFilesListReturn, SlackInteractionsRespondReturn, SlackMembersListReturn, SlackMessagesInspectReturn, SlackMessagesReplayReturn, SlackMessagesSendReturn, SlackPermissionsListReturn, SlackTopologyReturn, SpecsGetReturn, SpecsListReturn, SpecsNewReturn, SpecsSyncReturn, StickersAddReturn, StickersListReturn, StickersRemoveReturn, StickersSendReturn, StickersShowReturn, SyncInspectReturn, SyncPullReturn, SyncPushReturn, SyncRetryReturn, SyncStatusReturn, TagRulesEvaluateReturn, TagRulesExplainReturn, TagRulesListReturn, TagRulesShowReturn, TagRulesTickReturn, TagRulesValidateReturn, TagsAttachReturn, TagsCreateReturn, TagsDetachReturn, TagsListReturn, TagsSearchReturn, TagsSetReturn, TagsShowReturn, TasksArchiveReturn, TasksAutomationsAddReturn, TasksAutomationsDisableReturn, TasksAutomationsEnableReturn, TasksAutomationsListReturn, TasksAutomationsRmReturn, TasksAutomationsShowReturn, TasksBlockReturn, TasksCommentReturn, TasksCreateReturn, TasksDepsAddReturn, TasksDepsLsReturn, TasksDepsRmReturn, TasksDispatchReturn, TasksDoneReturn, TasksFailReturn, TasksListReturn, TasksProfilesInitReturn, TasksProfilesListReturn, TasksProfilesPreviewReturn, TasksProfilesShowReturn, TasksProfilesValidateReturn, TasksReportReturn, TasksShowReturn, TasksUnarchiveReturn, ThreadsBriefReturn, ThreadsCloseReturn, ThreadsCommentReturn, ThreadsCreateReturn, ThreadsEntriesReturn, ThreadsLinkReturn, ThreadsListReturn, ThreadsNoteReturn, ThreadsShowReturn, ToolsInvokeReturn, ToolsListReturn, ToolsManifestReturn, ToolsSchemaReturn, ToolsSearchReturn, ToolsShowReturn, ToolsTestReturn, TranscribeFileReturn, TriggersAddReturn, TriggersDisableReturn, TriggersEnableReturn, TriggersListReturn, TriggersRmReturn, TriggersSetReturn, TriggersShowReturn, TriggersTestReturn, TriggersTopicsReturn, VideoAnalyzeReturn, WatchConnectorsReturn, WatchCreateReturn, WatchDisableReturn, WatchEnableReturn, WatchEventsReturn, WatchListReturn, WatchRmReturn, WatchShowReturn, WatchTriggerReturn, WhatsappDmAckReturn, WhatsappDmReadReturn, WhatsappDmSendReturn, WhatsappGroupAddReturn, WhatsappGroupCreateReturn, WhatsappGroupDemoteReturn, WhatsappGroupDescriptionReturn, WhatsappGroupInfoReturn, WhatsappGroupInviteReturn, WhatsappGroupJoinReturn, WhatsappGroupLeaveReturn, WhatsappGroupListReturn, WhatsappGroupPromoteReturn, WhatsappGroupRemoveReturn, WhatsappGroupRenameReturn, WhatsappGroupRevokeInviteReturn, WhatsappGroupSendReturn, WhatsappGroupSettingsReturn, WorkObjectsActionReturn, WorkObjectsResolveReturn, WorkObjectsSuggestReturn, WorkObjectsUpdateReturn, WorkflowsRunsArchiveNodeReturn, WorkflowsRunsCancelReturn, WorkflowsRunsListReturn, WorkflowsRunsReleaseReturn, WorkflowsRunsShowReturn, WorkflowsRunsSkipReturn, WorkflowsRunsStartReturn, WorkflowsRunsTaskAttachReturn, WorkflowsRunsTaskCreateReturn, WorkflowsSpecsCreateReturn, WorkflowsSpecsListReturn, WorkflowsSpecsShowReturn } from "./types.js";
+import type { AdaptersListReturn, AdaptersShowReturn, AgentsCreateReturn, AgentsDebounceReturn, AgentsDebugReturn, AgentsDeleteReturn, AgentsListReturn, AgentsPermissionsReturn, AgentsResetReturn, AgentsSessionReturn, AgentsSetReturn, AgentsShowReturn, AgentsSpecModeReturn, AgentsSyncInstructionsReturn, AppsCheckReturn, AppsDeleteReturn, AppsGuideReturn, AppsImportCliReturn, AppsListReturn, AppsPromptsReturn, AppsRunReturn, AppsScaffoldReturn, AppsShowReturn, ArtifactsArchiveReturn, ArtifactsAttachReturn, ArtifactsBlobReturn, ArtifactsCreateReturn, ArtifactsEventReturn, ArtifactsEventsReturn, ArtifactsListReturn, ArtifactsPublishReturn, ArtifactsReleaseActivateReturn, ArtifactsRestoreReturn, ArtifactsShowReturn, ArtifactsSnapshotReturn, ArtifactsUpdateReturn, ArtifactsVersionReturn, ArtifactsVersionsReturn, AudioBlobReturn, AudioGenerateReturn, AudioPendingReturn, AudioTtsReturn, AudioVoicesReturn, BridgesCreateReturn, BridgesListReturn, BridgesRevokeReturn, CalendarsAvailabilityReturn, CalendarsCreateReturn, CalendarsDisableReturn, CalendarsEventsCancelReturn, CalendarsEventsCreateReturn, CalendarsEventsListReturn, CalendarsEventsReadReturn, CalendarsEventsRespondReturn, CalendarsEventsUpdateReturn, CalendarsListReturn, CalendarsShareReturn, CalendarsShowReturn, ChannelsCreateReturn, ChannelsListReturn, ChannelsProbeReturn, ChannelsRestartReturn, ChannelsSetReturn, ChannelsShowReturn, ChannelsStartReturn, ChannelsStatusReturn, ChannelsStopReturn, ChatsBackfillProviderTimestampsReturn, ChatsListReturn, ChatsListsAddReturn, ChatsListsCreateReturn, ChatsListsDeltaReturn, ChatsListsListReturn, ChatsListsMarkReadReturn, ChatsListsMembersReturn, ChatsListsRecomputeReturn, ChatsListsRemoveReturn, ChatsReadReturn, CloudProjectsCreateReturn, CloudProjectsListReturn, CloudScopeClearReturn, CloudScopeExplainReturn, CloudScopeSetReturn, CloudScopeShowReturn, CommandsListReturn, CommandsRunReturn, CommandsShowReturn, CommandsValidateReturn, ConnectorsListReturn, ConnectorsRevokeReturn, ConnectorsShowReturn, ContactsActivityReturn, ContactsAddReturn, ContactsAllowReturn, ContactsApproveReturn, ContactsBackfillReturn, ContactsBlockReturn, ContactsCheckReturn, ContactsDuplicatesReturn, ContactsFindReturn, ContactsGetReturn, ContactsInfoReturn, ContactsLinkReturn, ContactsListReturn, ContactsMergeReturn, ContactsMessagesReturn, ContactsMetadataListReturn, ContactsMetadataRemoveReturn, ContactsMetadataSetReturn, ContactsNoteReturn, ContactsPendingReturn, ContactsProfileReturn, ContactsRemoveReturn, ContactsSessionsReturn, ContactsSetReturn, ContactsTagReturn, ContactsTimelineReturn, ContactsUnlinkReturn, ContactsUntagReturn, ContextAuthorizeReturn, ContextCapabilitiesReturn, ContextCheckReturn, ContextCleanupAgentRuntimeReturn, ContextCodexBashHookReturn, ContextCredentialsAddReturn, ContextCredentialsListReturn, ContextCredentialsRemoveReturn, ContextCredentialsSetDefaultReturn, ContextInfoReturn, ContextIssueReturn, ContextLineageReturn, ContextListReturn, ContextPruneReturn, ContextRevokeReturn, ContextVisibilityReturn, ContextWhoamiReturn, CostsAgentReturn, CostsAgentsReturn, CostsPricingReturn, CostsSessionReturn, CostsSummaryReturn, CostsTopSessionsReturn, CredentialsConnectionsDisableReturn, CredentialsConnectionsEnableReturn, CredentialsConnectionsListReturn, CredentialsConnectionsShowReturn, CredentialsPoliciesExplainReturn, CrmAccountCreateReturn, CrmAccountLinkContactReturn, CrmAccountReturn, CrmAccountShowReturn, CrmBoardReturn, CrmContactReturn, CrmContactSetReturn, CrmContactShowReturn, CrmContactsReturn, CrmFactConfirmReturn, CrmFactListReturn, CrmFactProposeReturn, CrmFactRejectReturn, CrmNextReturn, CrmOpportunityContactsReturn, CrmOpportunityCreateReturn, CrmOpportunityLinkContactReturn, CrmOpportunityMoveReturn, CrmOpportunityReturn, CrmOpportunityShowReturn, CrmPipelineCreateReturn, CrmPipelineListReturn, CrmPipelinePolicyHitlCheckReturn, CrmPipelinePolicySendWindowCheckReturn, CrmPipelineReviewReturn, CrmPipelineSetReturn, CrmPipelineShowReturn, CrmPipelineStageAddReturn, CrmPipelineStageArchiveReturn, CrmPipelineStageListReturn, CrmPipelineStageSetReturn, CrmPipelineStageShowReturn, CrmPipelineStageTopicAddReturn, CrmPipelineStageTopicArchiveReturn, CrmPipelineStageTopicSetReturn, CrmPipelineStageTopicsReturn, CrmPipelineValidateReturn, CrmTaskCancelReturn, CrmTaskCreateReturn, CrmTaskDoneReturn, CrmTaskListReturn, CrmTaskShowReturn, CrmTaskSnoozeReturn, CronAddReturn, CronDisableReturn, CronEnableReturn, CronListReturn, CronRmReturn, CronRunReturn, CronSetReturn, CronShowReturn, DaemonEnvReturn, DaemonInitAdminKeyReturn, DaemonInstallReturn, DaemonLogsReturn, DaemonRestartReturn, DaemonStartReturn, DaemonStatusReturn, DaemonStopReturn, DaemonUninstallReturn, DevinAuthCheckReturn, DevinSessionsArchiveReturn, DevinSessionsAttachmentsReturn, DevinSessionsCreateReturn, DevinSessionsInsightsReturn, DevinSessionsListReturn, DevinSessionsMessagesReturn, DevinSessionsSendReturn, DevinSessionsShowReturn, DevinSessionsSyncReturn, DevinSessionsTerminateReturn, EvalRunReturn, FeedbackSendReturn, GmailListReturn, GmailReadReturn, HeartbeatDisableReturn, HeartbeatEnableReturn, HeartbeatSetReturn, HeartbeatShowReturn, HeartbeatStatusReturn, HeartbeatTriggerReturn, HooksCreateReturn, HooksDisableReturn, HooksEnableReturn, HooksListReturn, HooksRmReturn, HooksShowReturn, HooksTestReturn, ImageAtlasSplitReturn, ImageGenerateReturn, InboxArchiveReturn, InboxDisableReturn, InboxDoneReturn, InboxEnableReturn, InboxItemsReturn, InboxListReturn, InboxPollReturn, InboxReadReturn, InboxReplayReturn, InboxSnoozeReturn, InboxSourcesReturn, InboxStatusReturn, InsightsCreateReturn, InsightsListReturn, InsightsSearchReturn, InsightsShowReturn, InstancesCreateReturn, InstancesDeleteReturn, InstancesDeletedReturn, InstancesDisableReturn, InstancesDisconnectReturn, InstancesEnableReturn, InstancesGetReturn, InstancesListReturn, InstancesPendingApproveReturn, InstancesPendingListReturn, InstancesPendingRejectReturn, InstancesRestoreReturn, InstancesRoutesAddReturn, InstancesRoutesDeletedReturn, InstancesRoutesListReturn, InstancesRoutesRemoveReturn, InstancesRoutesRestoreReturn, InstancesRoutesSetReturn, InstancesRoutesShowReturn, InstancesSetReturn, InstancesShowReturn, InstancesStatusReturn, InstancesTargetReturn, MailAccountsCreateReturn, MailAccountsListReturn, MailAccountsSyncReturn, MailDomainsCreateReturn, MailDomainsListReturn, MailMailboxesCreateReturn, MailMailboxesDisableReturn, MailMailboxesListReturn, MailMailboxesShowReturn, MailMessagesImportReturn, MailMessagesListReturn, MailMessagesReadReturn, MailMessagesSearchReturn, MailOutboxInspectReturn, MailOutboxListReturn, MailOutboxRetryReturn, MailOutboxStatusReturn, MailProvidersListReturn, MailProvidersRaviMailMailboxesCreateReturn, MailProvidersRaviMailMailboxesDisableReturn, MailProvidersRaviMailMailboxesListReturn, MailProvidersRaviMailMailboxesShowReturn, MailProvidersRaviMailMessagesListReturn, MailProvidersRaviMailMessagesReadReturn, MailProvidersRaviMailMessagesShowReturn, MailProvidersRaviMailSendReturn, MailReplyReturn, MailSendReturn, MailThreadsReadReturn, MediaSendReturn, MeetingsFinalizeReturn, MeetingsProfilesInitReturn, MeetingsProfilesListReturn, MeetingsProfilesShowReturn, MeetingsProfilesValidateReturn, MeetingsVoiceRuntimesReturn, MetricsDatesReturn, MetricsRollupReturn, MetricsShowReturn, ObserversListReturn, ObserversProfilesInitReturn, ObserversProfilesListReturn, ObserversProfilesPreviewReturn, ObserversProfilesShowReturn, ObserversProfilesValidateReturn, ObserversRefreshReturn, ObserversRulesDisableReturn, ObserversRulesEnableReturn, ObserversRulesExplainReturn, ObserversRulesListReturn, ObserversRulesRmReturn, ObserversRulesSetReturn, ObserversRulesShowReturn, ObserversRulesValidateReturn, ObserversShowReturn, PagesCreateReturn, PagesDomainsReturn, PagesListReturn, PagesPublishReturn, PagesPublishedReturn, PagesUpdateReturn, PagesVisibilityReturn, PermissionsAllowReturn, PermissionsCheckReturn, PermissionsMaterializeReturn, PermissionsResolveReturn, PermissionsStatusReturn, ProjectsCreateReturn, ProjectsFixturesSeedReturn, ProjectsInitReturn, ProjectsLinkReturn, ProjectsListReturn, ProjectsNextReturn, ProjectsResourcesAddReturn, ProjectsResourcesImportReturn, ProjectsResourcesListReturn, ProjectsResourcesShowReturn, ProjectsShowReturn, ProjectsStatusReturn, ProjectsTasksAttachReturn, ProjectsTasksCreateReturn, ProjectsTasksDispatchReturn, ProjectsUpdateReturn, ProjectsWorkflowsAttachReturn, ProjectsWorkflowsStartReturn, ProxCallsCancelReturn, ProxCallsEventsReturn, ProxCallsProfilesConfigureReturn, ProxCallsProfilesListReturn, ProxCallsProfilesShowReturn, ProxCallsRequestReturn, ProxCallsRulesReturn, ProxCallsShowReturn, ProxCallsToolsBindReturn, ProxCallsToolsConfigureReturn, ProxCallsToolsCreateReturn, ProxCallsToolsListReturn, ProxCallsToolsRunReturn, ProxCallsToolsRunsReturn, ProxCallsToolsShowReturn, ProxCallsToolsUnbindReturn, ProxCallsTranscriptReturn, ProxCallsVoiceAgentsBindToolReturn, ProxCallsVoiceAgentsConfigureReturn, ProxCallsVoiceAgentsCreateReturn, ProxCallsVoiceAgentsListReturn, ProxCallsVoiceAgentsShowReturn, ProxCallsVoiceAgentsSyncReturn, ProxCallsVoiceAgentsUnbindToolReturn, ReactSendReturn, RoutesExplainReturn, RoutesListReturn, RoutesShowReturn, RulesImportReturn, RulesSourcesReturn, RuntimeCredentialsAddReturn, RuntimeCredentialsClassifyReturn, RuntimeCredentialsDisableReturn, RuntimeCredentialsEnableReturn, RuntimeCredentialsImportReturn, RuntimeCredentialsListReturn, RuntimeCredentialsRefreshReturn, RuntimeCredentialsResetHealthReturn, RuntimeCredentialsSelectReturn, RuntimeCredentialsStatusReturn, SdkClientCheckReturn, SdkClientGenerateReturn, SdkOpenapiCheckReturn, SdkOpenapiEmitReturn, SdkSwiftCheckReturn, SdkSwiftGenerateReturn, SelfChatReturn, SelfContextReturn, SelfExplainReturn, SelfKnowledgeReturn, SelfPermissionsReturn, SelfRecentReturn, SelfRouteReturn, SelfWhoamiReturn, SessionsActionsReturn, SessionsAnswerReturn, SessionsAskReturn, SessionsAttachReturn, SessionsDeleteMessageReturn, SessionsDeleteReturn, SessionsDetachReturn, SessionsEditMessageReturn, SessionsExecuteReturn, SessionsExtendReturn, SessionsFollowupsAddReturn, SessionsFollowupsInspectReturn, SessionsFollowupsListReturn, SessionsFollowupsPauseReturn, SessionsFollowupsResumeReturn, SessionsFollowupsRetryReturn, SessionsFollowupsRunReturn, SessionsFollowupsRunsReturn, SessionsFollowupsSnoozeReturn, SessionsFollowupsUpdateReturn, SessionsGoalReturn, SessionsInfoReturn, SessionsInformReturn, SessionsKeepReturn, SessionsListReturn, SessionsMuteReturn, SessionsPruneReturn, SessionsReadReturn, SessionsRenameReturn, SessionsResetReturn, SessionsRuntimeFollowUpReturn, SessionsRuntimeForkReturn, SessionsRuntimeInterruptReturn, SessionsRuntimeListReturn, SessionsRuntimeReadReturn, SessionsRuntimeRollbackReturn, SessionsRuntimeSteerReturn, SessionsSendReturn, SessionsSetDisplayReturn, SessionsSetModelReturn, SessionsSetThinkingReturn, SessionsSetTtlReturn, SessionsSubscriptionsReturn, SessionsTraceReturn, SessionsUnmuteReturn, SessionsVisibilityReturn, SettingsDeleteReturn, SettingsGetReturn, SettingsListReturn, SettingsSetReturn, SkillGatesDisableReturn, SkillGatesEnableReturn, SkillGatesListReturn, SkillGatesResetReturn, SkillGatesRmReturn, SkillGatesSetReturn, SkillGatesShowReturn, SkillsInstallReturn, SkillsListReturn, SkillsShowReturn, SkillsSyncReturn, SlackBlocksSendReturn, SlackBlocksShowcaseReturn, SlackBlocksUpdateReturn, SlackBlocksValidateReturn, SlackCanvasAccessDeleteReturn, SlackCanvasAccessSetReturn, SlackCanvasArtifactPublishReturn, SlackCanvasArtifactStatusReturn, SlackCanvasChannelCreateReturn, SlackCanvasChannelShowcaseReturn, SlackCanvasCreateReturn, SlackCanvasDeleteReturn, SlackCanvasEditReturn, SlackCanvasSectionsLookupReturn, SlackCanvasShowcaseReturn, SlackChannelsCreateReturn, SlackChannelsHistoryReturn, SlackChannelsInfoReturn, SlackChannelsInviteReturn, SlackChannelsListReturn, SlackChannelsRenameReturn, SlackFilesListReturn, SlackInteractionsRespondReturn, SlackMembersListReturn, SlackMessagesInspectReturn, SlackMessagesReplayReturn, SlackMessagesSendReturn, SlackPermissionsListReturn, SlackTopologyReturn, SpecsGetReturn, SpecsListReturn, SpecsNewReturn, SpecsSyncReturn, StickersAddReturn, StickersListReturn, StickersRemoveReturn, StickersSendReturn, StickersShowReturn, SyncInspectReturn, SyncPullReturn, SyncPushReturn, SyncRetryReturn, SyncStatusReturn, TagRulesEvaluateReturn, TagRulesExplainReturn, TagRulesListReturn, TagRulesShowReturn, TagRulesTickReturn, TagRulesValidateReturn, TagsAttachReturn, TagsCreateReturn, TagsDetachReturn, TagsListReturn, TagsSearchReturn, TagsSetReturn, TagsShowReturn, TasksArchiveReturn, TasksAutomationsAddReturn, TasksAutomationsDisableReturn, TasksAutomationsEnableReturn, TasksAutomationsListReturn, TasksAutomationsRmReturn, TasksAutomationsShowReturn, TasksBlockReturn, TasksCommentReturn, TasksCreateReturn, TasksDepsAddReturn, TasksDepsLsReturn, TasksDepsRmReturn, TasksDispatchReturn, TasksDoneReturn, TasksFailReturn, TasksListReturn, TasksProfilesInitReturn, TasksProfilesListReturn, TasksProfilesPreviewReturn, TasksProfilesShowReturn, TasksProfilesValidateReturn, TasksReportReturn, TasksShowReturn, TasksUnarchiveReturn, ThreadsBriefReturn, ThreadsCloseReturn, ThreadsCommentReturn, ThreadsCreateReturn, ThreadsEntriesReturn, ThreadsLinkReturn, ThreadsListReturn, ThreadsNoteReturn, ThreadsShowReturn, ToolsInvokeReturn, ToolsListReturn, ToolsManifestReturn, ToolsSchemaReturn, ToolsSearchReturn, ToolsShowReturn, ToolsTestReturn, TranscribeFileReturn, TriggersAddReturn, TriggersDisableReturn, TriggersEnableReturn, TriggersListReturn, TriggersRmReturn, TriggersSetReturn, TriggersShowReturn, TriggersTestReturn, TriggersTopicsReturn, VideoAnalyzeReturn, WatchConnectorsReturn, WatchCreateReturn, WatchDisableReturn, WatchEnableReturn, WatchEventsReturn, WatchListReturn, WatchRmReturn, WatchShowReturn, WatchTriggerReturn, WhatsappDmAckReturn, WhatsappDmReadReturn, WhatsappDmSendReturn, WhatsappGroupAddReturn, WhatsappGroupCreateReturn, WhatsappGroupDemoteReturn, WhatsappGroupDescriptionReturn, WhatsappGroupInfoReturn, WhatsappGroupInviteReturn, WhatsappGroupJoinReturn, WhatsappGroupLeaveReturn, WhatsappGroupListReturn, WhatsappGroupPromoteReturn, WhatsappGroupRemoveReturn, WhatsappGroupRenameReturn, WhatsappGroupRevokeInviteReturn, WhatsappGroupSendReturn, WhatsappGroupSettingsReturn, WorkObjectsActionReturn, WorkObjectsResolveReturn, WorkObjectsSuggestReturn, WorkObjectsUpdateReturn, WorkflowsRunsArchiveNodeReturn, WorkflowsRunsCancelReturn, WorkflowsRunsListReturn, WorkflowsRunsReleaseReturn, WorkflowsRunsShowReturn, WorkflowsRunsSkipReturn, WorkflowsRunsStartReturn, WorkflowsRunsTaskAttachReturn, WorkflowsRunsTaskCreateReturn, WorkflowsSpecsCreateReturn, WorkflowsSpecsListReturn, WorkflowsSpecsShowReturn } from "./types.js";
 
 /**
  * `RaviClient` exposes every registry command as a typed method.
@@ -783,6 +783,29 @@ export class RaviClient {
   };
 
   readonly channels = {
+    /** Create or update a native channel config */
+    create: async (name: string, options?: {
+      credentialConnection?: string;
+      provider?: string;
+    }): Promise<ChannelsCreateReturn> => {
+      return this.transport.call({
+        groupSegments: ["channels"],
+        command: "create",
+        body: { name, ...(options ?? {}) },
+      });
+    },
+    /** List configured native channels */
+    list: async (options?: {
+      limit?: string;
+      offset?: string;
+      provider?: string;
+    }): Promise<ChannelsListReturn> => {
+      return this.transport.call({
+        groupSegments: ["channels"],
+        command: "list",
+        body: { ...(options ?? {}) },
+      });
+    },
     /** Start channel runner infrastructure and print foreground status */
     probe: async (): Promise<ChannelsProbeReturn> => {
       return this.transport.call({
@@ -794,8 +817,6 @@ export class RaviClient {
     /** Restart the channel runner */
     restart: async (options?: {
       build?: boolean;
-      slackConnection?: string;
-      slackConnections?: string;
     }): Promise<ChannelsRestartReturn> => {
       return this.transport.call({
         groupSegments: ["channels"],
@@ -803,11 +824,25 @@ export class RaviClient {
         body: { ...(options ?? {}) },
       });
     },
+    /** Set a native channel config property */
+    set: async (name: string, key: string, value: string): Promise<ChannelsSetReturn> => {
+      return this.transport.call({
+        groupSegments: ["channels"],
+        command: "set",
+        body: { name, key, value },
+      });
+    },
+    /** Show one configured native channel */
+    show: async (name: string): Promise<ChannelsShowReturn> => {
+      return this.transport.call({
+        groupSegments: ["channels"],
+        command: "show",
+        body: { name },
+      });
+    },
     /** Start the channel runner via PM2 */
     start: async (options?: {
       build?: boolean;
-      slackConnection?: string;
-      slackConnections?: string;
     }): Promise<ChannelsStartReturn> => {
       return this.transport.call({
         groupSegments: ["channels"],
@@ -5633,7 +5668,6 @@ export class RaviClient {
   readonly slack = {
     /** Send a Slack Block Kit message; dry-run unless --execute is set */
     blocksSend: async (channel: string, file: string, options?: {
-      connection?: string;
       execute?: boolean;
       text?: string;
       threadTs?: string;
@@ -5646,7 +5680,6 @@ export class RaviClient {
     },
     /** Send a Slack Block Kit showcase; dry-run unless --execute is set */
     blocksShowcase: async (channel: string, options?: {
-      connection?: string;
       execute?: boolean;
       threadTs?: string;
     }): Promise<SlackBlocksShowcaseReturn> => {
@@ -5658,7 +5691,6 @@ export class RaviClient {
     },
     /** Update a Slack message with Block Kit; dry-run unless --execute is set */
     blocksUpdate: async (channel: string, ts: string, file: string, options?: {
-      connection?: string;
       execute?: boolean;
       text?: string;
     }): Promise<SlackBlocksUpdateReturn> => {
@@ -5670,7 +5702,7 @@ export class RaviClient {
     },
     /** Validate Slack Block Kit JSON with Slack blocks.validate */
     blocksValidate: async (file: string, options?: {
-      connection?: string;
+      channel?: string;
       target?: string;
     }): Promise<SlackBlocksValidateReturn> => {
       return this.transport.call({
@@ -5681,8 +5713,8 @@ export class RaviClient {
     },
     /** Delete Slack standalone canvas access; dry-run unless --execute is set */
     canvasAccessDelete: async (canvas: string, options?: {
+      channel?: string;
       channels?: string;
-      connection?: string;
       execute?: boolean;
       users?: string;
     }): Promise<SlackCanvasAccessDeleteReturn> => {
@@ -5694,8 +5726,8 @@ export class RaviClient {
     },
     /** Set Slack standalone canvas access; dry-run unless --execute is set */
     canvasAccessSet: async (canvas: string, access: string, options?: {
+      channel?: string;
       channels?: string;
-      connection?: string;
       execute?: boolean;
       users?: string;
     }): Promise<SlackCanvasAccessSetReturn> => {
@@ -5709,9 +5741,9 @@ export class RaviClient {
     canvasArtifactPublish: async (artifactOrFile: string, options?: {
       canvas?: string;
       channel?: string;
-      connection?: string;
       execute?: boolean;
       skipRefresh?: boolean;
+      slackChannel?: string;
       title?: string;
     }): Promise<SlackCanvasArtifactPublishReturn> => {
       return this.transport.call({
@@ -5731,7 +5763,6 @@ export class RaviClient {
     /** Create a Slack channel canvas; dry-run unless --execute is set */
     canvasChannelCreate: async (channel: string, options?: {
       artifact?: string;
-      connection?: string;
       ensure?: boolean;
       execute?: boolean;
       markdown?: string;
@@ -5747,7 +5778,6 @@ export class RaviClient {
     },
     /** Create or reuse a channel canvas and publish the Ravi showcase; dry-run unless --execute is set */
     canvasChannelShowcase: async (channel: string, options?: {
-      connection?: string;
       execute?: boolean;
       title?: string;
     }): Promise<SlackCanvasChannelShowcaseReturn> => {
@@ -5761,11 +5791,11 @@ export class RaviClient {
     canvasCreate: async (options?: {
       artifact?: string;
       channel?: string;
-      connection?: string;
       execute?: boolean;
       markdown?: string;
       markdownFile?: string;
       skipRefresh?: boolean;
+      slackChannel?: string;
       title?: string;
     }): Promise<SlackCanvasCreateReturn> => {
       return this.transport.call({
@@ -5776,7 +5806,7 @@ export class RaviClient {
     },
     /** Delete a Slack standalone canvas; dry-run unless --execute is set */
     canvasDelete: async (canvas: string, options?: {
-      connection?: string;
+      channel?: string;
       execute?: boolean;
     }): Promise<SlackCanvasDeleteReturn> => {
       return this.transport.call({
@@ -5788,7 +5818,7 @@ export class RaviClient {
     /** Edit a Slack canvas section or title; dry-run unless --execute is set */
     canvasEdit: async (canvas: string, operation: string, options?: {
       artifact?: string;
-      connection?: string;
+      channel?: string;
       execute?: boolean;
       markdown?: string;
       markdownFile?: string;
@@ -5804,7 +5834,7 @@ export class RaviClient {
     },
     /** Lookup Slack canvas section IDs */
     canvasSectionsLookup: async (canvas: string, options?: {
-      connection?: string;
+      channel?: string;
       containsText?: string;
       sectionTypes?: string;
     }): Promise<SlackCanvasSectionsLookupReturn> => {
@@ -5817,8 +5847,8 @@ export class RaviClient {
     /** Publish the Ravi Slack Canvas showcase into an existing canvas; dry-run unless --execute is set */
     canvasShowcase: async (canvas: string, options?: {
       channel?: string;
-      connection?: string;
       execute?: boolean;
+      slackChannel?: string;
       title?: string;
     }): Promise<SlackCanvasShowcaseReturn> => {
       return this.transport.call({
@@ -5829,7 +5859,7 @@ export class RaviClient {
     },
     /** Create a Slack channel; dry-run unless --execute is set */
     channelsCreate: async (name: string, options?: {
-      connection?: string;
+      channel?: string;
       execute?: boolean;
       private?: boolean;
     }): Promise<SlackChannelsCreateReturn> => {
@@ -5841,7 +5871,6 @@ export class RaviClient {
     },
     /** Read Slack conversation history */
     channelsHistory: async (channel: string, options?: {
-      connection?: string;
       cursor?: string;
       inclusive?: boolean;
       latest?: string;
@@ -5855,18 +5884,15 @@ export class RaviClient {
       });
     },
     /** Show Slack conversation metadata */
-    channelsInfo: async (channel: string, options?: {
-      connection?: string;
-    }): Promise<SlackChannelsInfoReturn> => {
+    channelsInfo: async (channel: string): Promise<SlackChannelsInfoReturn> => {
       return this.transport.call({
         groupSegments: ["slack"],
         command: "channels-info",
-        body: { channel, ...(options ?? {}) },
+        body: { channel },
       });
     },
     /** Invite Slack users to a channel; dry-run unless --execute is set */
     channelsInvite: async (channel: string, users: string, options?: {
-      connection?: string;
       execute?: boolean;
     }): Promise<SlackChannelsInviteReturn> => {
       return this.transport.call({
@@ -5877,7 +5903,7 @@ export class RaviClient {
     },
     /** List Slack conversations visible to the configured bot */
     channelsList: async (options?: {
-      connection?: string;
+      channel?: string;
       cursor?: string;
       includeArchived?: boolean;
       limit?: string;
@@ -5891,7 +5917,6 @@ export class RaviClient {
     },
     /** Rename a Slack channel; dry-run unless --execute is set */
     channelsRename: async (channel: string, name: string, options?: {
-      connection?: string;
       execute?: boolean;
     }): Promise<SlackChannelsRenameReturn> => {
       return this.transport.call({
@@ -5903,9 +5928,9 @@ export class RaviClient {
     /** List Slack files visible to the configured bot */
     filesList: async (options?: {
       channel?: string;
-      connection?: string;
       cursor?: string;
       limit?: string;
+      slackChannel?: string;
       user?: string;
     }): Promise<SlackFilesListReturn> => {
       return this.transport.call({
@@ -5916,7 +5941,7 @@ export class RaviClient {
     },
     /** Respond to a Slack interaction response handle; dry-run unless --execute is set */
     interactionsRespond: async (responseUrlId: string, file: string, options?: {
-      connection?: string;
+      channel?: string;
       execute?: boolean;
     }): Promise<SlackInteractionsRespondReturn> => {
       return this.transport.call({
@@ -5927,7 +5952,6 @@ export class RaviClient {
     },
     /** List Slack conversation members */
     membersList: async (channel: string, options?: {
-      connection?: string;
       cursor?: string;
       limit?: string;
     }): Promise<SlackMembersListReturn> => {
@@ -5938,18 +5962,15 @@ export class RaviClient {
       });
     },
     /** Inspect whether a Slack message exists in Slack and Ravi */
-    messagesInspect: async (channel: string, ts: string, options?: {
-      connection?: string;
-    }): Promise<SlackMessagesInspectReturn> => {
+    messagesInspect: async (channel: string, ts: string): Promise<SlackMessagesInspectReturn> => {
       return this.transport.call({
         groupSegments: ["slack"],
         command: "messages-inspect",
-        body: { channel, ts, ...(options ?? {}) },
+        body: { channel, ts },
       });
     },
     /** Replay a Slack message through the native Ravi channel pipeline */
     messagesReplay: async (channel: string, ts: string, options?: {
-      connection?: string;
       execute?: boolean;
       force?: boolean;
     }): Promise<SlackMessagesReplayReturn> => {
@@ -5961,7 +5982,6 @@ export class RaviClient {
     },
     /** Send a Slack message; dry-run unless --execute is set */
     messagesSend: async (channel: string, text: string, options?: {
-      connection?: string;
       execute?: boolean;
       threadTs?: string;
     }): Promise<SlackMessagesSendReturn> => {
@@ -5973,7 +5993,7 @@ export class RaviClient {
     },
     /** List OAuth scopes granted to the configured Slack bot token */
     permissionsList: async (options?: {
-      connection?: string;
+      channel?: string;
     }): Promise<SlackPermissionsListReturn> => {
       return this.transport.call({
         groupSegments: ["slack"],
@@ -5983,7 +6003,7 @@ export class RaviClient {
     },
     /** Show Slack channels and Ravi route/session ownership */
     topology: async (options?: {
-      connection?: string;
+      channel?: string;
       cursor?: string;
       includeArchived?: boolean;
       limit?: string;

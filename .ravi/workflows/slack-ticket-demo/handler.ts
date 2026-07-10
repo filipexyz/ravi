@@ -2,8 +2,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { resolveSlackCredentialConfigFromEnv } from "../../../src/channels/slack/credentials.js";
 import { respondToSlackInteraction } from "../../../src/channels/slack/interactions.js";
+import { configStore } from "../../../src/config-store.js";
 import { nats } from "../../../src/nats.js";
-import { dbCreateRoute, dbGetRoute } from "../../../src/router/router-db.js";
+import { dbCreateRoute, dbGetRoute, type ChannelConfig } from "../../../src/router/router-db.js";
 
 interface TriggerEnvelope {
   event?: {
@@ -67,7 +68,17 @@ async function main(): Promise<void> {
 }
 
 async function seed(channel: string): Promise<void> {
-  const payload = await runRavi(["slack", "blocks-send", channel, ENTRY_CARD_FILE, "--execute", "--json"]);
+  const raviChannel = resolveSlackChannel();
+  const payload = await runRavi([
+    "slack",
+    "blocks-send",
+    channel,
+    ENTRY_CARD_FILE,
+    "--channel",
+    raviChannel.name,
+    "--execute",
+    "--json",
+  ]);
   console.log(JSON.stringify(payload, null, 2));
 }
 
@@ -589,14 +600,14 @@ function simpleEphemeralBlocks(text: string): SlackBlock[] {
 }
 
 async function createRoute(input: { channelId: string; ticketId: string; agent: string }): Promise<boolean> {
-  const connection = resolveConnection();
+  const raviChannel = resolveSlackChannel();
   const session = slackChannelName(`${ROUTE_SESSION_PREFIX}-${input.ticketId}`).slice(0, 60);
   const pattern = `group:${input.channelId}`.toLowerCase();
-  const existing = dbGetRoute(pattern, connection);
+  const existing = dbGetRoute(pattern, raviChannel.name);
   if (existing) return true;
 
   dbCreateRoute({
-    accountId: connection,
+    accountId: raviChannel.name,
     pattern,
     agent: input.agent,
     priority: 50,
@@ -625,10 +636,7 @@ async function writeStore(store: TicketStore): Promise<void> {
 async function runRavi(args: string[]): Promise<Record<string, unknown>> {
   const proc = Bun.spawn(["bun", "dist/bundle/index.js", ...args], {
     cwd: process.cwd(),
-    env: {
-      ...process.env,
-      RAVI_SLACK_CONNECTION: resolveConnection(),
-    },
+    env: process.env,
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -658,13 +666,12 @@ async function postEphemeral(input: {
 }
 
 async function slackApi(method: string, body: Record<string, string>): Promise<Record<string, unknown>> {
-  const config = await resolveSlackCredentialConfigFromEnv(
-    {
-      ...process.env,
-      RAVI_SLACK_CONNECTION: resolveConnection(),
-    },
-    { action: method },
-  );
+  const channel = resolveSlackChannel();
+  const config = await resolveSlackCredentialConfigFromEnv(process.env, {
+    action: method,
+    channel,
+    channels: { [channel.name]: channel },
+  });
   if (!config) throw new Error("Missing Slack credential config");
 
   const res = await fetch(`https://slack.com/api/${method}`, {
@@ -683,12 +690,24 @@ async function slackApi(method: string, body: Record<string, string>): Promise<R
   return payload;
 }
 
-function resolveConnection(): string {
-  return (
-    process.env.RAVI_SLACK_CONNECTION?.trim() ||
-    process.env.RAVI_TRIGGER_SOURCE_ACCOUNT_ID?.trim() ||
-    "ravi-rbbt-slack"
+function resolveSlackChannel(): ChannelConfig {
+  const selector =
+    process.env.RAVI_TICKET_SLACK_CHANNEL?.trim() || process.env.RAVI_TRIGGER_SOURCE_ACCOUNT_ID?.trim();
+  if (!selector) {
+    throw new Error("Missing Slack channel. Set RAVI_TICKET_SLACK_CHANNEL or run from a Slack trigger source.");
+  }
+  const channel = Object.values(configStore.getConfig().channels ?? {}).find(
+    (item) => item.enabled !== false && item.provider === "slack" && item.name === selector,
   );
+  if (!channel) {
+    throw new Error(`Slack channel not found for selector: ${selector}`);
+  }
+  if (!channel.credentialConnection) {
+    throw new Error(
+      `Slack channel ${channel.name} has no credentialConnection. Run: ravi channels set ${channel.name} credentialConnection <connection-id>`,
+    );
+  }
+  return channel;
 }
 
 function selectedValue(data: Record<string, unknown>): string {

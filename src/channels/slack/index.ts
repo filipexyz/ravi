@@ -19,7 +19,7 @@ export type {
   SlackWebApiClientOptions,
 } from "./client.js";
 export {
-  credentialConnectionForInstance,
+  credentialConnectionForChannel,
   parseSlackSecretPayload,
   resolveSlackCredentialConfigFromEnv,
 } from "./credentials.js";

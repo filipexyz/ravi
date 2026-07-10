@@ -77,7 +77,9 @@ ravi triggers add "Slack ticket workflow demo actions" \
 
 ## Config
 
-- `RAVI_SLACK_CONNECTION`: override opcional apenas fora de um contexto Slack resolvivel.
+- `RAVI_TICKET_SLACK_CHANNEL`: channel config Slack a usar quando o workflow rodar
+  fora de um trigger Slack. Em trigger Slack, o workflow usa o account/source do
+  evento. O channel precisa ter `credentialConnection` configurado.
 - `RAVI_TICKET_DEFAULT_AGENT`: agent logico do ticket, default
   `ravi-channels-migration`.
 - `RAVI_TICKET_CREATE_ROUTE=1`: cria route para o canal novo via router DB local.

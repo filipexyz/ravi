@@ -9,7 +9,7 @@ import {
   dbUpsertChat,
   dbUpsertChatMessage,
   dbUpsertChatParticipant,
-  type InstanceConfig,
+  type ChannelConfig,
 } from "../../router/router-db.js";
 import type { RouterConfig } from "../../router/types.js";
 import type { MessageActorMetadata, MessageContext, MessageTarget } from "../../runtime/message-types.js";
@@ -25,11 +25,7 @@ import type {
   NativeTextDeliveryResult,
 } from "../native/types.js";
 import { SlackWebApiClient } from "./client.js";
-import {
-  credentialConnectionForInstance,
-  resolveSlackCredentialConfigFromEnv,
-  type SlackCredentialResolver,
-} from "./credentials.js";
+import { resolveSlackCredentialConfigFromEnv, type SlackCredentialResolver } from "./credentials.js";
 import { storeSlackInteractionResponseUrl } from "./interactions.js";
 import {
   cleanSlackId,
@@ -1019,19 +1015,19 @@ function syncSlackSessionSubscription(
 export async function createSlackNativeRuntimeFromEnv(
   env: NodeJS.ProcessEnv = process.env,
   options: {
-    instance?: InstanceConfig;
-    instances?: Record<string, InstanceConfig>;
+    channel?: ChannelConfig;
+    channels?: Record<string, ChannelConfig>;
     resolveSecret?: SlackCredentialResolver;
   } = {},
 ): Promise<SlackNativeRuntime | null> {
-  const instances = options.instances ?? configStore.getConfig().instances;
+  const channels = options.channels ?? configStore.getConfig().channels ?? {};
   const credentials = await resolveSlackCredentialConfigFromEnv(env, {
-    instances,
-    instance: options.instance,
+    channels,
+    channel: options.channel,
     resolveSecret: options.resolveSecret,
   });
   if (!credentials) {
-    log.warn("Slack native runtime disabled: configure a Slack channel instance with brokered credentials");
+    log.warn("Slack native runtime disabled: configure a Slack channel with brokered credentials");
     return null;
   }
 
@@ -1100,43 +1096,17 @@ export async function createSlackNativeRuntimeFromEnv(
 export async function createSlackNativeRuntimesFromEnv(
   env: NodeJS.ProcessEnv = process.env,
   options: {
-    instances?: Record<string, InstanceConfig>;
+    channels?: Record<string, ChannelConfig>;
     resolveSecret?: SlackCredentialResolver;
   } = {},
 ): Promise<SlackNativeRuntime[]> {
-  const instances = options.instances ?? configStore.getConfig().instances;
-  const connections = slackConnectionListFromEnv(env.RAVI_SLACK_CONNECTIONS);
-
-  if (!connections.length) {
-    if (!hasExplicitSlackRuntimeSelector(env)) {
-      const configuredInstances = enabledSlackInstances(instances);
-      if (configuredInstances.length > 1) {
-        const runtimes: SlackNativeRuntime[] = [];
-        for (const instance of configuredInstances) {
-          const runtime = await createSlackNativeRuntimeFromEnv(runtimeEnvForInstance(env, instance), {
-            instances,
-            instance,
-            resolveSecret: options.resolveSecret,
-          });
-          if (runtime) runtimes.push(runtime);
-        }
-        return runtimes;
-      }
-    }
-
-    const runtime = await createSlackNativeRuntimeFromEnv(env, { instances, resolveSecret: options.resolveSecret });
-    return runtime ? [runtime] : [];
-  }
-
+  const channels = options.channels ?? configStore.getConfig().channels ?? {};
+  const configuredChannels = enabledSlackChannels(channels);
   const runtimes: SlackNativeRuntime[] = [];
-  for (const connection of connections) {
-    const instance = findSlackInstanceForConnection(instances, connection);
-    const runtimeEnv = instance
-      ? runtimeEnvForInstance(env, instance, connection)
-      : ({ ...env, RAVI_SLACK_CONNECTION: connection } as NodeJS.ProcessEnv);
-    const runtime = await createSlackNativeRuntimeFromEnv(runtimeEnv, {
-      instances,
-      instance,
+  for (const channel of configuredChannels) {
+    const runtime = await createSlackNativeRuntimeFromEnv(env, {
+      channels,
+      channel,
       resolveSecret: options.resolveSecret,
     });
     if (runtime) runtimes.push(runtime);
@@ -1144,62 +1114,11 @@ export async function createSlackNativeRuntimesFromEnv(
   return runtimes;
 }
 
-function hasExplicitSlackRuntimeSelector(env: NodeJS.ProcessEnv): boolean {
-  return Boolean(
-    env.RAVI_SLACK_CONNECTION?.trim() ||
-      env.RAVI_SLACK_CREDENTIAL_CONNECTION?.trim() ||
-      env.RAVI_SLACK_ACCOUNT?.trim() ||
-      env.RAVI_SLACK_INSTANCE?.trim(),
-  );
-}
-
-function enabledSlackInstances(instances: Record<string, InstanceConfig> | undefined): InstanceConfig[] {
-  if (!instances) return [];
-  return Object.values(instances)
-    .filter((instance) => instance.enabled !== false && instance.channel === "slack")
+function enabledSlackChannels(channels: Record<string, ChannelConfig> | undefined): ChannelConfig[] {
+  if (!channels) return [];
+  return Object.values(channels)
+    .filter((channel) => channel.enabled !== false && channel.provider === "slack")
     .sort((a, b) => a.name.localeCompare(b.name));
-}
-
-function runtimeEnvForInstance(
-  env: NodeJS.ProcessEnv,
-  instance: InstanceConfig,
-  connection = credentialConnectionForInstance(instance) ?? instance.name,
-): NodeJS.ProcessEnv {
-  return {
-    ...env,
-    RAVI_SLACK_CONNECTION: connection,
-    RAVI_SLACK_ACCOUNT: instance.name,
-    RAVI_SLACK_ROUTE_ACCOUNT: instance.name,
-    RAVI_SLACK_INSTANCE: instance.instanceId ?? instance.name,
-  } as NodeJS.ProcessEnv;
-}
-
-function slackConnectionListFromEnv(value: string | undefined): string[] {
-  if (!value) return [];
-  return Array.from(
-    new Set(
-      value
-        .split(",")
-        .map((part) => part.trim())
-        .filter(Boolean),
-    ),
-  );
-}
-
-function findSlackInstanceForConnection(
-  instances: Record<string, InstanceConfig> | undefined,
-  connection: string,
-): InstanceConfig | undefined {
-  if (!instances) return undefined;
-  const normalized = connection.trim();
-  return Object.values(instances).find((instance) => {
-    if (instance.enabled === false || instance.channel !== "slack") return false;
-    return (
-      instance.name === normalized ||
-      instance.instanceId === normalized ||
-      credentialConnectionForInstance(instance) === normalized
-    );
-  });
 }
 
 function slackAssistantPresenceEnabledFromEnv(value: string | undefined): boolean {

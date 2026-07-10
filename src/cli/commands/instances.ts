@@ -845,6 +845,7 @@ export class InstancesCommands {
     contactIntakeMode?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    const resolvedChannel = channel ?? "whatsapp";
     if (agent && !dbGetAgent(agent)) {
       fail(
         `Agent not found: ${agent}. Available: ${dbListAgents()
@@ -867,7 +868,7 @@ export class InstancesCommands {
     try {
       const instance = dbUpsertInstance({
         name,
-        channel: channel ?? "whatsapp",
+        channel: resolvedChannel,
         agent: agent ?? undefined,
         dmPolicy: (dmPolicy ?? "open") as "open" | "pairing" | "closed",
         groupPolicy: (groupPolicy ?? "open") as "open" | "allowlist" | "closed",
@@ -881,7 +882,7 @@ export class InstancesCommands {
       if (asJson) {
         printJson(payload);
       } else {
-        console.log(`✓ Instance created: ${name} (channel: ${channel ?? "whatsapp"})`);
+        console.log(`✓ Instance created: ${name} (channel: ${resolvedChannel})`);
         if (agent) console.log(`  Agent: ${agent}`);
       }
       emitConfigChanged();

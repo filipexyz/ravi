@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import {
-  credentialConnectionForInstance,
+  credentialConnectionForChannel,
   parseSlackSecretPayload,
   resolveSlackCredentialConfigFromEnv,
 } from "./credentials.js";
@@ -12,16 +12,11 @@ describe("Slack credential config", () => {
         JSON.stringify({
           appToken: "xapp-test",
           botToken: "xoxb-test",
-          accountId: "T1",
-          instanceId: "slack-main",
         }),
       ),
     ).toEqual({
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      accountId: "T1",
-      routeAccountId: undefined,
-      instanceId: "slack-main",
     });
   });
 
@@ -30,21 +25,18 @@ describe("Slack credential config", () => {
       parseSlackSecretPayload(`
         SLACK_APP_TOKEN="xapp-test"
         SLACK_BOT_TOKEN='xoxb-test'
-        RAVI_SLACK_ACCOUNT=T1
       `),
     ).toMatchObject({
       appToken: "xapp-test",
       botToken: "xoxb-test",
-      accountId: "T1",
     });
   });
 
-  it("resolves broker credentials from the enabled Slack instance", async () => {
+  it("resolves broker credentials from the enabled Slack channel", async () => {
     const resolveSecret = mock(async () => ({
       secret: JSON.stringify({
         appToken: "xapp-broker",
         botToken: "xoxb-broker",
-        accountId: "T1",
       }),
       connection: { connection: "ravi-rbbt-slack" },
     }));
@@ -53,10 +45,14 @@ describe("Slack credential config", () => {
       {},
       {
         resolveSecret,
-        instances: {
-          "ravi-rbbt-slack": slackInstance({
+        channel: slackChannel({
+          name: "ravi-rbbt-slack",
+          credentialConnection: "ravi-rbbt-slack",
+        }),
+        channels: {
+          "ravi-rbbt-slack": slackChannel({
             name: "ravi-rbbt-slack",
-            instanceId: "slack-instance-1",
+            credentialConnection: "ravi-rbbt-slack",
           }),
         },
       },
@@ -72,13 +68,14 @@ describe("Slack credential config", () => {
       botToken: "xoxb-broker",
       accountId: "ravi-rbbt-slack",
       routeAccountId: "ravi-rbbt-slack",
-      instanceId: "slack-instance-1",
+      channel: "ravi-rbbt-slack",
+      instanceId: "ravi-rbbt-slack",
       connection: "ravi-rbbt-slack",
       source: "broker",
     });
   });
 
-  it("uses the instance credential connection default when configured", async () => {
+  it("uses the channel credential connection when configured", async () => {
     const resolveSecret = mock(async () => ({
       secret: JSON.stringify({
         appToken: "xapp-broker",
@@ -91,11 +88,14 @@ describe("Slack credential config", () => {
       {},
       {
         resolveSecret,
-        instances: {
-          "ravi-rbbt-slack": slackInstance({
+        channel: slackChannel({
+          name: "ravi-rbbt-slack",
+          credentialConnection: "rbbt-secret",
+        }),
+        channels: {
+          "ravi-rbbt-slack": slackChannel({
             name: "ravi-rbbt-slack",
-            instanceId: "slack-instance-1",
-            defaults: { slackCredentialConnection: "rbbt-secret" },
+            credentialConnection: "rbbt-secret",
           }),
         },
       },
@@ -109,13 +109,14 @@ describe("Slack credential config", () => {
     expect(config).toMatchObject({
       accountId: "ravi-rbbt-slack",
       routeAccountId: "ravi-rbbt-slack",
-      instanceId: "slack-instance-1",
+      channel: "ravi-rbbt-slack",
+      instanceId: "ravi-rbbt-slack",
       connection: "rbbt-secret",
       source: "broker",
     });
   });
 
-  it("does not guess a broker connection when multiple Slack instances are enabled", async () => {
+  it("does not guess a broker connection from channel names", async () => {
     const resolveSecret = mock(async () => ({
       secret: JSON.stringify({ appToken: "xapp-broker", botToken: "xoxb-broker" }),
     }));
@@ -124,9 +125,8 @@ describe("Slack credential config", () => {
       {},
       {
         resolveSecret,
-        instances: {
-          "ravi-rbbt-slack": slackInstance({ name: "ravi-rbbt-slack" }),
-          "ravi-slack-dev": slackInstance({ name: "ravi-slack-dev" }),
+        channels: {
+          "ravi-rbbt-slack": slackChannel({ name: "ravi-rbbt-slack" }),
         },
       },
     );
@@ -135,89 +135,25 @@ describe("Slack credential config", () => {
     expect(resolveSecret).not.toHaveBeenCalled();
   });
 
-  it("resolves broker credentials when an explicit dev connection override is configured", async () => {
-    const resolveSecret = mock(async () => ({
-      secret: JSON.stringify({
-        appToken: "xapp-broker",
-        botToken: "xoxb-broker",
-        accountId: "T1",
-      }),
-      connection: { connection: "main" },
-    }));
-
-    const config = await resolveSlackCredentialConfigFromEnv(
-      {
-        RAVI_SLACK_CONNECTION: "main",
-        RAVI_SLACK_INSTANCE: "slack-main",
-      } as NodeJS.ProcessEnv,
-      { resolveSecret },
-    );
-
-    expect(resolveSecret).toHaveBeenCalledWith({
-      provider: "slack",
-      connection: "main",
-      action: "socket_mode.connect",
-    });
-    expect(config).toMatchObject({
-      appToken: "xapp-broker",
-      botToken: "xoxb-broker",
-      accountId: "T1",
-      instanceId: "slack-main",
-      connection: "main",
-      source: "broker",
-    });
-  });
-
-  it("requires an explicit flag before using raw env credentials", async () => {
+  it("maps Slack channels to broker connection ids", () => {
     expect(
-      await resolveSlackCredentialConfigFromEnv({
-        SLACK_APP_TOKEN: "xapp-env",
-        SLACK_BOT_TOKEN: "xoxb-env",
-      } as NodeJS.ProcessEnv),
-    ).toBeNull();
-
-    expect(
-      await resolveSlackCredentialConfigFromEnv({
-        RAVI_SLACK_ALLOW_ENV_CREDENTIALS: "1",
-        SLACK_APP_TOKEN: "xapp-env",
-        SLACK_BOT_TOKEN: "xoxb-env",
-      } as NodeJS.ProcessEnv),
-    ).toMatchObject({
-      appToken: "xapp-env",
-      botToken: "xoxb-env",
-      connection: "slack",
-      source: "env",
-    });
-  });
-
-  it("maps Slack instances to broker connection ids", () => {
-    expect(
-      credentialConnectionForInstance(
-        slackInstance({
+      credentialConnectionForChannel(
+        slackChannel({
           name: "ravi-rbbt-slack",
-          defaults: { credentials: { slackConnection: "rbbt-secret" } },
+          credentialConnection: "rbbt-secret",
         }),
       ),
     ).toBe("rbbt-secret");
-    expect(credentialConnectionForInstance(slackInstance({ name: "ravi-rbbt-slack" }))).toBe("ravi-rbbt-slack");
+    expect(credentialConnectionForChannel(slackChannel({ name: "ravi-rbbt-slack" }))).toBeUndefined();
   });
 });
 
-function slackInstance(input: {
-  name: string;
-  instanceId?: string;
-  defaults?: Record<string, unknown>;
-  enabled?: boolean;
-}) {
+function slackChannel(input: { name: string; credentialConnection?: string; enabled?: boolean }) {
   return {
     name: input.name,
-    ...(input.instanceId ? { instanceId: input.instanceId } : {}),
-    channel: "slack",
-    dmPolicy: "closed" as const,
-    groupPolicy: "allowlist" as const,
-    contactIntakeMode: "off" as const,
+    provider: "slack",
     enabled: input.enabled ?? true,
-    ...(input.defaults ? { defaults: input.defaults } : {}),
+    ...(input.credentialConnection ? { credentialConnection: input.credentialConnection } : {}),
     createdAt: 1,
     updatedAt: 1,
   };
