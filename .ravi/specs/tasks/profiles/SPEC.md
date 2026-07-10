@@ -167,3 +167,12 @@ Other profiles MAY exist from plugin, workspace, or user catalogs. They MUST NOT
 - Letting a profile edit silently alter behavior for already-created tasks.
 - Accidentally requiring `TASK.md` for a profile that does not declare task-document usage.
 - Putting observer status-sync instructions in the worker prompt for `observed-task`.
+
+## Model Presets Interaction
+
+Profile runtime defaults sit at precedence level 3 (above session override and
+agent preset). A profile runtime default MUST continue to win over an agent
+preset and MUST NOT be rewritten when a preset changes. When neither a
+prompt/dispatch/task/profile/session model applies, an agent preset (precedence
+level 5) supplies the effective model, reported as `modelSource=agent_preset`
+with `modelPresetId`/`modelPresetVersion`. See `runtime/model-presets`.

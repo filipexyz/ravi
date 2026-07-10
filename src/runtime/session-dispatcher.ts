@@ -29,6 +29,7 @@ import {
   type RuntimeUserMessage,
 } from "./host-session.js";
 import { applyDirectRuntimeModelSwitch, resolveRuntimeModelSwitchStrategy } from "./model-switch.js";
+import { resolveAgentModelSelection } from "./model-preset-resolver.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID } from "./provider-registry.js";
 import type { RuntimeProviderId } from "./types.js";
 import { formatUserFacingTurnFailure, type RuntimeSafeEmit } from "./host-event-loop.js";
@@ -429,7 +430,12 @@ export class RuntimeSessionDispatcher {
   async applySessionModelChange(
     sessionName: string,
     model: string,
-    options: { drainReleasedSlot?: boolean } = {},
+    options: {
+      drainReleasedSlot?: boolean;
+      modelSource?: string | null;
+      modelPresetId?: string | null;
+      modelPresetVersion?: number | null;
+    } = {},
   ): Promise<"missing" | "unchanged" | "applied" | "restart-next-turn"> {
     const streaming = this.streamingSessions.get(sessionName);
     if (!streaming || streaming.done) {
@@ -438,6 +444,14 @@ export class RuntimeSessionDispatcher {
     if (streaming.currentModel === model) {
       return "unchanged";
     }
+
+    const presetTrace = {
+      ...(options.modelSource ? { modelSource: options.modelSource } : {}),
+      ...(options.modelPresetId ? { modelPresetId: options.modelPresetId } : {}),
+      ...(options.modelPresetVersion !== undefined && options.modelPresetVersion !== null
+        ? { modelPresetVersion: options.modelPresetVersion }
+        : {}),
+    };
 
     if (resolveRuntimeModelSwitchStrategy(streaming.queryHandle) === "direct-set") {
       recordRuntimeTraceEvent({
@@ -456,6 +470,7 @@ export class RuntimeSessionDispatcher {
           previousModel: streaming.currentModel,
           nextModel: model,
           strategy: "direct-set",
+          ...presetTrace,
         },
       });
       await applyDirectRuntimeModelSwitch(streaming.queryHandle, model);
@@ -482,6 +497,8 @@ export class RuntimeSessionDispatcher {
       payloadJson: {
         reason: "model_change_restart",
         nextModel: model,
+        strategy: "restart-next-turn",
+        ...presetTrace,
       },
     });
     recordStreamingTurnInterruptedTrace(sessionName, streaming, "model_change_restart", sessionName);
@@ -634,10 +651,13 @@ export class RuntimeSessionDispatcher {
       log.error("No agent found for prompt", { sessionName, agentId });
       return;
     }
+    const agentSelection = resolveAgentModelSelection(agent);
     const requestedProvider: RuntimeProviderId =
       prompt._observation && prompt._runtimeProviderId
         ? prompt._runtimeProviderId
-        : (agent.provider ?? DEFAULT_RUNTIME_PROVIDER_ID);
+        : agentSelection.modelSource === "agent_preset"
+          ? agentSelection.effectiveProvider
+          : (agent.provider ?? DEFAULT_RUNTIME_PROVIDER_ID);
     let retainReleasedSlot = false;
 
     if (existing && !existing.done) {
@@ -739,6 +759,9 @@ export class RuntimeSessionDispatcher {
         } else if (existing.currentModel !== requestedModel) {
           const modelStatus = await this.applySessionModelChange(sessionName, requestedModel, {
             drainReleasedSlot: false,
+            modelSource: requestedRuntime.sources.model,
+            modelPresetId: requestedRuntime.modelPresetId ?? null,
+            modelPresetVersion: requestedRuntime.modelPresetVersion ?? null,
           });
           if (modelStatus === "restart-next-turn") {
             await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot: true });

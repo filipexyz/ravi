@@ -9,7 +9,8 @@ const actualRouterSessionsModule = await import("../../router/sessions.js");
 type AgentLike = {
   id: string;
   cwd: string;
-  model?: string;
+  model?: string | null;
+  modelPresetId?: string | null;
   provider?: string;
   remote?: string;
   defaults?: Record<string, unknown> | null;
@@ -207,6 +208,13 @@ mock.module("../../transcripts.js", () => ({
   locateRuntimeTranscript: () => (transcriptPath ? { path: transcriptPath } : { path: null, reason: "missing" }),
 }));
 
+type PresetLike = { id: string; provider: string; model: string; enabled: boolean; version: number };
+let presetsById: Record<string, PresetLike> = {};
+
+mock.module("../../runtime/model-preset-store.js", () => ({
+  getRuntimeModelPreset: (id: string) => presetsById[id.trim().toLowerCase()] ?? null,
+}));
+
 const { AgentsCommands } = await import("./agents.js");
 
 describe("AgentsCommands set model validation", () => {
@@ -291,6 +299,64 @@ describe("AgentsCommands set model validation", () => {
     );
 
     expect(createAgentCalls).toHaveLength(0);
+  });
+});
+
+describe("AgentsCommands model preset mutations", () => {
+  beforeEach(() => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev" };
+    createAgentCalls = [];
+    updateAgentCalls = [];
+    presetsById = {
+      "fast-sonnet": { id: "fast-sonnet", provider: "anthropic", model: "sonnet", enabled: true, version: 3 },
+      "off-preset": { id: "off-preset", provider: "anthropic", model: "sonnet", enabled: false, version: 1 },
+    };
+  });
+
+  it("assigns a preset and clears any direct model atomically", async () => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", model: "haiku" };
+    const commands = new AgentsCommands();
+
+    await commands.set("dev", "modelPreset", "fast-sonnet", true);
+
+    expect(updateAgentCalls).toEqual([{ id: "dev", partial: { modelPresetId: "fast-sonnet", model: null } }]);
+  });
+
+  it("clears a preset reference", async () => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", modelPresetId: "fast-sonnet" };
+    const commands = new AgentsCommands();
+
+    await commands.set("dev", "modelPreset", "clear", true);
+
+    expect(updateAgentCalls).toEqual([{ id: "dev", partial: { modelPresetId: null } }]);
+  });
+
+  it("clears the preset when a direct model is written", async () => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", modelPresetId: "fast-sonnet" };
+    const commands = new AgentsCommands();
+
+    await commands.set("dev", "model", "sonnet", true);
+
+    expect(updateAgentCalls).toEqual([{ id: "dev", partial: { model: "sonnet", modelPresetId: null } }]);
+  });
+
+  it("rejects assigning a disabled preset", async () => {
+    const commands = new AgentsCommands();
+    await expect(commands.set("dev", "modelPreset", "off-preset", true)).rejects.toThrow(/disabled/);
+    expect(updateAgentCalls).toHaveLength(0);
+  });
+
+  it("rejects assigning a missing preset", async () => {
+    const commands = new AgentsCommands();
+    await expect(commands.set("dev", "modelPreset", "ghost", true)).rejects.toThrow(/not found/);
+    expect(updateAgentCalls).toHaveLength(0);
+  });
+
+  it("rejects a provider write incompatible with the referenced preset", async () => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", modelPresetId: "fast-sonnet" };
+    const commands = new AgentsCommands();
+    await expect(commands.set("dev", "provider", "codex", true)).rejects.toThrow(/incompatible|references preset/);
+    expect(updateAgentCalls).toHaveLength(0);
   });
 });
 

@@ -242,3 +242,12 @@ Before implementing the Pi adapter, Ravi SHOULD harden these generic runtime sur
 - A provider with no control support receives `sessions runtime` commands and fails silently.
 - Model switching is implemented by provider name instead of handle strategy.
 - Provider capability data says skills are supported, but session visibility can only prove local sync or prompt advertisement.
+
+## Model Presets
+
+A runtime model preset selects a provider and model selector that agents
+reference indirectly. The preset provider is immutable and MUST match the
+provider used to validate its model selector. When an agent references a preset,
+the canonical resolver returns the preset provider as `effectiveProvider`, and
+the runtime uses the provider's existing direct-set or restart-next-turn
+strategy on the next turn. See `runtime/model-presets`.

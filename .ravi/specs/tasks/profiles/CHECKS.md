@@ -23,3 +23,12 @@
 
 - Creating a task MUST pin the effective profile snapshot, state, inputs, and runtime defaults.
 - A task created under an older snapshot MUST remain resumable when the live catalog changes.
+
+## Model Preset Precedence Checks
+
+- A profile runtime model default wins over an agent preset and is not rewritten
+  when the preset changes.
+- With no prompt/dispatch/task/profile/session model, an agent preset supplies
+  the effective model reported as `modelSource=agent_preset` with the preset
+  version.
+- `bun test src/tasks/runtime-options.test.ts`

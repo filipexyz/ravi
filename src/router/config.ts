@@ -7,7 +7,7 @@
 
 import { homedir } from "node:os";
 import { existsSync, mkdirSync } from "node:fs";
-import type { RouterConfig, AgentConfig } from "./types.js";
+import type { RouterConfig, AgentConfig, AgentUpdateInput } from "./types.js";
 import { logger } from "../utils/logger.js";
 import { ensureAgentInstructionFiles } from "../runtime/agent-instructions.js";
 import { IGNORED_OMNI_INSTANCE_IDS_SETTING, parseIgnoredOmniInstanceIds } from "./omni-ignore.js";
@@ -117,7 +117,7 @@ export function loadRouterConfig(): RouterConfig {
 /**
  * Update an existing agent (strips id from partial to prevent accidental change)
  */
-export function updateAgent(id: string, partial: Partial<AgentConfig>): void {
+export function updateAgent(id: string, partial: AgentUpdateInput): void {
   const { id: _ignoreId, ...updates } = partial;
   dbUpdateAgent(id, updates);
 }
