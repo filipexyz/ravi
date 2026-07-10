@@ -31,6 +31,11 @@ const CONSUMER_NAME = "ravi-prompts";
 let legacyConsumerCleanupComplete = false;
 let legacyConsumerCleanupInFlight: Promise<void> | null = null;
 let sessionPromptInfrastructureInFlight: Promise<void> | null = null;
+let sessionPromptInfrastructureReady = false;
+
+export interface EnsureSessionPromptInfrastructureOptions {
+  force?: boolean;
+}
 
 export function getConsumerName(): string {
   return CONSUMER_NAME;
@@ -164,13 +169,34 @@ export async function ensureSessionConsumer(jsm: JetStreamManager): Promise<void
  * the daemon process stays alive; re-ensuring both pieces lets the pull loop
  * recover without requiring a full daemon restart.
  */
-export async function ensureSessionPromptInfrastructure(existingJsm?: JetStreamManager): Promise<void> {
+export async function ensureSessionPromptInfrastructure(
+  existingJsm?: JetStreamManager,
+  options: EnsureSessionPromptInfrastructureOptions = {},
+): Promise<void> {
+  if (sessionPromptInfrastructureReady && !options.force) return;
   if (sessionPromptInfrastructureInFlight) return sessionPromptInfrastructureInFlight;
 
-  sessionPromptInfrastructureInFlight = ensureSessionPromptInfrastructureOnce(existingJsm).finally(() => {
-    sessionPromptInfrastructureInFlight = null;
-  });
+  sessionPromptInfrastructureInFlight = ensureSessionPromptInfrastructureOnce(existingJsm)
+    .then(() => {
+      sessionPromptInfrastructureReady = true;
+    })
+    .catch((err) => {
+      if (options.force) {
+        sessionPromptInfrastructureReady = false;
+      }
+      throw err;
+    })
+    .finally(() => {
+      sessionPromptInfrastructureInFlight = null;
+    });
   return sessionPromptInfrastructureInFlight;
+}
+
+export function resetSessionPromptInfrastructureCacheForTests(): void {
+  legacyConsumerCleanupComplete = false;
+  legacyConsumerCleanupInFlight = null;
+  sessionPromptInfrastructureInFlight = null;
+  sessionPromptInfrastructureReady = false;
 }
 
 async function ensureSessionPromptInfrastructureOnce(existingJsm?: JetStreamManager): Promise<void> {
@@ -203,7 +229,20 @@ export async function publishSessionPrompt(sessionName: string, payload: Record<
     deliveryBarrier,
     deliveryBarrierSource,
   };
-  await js.publish(`ravi.session.${sessionName}.prompt`, sc.encode(JSON.stringify(enrichedPayload)));
+  try {
+    await js.publish(`ravi.session.${sessionName}.prompt`, sc.encode(JSON.stringify(enrichedPayload)));
+  } catch (error) {
+    if (!isPromptPublishInfrastructureError(error)) {
+      throw error;
+    }
+    sessionPromptInfrastructureReady = false;
+    log.warn("SESSION_PROMPTS publish failed after cached infrastructure; revalidating once", {
+      sessionName,
+      error,
+    });
+    await ensureSessionPromptInfrastructure(undefined, { force: true });
+    await js.publish(`ravi.session.${sessionName}.prompt`, sc.encode(JSON.stringify(enrichedPayload)));
+  }
   try {
     recordPromptPublishedTrace({ sessionName, payload: enrichedPayload });
   } catch (error) {
@@ -236,4 +275,15 @@ async function ensureConsumerExistsAfterRace(jsm: JetStreamManager, originalErro
 function isNotFoundError(err: unknown): boolean {
   const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
   return message.includes("not found") || message.includes("deleted");
+}
+
+function isPromptPublishInfrastructureError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+  return (
+    message.includes("stream not found") ||
+    message.includes("consumer not found") ||
+    message.includes("not found") ||
+    message.includes("deleted") ||
+    message.includes("no responders")
+  );
 }

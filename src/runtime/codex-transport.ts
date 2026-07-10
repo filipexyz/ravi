@@ -50,6 +50,33 @@ export interface CodexTransport {
   closeChannel(): void;
 }
 
+export type CodexTransportProcess = Pick<ChildProcess, "pid" | "kill">;
+export type CodexProcessSignaler = (pid: number, signal?: NodeJS.Signals | number) => boolean;
+
+export function signalCodexTransportProcess(
+  child: CodexTransportProcess,
+  signal: NodeJS.Signals,
+  killProcess: CodexProcessSignaler = process.kill,
+): void {
+  const pid = child.pid;
+  if (typeof pid === "number" && Number.isFinite(pid) && pid > 0) {
+    try {
+      killProcess(-pid, signal);
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ESRCH") {
+        return;
+      }
+    }
+  }
+
+  try {
+    child.kill(signal);
+  } catch {
+    // already gone
+  }
+}
+
 export function shouldSuppressCodexStderrLine(line: string): boolean {
   if (line.includes(BENIGN_CODEX_SKILL_ICON_WARNING) && line.includes("icon path must not contain '..'")) {
     return true;
@@ -91,6 +118,7 @@ function attachStderrStreaming(
 export function createStdioTransport(opts: CodexTransportSpawnOptions): CodexTransport {
   const spawned = spawn(opts.command, [...opts.baseArgs, "app-server"], {
     cwd: opts.cwd,
+    detached: true,
     env: opts.env,
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -154,6 +182,7 @@ export function createStdioTransport(opts: CodexTransportSpawnOptions): CodexTra
 export function createWebsocketTransport(opts: CodexTransportSpawnOptions): CodexTransport {
   const spawned = spawn(opts.command, [...opts.baseArgs, "app-server", "--listen", "ws://127.0.0.1:0"], {
     cwd: opts.cwd,
+    detached: true,
     env: opts.env,
     stdio: ["ignore", "pipe", "pipe"],
   });

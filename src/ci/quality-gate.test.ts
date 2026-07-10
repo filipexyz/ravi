@@ -269,6 +269,32 @@ describe("runCoverageGate", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("passes when the session stream focused test is in the diff", () => {
+    const cwd = makeWorkspace();
+
+    const result = runCoverageGate(["src/omni/session-stream.ts", "src/omni/session-stream.test.ts"], cwd);
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/omni/"]);
+  });
+
+  it("passes when runtime transport focused tests are in the diff", () => {
+    const cwd = makeWorkspace();
+
+    const result = runCoverageGate(
+      [
+        "src/runtime/codex-transport.ts",
+        "src/runtime/codex-transport.test.ts",
+        "src/runtime/prompt-subscription.ts",
+        "src/runtime/prompt-subscription.test.ts",
+      ],
+      cwd,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
+  });
+
   it("fails for runtime change without focused test", () => {
     const cwd = makeWorkspace();
 

@@ -10,6 +10,7 @@ import { logger } from "../utils/logger.js";
 import {
   createCodexTransport,
   resolveCodexTransportKind,
+  signalCodexTransportProcess,
   type CodexTransport,
   type CodexTransportKind,
 } from "./codex-transport.js";
@@ -997,18 +998,14 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           if (activeTurn) {
             settleTurn(activeTurn, { exitCode: 1, stderr: getStderr() }, { failQueue: error });
           }
-          newTransport.child.kill("SIGKILL");
+          signalCodexTransportProcess(newTransport.child, "SIGKILL");
         }
       },
       onTransportError: (error) => {
         if (activeTurn) {
           settleTurn(activeTurn, { exitCode: 1, stderr: getStderr() }, { failQueue: error });
         }
-        try {
-          newTransport.child.kill("SIGKILL");
-        } catch {
-          // child already gone
-        }
+        signalCodexTransportProcess(newTransport.child, "SIGKILL");
       },
     });
 
@@ -1161,10 +1158,10 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       if (!child || closed) {
         return;
       }
-      child.kill("SIGINT");
+      signalCodexTransportProcess(child, "SIGINT");
       forcedKillTimer = setTimeout(() => {
         if (!closed && child) {
-          child.kill("SIGKILL");
+          signalCodexTransportProcess(child, "SIGKILL");
         }
       }, INTERRUPT_GRACE_MS);
       forcedKillTimer.unref?.();
@@ -1655,10 +1652,10 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
     const targetChild = child;
     targetChild.stdin?.end();
-    targetChild.kill("SIGTERM");
+    signalCodexTransportProcess(targetChild, "SIGTERM");
     forcedKillTimer = setTimeout(() => {
       if (child === targetChild && !closed) {
-        targetChild.kill("SIGKILL");
+        signalCodexTransportProcess(targetChild, "SIGKILL");
       }
     }, INTERRUPT_GRACE_MS);
     forcedKillTimer.unref?.();
@@ -1724,7 +1721,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         } catch (error) {
           settleTurn(turn, { exitCode: 1, stderr: getStderr().slice(turn.stderrOffset) }, { failQueue: error });
           if (child && !closed) {
-            child.kill("SIGKILL");
+            signalCodexTransportProcess(child, "SIGKILL");
           }
         }
       })();
@@ -1769,6 +1766,7 @@ function _createCodexCliTransport(options: { command?: string } = {}): CodexCliT
       const args = buildExecArgs(input.resume, input.model, toCodexRuntimeEffort(input.effort));
       const child = spawn(command, args, {
         cwd: input.cwd,
+        detached: true,
         env: input.env,
         stdio: ["pipe", "pipe", "pipe"],
       });
@@ -1838,10 +1836,10 @@ function _createCodexCliTransport(options: { command?: string } = {}): CodexCliT
             return;
           }
 
-          child.kill("SIGINT");
+          signalCodexTransportProcess(child, "SIGINT");
           forcedKillTimer = setTimeout(() => {
             if (!closed) {
-              child.kill("SIGKILL");
+              signalCodexTransportProcess(child, "SIGKILL");
             }
           }, INTERRUPT_GRACE_MS);
           forcedKillTimer.unref?.();

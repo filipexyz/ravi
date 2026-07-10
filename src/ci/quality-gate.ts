@@ -19,7 +19,11 @@ const REQUIRED_COMPANIONS = ["WHY.md", "RUNBOOK.md", "CHECKS.md"] as const;
  * Each prefix maps to a list of known test file glob patterns.
  */
 export const RUNTIME_PATH_MAP: Record<string, string[]> = {
-  "src/omni/": ["src/omni/consumer-context.test.ts", "src/omni/consumer-policy.test.ts"],
+  "src/omni/": [
+    "src/omni/consumer-context.test.ts",
+    "src/omni/consumer-policy.test.ts",
+    "src/omni/session-stream.test.ts",
+  ],
   "src/router/": [
     "src/router/router.test.ts",
     "src/router/sessions.test.ts",
@@ -33,6 +37,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/session-goals.test.ts",
     "src/runtime/session-trace.test.ts",
     "src/runtime/compaction-announcement.test.ts",
+    "src/runtime/codex-transport.test.ts",
+    "src/runtime/prompt-subscription.test.ts",
   ],
   "src/session-trace/": ["src/session-trace/session-trace.test.ts"],
   "src/triggers/": ["src/triggers/triggers.test.ts"],
