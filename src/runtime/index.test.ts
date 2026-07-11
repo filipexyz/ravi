@@ -9,6 +9,7 @@ import {
   unregisterRuntimeProvider,
 } from "./index.js";
 import type { RuntimeProvider } from "./types.js";
+import { isNonConversationalSession } from "../skills/skill-curation-runtime.js";
 
 describe("runtime compatibility preflight", () => {
   it("uses Codex as the default runtime provider", () => {
@@ -129,6 +130,32 @@ describe("runtime compatibility preflight", () => {
       expect(createRuntimeProvider("test-provider").id).toBe("test-provider");
     } finally {
       unregisterRuntimeProvider("test-provider");
+    }
+  });
+});
+
+describe("skill nudge cadence — session guard (runtime wiring)", () => {
+  it("never ticks curator or curation-report sessions", () => {
+    expect(isNonConversationalSession("task-abc123-curator")).toBe(true);
+    expect(isNonConversationalSession("memory-log")).toBe(true);
+    expect(isNonConversationalSession("skill-log")).toBe(true);
+  });
+
+  it("ticks a normal conversation session", () => {
+    expect(isNonConversationalSession("ravi-dev-group-57603085")).toBe(false);
+    expect(isNonConversationalSession("main-dm-615153")).toBe(false);
+  });
+
+  it("honors RAVI_NUDGE_SKIP_SESSIONS for extra report groups", () => {
+    const prev = process.env.RAVI_NUDGE_SKIP_SESSIONS;
+    process.env.RAVI_NUDGE_SKIP_SESSIONS = "insights-log, ops-log";
+    try {
+      expect(isNonConversationalSession("insights-log")).toBe(true);
+      expect(isNonConversationalSession("ops-log")).toBe(true);
+      expect(isNonConversationalSession("some-group")).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.RAVI_NUDGE_SKIP_SESSIONS;
+      else process.env.RAVI_NUDGE_SKIP_SESSIONS = prev;
     }
   });
 });

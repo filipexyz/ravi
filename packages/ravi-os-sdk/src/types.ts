@@ -10945,6 +10945,51 @@ export type SkillGatesShowReturn = {
   };
 };
 
+/** Input shape for `skills.archive`. */
+export type SkillsArchiveInput = {
+  force?: boolean;
+  name: string;
+  skill?: string;
+};
+
+/** Return shape for `skills.archive`. */
+export type SkillsArchiveReturn = {
+  archivedTo?: string;
+  detail?: string;
+  dryRun: boolean;
+  outcome: "archived" | "rejected";
+  path?: string;
+  reason?: string;
+  skill: string;
+};
+
+/** Input shape for `skills.guard`. */
+export type SkillsGuardInput = {
+  agent?: string;
+  cadenceTurn?: string;
+  content?: string;
+  contentFile?: string;
+  date?: string;
+  description?: string;
+  dryRun?: boolean;
+  op?: string;
+  sessionKey?: string;
+  skill?: string;
+  taskId?: string;
+};
+
+/** Return shape for `skills.guard`. */
+export type SkillsGuardReturn = {
+  detail?: string;
+  dryRun: boolean;
+  finalChars?: number;
+  op: "patch" | "create";
+  outcome: "written" | "rejected";
+  path?: string;
+  reason?: string;
+  skill: string;
+};
+
 /** Input shape for `skills.install`. */
 export type SkillsInstallInput = {
   all?: boolean;

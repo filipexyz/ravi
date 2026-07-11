@@ -38,3 +38,6 @@ coverage/
 # Codex/Electron runtime bundles accidentally dropped in repo root
 /app-session-*.js
 /app-session-*.js.map
+
+# build artifacts (npm pack)
+ravi.bot-*.tgz
