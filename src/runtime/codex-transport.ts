@@ -191,6 +191,7 @@ export function createWebsocketTransport(opts: CodexTransportSpawnOptions): Code
   let ws: WebSocket | null = null;
   let resolvedUrl: string | undefined;
   let readySettled = false;
+  let closeRequested = false;
   let transportErrorNotified = false;
   let readyResolve: () => void = () => {};
   let readyReject: (error: Error) => void = () => {};
@@ -261,7 +262,7 @@ export function createWebsocketTransport(opts: CodexTransportSpawnOptions): Code
       notifyTransportError(new Error(`codex websocket error: ${message}`));
     };
     ws.onclose = (event: CloseEvent) => {
-      if (readySettled && spawned.killed) return;
+      if (closeRequested || (readySettled && spawned.killed)) return;
       // Unclean close while child still alive: surface as transport error so
       // the caller can settle the active turn.
       const error = new Error(`codex websocket closed (code=${event.code}, reason=${event.reason || "n/a"})`);
@@ -299,6 +300,7 @@ export function createWebsocketTransport(opts: CodexTransportSpawnOptions): Code
     getStderr: () => state.stderr,
     getStderrOffset: () => state.stderrOffset,
     closeChannel: () => {
+      closeRequested = true;
       clearTimeout(readyTimer);
       try {
         ws?.close();

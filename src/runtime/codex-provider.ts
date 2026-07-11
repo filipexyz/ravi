@@ -62,6 +62,7 @@ import { createRuntimeTerminalEventTracker } from "./terminality.js";
 const DEFAULT_CODEX_MODEL = "gpt-5";
 const INTERRUPT_GRACE_MS = 1_500;
 const CODEX_APP_SERVER_SANDBOX = "danger-full-access";
+const CODEX_SUB_AGENT_DIRECT_INPUT_ERROR = "direct app-server input is not allowed for multi-agent v2 sub-agents";
 const RAVI_CODEX_BASH_HOOK_STATUS = "ravi codex bash permission gate";
 const RAVI_CODEX_TOOL_HOOK_STATUS = "ravi codex native tool permission gate";
 const RAVI_CODEX_TOOL_HOOK_MATCHER = buildCodexNativeToolHookMatcher();
@@ -142,6 +143,11 @@ interface CodexCliTransport {
   startTurn(input: CodexCliTurnRequest): CodexCliTurnHandle;
   control?(request: RuntimeControlRequest): Promise<RuntimeControlResult>;
   close?(): Promise<void>;
+}
+
+function isCodexSubAgentDirectInputError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.toLowerCase().includes(CODEX_SUB_AGENT_DIRECT_INPUT_ERROR);
 }
 
 interface CodexSessionState {
@@ -263,6 +269,13 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
     },
     startSession(input) {
       const transport = options.transport ?? createCodexAppServerTransport({ command: options.command });
+      let closePromise: Promise<void> | null = null;
+      const closeTransport = (): Promise<void> => {
+        closePromise ??= (async () => {
+          await transport.close?.();
+        })();
+        return closePromise;
+      };
       const state: CodexSessionState = {
         activeTurn: null,
         interrupted: false,
@@ -279,6 +292,7 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
           defaultModel,
           state,
           skillVisibilityByCwd.get(input.cwd)?.syncedSkillNames ?? [],
+          closeTransport,
         ),
         interrupt: async () => {
           if (!state.activeTurn) {
@@ -287,6 +301,7 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
           state.interrupted = true;
           await state.activeTurn.interrupt();
         },
+        close: closeTransport,
         control: async (request) => {
           if (transport.control) {
             return transport.control(request);
@@ -534,6 +549,7 @@ async function* normalizeCodexEvents(
   defaultModel: string,
   state: CodexSessionState,
   syncedSkillNames: string[],
+  closeTransport: () => Promise<void>,
 ): AsyncGenerator<RuntimeEvent> {
   let previousSessionId = resolveCodexResumeId(input.resumeSession, input.resume, input.cwd);
   const outerAbortSignal = input.abortController.signal;
@@ -858,7 +874,7 @@ async function* normalizeCodexEvents(
       }
     }
   } finally {
-    await transport.close?.();
+    await closeTransport();
   }
 }
 
@@ -894,6 +910,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   let activeTurn: AppServerTurnState | null = null;
   let activeSpawnEnvSignature: string | null = null;
   let intentionalChildRestart = false;
+  let closePromise: Promise<void> | null = null;
 
   const clearForcedKillTimer = () => {
     if (forcedKillTimer) {
@@ -1554,6 +1571,51 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
   }
 
+  async function bootstrapThread(input: CodexCliTurnRequest, resumeThreadId: string | null): Promise<void> {
+    const effort = toCodexRuntimeEffort(input.effort);
+    if (!resumeThreadId) {
+      // Do not let a rejected resumed thread leak into the fresh-thread fallback.
+      currentThreadId = undefined;
+    }
+
+    const threadResponse = resumeThreadId
+      ? await sendRequest("thread/resume", {
+          threadId: resumeThreadId,
+          model: input.model ?? null,
+          modelProvider: null,
+          cwd: input.cwd,
+          approvalPolicy: "never",
+          sandbox: CODEX_APP_SERVER_SANDBOX,
+          config: { model_reasoning_effort: effort },
+          baseInstructions: null,
+          developerInstructions: input.systemPromptAppend || null,
+          dynamicTools: null,
+          personality: null,
+          persistExtendedHistory: false,
+        })
+      : await sendRequest("thread/start", {
+          model: input.model ?? null,
+          modelProvider: null,
+          cwd: input.cwd,
+          approvalPolicy: "never",
+          sandbox: CODEX_APP_SERVER_SANDBOX,
+          config: { model_reasoning_effort: effort },
+          serviceName: null,
+          baseInstructions: null,
+          developerInstructions: input.systemPromptAppend || null,
+          dynamicTools: null,
+          personality: null,
+          ephemeral: false,
+          experimentalRawEvents: false,
+          persistExtendedHistory: false,
+        });
+
+    currentThreadId = firstString(asRecord(threadResponse.thread)?.id, currentThreadId, resumeThreadId ?? undefined);
+    currentInstructionSources = stringArray(threadResponse.instructionSources);
+    resolvedModel = firstString(threadResponse.model, input.model) ?? null;
+    resolvedModelProvider = firstString(threadResponse.modelProvider, resolvedModelProvider) ?? "openai";
+  }
+
   async function ensureClient(input: CodexCliTurnRequest): Promise<void> {
     const nextEnvSignature = buildCodexAppServerEnvSignature(input.env);
     if (!closed && child && !bootstrapPromise && activeSpawnEnvSignature !== nextEnvSignature) {
@@ -1600,44 +1662,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           params: {},
         });
 
-        const resumeThreadId = currentThreadId ?? input.resume;
-        const effort = toCodexRuntimeEffort(input.effort);
-        const threadResponse = resumeThreadId
-          ? await sendRequest("thread/resume", {
-              threadId: resumeThreadId,
-              model: input.model ?? null,
-              modelProvider: null,
-              cwd: input.cwd,
-              approvalPolicy: "never",
-              sandbox: CODEX_APP_SERVER_SANDBOX,
-              config: { model_reasoning_effort: effort },
-              baseInstructions: null,
-              developerInstructions: input.systemPromptAppend || null,
-              dynamicTools: null,
-              personality: null,
-              persistExtendedHistory: false,
-            })
-          : await sendRequest("thread/start", {
-              model: input.model ?? null,
-              modelProvider: null,
-              cwd: input.cwd,
-              approvalPolicy: "never",
-              sandbox: CODEX_APP_SERVER_SANDBOX,
-              config: { model_reasoning_effort: effort },
-              serviceName: null,
-              baseInstructions: null,
-              developerInstructions: input.systemPromptAppend || null,
-              dynamicTools: null,
-              personality: null,
-              ephemeral: false,
-              experimentalRawEvents: false,
-              persistExtendedHistory: false,
-            });
-
-        currentThreadId = firstString(asRecord(threadResponse.thread)?.id, resumeThreadId);
-        currentInstructionSources = stringArray(threadResponse.instructionSources);
-        resolvedModel = firstString(threadResponse.model, input.model) ?? null;
-        resolvedModelProvider = firstString(threadResponse.modelProvider, resolvedModelProvider) ?? "openai";
+        await bootstrapThread(input, currentThreadId ?? input.resume ?? null);
       } finally {
         bootstrapPromise = null;
       }
@@ -1646,27 +1671,35 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     await bootstrapPromise;
   }
 
-  const close = async () => {
+  const close = (): Promise<void> => {
+    if (closePromise) {
+      return closePromise;
+    }
     if (!child || closed) {
-      return;
+      return Promise.resolve();
     }
     const targetChild = child;
-    targetChild.stdin?.end();
-    signalCodexTransportProcess(targetChild, "SIGTERM");
-    forcedKillTimer = setTimeout(() => {
-      if (child === targetChild && !closed) {
-        signalCodexTransportProcess(targetChild, "SIGKILL");
-      }
-    }, INTERRUPT_GRACE_MS);
-    forcedKillTimer.unref?.();
+    closePromise = (async () => {
+      transport?.closeChannel();
+      signalCodexTransportProcess(targetChild, "SIGTERM");
+      forcedKillTimer = setTimeout(() => {
+        if (child === targetChild && !closed) {
+          signalCodexTransportProcess(targetChild, "SIGKILL");
+        }
+      }, INTERRUPT_GRACE_MS);
+      forcedKillTimer.unref?.();
 
-    await new Promise<void>((resolve) => {
-      if (closed || child !== targetChild) {
-        resolve();
-        return;
-      }
-      targetChild.once("close", () => resolve());
+      await new Promise<void>((resolve) => {
+        if (closed || child !== targetChild) {
+          resolve();
+          return;
+        }
+        targetChild.once("close", () => resolve());
+      });
+    })().finally(() => {
+      closePromise = null;
     });
+    return closePromise;
   };
 
   return {
@@ -1695,29 +1728,55 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       void (async () => {
         try {
           await ensureClient(input);
-          turn.threadId = currentThreadId ?? input.resume;
-          if (!turn.threadId) {
-            throw new Error("Codex app-server did not initialize a thread");
+          const requestTurnStart = async () => {
+            turn.threadId = currentThreadId ?? input.resume;
+            if (!turn.threadId) {
+              throw new Error("Codex app-server did not initialize a thread");
+            }
+            await sendRequest("turn/start", {
+              threadId: turn.threadId,
+              input: [
+                {
+                  type: "text",
+                  text: input.prompt,
+                  text_elements: [],
+                },
+              ],
+              cwd: null,
+              approvalPolicy: null,
+              sandboxPolicy: null,
+              model: null,
+              effort: input.effort ?? null,
+              summary: null,
+              personality: null,
+              outputSchema: null,
+              collaborationMode: null,
+            });
+          };
+
+          try {
+            await requestTurnStart();
+          } catch (error) {
+            if (!turn.threadId || turn.turnId || !isCodexSubAgentDirectInputError(error)) {
+              throw error;
+            }
+
+            const rejectedThreadId = turn.threadId;
+            log.warn("codex resumed sub-agent thread rejected direct input; starting a fresh top-level thread", {
+              rejectedThreadId,
+            });
+            await bootstrapThread(input, null);
+            if (!currentThreadId || currentThreadId === rejectedThreadId) {
+              throw new Error("Codex app-server did not initialize a fresh top-level thread", { cause: error });
+            }
+            turn.queue.push({
+              type: "thread.resume_recovered",
+              source: "codex.app-server",
+              rejected_thread_id: rejectedThreadId,
+              thread_id: currentThreadId,
+            });
+            await requestTurnStart();
           }
-          await sendRequest("turn/start", {
-            threadId: turn.threadId,
-            input: [
-              {
-                type: "text",
-                text: input.prompt,
-                text_elements: [],
-              },
-            ],
-            cwd: null,
-            approvalPolicy: null,
-            sandboxPolicy: null,
-            model: null,
-            effort: input.effort ?? null,
-            summary: null,
-            personality: null,
-            outputSchema: null,
-            collaborationMode: null,
-          });
         } catch (error) {
           settleTurn(turn, { exitCode: 1, stderr: getStderr().slice(turn.stderrOffset) }, { failQueue: error });
           if (child && !closed) {

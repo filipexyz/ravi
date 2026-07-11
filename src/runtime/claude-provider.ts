@@ -119,6 +119,11 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
         interrupt: async () => {
           await activeQuery?.interrupt();
         },
+        close: async () => {
+          const queryResult = activeQuery;
+          activeQuery = null;
+          queryResult?.close();
+        },
         setModel: async (model: string) => {
           currentModel = model;
           if (activeQuery) {

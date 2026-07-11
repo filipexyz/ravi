@@ -78,6 +78,7 @@ const MAX_TURN_FAILURE_RESPONSE = 320;
 const PROVIDER_INACTIVE_AFTER_TOOL_REASON = "provider_inactive";
 const PROVIDER_TURN_INACTIVITY_REASON = "provider_turn_inactive";
 const IDLE_SESSION_TTL_REASON = "idle_session_ttl";
+const RUNTIME_SESSION_CLOSE_TIMEOUT_MS = 5_000;
 const USER_FACING_LIMIT_SUPPRESSION_DEFAULT_MS = 60 * 60_000;
 const USER_FACING_LIMIT_SUPPRESSION_MAX_MS = 24 * 60 * 60_000;
 const USER_FACING_LIMIT_SUPPRESSION_RESET_GRACE_MS = 60_000;
@@ -1157,6 +1158,61 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   };
 
   const runtimeEventIterator = runtimeSession.events[Symbol.asyncIterator]();
+  let runtimeSessionClosePromise: Promise<void> | null = null;
+  const closeRuntimeSession = (): Promise<void> => {
+    if (runtimeSessionClosePromise) {
+      return runtimeSessionClosePromise;
+    }
+
+    const closeResources = async () => {
+      await Promise.all([
+        (async () => {
+          try {
+            await runtimeSession.close?.();
+          } catch (error) {
+            log.warn("Failed to close runtime session handle", {
+              runId,
+              sessionName,
+              provider: runtimeSession.provider,
+              error,
+            });
+          }
+        })(),
+        (async () => {
+          try {
+            await runtimeEventIterator.return?.();
+          } catch (error) {
+            log.warn("Failed to close runtime event iterator", {
+              runId,
+              sessionName,
+              provider: runtimeSession.provider,
+              error,
+            });
+          }
+        })(),
+      ]);
+    };
+
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    runtimeSessionClosePromise = Promise.race([
+      closeResources(),
+      new Promise<void>((resolve) => {
+        timeout = setTimeout(() => {
+          log.warn("Timed out closing runtime session resources", {
+            runId,
+            sessionName,
+            provider: runtimeSession.provider,
+            timeoutMs: RUNTIME_SESSION_CLOSE_TIMEOUT_MS,
+          });
+          resolve();
+        }, RUNTIME_SESSION_CLOSE_TIMEOUT_MS);
+        timeout.unref?.();
+      }),
+    ]).finally(() => {
+      if (timeout) clearTimeout(timeout);
+    });
+    return runtimeSessionClosePromise;
+  };
   const readNextRuntimeEvent = async (): Promise<IteratorResult<RuntimeEvent>> => {
     const nextEvent = runtimeEventIterator.next();
     let interval: ReturnType<typeof setInterval> | undefined;
@@ -1185,13 +1241,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         if (!streaming.abortController.signal.aborted) {
           streaming.abortController.abort();
         }
-        Promise.resolve(runtimeEventIterator.return?.()).catch((error) => {
-          log.warn("Failed to close inactive provider event iterator", {
-            runId,
-            sessionName,
-            error,
-          });
-        });
+        void closeRuntimeSession();
         resolve({ done: true, value: undefined as never });
       }, PROVIDER_TURN_INACTIVITY_CHECK_MS);
       interval.unref?.();
@@ -2292,6 +2342,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     if (!streaming.abortController.signal.aborted) {
       streaming.abortController.abort();
     }
+    await closeRuntimeSession();
 
     if (streamingSessions.delete(sessionName)) {
       completeRuntimeCredentialAttempt(streaming.currentRuntimeCredential?.attemptId, {

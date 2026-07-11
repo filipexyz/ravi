@@ -7,6 +7,7 @@ import type { RuntimeEvent, RuntimeStartRequest } from "./types.js";
 let nextMessages: any[] = [];
 let queryCalls: Array<{ prompt: unknown; options: Record<string, unknown> }> = [];
 let querySetModelCalls: Array<string | undefined> = [];
+let queryCloseCalls = 0;
 let queryGate: Promise<void> | null = null;
 let releaseQueryGate: (() => void) | null = null;
 
@@ -26,6 +27,10 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
       interrupt: async () => {},
       setModel: async (model?: string) => {
         querySetModelCalls.push(model);
+      },
+      close: () => {
+        queryCloseCalls++;
+        releaseQueryGate?.();
       },
       async *[Symbol.asyncIterator]() {
         if (queryGate) {
@@ -94,6 +99,7 @@ describe("createClaudeRuntimeProvider", () => {
     nextMessages = [];
     queryCalls = [];
     querySetModelCalls = [];
+    queryCloseCalls = 0;
     queryGate = null;
     releaseQueryGate = null;
     if (tempDir) {
@@ -122,6 +128,35 @@ describe("createClaudeRuntimeProvider", () => {
 
     const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
     expect(settings.PermissionRequest[0].matcher).toBe("*");
+  });
+
+  it("closes the active Claude SDK query idempotently", async () => {
+    nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-close" }];
+    queryGate = new Promise<void>((resolve) => {
+      releaseQueryGate = resolve;
+    });
+
+    const provider = createClaudeRuntimeProvider();
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "close" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+      ),
+    );
+
+    const eventsPromise = collectEvents(session.events);
+    await waitFor(() => queryCalls.length === 1);
+    await session.close?.();
+    await session.close?.();
+    await eventsPromise;
+
+    expect(queryCloseCalls).toBe(1);
   });
 
   it("normalizes assistant/tool/result events", async () => {

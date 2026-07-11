@@ -516,6 +516,8 @@ export interface RuntimeSessionHandle {
    */
   concurrentInputStrategy?: RuntimeConcurrentInputStrategy;
   interrupt(): Promise<void>;
+  /** Release provider-owned transports and subprocesses when the host session ends. */
+  close?(): Promise<void>;
   setModel?(model: string): Promise<void>;
   control?(request: RuntimeControlRequest): Promise<RuntimeControlResult>;
 }

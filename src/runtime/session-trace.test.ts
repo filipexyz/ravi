@@ -152,12 +152,26 @@ function makeRuntimeSession(events: RuntimeEvent[]): RuntimeSessionHandle {
 }
 
 function makeNeverEndingRuntimeSession(): RuntimeSessionHandle {
+  let resolveClose!: () => void;
+  const closed = new Promise<void>((resolve) => {
+    resolveClose = resolve;
+  });
   return {
     provider: PROVIDER,
-    events: (async function* () {
-      await new Promise(() => {});
-    })(),
+    events: {
+      [Symbol.asyncIterator]() {
+        return {
+          next: async () => {
+            await closed;
+            return { done: true, value: undefined };
+          },
+        };
+      },
+    },
     interrupt: async () => {},
+    close: async () => {
+      resolveClose();
+    },
   };
 }
 
@@ -1173,6 +1187,48 @@ describe("runtime session trace instrumentation", () => {
       autoRecovered: true,
     });
     expect(getSessionTurn("turn-stream-closed-before-tool")?.status).toBe("aborted");
+  });
+
+  it("closes the provider handle and event iterator when the host session is aborted", async () => {
+    let handleCloseCalls = 0;
+    let iteratorReturnCalls = 0;
+    let releaseHandleClose!: () => void;
+    const handleClosed = new Promise<void>((resolve) => {
+      releaseHandleClose = resolve;
+    });
+    const iterator: AsyncIterator<RuntimeEvent> & AsyncIterable<RuntimeEvent> = {
+      next: () => new Promise<IteratorResult<RuntimeEvent>>(() => {}),
+      return: async () => {
+        iteratorReturnCalls++;
+        return { done: true, value: undefined };
+      },
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+    };
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: PROVIDER,
+      events: iterator,
+      interrupt: async () => {},
+      close: async () => {
+        handleCloseCalls++;
+        await handleClosed;
+      },
+    };
+    const streaming = makeStreamingSession();
+
+    const loop = runTraceLoop(streaming, runtimeSession);
+    await Promise.resolve();
+    streaming.abortController.abort();
+    for (let attempt = 0; attempt < 20 && iteratorReturnCalls === 0; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+
+    expect(iteratorReturnCalls).toBe(1);
+    releaseHandleClose();
+    await loop;
+
+    expect(handleCloseCalls).toBe(1);
   });
 
   it("does not replay an unterminated turn after a tool has started", async () => {

@@ -31,7 +31,7 @@ import {
 import { applyDirectRuntimeModelSwitch, resolveRuntimeModelSwitchStrategy } from "./model-switch.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID } from "./provider-registry.js";
 import type { RuntimeProviderId } from "./types.js";
-import type { RuntimeSafeEmit } from "./host-event-loop.js";
+import { formatUserFacingTurnFailure, type RuntimeSafeEmit } from "./host-event-loop.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
 import {
   startRuntimeSession,
@@ -39,6 +39,7 @@ import {
   type PendingRuntimeSessionStart,
 } from "./session-launcher.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { resolveSessionOutputTarget } from "./session-output-target.js";
 import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-runtime-context.js";
 import {
   buildRuntimeSessionPoolSnapshot,
@@ -49,6 +50,10 @@ import {
 } from "./session-pool.js";
 
 const log = logger.child("runtime:session-dispatcher");
+const RUNTIME_EVENT_LOOP_CLOSED_REASON = "runtime_event_loop_closed";
+const MAX_RUNTIME_EVENT_LOOP_RESTARTS = 2;
+const RUNTIME_RESTART_EXHAUSTED_ERROR =
+  "Runtime provider stream closed repeatedly. Automatic recovery was stopped; send a new message to retry.";
 const NATIVE_STEER_ACTIVE_TURN_MAX_IDLE_MS = 30_000;
 const IDLE_GAP_RECOVERY_MS = Math.max(1_000, Number(process.env.RAVI_RUNTIME_IDLE_GAP_RECOVERY_MS) || 5_000);
 
@@ -104,6 +109,7 @@ export class RuntimeSessionDispatcher {
   readonly inFlightStartPrompts = new Map<string, RuntimeLaunchPrompt>();
   readonly pendingStartSessions = new Set<string>();
   readonly startingSessions = new Set<string>();
+  private readonly runtimeEventLoopRestartAttempts = new Map<string, number>();
 
   constructor(private readonly options: RuntimeSessionDispatcherOptions) {}
 
@@ -310,6 +316,7 @@ export class RuntimeSessionDispatcher {
       log.info("Clearing session start reservations", { count: this.startReservations.size });
       this.startReservations.clear();
     }
+    this.runtimeEventLoopRestartAttempts.clear();
 
     if (this.streamingSessions.size === 0) {
       return;
@@ -612,6 +619,9 @@ export class RuntimeSessionDispatcher {
   }
 
   async handlePromptImmediate(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void> {
+    if (!prompt._resumeStashedMessages) {
+      this.runtimeEventLoopRestartAttempts.delete(sessionName);
+    }
     const routerConfig = configStore.getConfig();
     const sessionEntry = getSessionByName(sessionName);
     const existing = this.streamingSessions.get(sessionName);
@@ -1387,6 +1397,79 @@ export class RuntimeSessionDispatcher {
     }
 
     const traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
+    const restartAttempt =
+      reason === RUNTIME_EVENT_LOOP_CLOSED_REASON
+        ? (this.runtimeEventLoopRestartAttempts.get(sessionName) ?? 0) + 1
+        : undefined;
+    if (restartAttempt !== undefined && restartAttempt > MAX_RUNTIME_EVENT_LOOP_RESTARTS) {
+      recordRuntimeTraceEvent({
+        sessionKey: traceIdentity.sessionKey,
+        sessionName,
+        agentId: traceIdentity.agentId ?? prompt._agentId,
+        provider: prompt._runtimeProviderId,
+        eventType: "dispatch.restart_suppressed",
+        eventGroup: "dispatch",
+        status: "blocked",
+        source: prompt.source,
+        messageId: prompt.context?.messageId,
+        error: RUNTIME_RESTART_EXHAUSTED_ERROR,
+        payloadJson: {
+          reason,
+          restartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+          stashedQueueSize: stashed.length,
+          resumeStashedMessages: true,
+        },
+      });
+      updateRuntimeLiveState(sessionName, {
+        activity: "blocked",
+        summary: RUNTIME_RESTART_EXHAUSTED_ERROR,
+        agentId: traceIdentity.agentId ?? prompt._agentId,
+        provider: prompt._runtimeProviderId,
+        source: prompt.source,
+      });
+      await this.options
+        .safeEmit(`ravi.session.${sessionName}.runtime`, {
+          type: "dispatch.restart_suppressed",
+          reason,
+          restartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+          stashedQueueSize: stashed.length,
+          error: RUNTIME_RESTART_EXHAUSTED_ERROR,
+          ...(prompt.source ? { _source: prompt.source } : {}),
+          timestamp: new Date().toISOString(),
+        })
+        .catch((error) => {
+          log.warn("Failed to emit suppressed runtime restart event", { sessionName, reason, error });
+        });
+
+      const outputTarget = resolveSessionOutputTarget({
+        sessionKey: traceIdentity.sessionKey,
+        fallback: prompt.source,
+      }).target;
+      if (outputTarget) {
+        const routerConfig = configStore.getConfig();
+        const agentId = traceIdentity.agentId ?? prompt._agentId;
+        const agent = agentId ? routerConfig.agents[agentId] : undefined;
+        if (agent?.mode !== "sentinel") {
+          await nats
+            .emit(`ravi.session.${sessionName}.response`, {
+              response: formatUserFacingTurnFailure(RUNTIME_RESTART_EXHAUSTED_ERROR),
+              target: outputTarget,
+              _emitId: Math.random().toString(36).slice(2, 8),
+              _instanceId: this.options.instanceId,
+              _pid: process.pid,
+              _v: 2,
+            })
+            .catch((error) => {
+              log.warn("Failed to emit exhausted runtime recovery response", { sessionName, reason, error });
+            });
+        }
+      }
+      return;
+    }
+    if (restartAttempt !== undefined) {
+      this.runtimeEventLoopRestartAttempts.set(sessionName, restartAttempt);
+    }
+
     recordRuntimeTraceEvent({
       sessionKey: traceIdentity.sessionKey,
       sessionName,
@@ -1399,6 +1482,12 @@ export class RuntimeSessionDispatcher {
       messageId: prompt.context?.messageId,
       payloadJson: {
         reason,
+        ...(restartAttempt !== undefined
+          ? {
+              restartAttempt,
+              maxRestartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+            }
+          : {}),
         stashedQueueSize: stashed.length,
         resumeStashedMessages: true,
       },
