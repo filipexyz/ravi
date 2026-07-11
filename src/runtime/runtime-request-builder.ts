@@ -10,6 +10,7 @@ import {
 } from "../session-trace/runtime-trace.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { classifyCompactionAnnouncement } from "./compaction-announcement.js";
+import { resolveAgentSkills } from "./allowed-skills.js";
 import { createRuntimeMessageGenerator } from "./delivery-queue.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import {
@@ -267,6 +268,11 @@ export async function buildRuntimeStartRequest(
   const systemPromptSectionMetadata = buildRuntimeTracePromptSectionMetadata(systemPromptSections);
   const pluginNames = runtimePlugins.map((plugin) => plugin.path);
   const mcpServerNames = specServer ? ["spec"] : [];
+  const resolvedAllowedSkills = resolveAgentSkills(agent.id);
+  const allowedSkills =
+    resolvedAllowedSkills.hasConfiguration && resolvedAllowedSkills.allowlist.length > 0
+      ? resolvedAllowedSkills.allowlist
+      : undefined;
   const toolAccessMode = getRuntimeToolAccessMode(runtimeCapabilities, agent.id, runtimeContext);
   const traceTurnStart = (input: { combinedPrompt: string; deliverableMessages: RuntimeUserMessage[] }) => {
     const firstMessage = input.deliverableMessages[0];
@@ -388,6 +394,7 @@ export async function buildRuntimeStartRequest(
       settingSources: agent.settingSources ?? ["project"],
       ...(hooks ? { hooks } : {}),
       ...(runtimePlugins.length > 0 ? { plugins: runtimePlugins } : {}),
+      ...(allowedSkills ? { allowedSkills } : {}),
       ...(remoteSpawn ? { remoteSpawn } : {}),
     },
     toolContext,

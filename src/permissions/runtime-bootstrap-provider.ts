@@ -2,6 +2,17 @@ import type { ContextCapability } from "../router/router-db.js";
 import type { PermissionProvider, PermissionProviderDecision, PermissionProviderRequest } from "./provider-types.js";
 
 const TRUSTED_BOOTSTRAP_SUBJECT_TYPES = new Set(["agent", "automation"]);
+
+/**
+ * Grupos de comando que todo agente recebe ao nascer pra OPERAR (least-privilege).
+ * Dois tipos, ambos essenciais:
+ *  - Kit de skill (sessions/tasks/specs/skills): espelham `BASELINE_SYSTEM_SKILL_SLUGS`
+ *    (runtime/allowed-skills.ts) e também aparecem como skill no contexto.
+ *  - Fabric de operação (self/doctor): introspecção e saúde. NÃO têm skill associada no
+ *    mapa de gates, então habilitam rodar o comando SEM poluir o índice de skills.
+ * Domínio/admin (cron, crm, whatsapp, db, service…) continuam opt-in por `execute:group:<grupo>`.
+ */
+const BASELINE_COMMAND_GROUPS = ["sessions", "tasks", "specs", "skills", "self", "doctor"] as const;
 const SAFE_EXECUTABLES = [
   "bun",
   "cat",
@@ -55,7 +66,17 @@ function bootstrapCapabilitiesFor(subjectType: string): ContextCapability[] {
   return [
     { permission: "use", objectType: "tool", objectId: "*", source },
     { permission: "use", objectType: "toolgroup", objectId: "*", source },
-    { permission: "execute", objectType: "group", objectId: "*", source },
+    // Least-privilege default (spec: skills/scoping/per-agent-visibility, decisão RM 2026-07-03):
+    // agente nasce só com BASELINE_COMMAND_GROUPS (kit de skill + fabric de operação) —
+    // o suficiente pra operar (falar, trabalhar, ler regras, criar skill, introspectar, checar saúde).
+    // Domínio/admin é opt-in por `execute:group:<grupo>`. Substitui o antigo `execute:group:*`,
+    // que dava tudo a todo agente e deixava o filtro de skills inerte.
+    ...BASELINE_COMMAND_GROUPS.map((objectId) => ({
+      permission: "execute" as const,
+      objectType: "group" as const,
+      objectId,
+      source,
+    })),
     ...SAFE_EXECUTABLES.map((objectId) => ({
       permission: "execute",
       objectType: "executable",

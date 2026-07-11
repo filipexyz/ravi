@@ -1134,6 +1134,62 @@ export const skillsSyncReturnSchema = z
   })
   .passthrough();
 
+export const skillGrantRecordReturnSchema = z
+  .object({
+    agentId: z.string(),
+    skillName: z.string(),
+    note: z.string().optional(),
+    grantedAt: z.number(),
+  })
+  .strict();
+
+export const skillGrantMutationReturnSchema = z
+  .object({
+    success: z.boolean(),
+    agentId: z.string(),
+    skillName: z.string(),
+    grant: skillGrantRecordReturnSchema.optional(),
+  })
+  .strict();
+
+export const skillGrantWhoReturnSchema = z
+  .object({
+    // Filled with the positional skill argument; omitted for --agent / no-filter scopes.
+    skillName: z.string().optional(),
+    total: z.number(),
+    grants: z.array(skillGrantRecordReturnSchema),
+  })
+  .strict();
+
+export const skillGrantBatchReturnSchema = z
+  .object({
+    op: z.enum(["grant", "revoke"]),
+    dryRun: z.boolean(),
+    agentsTargeted: z.number(),
+    skillsTargeted: z.number(),
+    pairsAffected: z.number(),
+    pairsSkipped: z.number(),
+    errors: z.array(z.object({ agentId: z.string(), skillName: z.string(), error: z.string() }).strict()),
+    sampleAgents: z.array(z.string()),
+    sampleSkills: z.array(z.string()),
+  })
+  .strict();
+
+export const skillInspectReturnSchema = z
+  .object({
+    agentId: z.string(),
+    hasConfiguration: z.boolean(),
+    allowlist: z.array(z.string()),
+    provenance: z
+      .object({
+        baseline: z.array(z.string()),
+        fromCapabilities: z.array(z.string()),
+        fromGrants: z.array(z.string()),
+      })
+      .strict(),
+  })
+  .strict();
+
 export const specsListReturnSchema = pagedItemsReturnSchema
   .extend({
     specs: z.array(looseObjectSchema),

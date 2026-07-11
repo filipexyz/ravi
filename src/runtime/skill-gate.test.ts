@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { createRuntimeContext } from "./context-registry.js";
-import { dbUpsertSkillGateRule, getOrCreateSession, getSession } from "../router/index.js";
+import { dbUpsertSkillGateRule, dbUpsertSkillGrant, getOrCreateSession, getSession } from "../router/index.js";
 import { evaluateSkillGate, runtimeSkillGateForCommand, runtimeSkillGateForTool } from "./skill-gate.js";
 import { createRuntimeHostServices } from "./host-services.js";
 import type { RuntimeSkillVisibilitySnapshot } from "./types.js";
@@ -39,6 +39,9 @@ function writeCodexSkill(name: string): void {
 describe("evaluateSkillGate", () => {
   it("soft-gates a missing skill, delivers it, and marks it loaded for the session", () => {
     writeCodexSkill("demo-skill");
+    // Custom skills must be granted to the agent (Invariant G,
+    // spec skills/scoping/per-agent-visibility) before the gate delivers them.
+    dbUpsertSkillGrant({ agentId: "main", skillName: "demo-skill" });
     getOrCreateSession("agent:main:main", "main", stateDir!, {
       name: "skill-gate-test",
       runtimeProvider: "codex",
@@ -76,6 +79,10 @@ describe("evaluateSkillGate", () => {
   });
 
   it("reports configuration errors distinctly when the declared skill does not exist", () => {
+    // Grant a made-up skill to isolate this test from the Invariant G
+    // (per-agent visibility) allowlist check: we want to exercise the branch
+    // where the skill is allowed to the agent but not installed/publish-ed.
+    dbUpsertSkillGrant({ agentId: "main", skillName: "missing-skill" });
     getOrCreateSession("agent:main:main", "main", stateDir!, { name: "skill-gate-test", runtimeProvider: "codex" });
     const context = createRuntimeContext({
       kind: "agent-runtime",
