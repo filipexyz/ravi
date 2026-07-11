@@ -344,3 +344,4 @@ function parseMessageCreatedAtMs(value: string | null | undefined): number | und
   const ms = Date.parse(normalized);
   return Number.isFinite(ms) && ms > 0 ? ms : undefined;
 }
+

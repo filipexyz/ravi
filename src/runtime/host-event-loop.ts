@@ -49,6 +49,8 @@ import { resolveRuntimeIdleSessionTtlMs } from "./session-pool.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
 import { preserveMemoryCurationState } from "../memory/curation-state.js";
 import { noteTurnForMemoryNudge } from "../memory/curation-runtime.js";
+import { preserveSkillCurationState } from "../skills/skill-curation-state.js";
+import { noteTurnForSkillNudge } from "../skills/skill-curation-runtime.js";
 import {
   createObservationEvent,
   deliverObservationEvents,
@@ -573,6 +575,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     restartStashedSession,
   } = options;
   prewarmPricingCatalog();
+
+  const noteSkillTurnEndedForCadence = () => {
+    const skillsInPlay = runtimeSession.skillVisibility?.loadedSkills;
+    noteTurnForSkillNudge({ sessionKey: session.sessionKey, sessionName, agentId: agent.id, skillsInPlay });
+  };
   const recordTraceEvent = (
     input: Omit<Parameters<typeof recordRuntimeTraceEvent>[0], "sessionKey" | "sessionName" | "agentId" | "runId">,
   ) => {
@@ -1067,7 +1074,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     // instead of resetting every turn.
     const existing = session.runtimeSessionParams;
     if (!isRecord(session.runtimeSessionParams?.skillVisibility) && !isRecord(params?.skillVisibility)) {
-      return preserveMemoryCurationState(existing, params);
+      return preserveSkillCurationState(existing, preserveMemoryCurationState(existing, params));
     }
     const storedSkillVisibility = isRecord(session.runtimeSessionParams?.skillVisibility)
       ? readSkillVisibilityFromParams(session.runtimeSessionParams)
@@ -1076,10 +1083,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       ? readSkillVisibilityFromParams(params)
       : undefined;
     const skillVisibility = mergeSkillVisibilitySnapshots(storedSkillVisibility, incomingSkillVisibility);
-    return preserveMemoryCurationState(existing, {
-      ...(params ?? {}),
-      skillVisibility,
-    });
+    return preserveSkillCurationState(
+      existing,
+      preserveMemoryCurationState(existing, {
+        ...(params ?? {}),
+        skillVisibility,
+      }),
+    );
   };
 
   const persistRuntimeSkillVisibility = (skillVisibility: RuntimeSkillVisibilitySnapshot) => {
@@ -1832,6 +1842,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           agentId: agent.id,
           agentCwd: agent.cwd,
         });
+        noteSkillTurnEndedForCadence();
         const terminalSkillVisibility = runtimeSkillVisibilityFromParams(runtimeSessionParams);
         const persistedSessionId =
           runtimeSessionDisplayId ??
@@ -2024,6 +2035,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.turnActive = false;
         clearTraceTurnState();
         markRuntimeLiveIdle(sessionName, "turn interrupted");
+        noteSkillTurnEndedForCadence();
         signalTurnComplete();
         continue;
       }
@@ -2113,6 +2125,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           // can drain them instead of losing the interrupted turn.
           stashPendingRuntimeMessages(sessionName, streaming, stashedMessages);
           restartStashedReason = restartReason;
+          noteSkillTurnEndedForCadence();
           signalTurnComplete();
           clearTraceTurnState();
           streaming.done = true;
@@ -2382,3 +2395,4 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
+
