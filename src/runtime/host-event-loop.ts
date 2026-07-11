@@ -47,6 +47,8 @@ import {
 import { resolveSessionOutputTarget } from "./session-output-target.js";
 import { resolveRuntimeIdleSessionTtlMs } from "./session-pool.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
+import { preserveMemoryCurationState } from "../memory/curation-state.js";
+import { noteTurnForMemoryNudge } from "../memory/curation-runtime.js";
 import {
   createObservationEvent,
   deliverObservationEvents,
@@ -1057,8 +1059,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const mergeRuntimeSessionParams = (
     params: Record<string, unknown> | undefined,
   ): Record<string, unknown> | undefined => {
+    // R1c: the runtime's persist is a full-column replace of provider params,
+    // which would drop the hook-owned `memoryCuration` cadence counter written
+    // out-of-band into the same column (lost-update). Carry it forward from the
+    // freshest DB read (session.runtimeSessionParams) so the counter accumulates
+    // instead of resetting every turn.
+    const existing = session.runtimeSessionParams;
     if (!isRecord(session.runtimeSessionParams?.skillVisibility) && !isRecord(params?.skillVisibility)) {
-      return params;
+      return preserveMemoryCurationState(existing, params);
     }
     const storedSkillVisibility = isRecord(session.runtimeSessionParams?.skillVisibility)
       ? readSkillVisibilityFromParams(session.runtimeSessionParams)
@@ -1067,10 +1075,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       ? readSkillVisibilityFromParams(params)
       : undefined;
     const skillVisibility = mergeSkillVisibilitySnapshots(storedSkillVisibility, incomingSkillVisibility);
-    return {
+    return preserveMemoryCurationState(existing, {
       ...(params ?? {}),
       skillVisibility,
-    };
+    });
   };
 
   const persistRuntimeSkillVisibility = (skillVisibility: RuntimeSkillVisibilitySnapshot) => {
@@ -1763,6 +1771,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           mergeRuntimeSessionParams(event.session?.params ?? undefined),
           streaming.currentRuntimeCredential,
         );
+        // In-process memory nudge (Hermes-adapted): count this completed turn in
+        // process memory and dispatch the curador at the nudge interval. The
+        // counter never touches runtime_session_json, so nothing here can be
+        // clobbered by the runtime's own per-turn write. Best-effort, fire-and-
+        // forget — never blocks or breaks the turn.
+        noteTurnForMemoryNudge({
+          sessionKey: session.sessionKey,
+          sessionName,
+          agentId: agent.id,
+          agentCwd: agent.cwd,
+        });
         const terminalSkillVisibility = runtimeSkillVisibilityFromParams(runtimeSessionParams);
         const persistedSessionId =
           runtimeSessionDisplayId ??

@@ -1,4 +1,7 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   assertRuntimeCompatibility,
   createRuntimeProvider,
@@ -8,6 +11,9 @@ import {
   registerRuntimeProvider,
   unregisterRuntimeProvider,
 } from "./index.js";
+import { buildRuntimeSystemPrompt } from "./runtime-system-prompt.js";
+import { MEMORY_PROMPT_SECTION_ID, MEMORY_PROMPT_SECTION_PRIORITY } from "../memory/index.js";
+import type { AgentConfig } from "../router/types.js";
 import type { RuntimeProvider } from "./types.js";
 
 describe("runtime compatibility preflight", () => {
@@ -130,5 +136,39 @@ describe("runtime compatibility preflight", () => {
     } finally {
       unregisterRuntimeProvider("test-provider");
     }
+  });
+});
+
+describe("buildRuntimeSystemPrompt with memory section (R6/R12/R13)", () => {
+  let dir: string;
+
+  const baseAgent: AgentConfig = {
+    id: "runtime-mem-test",
+    cwd: "/tmp/replaced-per-test",
+    provider: "claude",
+  };
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "ravi-runtime-mem-"));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("omits the memory section when MEMORY.md is absent (R26 cold-start)", async () => {
+    const result = await buildRuntimeSystemPrompt({ agent: { ...baseAgent, cwd: dir }, cwd: dir });
+    expect(existsSync(join(dir, "MEMORY.md"))).toBe(false);
+    expect(result.sections.some((s) => s.id === MEMORY_PROMPT_SECTION_ID)).toBe(false);
+  });
+
+  it("injects the memory section at the volatile-tier priority between workspace and agent append", async () => {
+    writeFileSync(join(dir, "MEMORY.md"), "# runtime-mem-test — auto-memory\n\n- persisted preference\n", "utf-8");
+    const result = await buildRuntimeSystemPrompt({ agent: { ...baseAgent, cwd: dir }, cwd: dir });
+    const memorySection = result.sections.find((s) => s.id === MEMORY_PROMPT_SECTION_ID);
+    expect(memorySection).toBeDefined();
+    expect(memorySection!.priority).toBe(MEMORY_PROMPT_SECTION_PRIORITY);
+    expect(memorySection!.content).toContain("- persisted preference");
+    expect(result.text).toContain("- persisted preference");
   });
 });
