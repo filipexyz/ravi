@@ -1,9 +1,15 @@
 ---
+id: learning-loop/memory-lifecycle
+title: "Memory Lifecycle"
+kind: capability
 domain: learning-loop
-capability: memory-lifecycle
+capabilities:
+  - memory-lifecycle
 status: draft
+normative: true
 created: 2026-07-10
-owner: ravi-dev
+owners:
+  - ravi-dev
 ---
 
 # Memory Lifecycle — bounded MEMORY.md via fill-triggered graduate / keep / evict
