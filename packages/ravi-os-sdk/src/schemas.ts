@@ -52989,6 +52989,165 @@ export const SkillGatesShowReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `skills.archive`. */
+export const SkillsArchiveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "force": {
+      "description": "Actually archive (without it, dry-run preview only)",
+      "type": "boolean"
+    },
+    "name": {
+      "description": "Skill name to archive (agent-created only)",
+      "type": "string"
+    },
+    "skill": {
+      "description": "Skill name (alternative to positional)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.archive`. */
+export const SkillsArchiveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "archivedTo": {
+      "type": "string"
+    },
+    "detail": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "outcome": {
+      "enum": [
+        "archived",
+        "rejected"
+      ],
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "skill": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "outcome",
+    "skill",
+    "dryRun"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skills.guard`. */
+export const SkillsGuardInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id whose skill this is (provenance)",
+      "type": "string"
+    },
+    "cadenceTurn": {
+      "description": "Cadence turn (provenance)",
+      "type": "string"
+    },
+    "content": {
+      "description": "Inline content — patch: the learned pitfall/correction; create: the SKILL.md body",
+      "type": "string"
+    },
+    "contentFile": {
+      "description": "File with the content (alternative to --content)",
+      "type": "string"
+    },
+    "date": {
+      "description": "Absolute ISO date for 'today' (provenance)",
+      "type": "string"
+    },
+    "description": {
+      "description": "Skill description (required for create)",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Compute the write outcome without touching disk",
+      "type": "boolean"
+    },
+    "op": {
+      "description": "'patch' (append a learned section) | 'create' (new umbrella skill)",
+      "type": "string"
+    },
+    "sessionKey": {
+      "description": "Originating session (provenance)",
+      "type": "string"
+    },
+    "skill": {
+      "description": "Skill name to patch/create (agent-editable user skills only)",
+      "type": "string"
+    },
+    "taskId": {
+      "description": "Curador task id (provenance)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.guard`. */
+export const SkillsGuardReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "detail": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "finalChars": {
+      "type": "number"
+    },
+    "op": {
+      "enum": [
+        "patch",
+        "create"
+      ],
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "written",
+        "rejected"
+      ],
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "skill": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "outcome",
+    "op",
+    "skill",
+    "dryRun"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `skills.install`. */
 export const SkillsInstallInputSchema = {
   "additionalProperties": false,
