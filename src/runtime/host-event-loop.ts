@@ -47,6 +47,8 @@ import {
 import { resolveSessionOutputTarget } from "./session-output-target.js";
 import { resolveRuntimeIdleSessionTtlMs } from "./session-pool.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
+import { preserveSkillCurationState } from "../skills/skill-curation-state.js";
+import { noteTurnForSkillNudge } from "../skills/skill-curation-runtime.js";
 import {
   createObservationEvent,
   deliverObservationEvents,
@@ -570,6 +572,19 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     restartStashedSession,
   } = options;
   prewarmPricingCatalog();
+
+  // Cadence tick for the in-process skill nudge. A turn ends via EXACTLY ONE
+  // terminal event: turn.complete (clean), turn.interrupted (user/provider
+  // interrupt) or turn.failed (recoverable interrupt). The nudge must count all
+  // three — in interactive chat the user sending the next message mid-response
+  // interrupts the turn (turn.failed/recoverable), and those turns are exactly
+  // the ones worth curating. Counting only turn.complete silently undercounts
+  // the most active sessions to a standstill. One terminal per turn → calling
+  // this from each terminal branch never double-counts a turn.
+  const noteTurnEndedForCadence = () => {
+    const skillsInPlay = runtimeSession.skillVisibility?.loadedSkills;
+    noteTurnForSkillNudge({ sessionKey: session.sessionKey, sessionName, agentId: agent.id, skillsInPlay });
+  };
   const recordTraceEvent = (
     input: Omit<Parameters<typeof recordRuntimeTraceEvent>[0], "sessionKey" | "sessionName" | "agentId" | "runId">,
   ) => {
@@ -1057,8 +1072,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const mergeRuntimeSessionParams = (
     params: Record<string, unknown> | undefined,
   ): Record<string, unknown> | undefined => {
+    const existing = isRecord(session.runtimeSessionParams) ? session.runtimeSessionParams : undefined;
     if (!isRecord(session.runtimeSessionParams?.skillVisibility) && !isRecord(params?.skillVisibility)) {
-      return params;
+      return preserveSkillCurationState(existing, params);
     }
     const storedSkillVisibility = isRecord(session.runtimeSessionParams?.skillVisibility)
       ? readSkillVisibilityFromParams(session.runtimeSessionParams)
@@ -1067,10 +1083,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       ? readSkillVisibilityFromParams(params)
       : undefined;
     const skillVisibility = mergeSkillVisibilitySnapshots(storedSkillVisibility, incomingSkillVisibility);
-    return {
+    return preserveSkillCurationState(existing, {
       ...(params ?? {}),
       skillVisibility,
-    };
+    });
   };
 
   const persistRuntimeSkillVisibility = (skillVisibility: RuntimeSkillVisibilitySnapshot) => {
@@ -1763,6 +1779,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           mergeRuntimeSessionParams(event.session?.params ?? undefined),
           streaming.currentRuntimeCredential,
         );
+        // Cadence tick — clean-turn terminal. (Interrupted/failed turns tick via
+        // their own terminal branches; see noteTurnEndedForCadence.)
+        noteTurnEndedForCadence();
         const terminalSkillVisibility = runtimeSkillVisibilityFromParams(runtimeSessionParams);
         const persistedSessionId =
           runtimeSessionDisplayId ??
@@ -1955,6 +1974,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.turnActive = false;
         clearTraceTurnState();
         markRuntimeLiveIdle(sessionName, "turn interrupted");
+        // Cadence tick — an interrupted turn still produced curatable
+        // conversation (a full user message + a partial/complete response).
+        noteTurnEndedForCadence();
         signalTurnComplete();
         continue;
       }
@@ -2044,6 +2066,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           // can drain them instead of losing the interrupted turn.
           stashPendingRuntimeMessages(sessionName, streaming, stashedMessages);
           restartStashedReason = restartReason;
+          // Cadence tick — a recoverable-interrupt failure IS a real turn (the
+          // user interrupted the response by sending the next message). This is
+          // the dominant terminal for active interactive chat; without it the
+          // counter never advances on the busiest sessions.
+          noteTurnEndedForCadence();
           signalTurnComplete();
           clearTraceTurnState();
           streaming.done = true;

@@ -4,6 +4,7 @@ import { getAgent } from "../router/config.js";
 import { expandHome } from "../router/resolver.js";
 import { findSessionByChatId, getOrCreateSession, getSessionByName, resolveSession } from "../router/sessions.js";
 import { getProjectSurfaceByWorkflowRunId, type ProjectTaskSurface } from "../projects/index.js";
+import { advanceSkillWatermarkForCompletedCuratorTask } from "../skills/skill-watermark-commit.js";
 import { logger } from "../utils/logger.js";
 import { loadConfig } from "../utils/config.js";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
@@ -3055,6 +3056,21 @@ export async function completeTask(
   const documentedTask = result.wasNoop
     ? result.task
     : syncRequiredTaskDocumentAfterRuntimeEvent(result.task, profile, result.event);
+  // When a skill curador task completes, the runtime advances that session's
+  // incremental-read cursor to the delta it was dispatched with — regardless of
+  // whether the curador wrote anything (a "read and judged nothing" cycle still
+  // moves the cursor). Best-effort, never blocks completion; done-only, so a
+  // failed curador leaves the cursor put and the next cycle re-reads.
+  if (!result.wasNoop) {
+    try {
+      advanceSkillWatermarkForCompletedCuratorTask(result.task);
+    } catch (err) {
+      log.warn("Failed to advance skill curation cursor on task completion (best-effort)", {
+        taskId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
   syncWorkflowNodeRunForTask(taskId);
   const dependencyRelatedEvents = result.wasNoop
     ? []
