@@ -1,0 +1,18 @@
+{
+  "id": "r20-spec-candidate",
+  "invariant": "R20",
+  "description": "Normative versioned rule MUST route to a spec, not persist as memory.",
+  "transcript_excerpt": "user: nova regra: task profiles com inputs.required faltando devem falhar fast-check no dispatch",
+  "candidate": {
+    "title": "Rule: task profile inputs.required fail-fast",
+    "content": "Task profiles missing an `inputs.required` value MUST fail fast at dispatch — no runtime fallback.",
+    "type": "project",
+    "identity_key": "task-profile-required-inputs-rule"
+  },
+  "existing_entry": null,
+  "expected": {
+    "action": "skip",
+    "reason": "R20:spec-candidate",
+    "note": "Normative rules belong in `.ravi/specs/` (versioned + queryable). Curator signals R20-spec-candidate + does NOT write to memory."
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "id": "r4-env-failure",
+  "invariant": "R4",
+  "description": "Environment failure (command not found) MUST NOT persist — resolved next turn = one-off noise.",
+  "transcript_excerpt": "user: rode `foo --bar`\nassistant: I tried `foo --bar` but got `bash: foo: command not found` — installed it and it works now.",
+  "candidate": {
+    "title": "foo CLI not installed by default",
+    "content": "The `foo` CLI is not installed by default; running `foo --bar` returns `bash: foo: command not found`.",
+    "type": "project",
+    "identity_key": "foo-cli-not-installed"
+  },
+  "existing_entry": null,
+  "expected": {
+    "action": "skip",
+    "reason": "R4:env-failure",
+    "note": "The failure was resolved in the same turn; capturing it hardens the agent into an incorrect refusal."
+  }
+}
