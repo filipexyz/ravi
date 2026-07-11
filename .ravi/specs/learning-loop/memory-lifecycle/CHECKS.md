@@ -8,11 +8,11 @@ owner: ravi-dev
 
 # CHECKS — Memory Lifecycle
 
-- [ ] L1: a write exceeding the OLD file cap succeeds (file grows); the injected prompt section still truncates at the read cap with the marker. (unit + live)
-- [ ] L2: the lifecycle fires ONLY at/over the threshold, never below; trigger is length-based, not LLM. (unit)
-- [ ] L4: classification obeys the matrix — a recurring normative general entry GRADUATES; a stale/superseded/one-off EVICTS; a fresh true fact KEEPS. (golden-set)
-- [ ] L5: NO code path edits AGENTS.md directly; graduation only emits a proposal artifact/task. (grep + integration)
-- [ ] L6: FIFO fires only when still over threshold after graduate+evict, and removes the oldest KEEP by `created`. (unit)
-- [ ] L7: eviction MOVES the topic to `.archive/` (recoverable), never hard-deletes. (unit)
-- [ ] L8: every graduate/evict/FIFO action carries provenance (date + run + criterion). (unit)
-- [ ] E2E: drive memory past trigger → real classification → graduation proposal lands + stale topic archived + FIFO only if still over. (live, ≥2 iterations)
+- A write exceeding the old file cap MUST succeed (the file grows) while the injected prompt section MUST still truncate at the read cap with a marker. (unit + live)
+- The lifecycle MUST fire only at or over the threshold and MUST NOT fire below it; the trigger MUST be length-based, never LLM-judged. (unit)
+- Classification MUST obey the matrix: a recurring normative entry graduates, a stale/superseded/one-off entry is evicted, and a fresh true fact is kept. (golden-set validates the routing)
+- No code path MUST edit AGENTS.md directly; graduation MUST only emit a proposal artifact or task. (grep + integration checks)
+- FIFO MUST fire only when the index is still over threshold after graduate and evict, and MUST remove the oldest kept entry by creation date. (unit)
+- Eviction MUST move the topic to an archive directory (recoverable) and MUST NOT hard-delete it. (unit)
+- Every graduate, evict, and FIFO action MUST carry provenance (date, run, criterion). (unit)
+- Driving memory past the trigger end to end MUST produce a graduation proposal, archive the stale topic, and fire FIFO only if still over threshold. (live, validated across at least two iterations)
