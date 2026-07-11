@@ -204,6 +204,50 @@ describe("RuntimeSessionDispatcher debounce", () => {
   });
 });
 
+describe("RuntimeSessionDispatcher runtime recovery", () => {
+  it("stops replaying a stashed turn after repeated event-loop closures", async () => {
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async (topic, data) => {
+        emitted.push({ topic, data });
+      },
+      getConfigModel: () => "test-model",
+    });
+    dispatcher.stashedMessages.set("recovery-loop", [
+      createQueuedRuntimeUserMessage({
+        prompt: "retry me",
+        _agentId: "main",
+      }),
+    ]);
+
+    let starts = 0;
+    dispatcher.startStreamingSession = mock(async () => {
+      starts++;
+    });
+    const recovery = dispatcher as unknown as {
+      restartStashedSession(sessionName: string, reason: string): Promise<void>;
+    };
+
+    await recovery.restartStashedSession("recovery-loop", "runtime_event_loop_closed");
+    await recovery.restartStashedSession("recovery-loop", "runtime_event_loop_closed");
+    await recovery.restartStashedSession("recovery-loop", "runtime_event_loop_closed");
+
+    expect(starts).toBe(2);
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]).toMatchObject({
+      topic: "ravi.session.recovery-loop.runtime",
+      data: {
+        type: "dispatch.restart_suppressed",
+        reason: "runtime_event_loop_closed",
+        restartAttempts: 2,
+      },
+    });
+  });
+});
+
 describe("RuntimeSessionDispatcher native runtime steer", () => {
   function createStreamingSession(overrides: Partial<RuntimeHostStreamingSession> = {}): RuntimeHostStreamingSession {
     return {
