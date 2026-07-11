@@ -70,6 +70,7 @@ export function buildSyntheticHookEvent(hook: HookRecord): NormalizedHookEvent {
         ...(hook.scopeType === "agent" && hook.scopeValue ? { agentId: hook.scopeValue } : { agentId: "dev" }),
         ...(hook.scopeType === "task" && hook.scopeValue ? { taskId: hook.scopeValue } : {}),
         cwd,
+        agentCwd: cwd,
         workspace: cwd,
         toolName: hook.matcher?.split("|")[0]?.trim() || "Write",
         toolInput: {
@@ -90,6 +91,7 @@ export function buildSyntheticHookEvent(hook: HookRecord): NormalizedHookEvent {
         ...(hook.scopeType === "agent" && hook.scopeValue ? { agentId: hook.scopeValue } : { agentId: "dev" }),
         ...(hook.scopeType === "task" && hook.scopeValue ? { taskId: hook.scopeValue } : {}),
         cwd,
+        agentCwd: cwd,
         workspace: cwd,
         path: `${cwd}/hook-runtime-test.txt`,
         paths: [`${cwd}/hook-runtime-test.txt`],
@@ -105,6 +107,7 @@ export function buildSyntheticHookEvent(hook: HookRecord): NormalizedHookEvent {
         ...(hook.scopeType === "agent" && hook.scopeValue ? { agentId: hook.scopeValue } : { agentId: "dev" }),
         ...(hook.scopeType === "task" && hook.scopeValue ? { taskId: hook.scopeValue } : {}),
         cwd,
+        agentCwd: cwd,
         workspace: cwd,
         path: cwd,
         metadata: {
@@ -121,6 +124,7 @@ export function buildSyntheticHookEvent(hook: HookRecord): NormalizedHookEvent {
         ...(hook.scopeType === "agent" && hook.scopeValue ? { agentId: hook.scopeValue } : { agentId: "dev" }),
         ...(hook.scopeType === "task" && hook.scopeValue ? { taskId: hook.scopeValue } : {}),
         cwd,
+        agentCwd: cwd,
         workspace: cwd,
         metadata: {
           synthetic: true,
@@ -330,6 +334,7 @@ export class HookRunner {
       sessionName,
       ...(session?.sessionKey ? { sessionKey: session.sessionKey } : {}),
       ...(input.agentId ? { agentId: input.agentId } : session?.agentId ? { agentId: session.agentId } : {}),
+      ...(session?.agentCwd ? { agentCwd: session.agentCwd } : {}),
       ...(input.taskId
         ? { taskId: input.taskId }
         : this.getSessionTaskId(sessionName)

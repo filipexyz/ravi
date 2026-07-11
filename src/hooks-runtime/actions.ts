@@ -1,12 +1,17 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { requireDeliveryBarrier } from "../delivery-barriers.js";
-import { saveMessage } from "../db.js";
+import { getMessagesAfterId, saveMessage, type Message } from "../db.js";
+import { advanceCurationCounter, readMemoryCurationState, writeMemoryCurationState } from "../memory/index.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
-import { commentTask } from "../tasks/index.js";
+import { getSession, updateRuntimeProviderState } from "../router/index.js";
+import { commentTask, createTask, listTasks, queueOrDispatchTask } from "../tasks/index.js";
 import { logger } from "../utils/logger.js";
 import { resolveHookTemplate } from "./template.js";
 import type {
   AppendHistoryActionPayload,
   CommentTaskActionPayload,
+  DispatchTaskActionPayload,
   HookExecutionResult,
   HookRecord,
   InjectContextActionPayload,
@@ -15,6 +20,8 @@ import type {
 } from "./types.js";
 
 const log = logger.child("hooks:actions");
+
+const UNRESOLVED_PLACEHOLDER = /\{\{[^}]+\}\}/;
 
 function resolveOptionalTemplate(value: string | undefined, event: NormalizedHookEvent): string | undefined {
   if (!value?.trim()) {
@@ -120,6 +127,236 @@ async function handleCommentTask(
   });
 }
 
+async function handleDispatchTask(
+  hook: HookRecord,
+  payload: DispatchTaskActionPayload,
+  event: NormalizedHookEvent,
+): Promise<void> {
+  const profileId = resolveOptionalTemplate(payload.profileId, event) ?? payload.profileId;
+  if (!profileId?.trim()) {
+    throw new Error(`Hook ${hook.id} dispatch_task requires a profileId`);
+  }
+
+  // Anti-reentrancy: a session whose name ends in `-curator` is itself a
+  // curator task session, and its `turn.complete` MUST NOT dispatch another
+  // curator on top of it (infinite loop). Also skip when the firing session
+  // is already handling a task of the same profile.
+  if (isCuratorReentry(event, profileId.trim())) {
+    log.debug("dispatch_task anti-reentrancy: skipping curator-on-curator", {
+      hookId: hook.id,
+      sessionName: event.sessionName,
+      profileId: profileId.trim(),
+    });
+    return;
+  }
+
+  if (typeof payload.cadenceTurns === "number" && payload.cadenceTurns > 0) {
+    if (!event.sessionKey) {
+      log.warn("dispatch_task cadenceTurns requires event.sessionKey; ignoring cadence", {
+        hookId: hook.id,
+        cadenceTurns: payload.cadenceTurns,
+      });
+    } else {
+      const cadenceDecision = advanceSessionCadence(event.sessionKey, payload.cadenceTurns);
+      if (!cadenceDecision.shouldCurate) {
+        log.debug("dispatch_task cadence gate: skip this turn", {
+          hookId: hook.id,
+          sessionKey: event.sessionKey,
+          turnCount: cadenceDecision.turnCount,
+          cadenceTurns: payload.cadenceTurns,
+        });
+        return;
+      }
+      // R27: materialize the incremental transcript FROM THE messages TABLE
+      // (src/db.ts) — not a hand-maintained file nobody was writing. session_id
+      // in `messages` is the session's name (see saveMessage callers), which
+      // matches event.sessionName for every agent/session uniformly; no
+      // per-agent wiring needed. Only rows after lastCuratedMessageId are
+      // written, so a long-lived session's cost per cycle stays bounded by
+      // the delta (~cadenceTurns worth of messages), not the whole history.
+      const sinceMessageId = cadenceDecision.sinceMessageId;
+      const newMessages = getMessagesAfterId(event.sessionName ?? event.sessionKey, sinceMessageId);
+      const highestMessageId = newMessages.length > 0 ? newMessages[newMessages.length - 1]!.id : sinceMessageId;
+      if (event.agentCwd) {
+        writeCuratorTranscript(event.agentCwd, newMessages, sinceMessageId);
+      }
+      // Expose the counter to downstream templates as `metadata.cadenceTurn`
+      // so the profileInputJson can carry the absolute turn number (R16
+      // provenance), and `metadata.sinceMessageId` so the curator reports
+      // back the same watermark it started from (R27 provenance/audit).
+      event = {
+        ...event,
+        metadata: {
+          ...(event.metadata ?? {}),
+          cadenceTurn: cadenceDecision.turnCount,
+          sinceMessageId,
+          highestMessageId,
+        },
+      };
+    }
+  }
+
+  const title = resolveHookTemplate(payload.title, event).trim();
+  if (!title) {
+    log.debug("Skipping empty dispatch_task title", { hookId: hook.id });
+    return;
+  }
+
+  const targetAgentId = resolveOptionalTemplate(payload.targetAgentId, event) ?? event.agentId;
+  const instructions = resolveOptionalTemplate(payload.instructions, event);
+
+  // Guard: a Stop event that carries no resolvable `agentId` (e.g. task-*-work
+  // and other non-agent sessions) leaves `{{agentId}}`-style placeholders
+  // literal in the rendered title/targetAgentId. Dispatching then creates an
+  // orphan task addressed to an agent named "{{agentId}}" that can never run,
+  // and those pile up on every fire. Skip cleanly instead of leaking garbage.
+  const unresolved = [title, targetAgentId].find((value) => value && UNRESOLVED_PLACEHOLDER.test(value));
+  if (unresolved) {
+    log.debug("Skipping dispatch_task: unresolved template placeholder", {
+      hookId: hook.id,
+      sessionName: event.sessionName,
+      unresolved,
+    });
+    return;
+  }
+
+  let profileInput: Record<string, string> | undefined;
+  if (payload.profileInputJson?.trim()) {
+    const rendered = resolveHookTemplate(payload.profileInputJson, event);
+    try {
+      const parsed = JSON.parse(rendered) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("profileInputJson must render to a JSON object");
+      }
+      profileInput = {};
+      for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+        profileInput[key] = typeof value === "string" ? value : JSON.stringify(value);
+      }
+    } catch (err) {
+      throw new Error(
+        `Hook ${hook.id} dispatch_task profileInputJson invalid: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  const created = createTask({
+    title,
+    instructions: instructions ?? title,
+    profileId: profileId.trim(),
+    createdBy: `hook:${hook.name}`,
+    ...(event.agentId ? { createdByAgentId: event.agentId } : {}),
+    ...(event.sessionName ? { createdBySessionName: event.sessionName } : {}),
+    ...(profileInput ? { profileInput } : {}),
+  });
+
+  if (targetAgentId) {
+    try {
+      // Reentrancy note (m8): isCuratorReentry() short-circuits when the Stop
+      // session name ends in "-curator". The memory-curator hook's fallback
+      // name ("hook-memory-curator") satisfies that coincidentally, but the
+      // primary guard against curator-on-curator loops is the cadence gate
+      // (enroll enforces cadence >= 2), not this naming convention.
+      await queueOrDispatchTask(created.task.id, {
+        agentId: targetAgentId,
+        sessionName: event.sessionName ?? `hook-${hook.name}`,
+        assignedBy: `hook:${hook.name}`,
+        ...(event.agentId ? { assignedByAgentId: event.agentId } : {}),
+        ...(event.sessionName ? { assignedBySessionName: event.sessionName } : {}),
+      });
+    } catch (err) {
+      log.warn("dispatch_task created task but dispatch failed", {
+        hookId: hook.id,
+        taskId: created.task.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  log.info("Dispatched task from hook", {
+    hookId: hook.id,
+    taskId: created.task.id,
+    profileId,
+    targetAgentId,
+  });
+}
+
+function isCuratorReentry(event: NormalizedHookEvent, profileId: string): boolean {
+  const sessionName = event.sessionName ?? "";
+  if (sessionName.toLowerCase().endsWith("-curator")) {
+    return true;
+  }
+  if (sessionName && event.taskId) {
+    // A profile-tagged task in flight — same-profile Stop is the curator
+    // returning; do not chain another curator on top of it.
+    const activeSameProfileTasks = listTasks({ sessionName });
+    for (const task of activeSameProfileTasks) {
+      if (task.profileId === profileId && (task.status === "in_progress" || task.status === "dispatched")) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function advanceSessionCadence(
+  sessionKey: string,
+  cadenceTurns: number,
+): { shouldCurate: boolean; turnCount: number; sinceMessageId: number } {
+  const session = getSession(sessionKey);
+  if (!session) {
+    log.warn("dispatch_task cadence: session not found; treating as skip", { sessionKey });
+    return { shouldCurate: false, turnCount: 0, sinceMessageId: 0 };
+  }
+  const current = readMemoryCurationState(session, cadenceTurns);
+  // Honor a cadence change made after the hook was persisted with a different value.
+  const withRequestedCadence = current.cadenceTurns === cadenceTurns ? current : { ...current, cadenceTurns };
+  const advanced = advanceCurationCounter(withRequestedCadence);
+  const nextParams = writeMemoryCurationState(session, advanced.next);
+  // m11: MUST carry the session's existing providerSessionId/displayId through.
+  // updateRuntimeProviderState writes sdk_session_id / runtime_session_display_id
+  // unconditionally when runtimeSessionParams is set; omitting them here nulled
+  // out the provider's continuity id every cadence tick, forcing a fresh
+  // provider-side session each time (RM-reported "loses the thread" symptom).
+  updateRuntimeProviderState(sessionKey, session.runtimeProvider, {
+    runtimeSessionParams: nextParams,
+    ...(session.providerSessionId ? { providerSessionId: session.providerSessionId } : {}),
+    ...(session.runtimeSessionDisplayId ? { runtimeSessionDisplayId: session.runtimeSessionDisplayId } : {}),
+  });
+  return {
+    shouldCurate: advanced.shouldCurate,
+    turnCount: advanced.next.turnCount,
+    // lastCuratedMessageId does not change here (only markCurationMessageProcessed
+    // moves it) — so withRequestedCadence.lastCuratedMessageId is exactly the
+    // watermark to read `messages` from for this cycle.
+    sinceMessageId: withRequestedCadence.lastCuratedMessageId,
+  };
+}
+
+/**
+ * R27 — render the session's new `messages` rows (since the last curation
+ * cycle) as CURATOR_TRANSCRIPT.md, replacing whatever was there. This is the
+ * curator's only read surface: a plain, source-of-truth-backed file that
+ * always exists and always holds exactly the delta, for every agent/session
+ * uniformly (no per-agent file maintenance).
+ */
+function writeCuratorTranscript(agentCwd: string, messages: Message[], sinceMessageId: number): void {
+  const path = `${agentCwd}/CURATOR_TRANSCRIPT.md`;
+  const header = `# Session transcript delta — messages.id > ${sinceMessageId}\n\n`;
+  const body =
+    messages.length === 0
+      ? "_(no new messages since the last curation cycle)_\n"
+      : messages.map((m) => `## msg#${m.id} — ${m.role} — ${m.created_at}\n\n${m.content}\n`).join("\n");
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, header + body, "utf-8");
+  } catch (err) {
+    log.warn("Failed to write CURATOR_TRANSCRIPT.md (best-effort)", {
+      agentCwd,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 export async function executeHookAction(hook: HookRecord, event: NormalizedHookEvent): Promise<HookExecutionResult> {
   switch (hook.actionType) {
     case "inject_context":
@@ -133,6 +370,9 @@ export async function executeHookAction(hook: HookRecord, event: NormalizedHookE
       break;
     case "comment_task":
       await handleCommentTask(hook, hook.actionPayload as CommentTaskActionPayload, event);
+      break;
+    case "dispatch_task":
+      await handleDispatchTask(hook, hook.actionPayload as DispatchTaskActionPayload, event);
       break;
   }
 

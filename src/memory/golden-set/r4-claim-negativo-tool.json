@@ -1,0 +1,18 @@
+{
+  "id": "r4-claim-negativo-tool",
+  "invariant": "R4",
+  "description": "Negative claim about a tool (`X is broken`) MUST NOT persist — hardens into false refusals for months.",
+  "transcript_excerpt": "user: dá uma olhada nos meus taggers\nassistant: Não consigo — a integração de auto-tag do Ravi parece quebrada.",
+  "candidate": {
+    "title": "Ravi auto-tag integration is broken",
+    "content": "The Ravi auto-tag integration is broken and cannot be trusted for review tasks.",
+    "type": "reference",
+    "identity_key": "ravi-auto-tag-broken"
+  },
+  "existing_entry": null,
+  "expected": {
+    "action": "skip",
+    "reason": "R4:claim-negativo-tool",
+    "note": "Tools change fast; a persisted negative claim causes the curator to refuse features that were fixed after the write."
+  }
+}
