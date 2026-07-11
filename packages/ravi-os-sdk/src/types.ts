@@ -10945,6 +10945,70 @@ export type SkillGatesShowReturn = {
   };
 };
 
+/** Input shape for `skills.grant`. */
+export type SkillsGrantInput = {
+  agent: string;
+  note?: string;
+  skill: string;
+};
+
+/** Return shape for `skills.grant`. */
+export type SkillsGrantReturn = {
+  agentId: string;
+  grant?: {
+    agentId: string;
+    grantedAt: number;
+    note?: string;
+    skillName: string;
+  };
+  skillName: string;
+  success: boolean;
+};
+
+/** Input shape for `skills.grant-batch`. */
+export type SkillsGrantBatchInput = {
+  agent?: string;
+  allAgents?: boolean;
+  allSkills?: boolean;
+  dryRun?: boolean;
+  note?: string;
+  skill?: string;
+};
+
+/** Return shape for `skills.grant-batch`. */
+export type SkillsGrantBatchReturn = {
+  agentsTargeted: number;
+  dryRun: boolean;
+  errors: Array<{
+    agentId: string;
+    error: string;
+    skillName: string;
+  }>;
+  op: "grant" | "revoke";
+  pairsAffected: number;
+  pairsSkipped: number;
+  sampleAgents: string[];
+  sampleSkills: string[];
+  skillsTargeted: number;
+};
+
+/** Input shape for `skills.inspect`. */
+export type SkillsInspectInput = {
+  agent: string;
+};
+
+/** Return shape for `skills.inspect`. */
+export type SkillsInspectReturn = {
+  agentId: string;
+  allowlist: string[];
+  hasConfiguration: boolean;
+  provenance: {
+    baseline: string[];
+    fromCapabilities: string[];
+    fromGrants: string[];
+  };
+};
+
 /** Input shape for `skills.install`. */
 export type SkillsInstallInput = {
   all?: boolean;
@@ -11010,6 +11074,51 @@ export type SkillsListReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `skills.revoke`. */
+export type SkillsRevokeInput = {
+  agent: string;
+  skill: string;
+};
+
+/** Return shape for `skills.revoke`. */
+export type SkillsRevokeReturn = {
+  agentId: string;
+  grant?: {
+    agentId: string;
+    grantedAt: number;
+    note?: string;
+    skillName: string;
+  };
+  skillName: string;
+  success: boolean;
+};
+
+/** Input shape for `skills.revoke-batch`. */
+export type SkillsRevokeBatchInput = {
+  agent?: string;
+  allAgents?: boolean;
+  allSkills?: boolean;
+  dryRun?: boolean;
+  skill?: string;
+};
+
+/** Return shape for `skills.revoke-batch`. */
+export type SkillsRevokeBatchReturn = {
+  agentsTargeted: number;
+  dryRun: boolean;
+  errors: Array<{
+    agentId: string;
+    error: string;
+    skillName: string;
+  }>;
+  op: "grant" | "revoke";
+  pairsAffected: number;
+  pairsSkipped: number;
+  sampleAgents: string[];
+  sampleSkills: string[];
+  skillsTargeted: number;
+};
+
 /** Input shape for `skills.show`. */
 export type SkillsShowInput = {
   installed?: boolean;
@@ -11041,6 +11150,24 @@ export type SkillsSyncReturn = {
   success: true;
   total: number;
   [k: string]: unknown;
+};
+
+/** Input shape for `skills.who`. */
+export type SkillsWhoInput = {
+  agent?: string;
+  skill?: string;
+};
+
+/** Return shape for `skills.who`. */
+export type SkillsWhoReturn = {
+  grants: Array<{
+    agentId: string;
+    grantedAt: number;
+    note?: string;
+    skillName: string;
+  }>;
+  skillName?: string;
+  total: number;
 };
 
 /** Input shape for `slack.blocks-send`. */

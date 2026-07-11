@@ -443,6 +443,20 @@ export interface DbSkillGateRule {
   updatedAt: number;
 }
 
+interface SkillGrantRow {
+  agent_id: string;
+  skill_name: string;
+  note: string | null;
+  granted_at: number;
+}
+
+export interface DbSkillGrant {
+  agentId: string;
+  skillName: string;
+  note?: string;
+  grantedAt: number;
+}
+
 export interface DbSkillGateRuleInput {
   id: string;
   skill?: string | null;
@@ -1075,6 +1089,15 @@ function getDb(): Database {
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_skill_gate_rules_disabled ON skill_gate_rules(disabled);
+
+    CREATE TABLE IF NOT EXISTS skill_grants (
+      agent_id TEXT NOT NULL,
+      skill_name TEXT NOT NULL,
+      note TEXT,
+      granted_at INTEGER NOT NULL,
+      PRIMARY KEY (agent_id, skill_name)
+    );
+    CREATE INDEX IF NOT EXISTS idx_skill_grants_skill ON skill_grants(skill_name);
 
     CREATE TABLE IF NOT EXISTS sessions (
       session_key TEXT PRIMARY KEY,
@@ -4366,6 +4389,14 @@ interface PreparedStatements {
   getSkillGateRule: Statement;
   deleteSkillGateRule: Statement;
   listSkillGateRules: Statement;
+  // Skill grants (per-agent skill visibility)
+  upsertSkillGrant: Statement;
+  deleteSkillGrant: Statement;
+  listSkillGrants: Statement;
+  listSkillGrantsForAgent: Statement;
+  listAgentsForSkill: Statement;
+  deleteSkillGrantsForAgent: Statement;
+  deleteSkillGrantsForSkill: Statement;
   // Matrix accounts
   upsertMatrixAccount: Statement;
   getMatrixAccount: Statement;
@@ -4528,6 +4559,21 @@ function getStatements(): PreparedStatements {
     getSkillGateRule: database.prepare("SELECT * FROM skill_gate_rules WHERE id = ?"),
     deleteSkillGateRule: database.prepare("DELETE FROM skill_gate_rules WHERE id = ?"),
     listSkillGateRules: database.prepare("SELECT * FROM skill_gate_rules ORDER BY id"),
+
+    // Skill grants (per-agent skill visibility)
+    upsertSkillGrant: database.prepare(`
+      INSERT INTO skill_grants (agent_id, skill_name, note, granted_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(agent_id, skill_name) DO UPDATE SET
+        note = excluded.note,
+        granted_at = excluded.granted_at
+    `),
+    deleteSkillGrant: database.prepare("DELETE FROM skill_grants WHERE agent_id = ? AND skill_name = ?"),
+    listSkillGrants: database.prepare("SELECT * FROM skill_grants ORDER BY agent_id, skill_name"),
+    listSkillGrantsForAgent: database.prepare("SELECT * FROM skill_grants WHERE agent_id = ? ORDER BY skill_name"),
+    listAgentsForSkill: database.prepare("SELECT * FROM skill_grants WHERE skill_name = ? ORDER BY agent_id"),
+    deleteSkillGrantsForAgent: database.prepare("DELETE FROM skill_grants WHERE agent_id = ?"),
+    deleteSkillGrantsForSkill: database.prepare("DELETE FROM skill_grants WHERE skill_name = ?"),
 
     // Matrix accounts
     upsertMatrixAccount: database.prepare(`
@@ -6868,6 +6914,8 @@ export function dbDeleteAgent(id: string): boolean {
   }
 
   const s = getStatements();
+  // Clean up per-agent skill grants so a same-id recreation does not inherit orphans.
+  s.deleteSkillGrantsForAgent.run(id);
   s.deleteAgent.run(id);
   if (getDbChanges() > 0) {
     log.info("Deleted agent", { id });
@@ -7215,6 +7263,81 @@ export function dbDeleteSkillGateRule(id: string): boolean {
   const s = getStatements();
   s.deleteSkillGateRule.run(cleanId);
   return getDbChanges() > 0;
+}
+
+// ============================================================================
+// Skill Grant CRUD
+// ============================================================================
+
+function rowToSkillGrant(row: SkillGrantRow): DbSkillGrant {
+  return {
+    agentId: row.agent_id,
+    skillName: row.skill_name,
+    ...(row.note !== null ? { note: row.note } : {}),
+    grantedAt: row.granted_at,
+  };
+}
+
+export function dbListSkillGrants(): DbSkillGrant[] {
+  const s = getStatements();
+  return (s.listSkillGrants.all() as SkillGrantRow[]).map(rowToSkillGrant);
+}
+
+export function dbListSkillGrantsForAgent(agentId: string): DbSkillGrant[] {
+  const cleanAgentId = cleanOptionalText(agentId);
+  if (!cleanAgentId) return [];
+  const s = getStatements();
+  return (s.listSkillGrantsForAgent.all(cleanAgentId) as SkillGrantRow[]).map(rowToSkillGrant);
+}
+
+export function dbListAgentsForSkill(skillName: string): DbSkillGrant[] {
+  const cleanSkill = cleanOptionalText(skillName);
+  if (!cleanSkill) return [];
+  const s = getStatements();
+  return (s.listAgentsForSkill.all(cleanSkill) as SkillGrantRow[]).map(rowToSkillGrant);
+}
+
+export function dbUpsertSkillGrant(input: { agentId: string; skillName: string; note?: string }): DbSkillGrant {
+  const agentId = cleanOptionalText(input.agentId);
+  const skillName = cleanOptionalText(input.skillName);
+  if (!agentId) throw new Error("Skill grant agent id is required.");
+  if (!skillName) throw new Error("Skill grant skill name is required.");
+
+  const s = getStatements();
+  const now = Date.now();
+  s.upsertSkillGrant.run(agentId, skillName, cleanOptionalText(input.note), now);
+  log.info("Upserted skill grant", { agentId, skillName });
+  return {
+    agentId,
+    skillName,
+    ...(cleanOptionalText(input.note) ? { note: cleanOptionalText(input.note)! } : {}),
+    grantedAt: now,
+  };
+}
+
+export function dbDeleteSkillGrant(agentId: string, skillName: string): boolean {
+  const cleanAgentId = cleanOptionalText(agentId);
+  const cleanSkill = cleanOptionalText(skillName);
+  if (!cleanAgentId || !cleanSkill) return false;
+  const s = getStatements();
+  s.deleteSkillGrant.run(cleanAgentId, cleanSkill);
+  return getDbChanges() > 0;
+}
+
+export function dbDeleteSkillGrantsForAgent(agentId: string): number {
+  const cleanAgentId = cleanOptionalText(agentId);
+  if (!cleanAgentId) return 0;
+  const s = getStatements();
+  s.deleteSkillGrantsForAgent.run(cleanAgentId);
+  return getDbChanges();
+}
+
+export function dbDeleteSkillGrantsForSkill(skillName: string): number {
+  const cleanSkill = cleanOptionalText(skillName);
+  if (!cleanSkill) return 0;
+  const s = getStatements();
+  s.deleteSkillGrantsForSkill.run(cleanSkill);
+  return getDbChanges();
 }
 
 // ============================================================================

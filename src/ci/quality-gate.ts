@@ -29,6 +29,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/router/sessions.test.ts",
     "src/router/resolver.test.ts",
     "src/runtime/session-goals.test.ts",
+    // Skill-grant store (dbUpsert/List/DeleteSkillGrant*) is exercised here.
+    "src/cli/commands/skills.test.ts",
+    "src/runtime/allowed-skills.test.ts",
   ],
   "src/runtime/": [
     "src/runtime/index.test.ts",
@@ -39,6 +42,10 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/compaction-announcement.test.ts",
     "src/runtime/codex-transport.test.ts",
     "src/runtime/prompt-subscription.test.ts",
+    // Per-agent skill visibility: core resolution, gate, and local-skill preservation.
+    "src/runtime/allowed-skills.test.ts",
+    "src/runtime/skill-gate.test.ts",
+    "src/runtime/claude-local-skills.test.ts",
   ],
   "src/session-trace/": ["src/session-trace/session-trace.test.ts"],
   "src/triggers/": ["src/triggers/triggers.test.ts"],

@@ -52989,6 +52989,253 @@ export const SkillGatesShowReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `skills.grant`. */
+export const SkillsGrantInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id (immutable)",
+      "type": "string"
+    },
+    "note": {
+      "description": "Optional operator note",
+      "type": "string"
+    },
+    "skill": {
+      "description": "Skill name (matches SKILL.md name)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent",
+    "skill"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.grant`. */
+export const SkillsGrantReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "grant": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "grantedAt": {
+          "type": "number"
+        },
+        "note": {
+          "type": "string"
+        },
+        "skillName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agentId",
+        "skillName",
+        "grantedAt"
+      ],
+      "type": "object"
+    },
+    "skillName": {
+      "type": "string"
+    },
+    "success": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "agentId",
+    "skillName"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skills.grant-batch`. */
+export const SkillsGrantBatchInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Target a single agent (mutually exclusive with --all-agents)",
+      "type": "string"
+    },
+    "allAgents": {
+      "description": "Target every agent in the fleet",
+      "type": "boolean"
+    },
+    "allSkills": {
+      "description": "Target every catalog + installed skill",
+      "type": "boolean"
+    },
+    "dryRun": {
+      "description": "Preview counts without writing any grant",
+      "type": "boolean"
+    },
+    "note": {
+      "description": "Optional operator note stamped on every grant",
+      "type": "string"
+    },
+    "skill": {
+      "description": "Target a single skill (mutually exclusive with --all-skills)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.grant-batch`. */
+export const SkillsGrantBatchReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentsTargeted": {
+      "type": "number"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "errors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "skillName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId",
+          "skillName",
+          "error"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "op": {
+      "enum": [
+        "grant",
+        "revoke"
+      ],
+      "type": "string"
+    },
+    "pairsAffected": {
+      "type": "number"
+    },
+    "pairsSkipped": {
+      "type": "number"
+    },
+    "sampleAgents": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "sampleSkills": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "skillsTargeted": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "op",
+    "dryRun",
+    "agentsTargeted",
+    "skillsTargeted",
+    "pairsAffected",
+    "pairsSkipped",
+    "errors",
+    "sampleAgents",
+    "sampleSkills"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skills.inspect`. */
+export const SkillsInspectInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id (immutable)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.inspect`. */
+export const SkillsInspectReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "allowlist": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "hasConfiguration": {
+      "type": "boolean"
+    },
+    "provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "baseline": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "fromCapabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "fromGrants": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "baseline",
+        "fromCapabilities",
+        "fromGrants"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "agentId",
+    "hasConfiguration",
+    "allowlist",
+    "provenance"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `skills.install`. */
 export const SkillsInstallInputSchema = {
   "additionalProperties": false,
@@ -53261,6 +53508,175 @@ export const SkillsListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `skills.revoke`. */
+export const SkillsRevokeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id (immutable)",
+      "type": "string"
+    },
+    "skill": {
+      "description": "Skill name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent",
+    "skill"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.revoke`. */
+export const SkillsRevokeReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "grant": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "grantedAt": {
+          "type": "number"
+        },
+        "note": {
+          "type": "string"
+        },
+        "skillName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agentId",
+        "skillName",
+        "grantedAt"
+      ],
+      "type": "object"
+    },
+    "skillName": {
+      "type": "string"
+    },
+    "success": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "agentId",
+    "skillName"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skills.revoke-batch`. */
+export const SkillsRevokeBatchInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Target a single agent (mutually exclusive with --all-agents)",
+      "type": "string"
+    },
+    "allAgents": {
+      "description": "Target every agent in the fleet",
+      "type": "boolean"
+    },
+    "allSkills": {
+      "description": "Target every catalog + installed skill",
+      "type": "boolean"
+    },
+    "dryRun": {
+      "description": "Preview counts without removing any grant",
+      "type": "boolean"
+    },
+    "skill": {
+      "description": "Target a single skill (mutually exclusive with --all-skills)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.revoke-batch`. */
+export const SkillsRevokeBatchReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentsTargeted": {
+      "type": "number"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "errors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "skillName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId",
+          "skillName",
+          "error"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "op": {
+      "enum": [
+        "grant",
+        "revoke"
+      ],
+      "type": "string"
+    },
+    "pairsAffected": {
+      "type": "number"
+    },
+    "pairsSkipped": {
+      "type": "number"
+    },
+    "sampleAgents": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "sampleSkills": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "skillsTargeted": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "op",
+    "dryRun",
+    "agentsTargeted",
+    "skillsTargeted",
+    "pairsAffected",
+    "pairsSkipped",
+    "errors",
+    "sampleAgents",
+    "sampleSkills"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `skills.show`. */
 export const SkillsShowInputSchema = {
   "additionalProperties": false,
@@ -53374,6 +53790,66 @@ export const SkillsSyncReturnSchema = {
     "success",
     "codexSynced",
     "total"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skills.who`. */
+export const SkillsWhoInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "List grants for a specific agent instead",
+      "type": "string"
+    },
+    "skill": {
+      "description": "Skill name to look up",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.who`. */
+export const SkillsWhoReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "grants": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "grantedAt": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          },
+          "skillName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId",
+          "skillName",
+          "grantedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "skillName": {
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "grants"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

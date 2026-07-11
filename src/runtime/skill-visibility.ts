@@ -96,10 +96,22 @@ export function buildPluginSkillVisibilitySnapshot(input: {
   state: RuntimeSkillVisibilityState;
   confidence: RuntimeSkillVisibilityConfidence;
   evidenceKind: RuntimeSkillVisibilityEvidenceKind;
+  /**
+   * Optional allowlist of skill identifiers actually exposed to the runtime.
+   * When provided (and non-empty) the snapshot reflects only skills the
+   * runtime can index — matching what the provider's context filter sees
+   * (spec skills/scoping/per-agent-visibility, Invariant T).
+   */
+  allowedSkills?: readonly string[];
   now?: number;
 }): RuntimeSkillVisibilitySnapshot {
   const now = input.now ?? Date.now();
-  const records = listPluginSkills(input.plugins ?? []).map((skill): RuntimeSkillVisibilityRecord => {
+  const rawSkills = listPluginSkills(input.plugins ?? []);
+  const filteredSkills =
+    input.allowedSkills && input.allowedSkills.length > 0
+      ? rawSkills.filter((skill) => skillMatchesAllowlist(skill, input.allowedSkills!))
+      : rawSkills;
+  const records = filteredSkills.map((skill): RuntimeSkillVisibilityRecord => {
     return {
       id: skill.id,
       provider: input.provider,
@@ -118,6 +130,25 @@ export function buildPluginSkillVisibilitySnapshot(input: {
     };
   });
   return buildSkillVisibilitySnapshot(records, now);
+}
+
+function skillMatchesAllowlist(skill: PluginSkillDescriptor, allowlist: readonly string[]): boolean {
+  const skillSlug = slugifySkillName(skill.id);
+  const pluginMatch = /^plugin:([^/]+)\/([^/]+)$/.exec(skill.source);
+  const pluginName = pluginMatch?.[1];
+  const skillDir = pluginMatch?.[2];
+  for (const entry of allowlist) {
+    if (!entry) continue;
+    if (entry === skill.id) return true;
+    if (slugifySkillName(entry) === skillSlug) return true;
+    if (pluginName && skillDir) {
+      if (entry === `${pluginName}:${skill.id}`) return true;
+      if (entry === `${pluginName}:${skillDir}`) return true;
+      if (entry === `${pluginName}-${skill.id}`) return true;
+      if (entry === `${pluginName}-${skillDir}`) return true;
+    }
+  }
+  return false;
 }
 
 export function buildCodexSkillVisibilitySnapshot(

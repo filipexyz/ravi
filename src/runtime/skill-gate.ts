@@ -22,6 +22,7 @@ import {
 } from "../cli/skill-gates.js";
 import { nats } from "../nats.js";
 import type { SessionEntry } from "../router/types.js";
+import { resolveAgentSkills } from "./allowed-skills.js";
 import { markLoadedFromSkillGate, readSkillVisibilityFromParams } from "./skill-visibility.js";
 import type { RuntimeSkillVisibilitySnapshot } from "./types.js";
 
@@ -118,6 +119,23 @@ export function evaluateSkillGate(input: EvaluateSkillGateInput): SkillGateDecis
   const snapshot = readSkillVisibilityFromParams(session.runtimeSessionParams);
   if (snapshot.loadedSkills.some((loadedSkill) => loadedSkillMatchesGate(loadedSkill, input.gate!.skill))) {
     return { allowed: true };
+  }
+
+  if (!skillAllowedForAgent(session.agentId, input.gate.skill)) {
+    const reason = `RAVI_SKILL_GATE_CONFIG_ERROR: ${input.toolName} requires skill ${input.gate.skill}, but that skill is not visible to agent ${session.agentId}. Grant it via 'ravi skills grant' or a group permission.`;
+    emitSkillGateEvent(session, {
+      type: "skill.gate.error",
+      toolName: input.toolName,
+      gate: input.gate,
+      code: "RAVI_SKILL_GATE_CONFIG_ERROR",
+      reason,
+    });
+    return {
+      allowed: false,
+      code: "RAVI_SKILL_GATE_CONFIG_ERROR",
+      skill: input.gate.skill,
+      reason,
+    };
   }
 
   const skill = resolveSkillForGate(input.gate.skill);
@@ -279,4 +297,23 @@ export function skillGateErrorPayload(decision: SkillGateDecision): Record<strin
 
 export function loadedSkillMatchesGate(loadedSkill: string, gateSkill: string): boolean {
   return loadedSkill === gateSkill || slugifySkillName(loadedSkill) === slugifySkillName(gateSkill);
+}
+
+/**
+ * Invariant G (spec skills/scoping/per-agent-visibility): if the agent has an
+ * active allowlist and the required skill is NOT in it, the gate MUST NOT
+ * deliver the corpus from the global catalog. Returns true when the skill is
+ * allowed, and also when the agent has no active configuration (Invariant F
+ * — grandfather: no allowlist ≡ full catalog visibility).
+ */
+function skillAllowedForAgent(agentId: string | undefined, gateSkill: string): boolean {
+  if (!agentId) return true;
+  const resolved = resolveAgentSkills(agentId);
+  if (!resolved.hasConfiguration) return true;
+  const gateSlug = slugifySkillName(gateSkill);
+  for (const allowed of resolved.allowlist) {
+    if (allowed === gateSkill) return true;
+    if (slugifySkillName(allowed) === gateSlug) return true;
+  }
+  return false;
 }
