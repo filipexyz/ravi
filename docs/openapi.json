@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "ca79e21902666597"
+    "version": "44d943d302e2d246"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -66076,6 +66076,500 @@
         },
         "security": [],
         "summary": "Set session display label",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/set-effort": {
+      "post": {
+        "operationId": "sessions.set-effort",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "level": {
+                    "description": "Reasoning effort (none|minimal|low|medium|high|xhigh|max|ultra) or 'clear'",
+                    "type": "string"
+                  },
+                  "nameOrKey": {
+                    "description": "Session name or key",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "nameOrKey",
+                  "level"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "action": {
+                      "const": "set-effort",
+                      "type": "string"
+                    },
+                    "after": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "agentId": {
+                              "type": "string"
+                            },
+                            "effectiveModel": {
+                              "type": "string"
+                            },
+                            "effectiveProvider": {
+                              "type": "string"
+                            },
+                            "effortOverride": {
+                              "enum": [
+                                "none",
+                                "minimal",
+                                "low",
+                                "medium",
+                                "high",
+                                "xhigh",
+                                "max",
+                                "ultra"
+                              ],
+                              "type": "string"
+                            },
+                            "ephemeral": {
+                              "type": "boolean"
+                            },
+                            "expiresAt": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "label": {
+                              "type": "string"
+                            },
+                            "modelOverride": {
+                              "type": "string"
+                            },
+                            "modelPresetId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "modelPresetVersion": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "modelSource": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "runtimeOptions": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "effort": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "source": {
+                                      "enum": [
+                                        "session_override",
+                                        "agent_default",
+                                        "runtime_default"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "enum": [
+                                        "none",
+                                        "minimal",
+                                        "low",
+                                        "medium",
+                                        "high",
+                                        "xhigh",
+                                        "max",
+                                        "ultra"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "value",
+                                    "source"
+                                  ],
+                                  "type": "object"
+                                },
+                                "model": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "source": {
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "value",
+                                    "source"
+                                  ],
+                                  "type": "object"
+                                },
+                                "thinking": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "source": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "value": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "value",
+                                    "source"
+                                  ],
+                                  "type": "object"
+                                }
+                              },
+                              "required": [
+                                "model",
+                                "effort",
+                                "thinking"
+                              ],
+                              "type": "object"
+                            },
+                            "sessionKey": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "sessionKey",
+                            "label",
+                            "agentId",
+                            "effectiveProvider",
+                            "effectiveModel",
+                            "modelSource",
+                            "modelPresetId",
+                            "modelPresetVersion",
+                            "ephemeral",
+                            "expiresAt",
+                            "runtimeOptions"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "appliesOn": {
+                      "const": "next-turn-runtime-restart",
+                      "type": "string"
+                    },
+                    "before": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "agentId": {
+                          "type": "string"
+                        },
+                        "effectiveModel": {
+                          "type": "string"
+                        },
+                        "effectiveProvider": {
+                          "type": "string"
+                        },
+                        "effortOverride": {
+                          "enum": [
+                            "none",
+                            "minimal",
+                            "low",
+                            "medium",
+                            "high",
+                            "xhigh",
+                            "max",
+                            "ultra"
+                          ],
+                          "type": "string"
+                        },
+                        "ephemeral": {
+                          "type": "boolean"
+                        },
+                        "expiresAt": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "modelOverride": {
+                          "type": "string"
+                        },
+                        "modelPresetId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "modelPresetVersion": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "modelSource": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "runtimeOptions": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "effort": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "source": {
+                                  "enum": [
+                                    "session_override",
+                                    "agent_default",
+                                    "runtime_default"
+                                  ],
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "enum": [
+                                    "none",
+                                    "minimal",
+                                    "low",
+                                    "medium",
+                                    "high",
+                                    "xhigh",
+                                    "max",
+                                    "ultra"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "value",
+                                "source"
+                              ],
+                              "type": "object"
+                            },
+                            "model": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "source": {
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "value",
+                                "source"
+                              ],
+                              "type": "object"
+                            },
+                            "thinking": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "source": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "value": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "value",
+                                "source"
+                              ],
+                              "type": "object"
+                            }
+                          },
+                          "required": [
+                            "model",
+                            "effort",
+                            "thinking"
+                          ],
+                          "type": "object"
+                        },
+                        "sessionKey": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "sessionKey",
+                        "label",
+                        "agentId",
+                        "effectiveProvider",
+                        "effectiveModel",
+                        "modelSource",
+                        "modelPresetId",
+                        "modelPresetVersion",
+                        "ephemeral",
+                        "expiresAt",
+                        "runtimeOptions"
+                      ],
+                      "type": "object"
+                    },
+                    "changed": {
+                      "type": "boolean"
+                    },
+                    "effectiveEffort": {
+                      "enum": [
+                        "none",
+                        "minimal",
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max",
+                        "ultra"
+                      ],
+                      "type": "string"
+                    },
+                    "effectiveEffortSource": {
+                      "enum": [
+                        "session_override",
+                        "agent_default",
+                        "runtime_default"
+                      ],
+                      "type": "string"
+                    },
+                    "effortOverride": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "none",
+                            "minimal",
+                            "low",
+                            "medium",
+                            "high",
+                            "xhigh",
+                            "max",
+                            "ultra"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sessionKey": {
+                      "type": "string"
+                    },
+                    "sessionName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "action",
+                    "changed",
+                    "sessionKey",
+                    "sessionName",
+                    "before",
+                    "after",
+                    "effortOverride",
+                    "effectiveEffort",
+                    "effectiveEffortSource",
+                    "appliesOn"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Set session reasoning effort override",
         "tags": [
           "sessions"
         ]

@@ -45,6 +45,7 @@ let deletedSessionKeys: string[] = [];
 let renameSessionNameCalls: Array<{ sessionKey: string; newName: string }> = [];
 let renameSessionNameError: Error | null = null;
 let renameRouteReferencesUpdated = 0;
+let effortUpdates: Array<{ sessionKey: string; effort: string | null }> = [];
 const runtimeLiveStates = new Map<string, Record<string, unknown>>();
 
 function defaultTurnUsageSummary(): Record<string, unknown> {
@@ -168,7 +169,23 @@ mock.module("../../router/sessions.js", () => ({
       routeReferencesUpdated: before.name === newName ? 0 : renameRouteReferencesUpdated,
     };
   },
-  updateSessionModelOverride: () => {},
+  updateSessionModelOverride: (sessionKey: string, model: string | null) => {
+    if (resolvedSession?.sessionKey === sessionKey) {
+      resolvedSession =
+        model === null
+          ? { ...resolvedSession, modelOverride: undefined }
+          : { ...resolvedSession, modelOverride: model };
+    }
+  },
+  updateSessionEffortOverride: (sessionKey: string, effort: string | null) => {
+    effortUpdates.push({ sessionKey, effort });
+    if (resolvedSession?.sessionKey === sessionKey) {
+      resolvedSession =
+        effort === null
+          ? { ...resolvedSession, effortOverride: undefined }
+          : { ...resolvedSession, effortOverride: effort };
+    }
+  },
   updateSessionThinkingLevel: () => {},
   setSessionEphemeral: () => {},
   extendSession: () => {},
@@ -328,6 +345,7 @@ beforeEach(() => {
   renameSessionNameCalls = [];
   renameSessionNameError = null;
   renameRouteReferencesUpdated = 0;
+  effortUpdates = [];
   runtimeLiveStates.clear();
 });
 
@@ -986,6 +1004,85 @@ describe("SessionCommands set-model", () => {
   });
 });
 
+describe("SessionCommands set-effort", () => {
+  beforeEach(() => {
+    listedSessions = [];
+    resolvedSession = null;
+    routerConfig = { agents: {} };
+    natsEmits.length = 0;
+    effortUpdates = [];
+  });
+
+  it("sets a session reasoning effort override without mixing with thinking", async () => {
+    resolvedSession = {
+      sessionKey: "agent:main:effort-switch",
+      name: "effort-switch",
+      agentId: "main",
+      thinkingLevel: "verbose",
+    };
+    routerConfig = {
+      agents: {
+        main: {
+          effort: "max",
+        },
+      },
+    };
+
+    const output = await captureLogsAsync(async () => {
+      new SessionCommands().setEffort("effort-switch", "Ultra");
+    });
+
+    expect(output).toContain('Set effort to "ultra" for: effort-switch');
+    expect(output).toContain("active runtime restarts when effort changes");
+    expect(effortUpdates).toEqual([{ sessionKey: "agent:main:effort-switch", effort: "ultra" }]);
+    expect(resolvedSession?.effortOverride).toBe("ultra");
+    expect(resolvedSession?.thinkingLevel).toBe("verbose");
+    expect(natsEmits).toHaveLength(0);
+  });
+
+  it("clears to the agent effort default in JSON output", async () => {
+    resolvedSession = {
+      sessionKey: "agent:main:effort-clear",
+      name: "effort-clear",
+      agentId: "main",
+      effortOverride: "ultra",
+    };
+    routerConfig = {
+      agents: {
+        main: {
+          effort: "max",
+        },
+      },
+    };
+
+    const output = await captureLogsAsync(async () => {
+      new SessionCommands().setEffort("effort-clear", "clear", true);
+    });
+    const payload = JSON.parse(output);
+
+    expect(payload).toMatchObject({
+      action: "set-effort",
+      changed: true,
+      effortOverride: null,
+      effectiveEffort: "max",
+      effectiveEffortSource: "agent_default",
+      appliesOn: "next-turn-runtime-restart",
+    });
+    expect(effortUpdates).toEqual([{ sessionKey: "agent:main:effort-clear", effort: null }]);
+  });
+
+  it("rejects invalid effort values", () => {
+    resolvedSession = {
+      sessionKey: "agent:main:effort-invalid",
+      name: "effort-invalid",
+      agentId: "main",
+    };
+
+    expect(() => new SessionCommands().setEffort("effort-invalid", "turbo", true)).toThrow(/Invalid runtime effort/);
+    expect(effortUpdates).toEqual([]);
+  });
+});
+
 describe("SessionCommands info", () => {
   beforeEach(() => {
     resolvedSession = null;
@@ -1004,6 +1101,7 @@ describe("SessionCommands info", () => {
       displayName: "Support",
       agentId: "main",
       modelOverride: "gpt-5.4-mini",
+      effortOverride: "ultra",
       thinkingLevel: "verbose",
       runtimeProvider: "codex",
       providerSessionId: "resp_123",
@@ -1028,6 +1126,7 @@ describe("SessionCommands info", () => {
         main: {
           provider: "codex",
           model: "gpt-5",
+          effort: "max",
         },
       },
     };

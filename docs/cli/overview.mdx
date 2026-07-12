@@ -50,7 +50,7 @@ ravi agents list                              # List all agents
 ravi agents show <id>                         # Show agent details (model, mode, permissions, defaults)
 ravi agents create <id> <cwd>                 # Create a new agent
 ravi agents delete <id>                       # Delete an agent
-ravi agents set <id> <key> <value>            # Set property (name, cwd, model, dmScope, mode, defaults, ...)
+ravi agents set <id> <key> <value>            # Set property (name, cwd, model, effort, dmScope, mode, defaults, ...)
 ravi agents debounce <id> [ms]                # Set/show message debounce (0 to disable)
 ravi agents spec-mode <id> [true|false]       # Enable/disable spec mode
 ravi agents session <id>                      # Show all sessions for agent
@@ -162,6 +162,7 @@ ravi sessions list [--agent <id>] [--ephemeral]  # List sessions
 ravi sessions info <nameOrKey>                    # Show session details
 ravi sessions rename <nameOrKey> <displayName>    # Set display name
 ravi sessions set-model <nameOrKey> <model>       # Set model override (sonnet, opus, haiku, clear)
+ravi sessions set-effort <nameOrKey> <level>      # Set effort (none..ultra, clear)
 ravi sessions set-thinking <nameOrKey> <level>    # Set thinking level (off, normal, verbose, clear)
 ravi sessions reset <nameOrKey>                   # Reset session (fresh start)
 ravi sessions delete <nameOrKey>                  # Delete session permanently

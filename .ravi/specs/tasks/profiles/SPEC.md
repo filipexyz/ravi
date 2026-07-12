@@ -98,14 +98,14 @@ The effective runtime MUST be resolved per field using this precedence:
 1. dispatch override or launch-plan override;
 2. task override;
 3. profile runtime defaults;
-4. existing human session model/thinking preference;
-5. agent default model;
+4. existing human session model/effort/thinking preference;
+5. agent default model/effort;
 6. global config model;
 7. runtime effort default `xhigh`.
 
 An unset effort MUST resolve to the runtime effort default `xhigh`. An unknown effort value in a CLI flag, task/dispatch override, or profile `runtimeDefaults` MUST fail clearly rather than silently falling back to the default, so invalid input is never masked.
 
-Task runtime selection MUST NOT mutate the assigned session's persistent model or thinking settings.
+Task runtime selection MUST NOT mutate the assigned session's persistent model, effort, or thinking settings.
 
 ## Inputs
 

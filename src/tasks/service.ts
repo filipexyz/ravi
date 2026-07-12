@@ -1637,6 +1637,7 @@ export function resolveTaskRuntimeForRead(
     assignment?: TaskAssignment | null;
     launchPlan?: TaskLaunchPlan | null;
     sessionModelOverride?: string | null;
+    sessionEffortOverride?: string | null;
     sessionThinkingLevel?: string | null;
   } = {},
 ): TaskRuntimeResolution {
@@ -1644,11 +1645,15 @@ export function resolveTaskRuntimeForRead(
   const launchPlan = options.launchPlan === undefined ? dbGetTaskLaunchPlan(task.id) : options.launchPlan;
   const agentId =
     options.assignment?.agentId ?? launchPlan?.agentId ?? task.assigneeAgentId ?? task.createdByAgentId ?? undefined;
-  const agentModel = agentId ? getAgent(agentId)?.model : undefined;
+  const agent = agentId ? getAgent(agentId) : undefined;
+  const agentModel = agent?.model;
+  const agentEffort = agent?.effort;
   const runtimeSessionName = options.assignment?.sessionName ?? launchPlan?.sessionName ?? task.assigneeSessionName;
   const runtimeSession = runtimeSessionName ? getSessionByName(runtimeSessionName) : null;
   const sessionModelOverride =
     options.sessionModelOverride !== undefined ? options.sessionModelOverride : runtimeSession?.modelOverride;
+  const sessionEffortOverride =
+    options.sessionEffortOverride !== undefined ? options.sessionEffortOverride : runtimeSession?.effortOverride;
   const sessionThinkingLevel =
     options.sessionThinkingLevel !== undefined ? options.sessionThinkingLevel : runtimeSession?.thinkingLevel;
   return resolveTaskRuntimeOptions({
@@ -1657,8 +1662,10 @@ export function resolveTaskRuntimeForRead(
     assignment: options.assignment,
     launchPlan,
     sessionModelOverride,
+    sessionEffortOverride,
     sessionThinkingLevel,
     agentModel,
+    agentEffort,
     configModel: loadConfig().model,
   });
 }

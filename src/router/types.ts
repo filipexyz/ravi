@@ -2,6 +2,7 @@
  * Session Router Types
  */
 
+import type { RuntimeEffort } from "../runtime/effort.js";
 import type { RuntimeProviderId } from "../runtime/types.js";
 
 // ============================================================================
@@ -58,6 +59,9 @@ export interface AgentConfig {
 
   /** Model override for this agent */
   model?: string;
+
+  /** Default reasoning effort for this agent */
+  effort?: RuntimeEffort;
 
   /** Runtime provider for this agent (defaults to Codex when unset) */
   provider?: RuntimeProviderId;
@@ -249,6 +253,7 @@ export interface SessionEntry {
   // Overrides
   thinkingLevel?: "off" | "normal" | "verbose";
   modelOverride?: string;
+  effortOverride?: RuntimeEffort;
   ttsAuto?: "on" | "off" | "voice";
 
   // Queue mode

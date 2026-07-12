@@ -12,7 +12,8 @@
 - An unset effort MUST resolve to the runtime effort default `xhigh`.
 - An unknown effort in a CLI flag, task/dispatch override, or profile default MUST fail clearly and MUST NOT silently fall back to the default.
 - Runtime resolution MUST pick effort per field using the documented precedence.
-- Task runtime selection MUST NOT mutate the assigned session's persistent model or thinking settings.
+- Session effort override MUST beat agent effort default for non-task turns and task/profile gaps.
+- Task runtime selection MUST NOT mutate the assigned session's persistent model, effort, or thinking settings.
 
 ## Model Selector
 

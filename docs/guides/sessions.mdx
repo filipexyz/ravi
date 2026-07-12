@@ -224,6 +224,18 @@ ravi sessions set-model <name> clear
 
 Takes effect on the next session start (after reset or daemon restart).
 
+### Reasoning Effort
+
+```bash
+# Set reasoning effort for a specific session
+ravi sessions set-effort <name> ultra
+
+# Options: none, minimal, low, medium, high, xhigh, max, ultra, clear
+ravi sessions set-effort <name> clear
+```
+
+Effort is independent from `thinking`. It takes effect on the next turn; an active runtime is restarted when the effective effort changes. Runtime precedence is task/dispatch/profile override, then session effort override, then agent effort default, then the runtime default `xhigh`.
+
 ### Thinking Level
 
 ```bash

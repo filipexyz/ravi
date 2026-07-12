@@ -118,6 +118,7 @@ function seedLinkedContext(): void {
     runtimeProvider: "codex",
     runtimeSessionDisplayId: "thread_123",
     modelOverride: undefined,
+    effortOverride: "ultra",
     thinkingLevel: undefined,
     channel: "whatsapp",
     accountId: "main",
@@ -265,6 +266,7 @@ describe("SelfCommands", () => {
     expect(payload.session.data).toMatchObject({
       sessionKey: "agent:main:main",
       agentId: "main",
+      effortOverride: "ultra",
     });
     expect(payload.chat.data.chat).toMatchObject({ id: "chat_123", title: "Ravi Main" });
     expect(payload.chat.data.participants).toHaveLength(1);

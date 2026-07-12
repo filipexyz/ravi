@@ -10711,6 +10711,82 @@ export type SessionsSetDisplayInput = {
 /** Return shape for `sessions.set-display`. */
 export type SessionsSetDisplayReturn = Record<string, unknown>;
 
+/** Input shape for `sessions.set-effort`. */
+export type SessionsSetEffortInput = {
+  level: string;
+  nameOrKey: string;
+};
+
+/** Return shape for `sessions.set-effort`. */
+export type SessionsSetEffortReturn = {
+  action: "set-effort";
+  after: ({
+    agentId: string;
+    effectiveModel: string;
+    effectiveProvider: string;
+    effortOverride?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+    ephemeral: boolean;
+    expiresAt: number | null;
+    label: string;
+    modelOverride?: string;
+    modelPresetId: string | null;
+    modelPresetVersion: number | null;
+    modelSource: string;
+    name?: string;
+    runtimeOptions: {
+      effort: {
+        source: "session_override" | "agent_default" | "runtime_default";
+        value: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+      };
+      model: {
+        source: string;
+        value: string;
+      };
+      thinking: {
+        source: string | null;
+        value: string | null;
+      };
+    };
+    sessionKey: string;
+  }) | null;
+  appliesOn: "next-turn-runtime-restart";
+  before: {
+    agentId: string;
+    effectiveModel: string;
+    effectiveProvider: string;
+    effortOverride?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+    ephemeral: boolean;
+    expiresAt: number | null;
+    label: string;
+    modelOverride?: string;
+    modelPresetId: string | null;
+    modelPresetVersion: number | null;
+    modelSource: string;
+    name?: string;
+    runtimeOptions: {
+      effort: {
+        source: "session_override" | "agent_default" | "runtime_default";
+        value: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+      };
+      model: {
+        source: string;
+        value: string;
+      };
+      thinking: {
+        source: string | null;
+        value: string | null;
+      };
+    };
+    sessionKey: string;
+  };
+  changed: boolean;
+  effectiveEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+  effectiveEffortSource: "session_override" | "agent_default" | "runtime_default";
+  effortOverride: ("none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra") | null;
+  sessionKey: string;
+  sessionName: string | null;
+};
+
 /** Input shape for `sessions.set-model`. */
 export type SessionsSetModelInput = {
   model: string;

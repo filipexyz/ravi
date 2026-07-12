@@ -36,6 +36,12 @@ An agent is not a human user, contact, chat, route, or permission profile.
 ## Invariants
 
 - Every runtime session MUST belong to exactly one agent.
+- Agents MAY define runtime defaults such as `model`, `provider`, and `effort`.
+  `effort` MUST use the canonical runtime effort set
+  `none|minimal|low|medium|high|xhigh|max|ultra`.
+- Agent `effort` is a fallback default for sessions without
+  `session.effortOverride` and for task/profile gaps; it MUST NOT override
+  task, dispatch, or profile runtime settings.
 - Agent grants are a ceiling for what the executor can possibly do.
 - Agent grants MUST NOT become ambient authority for every contact or chat that
   can speak to the agent.
@@ -68,6 +74,8 @@ tool execution.
   configuration.
 - Agent route inspection does not disclose hidden agent config to a principal
   that lacks `view agent:<id>`.
+- `ravi agents set <id> effort <level>` persists a canonical effort default,
+  and `clear` removes it.
 - A superadmin executor invoked by an untrusted contact does not expose hidden
   agents solely because the executor has broad grants.
 

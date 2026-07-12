@@ -19,9 +19,14 @@ import { normalizePhone } from "../utils/phone.js";
 import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
 import { timestampLikeToMs } from "../utils/provider-timestamp.js";
 import { executeWrite } from "../db/write-retry.js";
+import { RUNTIME_EFFORT_LEVELS } from "../runtime/effort.js";
 import type { AgentConfig, AgentUpdateInput, RouteConfig, DmScope } from "./types.js";
 
 const log = logger.child("router:db");
+
+function isDuplicateColumnError(error: unknown): boolean {
+  return error instanceof Error && /duplicate column name/i.test(error.message);
+}
 
 // ============================================================================
 // Constants
@@ -47,6 +52,7 @@ export const AgentInputSchema = z.object({
   name: z.string().optional(),
   cwd: z.string().min(1),
   model: z.string().optional(),
+  effort: z.enum(RUNTIME_EFFORT_LEVELS).optional(),
   provider: RuntimeProviderSchema.optional(),
   modelPresetId: z.string().min(1).optional(),
   remote: z.string().optional(),
@@ -133,6 +139,7 @@ interface AgentRow {
   name: string | null;
   cwd: string;
   model: string | null;
+  effort: string | null;
   provider: string | null;
   model_preset_id: string | null;
   remote: string | null;
@@ -1060,6 +1067,7 @@ function getDb(): Database {
       name TEXT,
       cwd TEXT NOT NULL,
       model TEXT,
+      effort TEXT,
       provider TEXT,
       model_preset_id TEXT REFERENCES runtime_model_presets(id),
       remote TEXT,
@@ -1070,8 +1078,6 @@ function getDb(): Database {
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS idx_agents_model_preset ON agents(model_preset_id);
-
     CREATE TABLE IF NOT EXISTS routes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       pattern TEXT NOT NULL,
@@ -1136,6 +1142,7 @@ function getDb(): Database {
       last_account_id TEXT,
       last_thread_id TEXT,
       model_override TEXT,
+      effort_override TEXT,
       thinking_level TEXT,
       queue_mode TEXT,
       queue_debounce_ms INTEGER,
@@ -1966,25 +1973,29 @@ function getDb(): Database {
   }
 
   // Migration: add heartbeat columns to agents if not exists
-  if (!agentColumns.some((c) => c.name === "heartbeat_enabled")) {
-    db.exec(`
-      ALTER TABLE agents ADD COLUMN heartbeat_enabled INTEGER DEFAULT 0;
-    `);
-    db.exec(`
-      ALTER TABLE agents ADD COLUMN heartbeat_interval_ms INTEGER DEFAULT 1800000;
-    `);
-    db.exec(`
-      ALTER TABLE agents ADD COLUMN heartbeat_model TEXT;
-    `);
-    db.exec(`
-      ALTER TABLE agents ADD COLUMN heartbeat_active_start TEXT;
-    `);
-    db.exec(`
-      ALTER TABLE agents ADD COLUMN heartbeat_active_end TEXT;
-    `);
-    db.exec(`
-      ALTER TABLE agents ADD COLUMN heartbeat_last_run_at INTEGER;
-    `);
+  const addAgentColumnIfMissing = (name: string, sql: string) => {
+    if (agentColumns.some((c) => c.name === name)) return false;
+    try {
+      db.exec(sql);
+      return true;
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) throw error;
+      log.debug("Agent column already exists", { column: name });
+      return false;
+    }
+  };
+  const addedAgentHeartbeatColumns = [
+    addAgentColumnIfMissing("heartbeat_enabled", "ALTER TABLE agents ADD COLUMN heartbeat_enabled INTEGER DEFAULT 0"),
+    addAgentColumnIfMissing(
+      "heartbeat_interval_ms",
+      "ALTER TABLE agents ADD COLUMN heartbeat_interval_ms INTEGER DEFAULT 1800000",
+    ),
+    addAgentColumnIfMissing("heartbeat_model", "ALTER TABLE agents ADD COLUMN heartbeat_model TEXT"),
+    addAgentColumnIfMissing("heartbeat_active_start", "ALTER TABLE agents ADD COLUMN heartbeat_active_start TEXT"),
+    addAgentColumnIfMissing("heartbeat_active_end", "ALTER TABLE agents ADD COLUMN heartbeat_active_end TEXT"),
+    addAgentColumnIfMissing("heartbeat_last_run_at", "ALTER TABLE agents ADD COLUMN heartbeat_last_run_at INTEGER"),
+  ].some(Boolean);
+  if (addedAgentHeartbeatColumns) {
     log.info("Added heartbeat columns to agents table");
   }
 
@@ -1998,6 +2009,17 @@ function getDb(): Database {
   if (!agentColumns.some((c) => c.name === "provider")) {
     db.exec("ALTER TABLE agents ADD COLUMN provider TEXT");
     log.info("Added provider column to agents table");
+  }
+
+  // Migration: add default reasoning effort column to agents if not exists
+  if (!agentColumns.some((c) => c.name === "effort")) {
+    try {
+      db.exec("ALTER TABLE agents ADD COLUMN effort TEXT");
+      log.info("Added effort column to agents table");
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) throw error;
+      log.debug("Effort column already exists on agents table");
+    }
   }
 
   if (!agentColumns.some((c) => c.name === "remote")) {
@@ -2058,19 +2080,41 @@ function getDb(): Database {
   // restrictive relation resolves for existing databases too.
   if (!agentColumns.some((c) => c.name === "model_preset_id")) {
     db.exec("ALTER TABLE agents ADD COLUMN model_preset_id TEXT REFERENCES runtime_model_presets(id)");
-    db.exec("CREATE INDEX IF NOT EXISTS idx_agents_model_preset ON agents(model_preset_id)");
     log.info("Added model_preset_id column to agents table");
   }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_agents_model_preset ON agents(model_preset_id)");
 
   // Migration: add heartbeat columns to sessions if not exists
   const sessionColumns = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;
-  if (!sessionColumns.some((c) => c.name === "last_heartbeat_text")) {
-    db.exec(`
-      ALTER TABLE sessions ADD COLUMN last_heartbeat_text TEXT;
-    `);
-    db.exec(`
-      ALTER TABLE sessions ADD COLUMN last_heartbeat_sent_at INTEGER;
-    `);
+  if (!sessionColumns.some((c) => c.name === "effort_override")) {
+    try {
+      db.exec("ALTER TABLE sessions ADD COLUMN effort_override TEXT");
+      log.info("Added effort_override column to sessions table");
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) throw error;
+      log.debug("Effort override column already exists on sessions table");
+    }
+  }
+
+  const addSessionColumnIfMissing = (name: string, sql: string) => {
+    if (sessionColumns.some((c) => c.name === name)) return false;
+    try {
+      db.exec(sql);
+      return true;
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) throw error;
+      log.debug("Session column already exists", { column: name });
+      return false;
+    }
+  };
+  const addedSessionHeartbeatColumns = [
+    addSessionColumnIfMissing("last_heartbeat_text", "ALTER TABLE sessions ADD COLUMN last_heartbeat_text TEXT"),
+    addSessionColumnIfMissing(
+      "last_heartbeat_sent_at",
+      "ALTER TABLE sessions ADD COLUMN last_heartbeat_sent_at INTEGER",
+    ),
+  ].some(Boolean);
+  if (addedSessionHeartbeatColumns) {
     log.info("Added heartbeat columns to sessions table");
   }
 
@@ -2368,8 +2412,7 @@ function getDb(): Database {
   }
 
   // Migration: add heartbeat_account_id column to agents
-  if (!agentColumns.some((c) => c.name === "heartbeat_account_id")) {
-    db.exec("ALTER TABLE agents ADD COLUMN heartbeat_account_id TEXT");
+  if (addAgentColumnIfMissing("heartbeat_account_id", "ALTER TABLE agents ADD COLUMN heartbeat_account_id TEXT")) {
     log.info("Added heartbeat_account_id column to agents table");
   }
 
@@ -4485,20 +4528,21 @@ function getStatements(): PreparedStatements {
   routerDbState.stmts = {
     // Agents
     insertAgent: database.prepare(`
-      INSERT INTO agents (id, name, cwd, model, provider, model_preset_id, remote, remote_user, dm_scope, system_prompt_append, debounce_ms, group_debounce_ms, matrix_account, setting_sources,
+      INSERT INTO agents (id, name, cwd, model, effort, provider, model_preset_id, remote, remote_user, dm_scope, system_prompt_append, debounce_ms, group_debounce_ms, matrix_account, setting_sources,
         heartbeat_enabled, heartbeat_interval_ms, heartbeat_model, heartbeat_active_start, heartbeat_active_end, heartbeat_account_id,
         spec_mode,
         contact_scope, allowed_sessions,
         agent_mode,
         defaults,
         created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     updateAgent: database.prepare(`
       UPDATE agents SET
         name = ?,
         cwd = ?,
         model = ?,
+        effort = ?,
         provider = ?,
         model_preset_id = ?,
         remote = ?,
@@ -4784,6 +4828,9 @@ function rowToAgent(row: AgentRow): AgentConfig {
 
   if (row.name !== null) result.name = row.name;
   if (row.model !== null) result.model = row.model;
+  if (row.effort !== null && (RUNTIME_EFFORT_LEVELS as readonly string[]).includes(row.effort)) {
+    result.effort = row.effort as AgentConfig["effort"];
+  }
   if (row.provider !== null) result.provider = row.provider;
   if (row.model_preset_id !== null) result.modelPresetId = row.model_preset_id;
   if (row.remote !== null) result.remote = row.remote;
@@ -6797,6 +6844,7 @@ export function dbCreateAgent(input: z.input<typeof AgentInputSchema>): AgentCon
       validated.name ?? null,
       validated.cwd,
       validated.model ?? null,
+      validated.effort ?? null,
       validated.provider ?? null,
       validated.modelPresetId ?? null,
       validated.remote ?? null,
@@ -6882,6 +6930,7 @@ export function dbUpdateAgent(id: string, updates: AgentUpdateInput): AgentConfi
     updates.name !== undefined ? (updates.name ?? null) : row.name,
     updates.cwd ?? row.cwd,
     updates.model !== undefined ? (updates.model ?? null) : row.model,
+    updates.effort !== undefined ? (updates.effort ?? null) : row.effort,
     updates.provider !== undefined ? (updates.provider ?? null) : row.provider,
     updates.modelPresetId !== undefined ? (updates.modelPresetId ?? null) : row.model_preset_id,
     updates.remote !== undefined ? (updates.remote ?? null) : row.remote,

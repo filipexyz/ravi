@@ -50,6 +50,7 @@ import { validateRuntimeModelSelector } from "../../runtime/model-validation.js"
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { resolveEffectiveAgentModel } from "../../runtime/model-preset-resolver.js";
 import { loadConfig } from "../../utils/config.js";
+import { formatRuntimeEffortLevels, parseRuntimeEffort } from "../../runtime/effort.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
 import {
   ensureAgentInstructionFiles,
@@ -483,6 +484,7 @@ export class AgentsCommands {
       console.log(`  Name:          ${agent.name || "-"}`);
       console.log(`  CWD:           ${agent.cwd}`);
       console.log(`  Model:         ${agent.model || "-"}`);
+      console.log(`  Effort:        ${agent.effort || "-"}`);
       console.log(`  Provider:      ${agent.provider || DEFAULT_RUNTIME_PROVIDER_ID}`);
       console.log(`  DM Scope:      ${agent.dmScope || "-"}`);
       console.log(`  Mode:          ${agent.mode ?? "active"}`);
@@ -793,6 +795,7 @@ export class AgentsCommands {
       "cwd",
       "model",
       "modelPreset",
+      "effort",
       "provider",
       "dmScope",
       "systemPromptAppend",
@@ -913,6 +916,19 @@ export class AgentsCommands {
         }
       }
     }
+    const normalizedEffortValue = key === "effort" ? value.trim().toLowerCase() : value;
+    if (
+      key === "effort" &&
+      normalizedEffortValue !== "clear" &&
+      normalizedEffortValue !== "null" &&
+      normalizedEffortValue !== ""
+    ) {
+      try {
+        parseRuntimeEffort(normalizedEffortValue);
+      } catch {
+        fail(`Invalid effort: ${value}. Valid values: ${formatRuntimeEffortLevels()}, clear`);
+      }
+    }
 
     // Validate matrixAccount (will be validated in updateAgent, but give better error)
     if (key === "matrixAccount" && value !== "null" && value !== "") {
@@ -942,6 +958,12 @@ export class AgentsCommands {
 
     // Parse settingSources as JSON array
     let parsedValue: unknown = value;
+    if (key === "effort") {
+      parsedValue =
+        normalizedEffortValue === "clear" || normalizedEffortValue === "null" || normalizedEffortValue === ""
+          ? undefined
+          : parseRuntimeEffort(normalizedEffortValue);
+    }
     if (key === "settingSources") {
       try {
         parsedValue = JSON.parse(value);

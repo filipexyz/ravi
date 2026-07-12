@@ -156,12 +156,12 @@ O modelo efetivo é resolvido por campo, sem mutar a sessão:
 1. `runtimeOverride` do dispatch ou launch plan
 2. `runtimeOverride` da task
 3. `profile.runtimeDefaults`
-4. `session.modelOverride` / `session.thinkingLevel` de sessão humana existente
-5. `agent.model`
+4. `session.modelOverride` / `session.effortOverride` / `session.thinkingLevel` de sessão humana existente
+5. `agent.model` / `agent.effort`
 6. modelo global do config
 7. `effort` default do runtime: `xhigh`
 
-O contexto da task vence a preferência da sessão porque dispatch/resume representam um contrato operacional explícito. A preferência da sessão continua valendo para turnos sem task e como fallback quando a task/profile não define aquele campo.
+O contexto da task vence a preferência da sessão porque dispatch/resume representam um contrato operacional explícito. A preferência da sessão e o default do agent continuam valendo para turnos sem task e como fallback quando a task/profile não define aquele campo.
 
 ### 4. Execução
 

@@ -3,6 +3,7 @@
  */
 
 import "reflect-metadata";
+import { z } from "zod";
 import { Group, Command, CommandAccess, CliOnly, Arg, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
@@ -38,6 +39,7 @@ import {
   updateSessionDisplayName,
   renameSessionName,
   updateSessionModelOverride,
+  updateSessionEffortOverride,
   updateSessionThinkingLevel,
   setSessionEphemeral,
   extendSession,
@@ -70,6 +72,12 @@ import {
   type ContextRecord,
 } from "../../router/router-db.js";
 import type { SessionEntry } from "../../router/types.js";
+import {
+  DEFAULT_RUNTIME_EFFORT,
+  RUNTIME_EFFORT_LEVELS,
+  formatRuntimeEffortLevels,
+  parseRuntimeEffort,
+} from "../../runtime/effort.js";
 import type { RuntimeProviderId } from "../../runtime/types.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
 import {
@@ -167,6 +175,50 @@ const NEXT_COMMANDS_META = {
   freshness: "derived-now",
   via: "session-inspect",
 } as const;
+const runtimeEffortReturnSchema = z.enum(RUNTIME_EFFORT_LEVELS);
+const sessionEffortSourceReturnSchema = z.enum(["session_override", "agent_default", "runtime_default"]);
+const sessionRuntimeOptionsReturnSchema = z.object({
+  model: z.object({
+    value: z.string(),
+    source: z.string(),
+  }),
+  effort: z.object({
+    value: runtimeEffortReturnSchema,
+    source: sessionEffortSourceReturnSchema,
+  }),
+  thinking: z.object({
+    value: z.string().nullable(),
+    source: z.string().nullable(),
+  }),
+});
+const sessionMutationSnapshotReturnSchema = z.object({
+  sessionKey: z.string(),
+  name: z.string().optional(),
+  label: z.string(),
+  agentId: z.string(),
+  effectiveProvider: z.string(),
+  effectiveModel: z.string(),
+  modelSource: z.string(),
+  modelPresetId: z.string().nullable(),
+  modelPresetVersion: z.number().nullable(),
+  modelOverride: z.string().optional(),
+  effortOverride: runtimeEffortReturnSchema.optional(),
+  ephemeral: z.boolean(),
+  expiresAt: z.number().nullable(),
+  runtimeOptions: sessionRuntimeOptionsReturnSchema,
+});
+const sessionSetEffortReturnSchema = z.object({
+  action: z.literal("set-effort"),
+  changed: z.boolean(),
+  sessionKey: z.string(),
+  sessionName: z.string().nullable(),
+  before: sessionMutationSnapshotReturnSchema,
+  after: sessionMutationSnapshotReturnSchema.nullable(),
+  effortOverride: runtimeEffortReturnSchema.nullable(),
+  effectiveEffort: runtimeEffortReturnSchema,
+  effectiveEffortSource: sessionEffortSourceReturnSchema,
+  appliesOn: z.literal("next-turn-runtime-restart"),
+});
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -605,6 +657,7 @@ function buildSessionJson(session: SessionEntry, options: { live?: boolean } = {
   const lifetimeContext = session.contextTokens ?? 0;
   const lifetimeTotal = session.totalTokens ?? lifetimeInput + lifetimeOutput;
   const effective = resolveEffectiveSessionSelection(session, session.modelOverride ?? null);
+  const runtimeOptions = resolveSessionRuntimeOptions(session);
   return {
     ...session,
     label: session.name ?? session.sessionKey,
@@ -624,6 +677,7 @@ function buildSessionJson(session: SessionEntry, options: { live?: boolean } = {
     },
     ephemeral: Boolean(session.ephemeral),
     expiresAt: session.expiresAt ?? null,
+    runtimeOptions,
     tags: listSessionTags(session),
     ...(options.live ? { live: getRuntimeLiveStateForSession(session) } : {}),
   };
@@ -883,7 +937,53 @@ function resolveEffectiveSessionSelection(session: SessionEntry, modelOverride: 
 }
 
 function resolveEffectiveSessionModel(session: SessionEntry, modelOverride: string | null): string {
-  return resolveEffectiveSessionSelection(session, modelOverride).effectiveModel;
+  const candidate = modelOverride === null ? { ...session, modelOverride: undefined } : { ...session, modelOverride };
+  return resolveSessionRuntimeOptions(candidate).model.value;
+}
+
+type SessionRuntimeOptionSource =
+  | "session_override"
+  | "agent_preset"
+  | "agent_default"
+  | "global_default"
+  | "runtime_default"
+  | null;
+
+function resolveSessionRuntimeOptions(session: SessionEntry): {
+  model: { value: string; source: SessionRuntimeOptionSource };
+  effort: { value: NonNullable<SessionEntry["effortOverride"]>; source: SessionRuntimeOptionSource };
+  thinking: { value: SessionEntry["thinkingLevel"] | null; source: SessionRuntimeOptionSource };
+} {
+  const routerConfig = loadRouterConfig();
+  const agent = routerConfig.agents[session.agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
+  const modelSelection = resolveEffectiveSessionSelection(session, session.modelOverride ?? null);
+  const model = { value: modelSelection.effectiveModel, source: modelSelection.modelSource };
+  const effort =
+    session.effortOverride !== undefined
+      ? { value: session.effortOverride, source: "session_override" as const }
+      : agent?.effort
+        ? { value: agent.effort, source: "agent_default" as const }
+        : { value: DEFAULT_RUNTIME_EFFORT, source: "runtime_default" as const };
+  const thinking = session.thinkingLevel
+    ? { value: session.thinkingLevel, source: "session_override" as const }
+    : { value: null, source: null };
+  return { model, effort, thinking };
+}
+
+function resolveEffectiveSessionEffort(
+  session: SessionEntry,
+  effortOverride: SessionEntry["effortOverride"] | null,
+): {
+  effort: NonNullable<SessionEntry["effortOverride"]>;
+  source: "session_override" | "agent_default" | "runtime_default";
+} {
+  const candidate =
+    effortOverride === null ? { ...session, effortOverride: undefined } : { ...session, effortOverride };
+  const resolved = resolveSessionRuntimeOptions(candidate).effort;
+  return {
+    effort: resolved.value,
+    source: resolved.source as "session_override" | "agent_default" | "runtime_default",
+  };
 }
 
 interface SessionMutationAuditSnapshot {
@@ -2082,6 +2182,7 @@ export class SessionCommands {
     const relatedAdapters = listSessionAdapters({ sessionKey: s.sessionKey });
     const suggestedCommands = buildSuggestedDebugCommands(s, relatedContexts, relatedAdapters);
     const turnUsage = getSessionTurnUsageSummary(s.sessionKey);
+    const runtimeOptions = resolveSessionRuntimeOptions(s);
 
     if (asJson) {
       const adapters = relatedAdapters.map((adapter) => {
@@ -2119,6 +2220,14 @@ export class SessionCommands {
     printInspectionField("Configured", agentConfig?.provider ?? "claude", CONFIG_DB_META, { labelWidth: 14 });
     printInspectionField("Model", agentConfig?.model ?? "(default)", CONFIG_DB_META, { labelWidth: 14 });
     printInspectionField("Override", s.modelOverride ?? "(agent default)", SESSION_DB_META, { labelWidth: 14 });
+    printInspectionField(
+      "Effort",
+      `${runtimeOptions.effort.value} (${runtimeOptions.effort.source})`,
+      SESSION_DB_META,
+      {
+        labelWidth: 14,
+      },
+    );
     printInspectionField("Thinking", s.thinkingLevel ?? "(default)", SESSION_DB_META, { labelWidth: 14 });
     printInspectionField("Tags", formatTagSlugs(listSessionTags(s)), SESSION_DB_META, { labelWidth: 14 });
     printInspectionField("Runtime", s.runtimeProvider ?? "(unknown)", RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
@@ -2665,6 +2774,73 @@ export class SessionCommands {
       printJson(payload);
       return payload;
     }
+  }
+
+  @Command({ name: "set-effort", description: "Set session reasoning effort override" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "set-effort",
+    risk: "medium",
+  })
+  setEffort(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Arg("level", {
+      description: `Reasoning effort (${formatRuntimeEffortLevels()}) or 'clear'`,
+    })
+    level: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    const s = resolveSession(nameOrKey);
+    if (!s) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, s.name ?? s.sessionKey)) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    const normalizedLevel = level.trim().toLowerCase();
+    if (!normalizedLevel) {
+      fail(`Invalid effort: ${level}. Valid values: ${formatRuntimeEffortLevels()}, clear`);
+      return;
+    }
+    const effortOverride =
+      normalizedLevel === "clear" ? null : (parseRuntimeEffort(normalizedLevel) as SessionEntry["effortOverride"]);
+    const beforeEffortOverride = s.effortOverride ?? null;
+    const label = s.name ?? s.sessionKey;
+
+    if (effortOverride === null) {
+      updateSessionEffortOverride(s.sessionKey, null);
+      if (!asJson) console.log(`Cleared effort override for: ${label}`);
+    } else {
+      updateSessionEffortOverride(s.sessionKey, effortOverride);
+      if (!asJson) console.log(`Set effort to "${effortOverride}" for: ${label}`);
+    }
+
+    const effective = resolveEffectiveSessionEffort(s, effortOverride);
+    const after =
+      resolveSession(s.sessionKey) ??
+      ({
+        ...s,
+        ...(effortOverride === null ? { effortOverride: undefined } : { effortOverride }),
+      } as SessionEntry);
+    if (asJson) {
+      const payload = buildSessionMutationJson("set-effort", s, after, beforeEffortOverride !== effortOverride, {
+        effortOverride,
+        effectiveEffort: effective.effort,
+        effectiveEffortSource: effective.source,
+        appliesOn: "next-turn-runtime-restart",
+      });
+      printJson(payload);
+      return payload;
+    }
+
+    console.log("Note: takes effect on the next turn; active runtime restarts when effort changes.");
   }
 
   @Command({ name: "set-thinking", description: "Set session thinking level" })
@@ -5444,6 +5620,7 @@ declareCommandReturns(SessionCommands, {
   send: commandEnvelopeReturnSchema,
   setDisplay: commandEnvelopeReturnSchema,
   setModel: commandEnvelopeReturnSchema,
+  setEffort: sessionSetEffortReturnSchema,
   setThinking: commandEnvelopeReturnSchema,
   setTtl: commandEnvelopeReturnSchema,
   subscriptions: commandEnvelopeReturnSchema,
