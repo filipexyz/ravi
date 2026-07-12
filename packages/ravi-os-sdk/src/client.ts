@@ -119,7 +119,7 @@ export class RaviClient {
         body: { id },
       });
     },
-    /** Set agent property */
+    /** Set agent property and report active session runtime overrides */
     set: async (id: string, key: string, value: string): Promise<AgentsSetReturn> => {
       return this.transport.call({
         groupSegments: ["agents"],

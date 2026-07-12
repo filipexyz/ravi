@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { ZodTypeAny } from "zod";
 import { Returns } from "../decorators.js";
 import { jsonObjectSchema, jsonValueSchema } from "../return-schemas.js";
+import { RUNTIME_EFFORT_LEVELS } from "../../runtime/effort.js";
 
 export const looseObjectSchema = z.object({}).passthrough();
 export const looseObjectOrNullSchema = looseObjectSchema.nullable();
@@ -1869,6 +1870,16 @@ export const agentSetReturnSchema = z
     key: z.string(),
     value: z.unknown(),
     agent: agentRecordReturnSchema.optional(),
+    sessionOverrides: z.array(
+      z
+        .object({
+          sessionName: z.string(),
+          model: z.string().optional(),
+          effort: z.enum(RUNTIME_EFFORT_LEVELS).optional(),
+          thinking: z.enum(["off", "normal", "verbose"]).optional(),
+        })
+        .strict(),
+    ),
   })
   .passthrough();
 

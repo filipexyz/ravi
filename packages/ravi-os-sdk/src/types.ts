@@ -298,6 +298,12 @@ export type AgentsSetReturn = {
   agentId: string;
   changed: boolean;
   key: string;
+  sessionOverrides: Array<{
+    effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+    model?: string;
+    sessionName: string;
+    thinking?: "off" | "normal" | "verbose";
+  }>;
   value: unknown;
   [k: string]: unknown;
 };

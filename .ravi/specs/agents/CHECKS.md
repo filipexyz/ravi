@@ -21,6 +21,15 @@
 - Assigning a missing or disabled preset MUST fail and MUST NOT fall back to the
   global default silently.
 
+## Agent Set Session Override Checks
+
+- `agents set --json` MUST return a typed `sessionOverrides` array on both
+  changed and idempotent mutations.
+- Every entry MUST use the canonical session name and MUST include only active
+  `model`, `effort`, and `thinking` override fields.
+- Human output MUST list all active overrides and MUST avoid raw channel ids.
+- A mutation with no active session overrides MUST NOT print a warning.
+
 ## Commands
 
 - `bun test src/cli/commands/agents.test.ts`

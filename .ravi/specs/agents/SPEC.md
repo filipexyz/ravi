@@ -50,6 +50,13 @@ An agent is not a human user, contact, chat, route, or permission profile.
   command is direct local operator CLI with no resolved principal.
 - Agent list/show/picker/route-selection surfaces MUST filter by agent
   visibility.
+- Every successful `ravi agents set` response MUST include `sessionOverrides`
+  for all sessions owned by the agent that have active runtime overrides. Each
+  entry MUST use the canonical session name and expose only active `model`,
+  `effort`, and `thinking` fields. Human output MUST warn concisely when the
+  array is non-empty and MUST NOT present raw channel ids as session identity.
+- Idempotent `ravi agents set` mutations MAY return `changed=false`, but MUST
+  still report the current `sessionOverrides` state.
 - Hidden agents SHOULD appear missing on direct lookup.
 - Routes that point to hidden agents MUST NOT disclose hidden agent metadata to
   principals that lack `view agent:<id>`.
@@ -76,6 +83,9 @@ tool execution.
   that lacks `view agent:<id>`.
 - `ravi agents set <id> effort <level>` persists a canonical effort default,
   and `clear` removes it.
+- `ravi agents set <id> <key> <value> --json` returns every active session
+  runtime override using canonical session names, including on idempotent
+  `changed=false` mutations.
 - A superadmin executor invoked by an untrusted contact does not expose hidden
   agents solely because the executor has broad grants.
 
