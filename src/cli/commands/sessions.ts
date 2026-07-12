@@ -52,6 +52,8 @@ import {
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { loadRouterConfig, expandHome } from "../../router/index.js";
 import { loadConfig } from "../../utils/config.js";
+import { resolveEffectiveAgentModel } from "../../runtime/model-preset-resolver.js";
+import { DEFAULT_RUNTIME_PROVIDER_ID } from "../../runtime/provider-registry.js";
 import type { ChannelContext, ResponseMessage } from "../../runtime/message-types.js";
 import { revokeAgentRuntimeContextsForSession } from "../../runtime/context-registry.js";
 import {
@@ -602,10 +604,16 @@ function buildSessionJson(session: SessionEntry, options: { live?: boolean } = {
   const lifetimeOutput = session.outputTokens ?? 0;
   const lifetimeContext = session.contextTokens ?? 0;
   const lifetimeTotal = session.totalTokens ?? lifetimeInput + lifetimeOutput;
+  const effective = resolveEffectiveSessionSelection(session, session.modelOverride ?? null);
   return {
     ...session,
     label: session.name ?? session.sessionKey,
     runtimeId,
+    effectiveProvider: effective.effectiveProvider,
+    effectiveModel: effective.effectiveModel,
+    modelSource: effective.modelSource,
+    modelPresetId: effective.modelPresetId,
+    modelPresetVersion: effective.modelPresetVersion,
     // Legacy alias. This is a lifetime accumulator, not the live context size.
     tokenTotal: lifetimeTotal,
     lifetimeTokens: {
@@ -832,11 +840,50 @@ function buildRelatedContextJson(context: ContextRecord): Record<string, unknown
   };
 }
 
-function resolveEffectiveSessionModel(session: SessionEntry, modelOverride: string | null): string {
+interface EffectiveSessionModel {
+  effectiveProvider: string;
+  effectiveModel: string;
+  modelSource: "session_override" | "agent_preset" | "agent_default" | "global_default";
+  modelPresetId: string | null;
+  modelPresetVersion: number | null;
+}
+
+function resolveEffectiveSessionSelection(session: SessionEntry, modelOverride: string | null): EffectiveSessionModel {
   const routerConfig = loadRouterConfig();
   const runtimeConfig = loadConfig();
   const agent = routerConfig.agents[session.agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
-  return modelOverride ?? agent?.model ?? runtimeConfig.model;
+  const agentEffective = agent
+    ? resolveEffectiveAgentModel(agent, runtimeConfig.model)
+    : {
+        effectiveProvider: DEFAULT_RUNTIME_PROVIDER_ID,
+        effectiveModel: runtimeConfig.model,
+        modelSource: "global_default" as const,
+        modelPresetId: null,
+        modelPresetVersion: null,
+      };
+
+  // Session model override wins over the agent-level selection.
+  if (modelOverride) {
+    return {
+      effectiveProvider: agentEffective.effectiveProvider,
+      effectiveModel: modelOverride,
+      modelSource: "session_override",
+      modelPresetId: agentEffective.modelPresetId,
+      modelPresetVersion: agentEffective.modelPresetVersion,
+    };
+  }
+
+  return {
+    effectiveProvider: agentEffective.effectiveProvider,
+    effectiveModel: agentEffective.effectiveModel ?? runtimeConfig.model,
+    modelSource: agentEffective.modelSource ?? "global_default",
+    modelPresetId: agentEffective.modelPresetId,
+    modelPresetVersion: agentEffective.modelPresetVersion,
+  };
+}
+
+function resolveEffectiveSessionModel(session: SessionEntry, modelOverride: string | null): string {
+  return resolveEffectiveSessionSelection(session, modelOverride).effectiveModel;
 }
 
 interface SessionMutationAuditSnapshot {

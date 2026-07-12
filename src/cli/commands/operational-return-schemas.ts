@@ -2603,3 +2603,87 @@ export const sessionGoalReturnSchema = z
     goal: sessionGoalObjectSchema.nullable(),
   })
   .strict();
+
+// ============================================================================
+// Runtime model presets
+// ============================================================================
+
+const strictOffsetPaginationReturnSchema = z
+  .object({
+    limit: z.number(),
+    offset: z.number(),
+    returned: z.number(),
+    total: z.number(),
+    hasMore: z.boolean(),
+    nextOffset: z.number().nullable(),
+    nextCommand: z.string().nullable(),
+  })
+  .strict();
+
+const runtimeModelPresetObjectSchema = z
+  .object({
+    id: z.string(),
+    provider: z.string(),
+    model: z.string(),
+    description: z.string().nullable(),
+    enabled: z.boolean(),
+    version: z.number(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+  })
+  .strict();
+
+const runtimeModelPresetImpactAgentSchema = z
+  .object({
+    agentId: z.string(),
+    name: z.string().nullable(),
+    provider: z.string(),
+    effectiveModel: z.string(),
+    modelSource: z.literal("agent_preset"),
+    shadowingSessions: z.number(),
+  })
+  .strict();
+
+const runtimeModelPresetImpactSchema = z
+  .object({
+    presetId: z.string(),
+    version: z.number(),
+    provider: z.string(),
+    model: z.string(),
+    enabled: z.boolean(),
+    referencingAgentsTotal: z.number(),
+    shadowingSessionsTotal: z.number(),
+    agents: z.array(runtimeModelPresetImpactAgentSchema),
+    limit: z.number(),
+    offset: z.number(),
+    referenced: z.boolean(),
+    correctionCommand: z.string().nullable(),
+    pagination: strictOffsetPaginationReturnSchema,
+  })
+  .strict();
+
+export const runtimeModelPresetsListReturnSchema = z
+  .object({
+    total: z.number(),
+    pagination: strictOffsetPaginationReturnSchema,
+    presets: z.array(runtimeModelPresetObjectSchema),
+  })
+  .strict();
+
+export const runtimeModelPresetShowReturnSchema = z
+  .object({
+    preset: runtimeModelPresetObjectSchema,
+    referencingAgentsTotal: z.number(),
+  })
+  .strict();
+
+export const runtimeModelPresetMutationReturnSchema = z
+  .object({
+    action: z.enum(["create", "set-model", "enable", "disable", "delete"]),
+    changed: z.boolean(),
+    dryRun: z.boolean(),
+    preset: runtimeModelPresetObjectSchema,
+  })
+  .strict();
+
+export const runtimeModelPresetImpactReturnSchema = runtimeModelPresetImpactSchema;

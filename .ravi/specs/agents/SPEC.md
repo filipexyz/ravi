@@ -70,3 +70,15 @@ tool execution.
   that lacks `view agent:<id>`.
 - A superadmin executor invoked by an untrusted contact does not expose hidden
   agents solely because the executor has broad grants.
+
+## Model Presets
+
+Agents MAY reference a runtime model preset via `agents.model_preset_id` instead
+of a direct `model`. The two are mutually exclusive on every create/update/set
+path: assigning `modelPreset` clears the direct `model`, and writing a direct
+`model` clears `modelPresetId`, both in one transaction. Provider writes fail
+with an actionable error when incompatible with a referenced preset. Agent JSON
+(`agents list/show`) exposes `effectiveProvider`, `effectiveModel`,
+`modelSource` (`agent_preset` | `agent_default` | `global_default`),
+`modelPresetId`, and `modelPresetVersion`, resolved through the canonical
+`resolveEffectiveAgentModel`. See `runtime/model-presets`.

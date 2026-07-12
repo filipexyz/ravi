@@ -98,6 +98,11 @@ export function resolveTaskRuntimeOptions(input: {
   sessionModelOverride?: string | null;
   sessionThinkingLevel?: TaskRuntimeThinking | string | null;
   agentModel?: string | null;
+  /**
+   * Agent-level model selection resolved via a runtime model preset. Occupies the
+   * same precedence level as a direct agent model and is mutually exclusive with it.
+   */
+  agentModelPreset?: { model: string; presetId: string; version: number } | null;
   configModel?: string | null;
 }): TaskRuntimeResolution {
   const promptOverride = normalizeTaskRuntimeOptions(input.promptOverride);
@@ -111,6 +116,7 @@ export function resolveTaskRuntimeOptions(input: {
     model: input.sessionModelOverride ?? undefined,
     ...(sessionThinking ? { thinking: sessionThinking } : {}),
   });
+  const agentPresetOptions = normalizeTaskRuntimeOptions({ model: input.agentModelPreset?.model ?? undefined });
   const agentOptions = normalizeTaskRuntimeOptions({ model: input.agentModel ?? undefined });
   const configOptions = normalizeTaskRuntimeOptions({ model: input.configModel ?? undefined });
 
@@ -120,6 +126,7 @@ export function resolveTaskRuntimeOptions(input: {
     ["task_override", taskOverride],
     ["profile_default", profileDefaults],
     ["session_override", sessionOptions],
+    ["agent_preset", agentPresetOptions],
     ["agent_default", agentOptions],
     ["global_default", configOptions],
   ];
@@ -138,6 +145,8 @@ export function resolveTaskRuntimeOptions(input: {
   const effort = pick("effort");
   const thinking = pick("thinking");
 
+  const usesAgentPreset = model.source === "agent_preset" && input.agentModelPreset;
+
   return {
     options: {
       ...(model.value ? { model: model.value } : {}),
@@ -149,6 +158,12 @@ export function resolveTaskRuntimeOptions(input: {
       effort: effort.source ?? "runtime_default",
       thinking: thinking.source,
     },
+    ...(usesAgentPreset
+      ? {
+          modelPresetId: input.agentModelPreset!.presetId,
+          modelPresetVersion: input.agentModelPreset!.version,
+        }
+      : {}),
     hasTaskRuntimeContext: Boolean(dispatchOverride || taskOverride || profileDefaults),
   };
 }

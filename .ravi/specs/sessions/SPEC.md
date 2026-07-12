@@ -129,3 +129,12 @@ Agents MUST consult `ravi sessions actions --json` before using a conversational
 - Mentioning a conversational tool in the prompt without exposing it through `ravi sessions actions --json`.
 - Marking a not-yet-implemented action as available instead of `planned`.
 - Letting threads, observers, or knowledge collapse into the session concept.
+
+## Effective Model And Presets
+
+Session JSON (`sessions list/info`) exposes the resolved `effectiveProvider`,
+`effectiveModel`, `modelSource` (`session_override` | `agent_preset` |
+`agent_default` | `global_default`), `modelPresetId`, and `modelPresetVersion`.
+A session `modelOverride` continues to win over the agent-level selection and is
+reported as `session_override`, shadowing any agent preset. Applying a preset
+MUST NOT mutate session state. See `runtime/model-presets`.

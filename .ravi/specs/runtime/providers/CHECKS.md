@@ -48,3 +48,10 @@
 - New model aliases are covered by provider-local tests.
 - Pricing is available through the model catalog or explicitly marked unknown.
 - New model capability differences are recorded in provider capability data or a covered provider-local compatibility shim.
+
+## Model Preset Checks
+
+- A preset model selector validates against its immutable provider before commit.
+- A referenced preset resolves `effectiveProvider` to the preset provider.
+- A preset model update applies on the next turn via direct-set or
+  restart-next-turn and traces `agent_preset` plus the new version.

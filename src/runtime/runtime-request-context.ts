@@ -466,6 +466,12 @@ function buildRuntimeContextMetadata(options: {
       ? { runtimeThinking: options.runtimeResolution.options.thinking }
       : {}),
     runtimeModelSource: options.runtimeResolution.sources.model,
+    ...(options.runtimeResolution.modelPresetId
+      ? { runtimeModelPresetId: options.runtimeResolution.modelPresetId }
+      : {}),
+    ...(options.runtimeResolution.modelPresetVersion !== undefined
+      ? { runtimeModelPresetVersion: options.runtimeResolution.modelPresetVersion }
+      : {}),
     ...(options.approvalSource ? { approvalSource: options.approvalSource } : {}),
     ...(actorMetadata ? { actor: actorMetadata, actorMetadata } : {}),
     ...(options.prompt._thread ? { raviThread: options.prompt._thread } : {}),

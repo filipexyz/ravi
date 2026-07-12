@@ -3,14 +3,17 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import {
   dbCreateAgent,
   dbCreateContext,
+  dbGetAgent,
   dbGetChannel,
   dbListContexts,
   dbPruneContexts,
+  dbUpdateAgent,
   dbUpdateChannel,
   dbUpsertChannel,
   getDb,
 } from "./router-db.js";
 import { getOrCreateSession } from "./sessions.js";
+import { createRuntimeModelPreset } from "../runtime/model-preset-store.js";
 
 let stateDir: string | null = null;
 
@@ -169,5 +172,41 @@ describe("router context queries", () => {
     const cleared = dbUpdateChannel("ravi-rbbt-slack", { credentialConnection: null });
     expect(cleared.credentialConnection).toBeUndefined();
     expect(dbGetChannel("ravi-rbbt-slack")?.provider).toBe("slack");
+  });
+});
+
+describe("agent model preset persistence", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-router-agent-preset-test-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("round-trips model_preset_id and keeps direct model and preset mutually exclusive", () => {
+    createRuntimeModelPreset({ id: "fast-sonnet", provider: "anthropic", model: "sonnet" });
+
+    const withPreset = dbCreateAgent({ id: "dev", cwd: "/tmp/ravi-dev", modelPresetId: "fast-sonnet" });
+    expect(withPreset.modelPresetId).toBe("fast-sonnet");
+    expect(withPreset.model).toBeUndefined();
+    expect(dbGetAgent("dev")?.modelPresetId).toBe("fast-sonnet");
+
+    // Writing a direct model clears the preset in the same update.
+    const direct = dbUpdateAgent("dev", { model: "opus", modelPresetId: null });
+    expect(direct.model).toBe("opus");
+    expect(direct.modelPresetId).toBeUndefined();
+    const afterDirect = dbGetAgent("dev");
+    expect(afterDirect?.model).toBe("opus");
+    expect(afterDirect?.modelPresetId).toBeUndefined();
+
+    // Assigning a preset clears the direct model in the same update.
+    const rePreset = dbUpdateAgent("dev", { modelPresetId: "fast-sonnet", model: null });
+    expect(rePreset.modelPresetId).toBe("fast-sonnet");
+    expect(rePreset.model).toBeUndefined();
+    const afterPreset = dbGetAgent("dev");
+    expect(afterPreset?.modelPresetId).toBe("fast-sonnet");
+    expect(afterPreset?.model).toBeUndefined();
   });
 });

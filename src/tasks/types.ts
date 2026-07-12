@@ -34,6 +34,7 @@ export type TaskRuntimeOptionsSource =
   | "task_override"
   | "profile_default"
   | "session_override"
+  | "agent_preset"
   | "agent_default"
   | "global_default"
   | "runtime_default";
@@ -51,6 +52,10 @@ export interface TaskRuntimeResolution {
     effort: TaskRuntimeOptionsSource | null;
     thinking: TaskRuntimeOptionsSource | null;
   };
+  /** Runtime model preset id when the effective model was resolved via an agent preset. */
+  modelPresetId?: string;
+  /** Runtime model preset version when the effective model was resolved via an agent preset. */
+  modelPresetVersion?: number;
   hasTaskRuntimeContext: boolean;
 }
 

@@ -19,7 +19,7 @@ import { normalizePhone } from "../utils/phone.js";
 import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
 import { timestampLikeToMs } from "../utils/provider-timestamp.js";
 import { executeWrite } from "../db/write-retry.js";
-import type { AgentConfig, RouteConfig, DmScope } from "./types.js";
+import type { AgentConfig, AgentUpdateInput, RouteConfig, DmScope } from "./types.js";
 
 const log = logger.child("router:db");
 
@@ -48,6 +48,7 @@ export const AgentInputSchema = z.object({
   cwd: z.string().min(1),
   model: z.string().optional(),
   provider: RuntimeProviderSchema.optional(),
+  modelPresetId: z.string().min(1).optional(),
   remote: z.string().optional(),
   remoteUser: z.string().optional(),
   dmScope: DmScopeSchema.optional(),
@@ -133,6 +134,7 @@ interface AgentRow {
   cwd: string;
   model: string | null;
   provider: string | null;
+  model_preset_id: string | null;
   remote: string | null;
   remote_user: string | null;
   dm_scope: string | null;
@@ -1040,12 +1042,26 @@ function getDb(): Database {
 
   // Initialize schema
   db.exec(`
+    CREATE TABLE IF NOT EXISTS runtime_model_presets (
+      id TEXT PRIMARY KEY,
+      provider TEXT NOT NULL,
+      model TEXT NOT NULL,
+      description TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+      version INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_runtime_model_presets_provider ON runtime_model_presets(provider);
+    CREATE INDEX IF NOT EXISTS idx_runtime_model_presets_enabled ON runtime_model_presets(enabled);
+
     CREATE TABLE IF NOT EXISTS agents (
       id TEXT PRIMARY KEY,
       name TEXT,
       cwd TEXT NOT NULL,
       model TEXT,
       provider TEXT,
+      model_preset_id TEXT REFERENCES runtime_model_presets(id),
       remote TEXT,
       remote_user TEXT,
       dm_scope TEXT CHECK(dm_scope IS NULL OR dm_scope IN ('main','per-peer','per-channel-peer','per-account-channel-peer')),
@@ -1054,6 +1070,7 @@ function getDb(): Database {
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS idx_agents_model_preset ON agents(model_preset_id);
 
     CREATE TABLE IF NOT EXISTS routes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2034,6 +2051,15 @@ function getDb(): Database {
   if (!agentColumns.some((c) => c.name === "defaults")) {
     db.exec("ALTER TABLE agents ADD COLUMN defaults TEXT");
     log.info("Added defaults column to agents table");
+  }
+
+  // Migration: add model_preset_id column + index to agents if not exists.
+  // The runtime_model_presets table is created in the base schema above, so the
+  // restrictive relation resolves for existing databases too.
+  if (!agentColumns.some((c) => c.name === "model_preset_id")) {
+    db.exec("ALTER TABLE agents ADD COLUMN model_preset_id TEXT REFERENCES runtime_model_presets(id)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_agents_model_preset ON agents(model_preset_id)");
+    log.info("Added model_preset_id column to agents table");
   }
 
   // Migration: add heartbeat columns to sessions if not exists
@@ -4459,14 +4485,14 @@ function getStatements(): PreparedStatements {
   routerDbState.stmts = {
     // Agents
     insertAgent: database.prepare(`
-      INSERT INTO agents (id, name, cwd, model, provider, remote, remote_user, dm_scope, system_prompt_append, debounce_ms, group_debounce_ms, matrix_account, setting_sources,
+      INSERT INTO agents (id, name, cwd, model, provider, model_preset_id, remote, remote_user, dm_scope, system_prompt_append, debounce_ms, group_debounce_ms, matrix_account, setting_sources,
         heartbeat_enabled, heartbeat_interval_ms, heartbeat_model, heartbeat_active_start, heartbeat_active_end, heartbeat_account_id,
         spec_mode,
         contact_scope, allowed_sessions,
         agent_mode,
         defaults,
         created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     updateAgent: database.prepare(`
       UPDATE agents SET
@@ -4474,6 +4500,7 @@ function getStatements(): PreparedStatements {
         cwd = ?,
         model = ?,
         provider = ?,
+        model_preset_id = ?,
         remote = ?,
         remote_user = ?,
         dm_scope = ?,
@@ -4758,6 +4785,7 @@ function rowToAgent(row: AgentRow): AgentConfig {
   if (row.name !== null) result.name = row.name;
   if (row.model !== null) result.model = row.model;
   if (row.provider !== null) result.provider = row.provider;
+  if (row.model_preset_id !== null) result.modelPresetId = row.model_preset_id;
   if (row.remote !== null) result.remote = row.remote;
   if (row.remote_user !== null) result.remoteUser = row.remote_user;
   if (row.dm_scope !== null) {
@@ -6770,6 +6798,7 @@ export function dbCreateAgent(input: z.input<typeof AgentInputSchema>): AgentCon
       validated.cwd,
       validated.model ?? null,
       validated.provider ?? null,
+      validated.modelPresetId ?? null,
       validated.remote ?? null,
       validated.remoteUser ?? null,
       validated.dmScope ?? null,
@@ -6826,7 +6855,7 @@ export function dbListAgents(): AgentConfig[] {
 /**
  * Update an existing agent
  */
-export function dbUpdateAgent(id: string, updates: Partial<AgentConfig>): AgentConfig {
+export function dbUpdateAgent(id: string, updates: AgentUpdateInput): AgentConfig {
   const s = getStatements();
   const row = s.getAgent.get(id) as AgentRow | undefined;
 
@@ -6854,6 +6883,7 @@ export function dbUpdateAgent(id: string, updates: Partial<AgentConfig>): AgentC
     updates.cwd ?? row.cwd,
     updates.model !== undefined ? (updates.model ?? null) : row.model,
     updates.provider !== undefined ? (updates.provider ?? null) : row.provider,
+    updates.modelPresetId !== undefined ? (updates.modelPresetId ?? null) : row.model_preset_id,
     updates.remote !== undefined ? (updates.remote ?? null) : row.remote,
     updates.remoteUser !== undefined ? (updates.remoteUser ?? null) : row.remote_user,
     updates.dmScope !== undefined ? (updates.dmScope ?? null) : row.dm_scope,

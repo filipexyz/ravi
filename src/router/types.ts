@@ -62,6 +62,13 @@ export interface AgentConfig {
   /** Runtime provider for this agent (defaults to Codex when unset) */
   provider?: RuntimeProviderId;
 
+  /**
+   * Indirect reference to a centrally managed runtime model preset. Mutually
+   * exclusive with a direct `model`; the preset model selector is never copied
+   * into the agent row.
+   */
+  modelPresetId?: string;
+
   /** Default DM scope for this agent */
   dmScope?: DmScope;
 
@@ -107,6 +114,15 @@ export interface AgentConfig {
   /** Generic key-value defaults for CLI tools and agent-scoped extensions (e.g., context guardians) */
   defaults?: Record<string, unknown> | null;
 }
+
+/**
+ * Update payload for an agent. `model` and `modelPresetId` accept `null` to
+ * clear the stored value (they are mutually exclusive on the agent row).
+ */
+export type AgentUpdateInput = Omit<Partial<AgentConfig>, "model" | "modelPresetId"> & {
+  model?: string | null;
+  modelPresetId?: string | null;
+};
 
 // ============================================================================
 // Route Configuration

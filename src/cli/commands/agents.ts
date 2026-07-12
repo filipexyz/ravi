@@ -47,6 +47,9 @@ import {
 } from "../../router/sessions.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID } from "../../runtime/provider-registry.js";
 import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
+import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
+import { resolveEffectiveAgentModel } from "../../runtime/model-preset-resolver.js";
+import { loadConfig } from "../../utils/config.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
 import {
   ensureAgentInstructionFiles,
@@ -54,7 +57,7 @@ import {
   type AgentInstructionState,
 } from "../../runtime/agent-instructions.js";
 import { formatCliRuntimeTarget, getCliRuntimeMismatchMessage, inspectCliRuntimeTarget } from "../runtime-target.js";
-import type { AgentConfig } from "../../router/types.js";
+import type { AgentConfig, AgentUpdateInput } from "../../router/types.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { searchTagBindingsForSelector } from "../../tags/service.js";
 import type { TagBinding } from "../../tags/types.js";
@@ -127,9 +130,13 @@ interface AgentInstructionSyncSummary {
   changed: boolean;
 }
 
-type AgentJsonSummary = AgentConfig & {
+type AgentJsonSummary = Omit<AgentConfig, "modelPresetId"> & {
   isDefault: boolean;
   effectiveProvider: string;
+  effectiveModel: string | null;
+  modelSource: "agent_preset" | "agent_default" | "global_default" | null;
+  modelPresetId: string | null;
+  modelPresetVersion: number | null;
   tags: TagBinding[];
 };
 
@@ -186,10 +193,15 @@ function listSessionTagsForSummary(session: { sessionKey: string; name?: string 
 }
 
 function buildAgentJson(agent: AgentConfig, defaultAgent: string): AgentJsonSummary {
+  const effective = resolveEffectiveAgentModel(agent, loadConfig().model);
   return {
     ...agent,
     isDefault: agent.id === defaultAgent,
-    effectiveProvider: agent.provider ?? DEFAULT_RUNTIME_PROVIDER_ID,
+    effectiveProvider: effective.effectiveProvider,
+    effectiveModel: effective.effectiveModel,
+    modelSource: effective.modelSource,
+    modelPresetId: effective.modelPresetId,
+    modelPresetVersion: effective.modelPresetVersion,
     tags: listAgentTags(agent.id),
   };
 }
@@ -522,10 +534,35 @@ export class AgentsCommands {
     allowRuntimeMismatch?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--model-preset <preset>",
+      description: "Reference a runtime model preset (mutually exclusive with --model)",
+    })
+    modelPreset?: string,
   ) {
     const normalizedProvider = provider?.trim() || undefined;
     const normalizedModel = model?.trim() || undefined;
+    const normalizedModelPreset = modelPreset?.trim() || undefined;
+    if (normalizedModel && normalizedModelPreset) {
+      fail("--model and --model-preset are mutually exclusive. Provide only one.");
+    }
     if (normalizedModel) validateAgentModelValue(normalizedProvider, normalizedModel);
+    let resolvedPresetProvider: string | undefined;
+    if (normalizedModelPreset) {
+      const preset = getRuntimeModelPreset(normalizedModelPreset);
+      if (!preset) {
+        fail(`Model preset not found: ${normalizedModelPreset}. Run: ravi runtime presets list`);
+      }
+      if (!preset.enabled) {
+        fail(`Model preset is disabled: ${preset.id}. Run: ravi runtime presets enable ${preset.id}`);
+      }
+      if (normalizedProvider && normalizedProvider !== preset.provider) {
+        fail(
+          `Provider '${normalizedProvider}' is incompatible with preset provider '${preset.provider}'. Omit --provider or choose a matching preset.`,
+        );
+      }
+      resolvedPresetProvider = preset.provider;
+    }
     assertAgentMutationRuntime(allowRuntimeMismatch);
 
     try {
@@ -534,6 +571,7 @@ export class AgentsCommands {
         cwd,
         ...(normalizedProvider ? { provider: normalizedProvider } : {}),
         ...(normalizedModel ? { model: normalizedModel } : {}),
+        ...(normalizedModelPreset ? { modelPresetId: normalizedModelPreset } : {}),
       });
       const creatorAgentId = getScopeContext()?.agentId;
       const creatorVisibilityChanged =
@@ -551,8 +589,11 @@ export class AgentsCommands {
         ({
           id,
           cwd,
-          ...(normalizedProvider ? { provider: normalizedProvider } : {}),
+          ...((normalizedProvider ?? resolvedPresetProvider)
+            ? { provider: normalizedProvider ?? resolvedPresetProvider }
+            : {}),
           ...(normalizedModel ? { model: normalizedModel } : {}),
+          ...(normalizedModelPreset ? { modelPresetId: normalizedModelPreset } : {}),
         } as AgentConfig);
       const payload = {
         action: "create" as const,
@@ -582,6 +623,9 @@ export class AgentsCommands {
         }
         if (normalizedModel) {
           console.log(`  Model: ${normalizedModel}`);
+        }
+        if (normalizedModelPreset) {
+          console.log(`  Model preset: ${normalizedModelPreset}`);
         }
         console.log(`  Permissions: bootstrap`);
         console.log(`  Inspect: ravi permissions materialize --subject-type agent --subject-id ${id} --json`);
@@ -748,6 +792,7 @@ export class AgentsCommands {
       "name",
       "cwd",
       "model",
+      "modelPreset",
       "provider",
       "dmScope",
       "systemPromptAppend",
@@ -761,6 +806,53 @@ export class AgentsCommands {
     ];
     if (!validKeys.includes(key)) {
       fail(`Invalid key: ${key}. Valid keys: ${validKeys.join(", ")}`);
+    }
+
+    // modelPreset: indirect reference to a centrally managed runtime model
+    // preset. Mutually exclusive with a direct `model`; assigning a preset
+    // clears the direct model in the same update.
+    if (key === "modelPreset") {
+      const cleared = value === "clear" || value === "null" || value === "";
+      if (cleared) {
+        try {
+          updateAgent(id, { modelPresetId: null });
+        } catch (err) {
+          fail(`Error: ${err instanceof Error ? err.message : err}`);
+        }
+      } else {
+        const preset = getRuntimeModelPreset(value);
+        if (!preset) {
+          fail(`Model preset not found: ${value}. Run: ravi runtime presets list`);
+        }
+        if (!preset.enabled) {
+          fail(`Model preset is disabled: ${preset.id}. Run: ravi runtime presets enable ${preset.id}`);
+        }
+        if (agent.provider && agent.provider !== preset.provider) {
+          fail(
+            `Agent provider '${agent.provider}' is incompatible with preset provider '${preset.provider}'. Clear the agent provider or choose a matching preset.`,
+          );
+        }
+        try {
+          updateAgent(id, { modelPresetId: preset.id, model: null });
+        } catch (err) {
+          fail(`Error: ${err instanceof Error ? err.message : err}`);
+        }
+      }
+      const presetPayload = {
+        action: "set" as const,
+        changed: true as const,
+        agentId: id,
+        key,
+        value: cleared ? null : value,
+        agent: getAgent(id),
+      };
+      if (asJson) {
+        printJson(presetPayload);
+      } else {
+        console.log(cleared ? `\u2713 modelPreset cleared: ${id}` : `\u2713 modelPreset set: ${id} -> ${value}`);
+      }
+      emitConfigChanged();
+      return presetPayload;
     }
 
     // Parse groupDebounceMs as integer
@@ -807,8 +899,19 @@ export class AgentsCommands {
     if (key === "model") {
       validateAgentModelValue(agent.provider, value);
     }
-    if (key === "provider" && agent.model) {
-      validateAgentModelValue(value, agent.model);
+    if (key === "provider") {
+      if (agent.model) {
+        validateAgentModelValue(value, agent.model);
+      }
+      // A provider write must stay compatible with any selected preset.
+      if (agent.modelPresetId) {
+        const preset = getRuntimeModelPreset(agent.modelPresetId);
+        if (preset && preset.provider !== value) {
+          fail(
+            `Cannot set provider '${value}': agent references preset '${preset.id}' (provider '${preset.provider}'). Clear the preset first: ravi agents set ${id} modelPreset clear`,
+          );
+        }
+      }
     }
 
     // Validate matrixAccount (will be validated in updateAgent, but give better error)
@@ -869,7 +972,15 @@ export class AgentsCommands {
     }
 
     try {
-      updateAgent(id, { [key]: parsedValue });
+      // A direct model write clears any existing preset reference atomically so
+      // the two never coexist (mutual exclusion).
+      const updates: AgentUpdateInput =
+        key === "model"
+          ? agent.modelPresetId
+            ? { model: parsedValue as string, modelPresetId: null }
+            : { model: parsedValue as string }
+          : { [key]: parsedValue };
+      updateAgent(id, updates);
       if (key === "cwd" || key === "provider") {
         ensureAgentDirs(loadRouterConfig());
       }

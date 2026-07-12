@@ -8,6 +8,7 @@ import { logger } from "../utils/logger.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { resolveAgentModelSelection } from "./model-preset-resolver.js";
 
 const log = logger.child("runtime:task-context");
 
@@ -41,6 +42,36 @@ export function resolveRuntimeForPrompt(options: {
   const promptOverride =
     options.prompt._observation && options.prompt._runtimeModel ? { model: options.prompt._runtimeModel } : undefined;
 
+  const agentSelection = resolveAgentModelSelection(options.agent);
+  if (agentSelection.warning) {
+    log.warn("Agent model selection drift", {
+      sessionName: options.sessionName,
+      agentId: options.agent.id,
+      warning: agentSelection.warning,
+    });
+  }
+  if (agentSelection.error) {
+    log.warn("Agent model preset unusable; not applying agent-level model", {
+      sessionName: options.sessionName,
+      agentId: options.agent.id,
+      modelPresetId: agentSelection.modelPresetId,
+      error: agentSelection.error,
+    });
+  }
+
+  const agentModelPreset =
+    agentSelection.modelSource === "agent_preset" &&
+    agentSelection.effectiveModel &&
+    agentSelection.modelPresetId &&
+    agentSelection.modelPresetVersion !== null
+      ? {
+          model: agentSelection.effectiveModel,
+          presetId: agentSelection.modelPresetId,
+          version: agentSelection.modelPresetVersion,
+        }
+      : null;
+  const agentModel = agentSelection.modelSource === "agent_default" ? agentSelection.effectiveModel : undefined;
+
   return resolveTaskRuntimeOptions({
     promptOverride,
     task: binding?.task,
@@ -48,7 +79,8 @@ export function resolveRuntimeForPrompt(options: {
     profile,
     sessionModelOverride: options.session?.modelOverride,
     sessionThinkingLevel: options.session?.thinkingLevel,
-    agentModel: options.agent.model,
+    agentModel,
+    agentModelPreset,
     configModel: options.configModel,
   });
 }
