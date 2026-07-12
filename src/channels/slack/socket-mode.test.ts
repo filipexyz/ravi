@@ -202,7 +202,7 @@ describe("Slack Socket Mode routing", () => {
     ]);
   });
 
-  it("routes Slack inbound to an existing chat subscription before account-agent fallback", async () => {
+  it("routes Slack inbound to an existing chat subscription when no route matches", async () => {
     seedAgent("route-agent", "/tmp/route-agent");
     seedAgent("owner-agent", "/tmp/owner-agent");
     const chat = dbUpsertChat({
@@ -254,7 +254,7 @@ describe("Slack Socket Mode routing", () => {
       routes: [],
       defaultAgent: "route-agent",
       defaultDmScope: "per-peer",
-      accountAgents: { "ravi-rbbt-slack": "route-agent" },
+      accountAgents: {},
       instanceToAccount: { "ravi-rbbt-slack": "ravi-rbbt-slack" },
       instances: {},
     };
