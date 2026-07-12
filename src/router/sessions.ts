@@ -107,7 +107,7 @@ function rowToEntry(row: SessionRow): SessionEntry {
     lastThreadId: row.last_thread_id ?? undefined,
     lastContext: row.last_context ?? undefined,
     modelOverride: row.model_override ?? undefined,
-    effortOverride: row.effort_override as SessionEntry["effortOverride"],
+    effortOverride: (row.effort_override ?? undefined) as SessionEntry["effortOverride"],
     thinkingLevel: row.thinking_level as SessionEntry["thinkingLevel"],
     queueMode: row.queue_mode as SessionEntry["queueMode"],
     queueDebounceMs: row.queue_debounce_ms ?? undefined,
