@@ -8719,6 +8719,144 @@ export type PermissionsStatusReturn = {
   status: "provider-runtime";
 };
 
+/** Input shape for `pi.auth.check`. */
+export type PiAuthCheckInput = {
+  provider?: string;
+};
+
+/** Return shape for `pi.auth.check`. */
+export type PiAuthCheckReturn = {
+  authenticated: boolean;
+  envVar: string | null;
+  provider: string;
+  source: "auth.json" | "env" | "none";
+};
+
+/** Input shape for `pi.doctor`. */
+export type PiDoctorInput = {
+  agent?: string;
+};
+
+/** Return shape for `pi.doctor`. */
+export type PiDoctorReturn = {
+  agentId: string | null;
+  authenticated: boolean;
+  healthy: boolean;
+  issues: string[];
+  model: string | null;
+  modelResolves: boolean;
+  provider: string | null;
+  scope: "agent" | "provider";
+};
+
+/** Input shape for `pi.models.add`. */
+export type PiModelsAddInput = {
+  api?: string;
+  apiKeyEnv?: string;
+  baseUrl?: string;
+  contextWindow?: string;
+  force?: boolean;
+  input?: string;
+  maxTokens?: string;
+  modelId?: string;
+  name?: string;
+  providerId?: string;
+  reasoning?: boolean;
+};
+
+/** Return shape for `pi.models.add`. */
+export type PiModelsAddReturn = {
+  created: boolean;
+  extensionPath: string;
+  modelId: string;
+  providerId: string;
+  resolvesNow: boolean;
+};
+
+/** Input shape for `pi.models.list`. */
+export type PiModelsListInput = {
+  limit?: string;
+  offset?: string;
+  provider?: string;
+  query?: string;
+};
+
+/** Return shape for `pi.models.list`. */
+export type PiModelsListReturn = {
+  items: Array<{
+    context: string;
+    images: boolean;
+    maxOut: string;
+    model: string;
+    provider: string;
+    thinking: boolean;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  total: number;
+};
+
+/** Input shape for `pi.models.remove`. */
+export type PiModelsRemoveInput = {
+  providerId?: string;
+};
+
+/** Return shape for `pi.models.remove`. */
+export type PiModelsRemoveReturn = {
+  extensionPath: string;
+  providerId: string;
+  removed: boolean;
+};
+
+/** Input shape for `pi.providers.list`. */
+export type PiProvidersListInput = {
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `pi.providers.list`. */
+export type PiProvidersListReturn = {
+  items: Array<{
+    authenticated: boolean;
+    modelCount: number;
+    provider: string;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  total: number;
+};
+
+/** Input shape for `pi.status`. */
+export type PiStatusInput = Record<string, never>;
+
+/** Return shape for `pi.status`. */
+export type PiStatusReturn = {
+  agentsUsingPi: Array<{
+    id: string;
+    model: string | null;
+  }>;
+  authenticatedProviders: string[];
+  defaultModel: string | null;
+  defaultProvider: string | null;
+  managedExtensions: string[];
+  piCommand: string;
+  piVersion: string;
+};
+
 /** Input shape for `projects.create`. */
 export type ProjectsCreateInput = {
   hypothesis?: string;

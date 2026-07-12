@@ -44498,6 +44498,570 @@ export const PermissionsStatusReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `pi.auth.check`. */
+export const PiAuthCheckInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "provider": {
+      "description": "Provider id (e.g. zai, google, openai)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `pi.auth.check`. */
+export const PiAuthCheckReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "authenticated": {
+      "type": "boolean"
+    },
+    "envVar": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "provider": {
+      "type": "string"
+    },
+    "source": {
+      "enum": [
+        "auth.json",
+        "env",
+        "none"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "provider",
+    "authenticated",
+    "source",
+    "envVar"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `pi.doctor`. */
+export const PiDoctorInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Validate this agent's pi model resolves",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `pi.doctor`. */
+export const PiDoctorReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "authenticated": {
+      "type": "boolean"
+    },
+    "healthy": {
+      "type": "boolean"
+    },
+    "issues": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "modelResolves": {
+      "type": "boolean"
+    },
+    "provider": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "scope": {
+      "enum": [
+        "agent",
+        "provider"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "scope",
+    "agentId",
+    "model",
+    "provider",
+    "authenticated",
+    "modelResolves",
+    "issues",
+    "healthy"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `pi.models.add`. */
+export const PiModelsAddInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "api": {
+      "default": "openai-completions",
+      "description": "openai-completions|openai-responses|anthropic-messages (default: openai-completions)",
+      "type": "string"
+    },
+    "apiKeyEnv": {
+      "description": "NAME of the env var holding the API key (never the secret)",
+      "type": "string"
+    },
+    "baseUrl": {
+      "description": "Provider base URL (OpenAI-compatible)",
+      "type": "string"
+    },
+    "contextWindow": {
+      "default": "128000",
+      "description": "Context window tokens (default: 128000)",
+      "type": "string"
+    },
+    "force": {
+      "description": "Overwrite an existing managed extension with the same provider-id",
+      "type": "boolean"
+    },
+    "input": {
+      "default": "text",
+      "description": "Comma-separated: text,image (default: text)",
+      "type": "string"
+    },
+    "maxTokens": {
+      "default": "8192",
+      "description": "Max output tokens",
+      "type": "string"
+    },
+    "modelId": {
+      "description": "Model id at the endpoint (e.g. glm-5.2)",
+      "type": "string"
+    },
+    "name": {
+      "description": "Human display name (default: provider-id)",
+      "type": "string"
+    },
+    "providerId": {
+      "description": "New pi provider id, kebab-case (e.g. zai-glm)",
+      "type": "string"
+    },
+    "reasoning": {
+      "description": "Model supports reasoning/thinking",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `pi.models.add`. */
+export const PiModelsAddReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "created": {
+      "type": "boolean"
+    },
+    "extensionPath": {
+      "type": "string"
+    },
+    "modelId": {
+      "type": "string"
+    },
+    "providerId": {
+      "type": "string"
+    },
+    "resolvesNow": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "providerId",
+    "modelId",
+    "extensionPath",
+    "created",
+    "resolvesNow"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `pi.models.list`. */
+export const PiModelsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Rows to skip (default: 0)",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Filter by provider id (e.g. google, zai)",
+      "type": "string"
+    },
+    "query": {
+      "description": "Substring match on model id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `pi.models.list`. */
+export const PiModelsListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "type": "string"
+          },
+          "images": {
+            "type": "boolean"
+          },
+          "maxOut": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "thinking": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "context",
+          "maxOut",
+          "thinking",
+          "images"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `pi.models.remove`. */
+export const PiModelsRemoveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "providerId": {
+      "description": "Provider id of the extension to remove",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `pi.models.remove`. */
+export const PiModelsRemoveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "extensionPath": {
+      "type": "string"
+    },
+    "providerId": {
+      "type": "string"
+    },
+    "removed": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "providerId",
+    "extensionPath",
+    "removed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `pi.providers.list`. */
+export const PiProvidersListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Rows to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `pi.providers.list`. */
+export const PiProvidersListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "authenticated": {
+            "type": "boolean"
+          },
+          "modelCount": {
+            "type": "number"
+          },
+          "provider": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "authenticated",
+          "modelCount"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `pi.status`. */
+export const PiStatusInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `pi.status`. */
+export const PiStatusReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentsUsingPi": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "model"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "authenticatedProviders": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "defaultModel": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "defaultProvider": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "managedExtensions": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "piCommand": {
+      "type": "string"
+    },
+    "piVersion": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "piCommand",
+    "piVersion",
+    "defaultProvider",
+    "defaultModel",
+    "authenticatedProviders",
+    "managedExtensions",
+    "agentsUsingPi"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `projects.create`. */
 export const ProjectsCreateInputSchema = {
   "additionalProperties": false,
