@@ -21,6 +21,7 @@
 - `ravi tasks create ... --model <model> --effort <level> --thinking <mode>` pins a task override.
 - `ravi tasks dispatch <task-id> --agent <agent> --effort <level>` pins a dispatch override.
 - Per-field precedence is: dispatch/launch override, task override, profile defaults, session preference, agent default, global config, then the `xhigh` effort default.
+- For human sessions, `ravi sessions set-effort <session> <level>` is the session fallback; `ravi agents set <agent> effort <level>` is the agent fallback. Neither replaces task or dispatch runtime overrides.
 
 ## Diagnosing Rejected Runtime Input
 

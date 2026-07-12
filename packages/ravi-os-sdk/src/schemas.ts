@@ -51619,6 +51619,472 @@ export const SessionsSetDisplayReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `sessions.set-effort`. */
+export const SessionsSetEffortInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "level": {
+      "description": "Reasoning effort (none|minimal|low|medium|high|xhigh|max|ultra) or 'clear'",
+      "type": "string"
+    },
+    "nameOrKey": {
+      "description": "Session name or key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "level",
+    "nameOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.set-effort`. */
+export const SessionsSetEffortReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "set-effort",
+      "type": "string"
+    },
+    "after": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "effectiveModel": {
+              "type": "string"
+            },
+            "effectiveProvider": {
+              "type": "string"
+            },
+            "effortOverride": {
+              "enum": [
+                "none",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max",
+                "ultra"
+              ],
+              "type": "string"
+            },
+            "ephemeral": {
+              "type": "boolean"
+            },
+            "expiresAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "label": {
+              "type": "string"
+            },
+            "modelOverride": {
+              "type": "string"
+            },
+            "modelPresetId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "modelPresetVersion": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "modelSource": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "runtimeOptions": {
+              "additionalProperties": false,
+              "properties": {
+                "effort": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "source": {
+                      "enum": [
+                        "session_override",
+                        "agent_default",
+                        "runtime_default"
+                      ],
+                      "type": "string"
+                    },
+                    "value": {
+                      "enum": [
+                        "none",
+                        "minimal",
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max",
+                        "ultra"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "source"
+                  ],
+                  "type": "object"
+                },
+                "model": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "source": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "source"
+                  ],
+                  "type": "object"
+                },
+                "thinking": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "source": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "value": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "source"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "model",
+                "effort",
+                "thinking"
+              ],
+              "type": "object"
+            },
+            "sessionKey": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionKey",
+            "label",
+            "agentId",
+            "effectiveProvider",
+            "effectiveModel",
+            "modelSource",
+            "modelPresetId",
+            "modelPresetVersion",
+            "ephemeral",
+            "expiresAt",
+            "runtimeOptions"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "appliesOn": {
+      "const": "next-turn-runtime-restart",
+      "type": "string"
+    },
+    "before": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "effectiveModel": {
+          "type": "string"
+        },
+        "effectiveProvider": {
+          "type": "string"
+        },
+        "effortOverride": {
+          "enum": [
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra"
+          ],
+          "type": "string"
+        },
+        "ephemeral": {
+          "type": "boolean"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "modelOverride": {
+          "type": "string"
+        },
+        "modelPresetId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelPresetVersion": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelSource": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "runtimeOptions": {
+          "additionalProperties": false,
+          "properties": {
+            "effort": {
+              "additionalProperties": false,
+              "properties": {
+                "source": {
+                  "enum": [
+                    "session_override",
+                    "agent_default",
+                    "runtime_default"
+                  ],
+                  "type": "string"
+                },
+                "value": {
+                  "enum": [
+                    "none",
+                    "minimal",
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh",
+                    "max",
+                    "ultra"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "source"
+              ],
+              "type": "object"
+            },
+            "model": {
+              "additionalProperties": false,
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "source"
+              ],
+              "type": "object"
+            },
+            "thinking": {
+              "additionalProperties": false,
+              "properties": {
+                "source": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "value",
+                "source"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "model",
+            "effort",
+            "thinking"
+          ],
+          "type": "object"
+        },
+        "sessionKey": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionKey",
+        "label",
+        "agentId",
+        "effectiveProvider",
+        "effectiveModel",
+        "modelSource",
+        "modelPresetId",
+        "modelPresetVersion",
+        "ephemeral",
+        "expiresAt",
+        "runtimeOptions"
+      ],
+      "type": "object"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "effectiveEffort": {
+      "enum": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "type": "string"
+    },
+    "effectiveEffortSource": {
+      "enum": [
+        "session_override",
+        "agent_default",
+        "runtime_default"
+      ],
+      "type": "string"
+    },
+    "effortOverride": {
+      "anyOf": [
+        {
+          "enum": [
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionKey": {
+      "type": "string"
+    },
+    "sessionName": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "sessionKey",
+    "sessionName",
+    "before",
+    "after",
+    "effortOverride",
+    "effectiveEffort",
+    "effectiveEffortSource",
+    "appliesOn"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.set-model`. */
 export const SessionsSetModelInputSchema = {
   "additionalProperties": false,

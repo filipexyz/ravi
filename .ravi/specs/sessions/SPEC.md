@@ -46,6 +46,7 @@ Those capabilities all *reference* a session, but they MUST NOT redefine what a 
 Sessions own:
 
 - session identity (`session_key`, `session_name`, `agent_id`, `cwd`);
+- session runtime preferences (`model_override`, `effort_override`, `thinking_level`) used as fallbacks after task/profile runtime selection and before agent/runtime defaults;
 - which chats can dispatch input into the session (attach);
 - which chat receives the session's external output (attach);
 - last-source provenance for trace/correlation;
@@ -76,6 +77,9 @@ Sessions do NOT own:
 - If a response has neither a speak-enabled source subscription nor a speak-enabled default output attachment, it MUST NOT emit externally.
 - `ravi sessions send` and related inter-session commands inject prompt/context into a Ravi session. They MUST NOT be documented as direct external channel delivery primitives. Visible outbound channel delivery belongs to the session response path or to explicit channel/media/outbound commands.
 - Session reset MUST clear provider continuity state (per `runtime/session-continuity`) but MUST NOT silently drop attach subscriptions — those are routing/wiring, not provider state.
+- `ravi sessions set-effort <session> <level>` MUST persist an effort override using `none|minimal|low|medium|high|xhigh|max|ultra`; `clear` MUST remove only the session override.
+- Session effort is separate from thinking. `ravi sessions set-thinking` MUST NOT accept effort values such as `max` or `ultra`, and `ravi sessions set-effort` MUST NOT mutate `thinking_level`.
+- `ravi sessions list --json`, `ravi sessions info --json`, and runtime trace payloads SHOULD expose both effective runtime value and source where available.
 - Deletion of a session MUST cascade to delete its subscriptions.
 - Session visibility is authorization-bearing. Runtime principals MUST only
   list, inspect, read, trace, or mutate sessions they own or have explicit

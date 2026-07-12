@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { querySessionTrace } from "./query.js";
-import { listRecentSessionEventsByType, recordSessionEvent } from "./session-trace-db.js";
+import { recordAdapterRequestTrace } from "./runtime-trace.js";
+import { getSessionTraceBlob, listRecentSessionEventsByType, recordSessionEvent } from "./session-trace-db.js";
 
 let stateDir: string | null = null;
 
@@ -82,5 +83,38 @@ describe("session trace query", () => {
         (event) => event.preview,
       ),
     ).toEqual(["newer complete", "old complete"]);
+  });
+
+  it("records runtime option sources in the adapter request payload", () => {
+    const trace = recordAdapterRequestTrace({
+      sessionKey: "agent:main:trace-limit",
+      sessionName: "trace-limit",
+      agentId: "main",
+      runId: "run-runtime-options",
+      turnId: "turn-runtime-options",
+      provider: "codex",
+      model: "gpt-5",
+      effort: "high",
+      thinking: "normal",
+      modelSource: "session_override",
+      effortSource: "agent_default",
+      thinkingSource: "runtime_default",
+      prompt: "hello",
+      systemPrompt: "system",
+      cwd: "/tmp/main",
+      resume: false,
+      fork: false,
+      hasHooks: false,
+      pluginNames: [],
+      mcpServerNames: [],
+      hasRemoteSpawn: false,
+    });
+
+    expect(trace).not.toBeNull();
+    expect(getSessionTraceBlob(trace!.requestBlobSha256)?.contentJson).toMatchObject({
+      model_source: "session_override",
+      effort_source: "agent_default",
+      thinking_source: "runtime_default",
+    });
   });
 });

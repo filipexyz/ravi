@@ -225,6 +225,9 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
         model,
         effort: runtimeResolution.options.effort ?? null,
         thinking: runtimeResolution.options.thinking ?? null,
+        modelSource: runtimeResolution.sources.model,
+        effortSource: runtimeResolution.sources.effort,
+        thinkingSource: runtimeResolution.sources.thinking,
         cwd: sessionCwd,
         canResumeStoredSession,
         storedProviderSessionId: canResumeStoredSession ? storedProviderSessionId : null,
@@ -252,6 +255,8 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       effort: runtimeResolution.options.effort ?? null,
       thinking: runtimeResolution.options.thinking ?? null,
       modelSource: runtimeResolution.sources.model,
+      effortSource: runtimeResolution.sources.effort,
+      thinkingSource: runtimeResolution.sources.thinking,
       providerSessionId: resumableProviderSessionId ?? null,
       resuming: !!resumableProviderSessionId,
     });

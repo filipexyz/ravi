@@ -77,6 +77,7 @@ interface SelfSessionSummary {
   runtimeProvider: string | null;
   runtimeSessionDisplayId: string | null;
   modelOverride: string | null;
+  effortOverride: string | null;
   thinkingLevel: string | null;
   channel: string | null;
   accountId: string | null;
@@ -602,6 +603,7 @@ function serializeSession(session: SessionEntry): SelfSessionSummary {
     runtimeProvider: session.runtimeProvider ?? null,
     runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? null,
     modelOverride: session.modelOverride ?? null,
+    effortOverride: session.effortOverride ?? null,
     thinkingLevel: session.thinkingLevel ?? null,
     channel: session.channel ?? null,
     accountId: session.accountId ?? null,

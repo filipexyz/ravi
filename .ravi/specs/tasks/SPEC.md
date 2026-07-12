@@ -132,7 +132,7 @@ ravi tasks profiles init <profile-id> --preset <doc-first|brainstorm|runtime-onl
 - Treating `TASK.md` as the task source of truth and bypassing DB/events.
 - Falling back to `default` when a requested profile is missing.
 - Changing a profile and accidentally changing old task behavior that should be snapshot-pinned.
-- Using `ravi sessions set-model` to implement task runtime overrides.
+- Using `ravi sessions set-model` or `ravi sessions set-effort` to implement task runtime overrides.
 - Reading or writing stale task context in a later non-task turn.
 - Reporting task progress only in chat without mutating durable task state.
 - Making `show` or `watch` create files as a display side effect.

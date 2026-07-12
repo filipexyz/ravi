@@ -78,9 +78,11 @@ export function resolveRuntimeForPrompt(options: {
     assignment: binding?.assignment,
     profile,
     sessionModelOverride: options.session?.modelOverride,
+    sessionEffortOverride: options.session?.effortOverride,
     sessionThinkingLevel: options.session?.thinkingLevel,
     agentModel,
     agentModelPreset,
+    agentEffort: options.agent.effort,
     configModel: options.configModel,
   });
 }

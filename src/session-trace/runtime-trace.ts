@@ -49,6 +49,9 @@ export interface RuntimeTraceAdapterRequestInput extends RuntimeTraceIdentity {
   cwd: string;
   effort?: RuntimeEffort | null;
   thinking?: RuntimeThinking | null;
+  modelSource?: string | null;
+  effortSource?: string | null;
+  thinkingSource?: string | null;
   resume: boolean;
   fork: boolean;
   providerSessionIdBefore?: string | null;
@@ -195,6 +198,9 @@ export function recordAdapterRequestTrace(input: RuntimeTraceAdapterRequestInput
       model: input.model ?? null,
       effort: input.effort ?? null,
       thinking: input.thinking ?? null,
+      model_source: input.modelSource ?? null,
+      effort_source: input.effortSource ?? null,
+      thinking_source: input.thinkingSource ?? null,
       cwd: input.cwd,
       resume: input.resume,
       fork: input.fork,

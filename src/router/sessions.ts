@@ -60,6 +60,7 @@ interface SessionRow {
   last_thread_id: string | null;
   last_context: string | null;
   model_override: string | null;
+  effort_override: string | null;
   thinking_level: string | null;
   queue_mode: string | null;
   queue_debounce_ms: number | null;
@@ -106,6 +107,7 @@ function rowToEntry(row: SessionRow): SessionEntry {
     lastThreadId: row.last_thread_id ?? undefined,
     lastContext: row.last_context ?? undefined,
     modelOverride: row.model_override ?? undefined,
+    effortOverride: (row.effort_override ?? undefined) as SessionEntry["effortOverride"],
     thinkingLevel: row.thinking_level as SessionEntry["thinkingLevel"],
     queueMode: row.queue_mode as SessionEntry["queueMode"],
     queueDebounceMs: row.queue_debounce_ms ?? undefined,
@@ -154,6 +156,7 @@ interface SessionStatements {
   updateDisplayName: Statement;
   updateContext: Statement;
   updateModelOverride: Statement;
+  updateEffortOverride: Statement;
   updateThinkingLevel: Statement;
 }
 
@@ -210,7 +213,7 @@ function getStatements(): SessionStatements {
         session_key, name, sdk_session_id, runtime_provider, runtime_session_json, runtime_session_display_id, agent_id, agent_cwd,
         chat_type, channel, account_id, group_id, subject, display_name,
         last_channel, last_to, last_account_id, last_thread_id,
-        model_override, thinking_level,
+        model_override, effort_override, thinking_level,
         queue_mode, queue_debounce_ms, queue_cap,
         input_tokens, output_tokens, total_tokens, context_tokens,
         system_sent, aborted_last_run, compaction_count,
@@ -219,7 +222,7 @@ function getStatements(): SessionStatements {
         ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?,
-        ?, ?,
+        ?, ?, ?,
         ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?,
@@ -241,6 +244,7 @@ function getStatements(): SessionStatements {
         last_account_id = COALESCE(excluded.last_account_id, sessions.last_account_id),
         last_thread_id = COALESCE(excluded.last_thread_id, sessions.last_thread_id),
         model_override = COALESCE(excluded.model_override, sessions.model_override),
+        effort_override = COALESCE(excluded.effort_override, sessions.effort_override),
         thinking_level = COALESCE(excluded.thinking_level, sessions.thinking_level),
         input_tokens = sessions.input_tokens + excluded.input_tokens,
         output_tokens = sessions.output_tokens + excluded.output_tokens,
@@ -289,6 +293,7 @@ function getStatements(): SessionStatements {
     updateDisplayName: db.prepare("UPDATE sessions SET display_name = ?, updated_at = ? WHERE session_key = ?"),
     updateContext: db.prepare("UPDATE sessions SET last_context = ?, updated_at = ? WHERE session_key = ?"),
     updateModelOverride: db.prepare("UPDATE sessions SET model_override = ?, updated_at = ? WHERE session_key = ?"),
+    updateEffortOverride: db.prepare("UPDATE sessions SET effort_override = ?, updated_at = ? WHERE session_key = ?"),
     updateThinkingLevel: db.prepare("UPDATE sessions SET thinking_level = ?, updated_at = ? WHERE session_key = ?"),
   };
   statementsDbPath = currentDbPath;
@@ -352,6 +357,7 @@ export function getOrCreateSession(
     defaults?.lastAccountId ?? null,
     defaults?.lastThreadId ?? null,
     defaults?.modelOverride ?? null,
+    defaults?.effortOverride ?? null,
     defaults?.thinkingLevel ?? null,
     defaults?.queueMode ?? null,
     defaults?.queueDebounceMs ?? null,
@@ -736,6 +742,14 @@ export function updateSessionContext(sessionKey: string, contextJson: string): v
 export function updateSessionModelOverride(sessionKey: string, model: string | null): void {
   const s = getStatements();
   s.updateModelOverride.run(model, Date.now(), sessionKey);
+}
+
+/**
+ * Update session reasoning effort override (null to clear)
+ */
+export function updateSessionEffortOverride(sessionKey: string, effort: SessionEntry["effortOverride"] | null): void {
+  const s = getStatements();
+  s.updateEffortOverride.run(effort, Date.now(), sessionKey);
 }
 
 /**

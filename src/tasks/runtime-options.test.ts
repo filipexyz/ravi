@@ -6,7 +6,9 @@ describe("task runtime options", () => {
     const resolved = resolveTaskRuntimeOptions({
       profile: { runtimeDefaults: { model: "profile-model", effort: "high" } },
       sessionModelOverride: "session-model",
+      sessionEffortOverride: "ultra",
       agentModel: "agent-model",
+      agentEffort: "max",
       configModel: "global-model",
     });
 
@@ -45,20 +47,27 @@ describe("task runtime options", () => {
   });
 
   it("falls back through session, agent, and global defaults", () => {
-    expect(
-      resolveTaskRuntimeOptions({
-        sessionModelOverride: "session-model",
-        agentModel: "agent-model",
-        configModel: "global-model",
-      }).options.model,
-    ).toBe("session-model");
+    const session = resolveTaskRuntimeOptions({
+      sessionModelOverride: "session-model",
+      sessionEffortOverride: "max",
+      agentModel: "agent-model",
+      agentEffort: "ultra",
+      configModel: "global-model",
+    });
+    expect(session.options.model).toBe("session-model");
+    expect(session.options.effort).toBe("max");
+    expect(session.sources.model).toBe("session_override");
+    expect(session.sources.effort).toBe("session_override");
 
-    expect(
-      resolveTaskRuntimeOptions({
-        agentModel: "agent-model",
-        configModel: "global-model",
-      }).options.model,
-    ).toBe("agent-model");
+    const agent = resolveTaskRuntimeOptions({
+      agentModel: "agent-model",
+      agentEffort: "ultra",
+      configModel: "global-model",
+    });
+    expect(agent.options.model).toBe("agent-model");
+    expect(agent.options.effort).toBe("ultra");
+    expect(agent.sources.model).toBe("agent_default");
+    expect(agent.sources.effort).toBe("agent_default");
 
     expect(resolveTaskRuntimeOptions({ configModel: "global-model" }).options.model).toBe("global-model");
   });

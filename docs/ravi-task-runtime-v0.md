@@ -102,12 +102,12 @@ A precedência por campo é:
 1. override do dispatch ou launch plan
 2. override da task
 3. `profile.runtimeDefaults`
-4. `session.modelOverride` / `session.thinkingLevel` de sessão humana existente
-5. `agent.model`
+4. `session.modelOverride` / `session.effortOverride` / `session.thinkingLevel` de sessão humana existente
+5. `agent.model` / `agent.effort`
 6. modelo global do config
 7. `effort` default do runtime: `xhigh`
 
-O contexto explícito da task vence `session.modelOverride` porque a task é o contrato operacional do turno. A preferência da sessão permanece como fallback para turnos sem task ou para tasks sem default/override.
+O contexto explícito da task vence preferências da sessão porque a task é o contrato operacional do turno. Preferências de sessão e defaults de agent permanecem como fallback para turnos sem task ou para tasks sem default/override naquele campo.
 
 ### Execução
 

@@ -11,6 +11,7 @@ type AgentLike = {
   cwd: string;
   model?: string | null;
   modelPresetId?: string | null;
+  effort?: string;
   provider?: string;
   remote?: string;
   defaults?: Record<string, unknown> | null;
@@ -274,6 +275,45 @@ describe("AgentsCommands set model validation", () => {
         },
       },
     ]);
+  });
+
+  it("sets canonical reasoning effort on the agent default", async () => {
+    const commands = new AgentsCommands();
+
+    await commands.set("dev", "effort", "Ultra", true);
+
+    expect(updateAgentCalls).toEqual([
+      {
+        id: "dev",
+        partial: {
+          effort: "ultra",
+        },
+      },
+    ]);
+    expect(currentAgent?.effort).toBe("ultra");
+  });
+
+  it("clears agent reasoning effort", async () => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "pi", effort: "ultra" };
+    const commands = new AgentsCommands();
+
+    await commands.set("dev", "effort", "clear", true);
+
+    expect(updateAgentCalls).toEqual([
+      {
+        id: "dev",
+        partial: {
+          effort: undefined,
+        },
+      },
+    ]);
+  });
+
+  it("rejects invalid agent reasoning effort values", async () => {
+    const commands = new AgentsCommands();
+
+    await expect(commands.set("dev", "effort", "turbo", true)).rejects.toThrow("Invalid effort: turbo");
+    expect(updateAgentCalls).toHaveLength(0);
   });
 
   it("creates agents with provider and model in one mutation", async () => {
