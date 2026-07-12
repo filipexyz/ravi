@@ -116,6 +116,29 @@ budget_limited -> complete (complete)
 - Goals are per-session, not per-agent. Different sessions for the same agent MAY have independent goals.
 - `taskId` and `projectId` are optional cross-references for correlation. They do not imply task or project lifecycle coupling.
 
+## Cross-Store References
+
+Session goals are core runtime state and MUST remain core-owned. Under the
+storage-by-workload split, tasks and projects become work-owned while sessions
+and their goals stay in core. The `taskId` and `projectId` fields cross that
+boundary and are governed here.
+
+- Goals MUST remain in core storage. They MUST NOT be moved into work storage.
+- `taskId` and `projectId` MUST remain opaque optional references. They MUST NOT
+  be implemented as cross-store foreign keys and MUST NOT participate in a
+  cross-store cascade.
+- Reading, creating, replacing, accounting, or rendering a goal MUST NOT require
+  a work-store owner lookup. The reference is stored and displayed as-is.
+- A missing work record (an unknown or deleted `taskId`/`projectId`) MUST NOT
+  delete, complete, block, or otherwise mutate the goal. The reference MAY
+  simply be unresolved.
+- Work-store `unavailable` state MUST NOT prevent core from reading or
+  accounting a goal, and MUST NOT be treated as `missing`. Goal budget
+  accounting and lifecycle continue from core-only state.
+- Any future resolution of `taskId`/`projectId` to work details MUST go through
+  the typed work port and MUST tolerate `found`, `missing`, `unavailable`, and
+  `unsupported` without mutating goal state.
+
 ## Authorization
 
 - Reading a goal (`get`) requires session read access.
@@ -151,6 +174,9 @@ budget_limited -> complete (complete)
 - `blockedReason` is required when `status = 'blocked'`, null otherwise.
 - `tokenBudget`, when set, MUST be a positive integer.
 - `tokensUsed` and `timeUsedSeconds` are non-negative integers.
+- `taskId` and `projectId` are opaque optional references with no cross-store foreign key or cascade.
+- A missing or unavailable work record MUST NOT mutate goal state.
+- Work-store unavailability MUST NOT block reading or accounting a goal.
 
 ## Validation
 

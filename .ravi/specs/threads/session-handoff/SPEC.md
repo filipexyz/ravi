@@ -207,6 +207,85 @@ Required audit facts:
 - delivery barrier;
 - outcome and error reason if failed.
 
+## Cross-Store Handoff Protocol
+
+A thread handoff crosses from work-owned thread state to a core-owned target
+session. Under the storage-by-workload split, thread, entry, and handoff records
+are work-owned while session enqueueing is core-owned. This crossing MUST follow
+the same intent/receipt discipline as `tasks/dispatch`.
+
+- Thread entry, handoff, and delivery intent MUST commit atomically in work
+  storage. The handoff MUST NOT be observable without its entry, and the
+  delivery intent MUST NOT exist without its handoff.
+- The handoff idempotency key MUST be stable across retries and derived from
+  durable identifiers (handoff id, target session, renderer version). Retry MUST
+  reuse the same key.
+- A `payloadHash` MUST cover the rendered brief + operator prompt envelope and
+  the brief renderer version (`thread_brief_renderer_version`). The existing
+  `snapshot_hash`/`thread_brief_snapshot_hash` MAY serve as this hash.
+- A handoff MUST be marked delivered only after a durable core enqueue receipt
+  for the same handoff id and payload hash. Returning from an in-process publish
+  call is NOT a durable receipt and MUST NOT alone flip status to `delivered`.
+- Work modules MUST enqueue the handoff prompt through the typed core session
+  port, not through untyped infrastructure.
+- Replay with the same idempotency key and the same payload hash MUST be safe:
+  it MUST NOT create a second entry, a second handoff, or a duplicate prompt.
+- Replay with the same key but a conflicting payload hash MUST fail closed and
+  surface repair evidence; it MUST NOT overwrite the prior handoff or deliver
+  both payloads.
+- Transient delivery failure MUST remain retryable with the same key. Terminal
+  failure MUST move to an explicit dead-letter state that is repairable; the
+  existing `failed` status MUST carry retryable-vs-terminal classification.
+- When the work store is `unavailable`, delivery MUST defer and MUST NOT be
+  marked delivered; `unavailable` MUST NOT be treated as `missing`.
+- Cross-store handoff delivery MUST reference the shared storage outbox/receipt
+  protocol once available and MUST NOT define a second generic outbox. This spec
+  MUST NOT create or edit any storage spec subtree.
+- Public `sessions send --thread` CLI/SDK return contracts MUST remain concrete.
+  `@CliOnly()` and weak return-schema baseline expansion MUST NOT be used to
+  avoid schemas.
+
+### Handoff State Machine
+
+Canonical handoff states:
+
+- `intent` — entry, handoff, and delivery intent committed in work storage;
+- `enqueued` — core returned a durable enqueue receipt for the handoff;
+- `delivered` — receipt for the same handoff id and payload hash is durable;
+- `timed_out` — no receipt within the delivery window; remote result unknown;
+- `retry_scheduled` — transient failure/timeout left retryable evidence;
+- `payload_conflict` — same key reused with a different payload hash;
+- `dead_letter` — retries exhausted or terminal failure; repairable;
+- `repair_required` — operator intervention needed.
+
+```text
+intent           -> enqueued | retry_scheduled | dead_letter | payload_conflict
+enqueued         -> delivered | timed_out | retry_scheduled | payload_conflict
+timed_out        -> retry_scheduled | delivered | dead_letter | repair_required
+retry_scheduled  -> enqueued | dead_letter | repair_required
+payload_conflict -> repair_required
+repair_required  -> retry_scheduled | dead_letter
+delivered        -> (terminal)
+dead_letter      -> (terminal; repairable via a new handoff)
+```
+
+## Failure Matrix — Thread Handoff
+
+Source intent is the work-owned entry + handoff + delivery intent. The core
+receipt is the durable enqueue receipt/acknowledgement.
+
+| Scenario | Source (work) state | Core state | Retry | Idempotency | Repair evidence |
+| --- | --- | --- | --- | --- | --- |
+| Crash before source commit | no entry/handoff/intent | no receipt | none; nothing committed | fresh key only after commit | none |
+| Crash after source commit, before core request | `intent` | no receipt | re-enqueue with same key | same key + hash is safe replay | pending handoff row (`status=queued`) |
+| Crash after core receipt, before source marks delivered | `intent`/`enqueued` | receipt exists | reconcile handoff to receipt | dedupe by receipt id + key | orphan receipt reconciled |
+| Timeout, unknown remote result | `timed_out` | receipt/ack unknown | retry same key after backoff | replay dedupes on key + hash | timeout marker + attempts |
+| Replay after acknowledgement loss | `enqueued` | receipt exists, ack lost | re-check ack; do not re-send new payload | same key + hash idempotent | ack ledger by handoff id |
+| Payload-hash mismatch for existing key | `payload_conflict` | receipt for prior hash | blocked until repair | conflicting hash fails closed | conflict record with both hashes |
+| Source (work) store unavailable | `unavailable` | n/a | defer; not delivered | no state change | unavailable read logged |
+| Core (session) store unavailable | `intent` | enqueue fails/unknown | `retry_scheduled` same key | no false `delivered` | enqueue failure evidence |
+| Unsupported renderer/protocol version | intent with unsupported version | receipt refused | no blind retry; escalate | `unsupported` never counts as delivered | version mismatch record |
+
 ## Failure Modes
 
 The command MUST fail closed when:
@@ -235,3 +314,8 @@ The command SHOULD still allow normal `sessions send` without `--thread` when th
 - The handoff audit record can explain the brief projection sent to the target session through included ids plus snapshot/hash metadata.
 - A second agent can receive the same thread later and continue from the same thread state.
 - Provider adapters do not need to know about thread storage. They only receive Ravi-owned prompt/context.
+- Thread entry, handoff, and delivery intent commit atomically in work storage.
+- A handoff is marked delivered only after a durable core enqueue receipt for the same handoff id and payload hash, not on in-process publish return.
+- Replay with the same idempotency key and payload hash does not create a duplicate entry, handoff, or prompt.
+- A conflicting payload hash for an existing handoff key fails closed with repair evidence.
+- The handoff defers rather than being marked delivered when the work store is unavailable.

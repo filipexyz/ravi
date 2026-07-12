@@ -37,3 +37,21 @@ normative: false
 - Handoff row exists for success.
 - Handoff row exists or event exists for safe failure after validation starts.
 - Included entries and links are reproducible from the handoff record.
+
+## Cross-Store Delivery
+
+- Thread entry, handoff, and delivery intent commit atomically in work storage.
+- The handoff idempotency key is stable across retries and derived from durable
+  identifiers.
+- The handoff is marked `delivered` only after a durable core enqueue receipt
+  for the same handoff id and payload hash, not on in-process publish return.
+- Replay with the same key and payload hash does not create a duplicate entry,
+  handoff, or prompt.
+- A conflicting payload hash for an existing key fails closed as
+  `payload_conflict` with repair evidence.
+- Transient failure stays retryable; terminal failure is an explicit,
+  repairable dead-letter state.
+- `unavailable` work state defers delivery and is never treated as `missing`.
+- Work modules enqueue the handoff prompt through the typed core session port.
+- Public `sessions send --thread` return contracts stay concrete; no
+  `@CliOnly()` or weak-baseline escape.

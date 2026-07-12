@@ -35,6 +35,23 @@ Make session goals a first-class Ravi-native session runtime primitive with:
 
 Tasks own tracked execution with dispatch, dependencies, reports, and terminal state. Goals are simpler: one objective per session, no dependency graph, no dispatch. A goal MAY reference a task via `taskId`, but it does not replace the task lifecycle.
 
+## Why taskId/projectId Stay Opaque Across Stores
+
+Goals live in core session storage, but they may reference a task or project
+that, after the storage-by-workload split, lives in work storage. If those
+references were cross-store foreign keys, a goal read would depend on the work
+store being reachable, and deleting a task could cascade into deleting or
+mutating a goal. Both are unacceptable: a session should still be able to state
+and account its objective even when the work store is degraded or a referenced
+task no longer exists.
+
+Keeping `taskId`/`projectId` as opaque optional strings — no cross-store FK, no
+cascade, no required owner lookup — means goal lifecycle and budget accounting
+depend only on core state. A missing work record leaves the reference merely
+unresolved; an unavailable work store never blocks the goal. This is the same
+`found|missing|unavailable|unsupported` discipline the core/work protocol uses
+everywhere, applied to a correlation reference rather than a control edge.
+
 ## Why Not Provider-Native Goals
 
 Provider-native goal or stop-hook behavior (e.g., Codex goals, Claude `/goal`) MAY inform the design. But Ravi MUST own the canonical goal state so it works consistently across providers and survives provider session resets.

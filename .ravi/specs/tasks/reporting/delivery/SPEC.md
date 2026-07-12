@@ -119,6 +119,53 @@ For observed tasks:
 
 Task reporting observers MUST remain isolated observer sessions with their own permissions. They MUST NOT inherit worker tool authority by default.
 
+## Cross-Store Delivery Protocol
+
+Report delivery crosses from work-owned task state to a core-owned target
+session. Once storage is split by workload this is a cross-store effect and MUST
+follow the same intent/receipt discipline as `tasks/dispatch`.
+
+- The report delivery idempotency key MUST derive from the durable task event
+  (its stable id), the resolved target session, and the renderer/protocol
+  version. It MUST be stable across retries.
+- A `payloadHash` MUST cover the rendered report prompt plus renderer/protocol
+  version. Same key + same hash is a safe replay; same key + different hash MUST
+  fail closed as a payload-hash conflict and surface repair evidence.
+- Replay MUST NOT deliver a duplicate report prompt to the target session.
+- The work-side source intent (the task event and its delivery intent) MUST
+  remain distinguishable from the core-side enqueue receipt/acknowledgement. A
+  report MUST be marked delivered only after a durable core enqueue receipt for
+  the same key and payload hash; enqueue attempt alone is not delivery.
+- Transient delivery failure MUST remain retryable with the same key. Terminal
+  failure MUST move to an explicit dead-letter state that is repairable.
+- Work modules MUST publish report prompts through the typed core session port,
+  not through untyped infrastructure. Runtime/report readers of work state MUST
+  use the typed work port.
+- When the work store is `unavailable`, delivery MUST defer and MUST NOT be
+  recorded as delivered; `unavailable` MUST NOT be treated as `missing`.
+- Cross-store report delivery MUST reference the shared storage outbox/receipt
+  protocol once available and MUST NOT define a second generic outbox. This
+  feature MUST NOT create or edit any storage spec subtree.
+- Public report CLI/SDK return contracts MUST remain concrete. `@CliOnly()` and
+  weak return-schema baseline expansion MUST NOT be used to avoid schemas.
+
+## Failure Matrix — Report Delivery
+
+Source intent is the durable task event plus delivery intent (work). The core
+receipt is the durable enqueue receipt/acknowledgement (core).
+
+| Scenario | Source (work) state | Core state | Retry | Idempotency | Repair evidence |
+| --- | --- | --- | --- | --- | --- |
+| Crash before source commit | no task event / no delivery intent | no receipt | none; nothing to deliver | fresh key only after event commits | none |
+| Crash after source commit, before core request | delivery intent pending | no receipt | re-request enqueue with same key | same key + hash is safe replay | pending intent row |
+| Crash after core receipt, before source marks delivered | delivery intent pending | receipt exists | reconcile intent to receipt | dedupe by receipt id + key | orphan receipt reconciled |
+| Timeout, unknown remote result | delivery intent `timed_out` | receipt/ack unknown | retry same key after backoff | replay dedupes on key + hash | timeout marker + attempts |
+| Replay after acknowledgement loss | delivery intent pending | receipt exists, ack lost | re-check ack; do not re-render new payload | same key + hash idempotent | ack ledger by key |
+| Payload-hash mismatch for existing key | `payload_conflict` | receipt for prior hash | blocked until repair | conflicting hash fails closed | conflict record with both hashes |
+| Source (work) store unavailable | `unavailable` | n/a | defer; not delivered | no state change | unavailable read logged |
+| Core (session) store unavailable | delivery intent pending | enqueue fails/unknown | retry with same key | no false delivered | enqueue failure evidence |
+| Unsupported renderer/protocol version | intent with unsupported version | receipt refused | no blind retry; escalate | `unsupported` never counts as delivered | version mismatch record |
+
 ## Invariants
 
 - Chat text alone MUST NOT be considered durable task progress.
@@ -139,6 +186,9 @@ Task reporting observers MUST remain isolated observer sessions with their own p
 - `task.blocked`, `task.done`, and `task.failed` can publish report prompts when a report target and matching report event are configured.
 - A task without a report target does not publish report prompts.
 - `observed-task` workers can avoid direct task-sync commands while a task-status observer owns durable synchronization.
+- A report delivery idempotency key derived from the task event, target session, and renderer/protocol version prevents duplicate report prompts on replay.
+- A payload-hash conflict for an existing report key fails closed with repair evidence instead of delivering a divergent prompt.
+- Report delivery defers rather than being marked delivered when the work store is unavailable.
 
 ## Validation
 
@@ -155,3 +205,6 @@ Task reporting observers MUST remain isolated observer sessions with their own p
 - `TASK.md` frontmatter is required for a profile that does not use task documents.
 - Duplicate observer deliveries create duplicate task reports or repeated terminal mutations.
 - Observer sessions inherit source tools or channel authority unintentionally.
+- A report is marked delivered on enqueue attempt before a durable core receipt, so a crash or dropped acknowledgement loses or duplicates the report.
+- An unavailable work store is treated as `missing`, so a report is dropped or re-delivered.
+- A task-specific report outbox is built instead of referencing the shared storage outbox/receipt protocol.

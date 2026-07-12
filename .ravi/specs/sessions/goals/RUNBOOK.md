@@ -88,6 +88,21 @@ If a goal is `blocked`:
 2. Resolve the impediment.
 3. Resume with `ravi sessions goal resume <session>`.
 
+## Diagnose an Unresolved or Unavailable Task Reference
+
+A goal MAY carry `taskId`/`projectId`. These are opaque references, not control
+edges.
+
+1. `ravi sessions goal get <session> --json` shows the stored references as-is.
+2. If the referenced task/project no longer exists (work store reports
+   `missing`), the goal is unaffected — the reference is simply unresolved. Do
+   NOT delete, complete, or block the goal because of a missing work record.
+3. If the work store is `unavailable`, goal read and budget accounting still
+   work from core state. Treat `unavailable` as "cannot resolve the reference
+   right now", never as "the task is gone".
+4. Never add a cross-store foreign key or cascade to make the reference
+   "consistent"; that would couple goal lifecycle to work-store availability.
+
 ## Inspect Goal in Runtime Prompt
 
 Active, paused, blocked, and budget-limited goals appear in the runtime system prompt under "Session Goal". The section includes the objective, status, and budget progress. Complete or cleared goals do not appear.
