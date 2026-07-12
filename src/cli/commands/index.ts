@@ -48,6 +48,7 @@ export * from "./observers.js";
 export * from "./operational-return-schemas.js";
 export * from "./pages.js";
 export * from "./permissions.js";
+export * from "./pi.js";
 export * from "./projects.js";
 export * from "./prox-calls.js";
 export * from "./react.js";
