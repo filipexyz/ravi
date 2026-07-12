@@ -1,5 +1,6 @@
 import { closeAllRaviDbs } from "../db/close-all.js";
 import { closeNats, connectNats } from "../nats.js";
+import { configStore } from "../config-store.js";
 import { logger } from "../utils/logger.js";
 import type { NativePresenceDelivery, NativeTextDelivery } from "./native/types.js";
 import { ChannelOutboundConsumer } from "./outbound-consumer.js";
@@ -68,6 +69,7 @@ export class ChannelRunner {
       explicit: true,
       retry: true,
     });
+    await configStore.startRefresh();
     await ensureChannelOutboundInfrastructure();
 
     this.outboundInfrastructureReady = true;
@@ -114,6 +116,7 @@ export class ChannelRunner {
     this.slackRuntimes = [];
     this.deliveries = [];
     this.presenceDeliveries = [];
+    configStore.stop();
     closeAllRaviDbs();
     await closeNats({ drainTimeoutMs: 2_000 });
     log.info("Channel runner stopped", { pid: process.pid });

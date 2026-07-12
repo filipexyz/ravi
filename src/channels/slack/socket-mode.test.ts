@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { ensureContactFromInbound } from "../../contacts.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
-import { getOrCreateSession, getSessionByName, listSessionSubscriptions } from "../../router/index.js";
-import { dbFindChatMessage, dbGetChat, getDb } from "../../router/router-db.js";
+import {
+  attachChatToSession,
+  getOrCreateSession,
+  getSessionByName,
+  listSessionSubscriptions,
+} from "../../router/index.js";
+import { dbFindChatMessage, dbGetChat, dbUpsertChat, getDb } from "../../router/router-db.js";
 import type { RouterConfig } from "../../router/types.js";
 import {
   SlackAssistantThreadPresence,
@@ -191,6 +196,105 @@ describe("Slack Socket Mode routing", () => {
     expect(listSessionSubscriptions(session!.sessionKey)).toEqual([
       expect.objectContaining({
         chatId: canonicalChatId,
+        role: "primary",
+        speechMode: "speak",
+      }),
+    ]);
+  });
+
+  it("routes Slack inbound to an existing chat subscription when no route matches", async () => {
+    seedAgent("route-agent", "/tmp/route-agent");
+    seedAgent("owner-agent", "/tmp/owner-agent");
+    const chat = dbUpsertChat({
+      channel: "slack",
+      instanceId: "ravi-rbbt-slack",
+      platformChatId: "C123",
+      chatType: "group",
+      title: "C123",
+      rawProvenance: { source: "test" },
+      seenAt: 1_713_000_000_000,
+    });
+    const ownerSession = getOrCreateSession(
+      "agent:owner-agent:slack:ravi-rbbt-slack:group:C123",
+      "owner-agent",
+      "/tmp/owner-agent",
+      {
+        name: "owner-agent",
+        channel: "slack",
+        accountId: "ravi-rbbt-slack",
+        groupId: "C123",
+        lastChannel: "slack",
+        lastTo: "C123",
+        lastAccountId: "ravi-rbbt-slack",
+      },
+    );
+    attachChatToSession({
+      sessionKey: ownerSession.sessionKey,
+      chatId: chat.id,
+      role: "primary",
+      attachedByType: "system",
+      attachedReason: "test-owner",
+      speechMode: "speak",
+      setOutputTarget: true,
+    });
+
+    const config: RouterConfig = {
+      agents: {
+        "route-agent": {
+          id: "route-agent",
+          cwd: "/tmp/route-agent",
+          dmScope: "per-peer",
+        },
+        "owner-agent": {
+          id: "owner-agent",
+          cwd: "/tmp/owner-agent",
+          dmScope: "per-peer",
+        },
+      },
+      routes: [],
+      defaultAgent: "route-agent",
+      defaultDmScope: "per-peer",
+      accountAgents: {},
+      instanceToAccount: { "ravi-rbbt-slack": "ravi-rbbt-slack" },
+      instances: {},
+    };
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "ravi-rbbt-slack",
+      routeAccountId: "ravi-rbbt-slack",
+      instanceId: "ravi-rbbt-slack",
+      getRouterConfig: () => config,
+      publishPrompt: async (sessionName, payload) => {
+        published.push({ sessionName, payload });
+      },
+      webClient: {} as never,
+    });
+
+    await service.handleEnvelope({
+      envelope_id: "env-subscription-owner-1",
+      payload: {
+        team_id: "T1",
+        event_id: "Ev1",
+        event_time: 1_713_000_001,
+        event: {
+          type: "message",
+          channel: "C123",
+          channel_type: "channel",
+          user: "U123",
+          text: "still here?",
+          ts: "1713000001.000100",
+        },
+      },
+    });
+
+    expect(published).toHaveLength(1);
+    expect(published[0]?.sessionName).toBe("owner-agent");
+    expect(getSessionByName("route-agent")).toBeNull();
+    expect(listSessionSubscriptions(ownerSession.sessionKey)).toEqual([
+      expect.objectContaining({
+        chatId: chat.id,
         role: "primary",
         speechMode: "speak",
       }),
