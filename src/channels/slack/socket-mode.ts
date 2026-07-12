@@ -2,7 +2,15 @@ import { configStore } from "../../config-store.js";
 import { resolvePlatformIdentity } from "../../contacts.js";
 import { publish } from "../../nats.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
-import { attachChatToSession, commitMatchedRoute, listSessionSubscriptions, matchRoute } from "../../router/index.js";
+import {
+  attachChatToSession,
+  commitMatchedRoute,
+  findSessionByAttachedChat,
+  getSession,
+  listSessionSubscriptions,
+  matchRoute,
+  subscriptionAllowsCrossInstance,
+} from "../../router/index.js";
 import {
   dbBindSessionToChat,
   dbListChatParticipants,
@@ -11,7 +19,7 @@ import {
   dbUpsertChatParticipant,
   type ChannelConfig,
 } from "../../router/router-db.js";
-import type { RouterConfig } from "../../router/types.js";
+import type { MatchedRoute, RouterConfig } from "../../router/types.js";
 import type { MessageActorMetadata, MessageContext, MessageTarget } from "../../runtime/message-types.js";
 import { transcribeAudio } from "../../transcribe/openai.js";
 import { logger } from "../../utils/logger.js";
@@ -576,7 +584,7 @@ export class SlackSocketModeService {
     const peerKind = slackPeerKindForChannelType(message.channelType);
     const isGroup = peerKind !== "dm";
     const routeThreadId = message.thread.routeThreadTs;
-    const matched = matchRoute(routerConfig, {
+    let matched = matchRoute(routerConfig, {
       phone: message.channelId,
       channel: "slack",
       accountId: this.options.routeAccountId,
@@ -594,14 +602,6 @@ export class SlackSocketModeService {
       return;
     }
 
-    const resolved = commitMatchedRoute(matched, {
-      phone: message.channelId,
-      isGroup,
-      groupId: isGroup ? message.channelId : undefined,
-      peerKind,
-      threadId: routeThreadId,
-    });
-    const sessionName = resolved.sessionName ?? resolved.sessionKey;
     const instanceId = this.options.instanceId ?? this.options.accountId;
     const canonicalChat = dbUpsertChat({
       channel: "slack",
@@ -619,6 +619,49 @@ export class SlackSocketModeService {
       },
       seenAt: message.eventTimeMs,
     });
+
+    const existingSubscription = findSessionByAttachedChat(canonicalChat.id);
+    if (existingSubscription && existingSubscription.sessionKey !== matched.sessionKey) {
+      const ownerSession = getSession(existingSubscription.sessionKey);
+      const ownerAgent = ownerSession ? routerConfig.agents[ownerSession.agentId] : undefined;
+      const sameInstance = subscriptionAllowsCrossInstance(canonicalChat.id, existingSubscription.sessionKey);
+      if (!sameInstance) {
+        log.warn("Slack subscription override would jump instances - ignoring subscription, using route resolution", {
+          chatId: canonicalChat.id,
+          subscriptionSessionKey: existingSubscription.sessionKey,
+          routeSessionKey: matched.sessionKey,
+        });
+      } else if (ownerSession && ownerAgent) {
+        log.info("Slack inbound rerouted by session subscription", {
+          chatId: canonicalChat.id,
+          fromSessionKey: matched.sessionKey,
+          toSessionKey: existingSubscription.sessionKey,
+        });
+        matched = {
+          agentId: ownerSession.agentId,
+          agent: ownerAgent,
+          sessionKey: existingSubscription.sessionKey,
+          dmScope: matched.dmScope,
+          route: matched.route,
+        } satisfies MatchedRoute;
+      } else {
+        log.warn("Slack subscription points to a missing session or agent - falling back to route resolution", {
+          chatId: canonicalChat.id,
+          subscriptionSessionKey: existingSubscription.sessionKey,
+          hasSession: !!ownerSession,
+          hasAgent: !!ownerAgent,
+        });
+      }
+    }
+
+    const resolved = commitMatchedRoute(matched, {
+      phone: message.channelId,
+      isGroup,
+      groupId: isGroup ? message.channelId : undefined,
+      peerKind,
+      threadId: routeThreadId,
+    });
+    const sessionName = resolved.sessionName ?? resolved.sessionKey;
 
     dbBindSessionToChat({
       sessionKey: resolved.sessionKey,
