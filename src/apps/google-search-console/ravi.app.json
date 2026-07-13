@@ -1,0 +1,183 @@
+{
+  "schema": "ravi.app/v1",
+  "id": "google-search-console",
+  "name": "Google Search Console",
+  "version": "0.1.0",
+  "description": "Gerencia propriedades, desempenho, indexação e sitemaps no Google Search Console.",
+  "interfaces": {
+    "cli": {
+      "command": "ravi google-search-console",
+      "json": true,
+      "health": "ravi gsc sites --json"
+    },
+    "ui": {
+      "routes": [
+        {
+          "id": "main",
+          "path": "/apps/google-search-console",
+          "label": "Search Console",
+          "icon": "search",
+          "view": "overview"
+        }
+      ],
+      "views": [
+        {
+          "id": "overview",
+          "type": "dashboard",
+          "title": "Google Search Console",
+          "density": "compact",
+          "query": { "operation": "google-search-console.top-queries" },
+          "actions": [
+            {
+              "id": "top-queries",
+              "label": "Buscas",
+              "icon": "search",
+              "operation": "google-search-console.top-queries",
+              "placement": "toolbar"
+            },
+            {
+              "id": "top-pages",
+              "label": "Páginas",
+              "icon": "file-text",
+              "operation": "google-search-console.top-pages",
+              "placement": "toolbar"
+            },
+            {
+              "id": "sitemaps",
+              "label": "Sitemaps",
+              "icon": "list-tree",
+              "operation": "google-search-console.sitemaps",
+              "placement": "toolbar"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "operations": {
+    "google-search-console.check": {
+      "interface": "builtin",
+      "handler": "apps.manifest.check",
+      "mutating": false
+    },
+    "google-search-console.sites": {
+      "interface": "cli",
+      "command": "ravi gsc sites --json {args}",
+      "mutating": false
+    },
+    "google-search-console.site-add": {
+      "interface": "cli",
+      "command": "ravi gsc site-add --json {args}",
+      "mutating": true,
+      "permission": "gsc:properties:write"
+    },
+    "google-search-console.site-delete": {
+      "interface": "cli",
+      "command": "ravi gsc site-delete --json {args}",
+      "mutating": true,
+      "permission": "gsc:properties:write"
+    },
+    "google-search-console.site-get": {
+      "interface": "cli",
+      "command": "ravi gsc site-get --json {args}",
+      "mutating": false
+    },
+    "google-search-console.verificar-token": {
+      "interface": "cli",
+      "command": "ravi gsc verification-token --json {args}",
+      "mutating": true,
+      "permission": "gsc:verification:write"
+    },
+    "google-search-console.verificar-site": {
+      "interface": "cli",
+      "command": "ravi gsc verify-site --json {args}",
+      "mutating": true,
+      "permission": "gsc:verification:write"
+    },
+    "google-search-console.top-queries": {
+      "interface": "cli",
+      "command": "ravi gsc top-queries --json {args}",
+      "mutating": false
+    },
+    "google-search-console.query": {
+      "interface": "cli",
+      "command": "ravi gsc query --json {args}",
+      "mutating": false
+    },
+    "google-search-console.top-pages": {
+      "interface": "cli",
+      "command": "ravi gsc top-pages --json {args}",
+      "mutating": false
+    },
+    "google-search-console.trends": {
+      "interface": "cli",
+      "command": "ravi gsc trends --json {args}",
+      "mutating": false
+    },
+    "google-search-console.rising": {
+      "interface": "cli",
+      "command": "ravi gsc rising --json {args}",
+      "mutating": false
+    },
+    "google-search-console.falling": {
+      "interface": "cli",
+      "command": "ravi gsc falling --json {args}",
+      "mutating": false
+    },
+    "google-search-console.inspect": {
+      "interface": "cli",
+      "command": "ravi gsc inspect --json {args}",
+      "mutating": false
+    },
+    "google-search-console.sitemaps": {
+      "interface": "cli",
+      "command": "ravi gsc sitemaps --json {args}",
+      "mutating": false
+    },
+    "google-search-console.sitemap-get": {
+      "interface": "cli",
+      "command": "ravi gsc sitemap-get --json {args}",
+      "mutating": false
+    },
+    "google-search-console.sitemap-submit": {
+      "interface": "cli",
+      "command": "ravi gsc sitemap-submit --json {args}",
+      "mutating": true,
+      "permission": "gsc:sitemaps:write"
+    },
+    "google-search-console.sitemap-delete": {
+      "interface": "cli",
+      "command": "ravi gsc sitemap-delete --json {args}",
+      "mutating": true,
+      "permission": "gsc:sitemaps:write"
+    },
+    "google-search-console.devices": {
+      "interface": "cli",
+      "command": "ravi gsc devices --json {args}",
+      "mutating": false
+    },
+    "google-search-console.countries": {
+      "interface": "cli",
+      "command": "ravi gsc countries --json {args}",
+      "mutating": false
+    },
+    "google-search-console.date-series": {
+      "interface": "cli",
+      "command": "ravi gsc date-series --json {args}",
+      "mutating": false
+    }
+  },
+  "permissions": {
+    "required": [],
+    "optional": [],
+    "mutating": ["gsc:properties:write", "gsc:verification:write", "gsc:sitemaps:write"]
+  },
+  "storage": { "sqlite": [], "files": [] },
+  "artifacts": [],
+  "events": { "emits": [], "consumes": [] },
+  "skills": [],
+  "health": {
+    "checks": [{ "type": "cli", "command": "ravi gsc sites --json" }]
+  },
+  "versioning": { "compatibility": "semver", "migrations": [] }
+}
