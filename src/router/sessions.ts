@@ -44,6 +44,7 @@ interface SessionRow {
   name: string | null;
   sdk_session_id: string | null;
   runtime_provider: string | null;
+  runtime_provider_override: string | null;
   runtime_session_json: string | null;
   runtime_session_display_id: string | null;
   agent_id: string;
@@ -89,6 +90,7 @@ function rowToEntry(row: SessionRow): SessionEntry {
     sessionKey: row.session_key,
     name: row.name ?? undefined,
     runtimeProvider: row.runtime_provider ?? undefined,
+    runtimeProviderOverride: row.runtime_provider_override ?? undefined,
     runtimeSessionParams,
     runtimeSessionDisplayId: row.runtime_session_display_id ?? undefined,
     providerSessionId,
@@ -144,6 +146,7 @@ interface SessionStatements {
   updateSdkId: Statement;
   updateProviderState: Statement;
   updateRuntimeProviderOnly: Statement;
+  updateRuntimeProviderOverride: Statement;
   clearProviderState: Statement;
   updateTokens: Statement;
   updateName: Statement;
@@ -210,7 +213,7 @@ function getStatements(): SessionStatements {
   stmts = {
     upsert: db.prepare(`
       INSERT INTO sessions (
-        session_key, name, sdk_session_id, runtime_provider, runtime_session_json, runtime_session_display_id, agent_id, agent_cwd,
+        session_key, name, sdk_session_id, runtime_provider, runtime_provider_override, runtime_session_json, runtime_session_display_id, agent_id, agent_cwd,
         chat_type, channel, account_id, group_id, subject, display_name,
         last_channel, last_to, last_account_id, last_thread_id,
         model_override, effort_override, thinking_level,
@@ -219,7 +222,7 @@ function getStatements(): SessionStatements {
         system_sent, aborted_last_run, compaction_count,
         created_at, updated_at
       ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?,
@@ -232,6 +235,7 @@ function getStatements(): SessionStatements {
         name = COALESCE(excluded.name, sessions.name),
         sdk_session_id = COALESCE(excluded.sdk_session_id, sessions.sdk_session_id),
         runtime_provider = COALESCE(excluded.runtime_provider, sessions.runtime_provider),
+        runtime_provider_override = COALESCE(excluded.runtime_provider_override, sessions.runtime_provider_override),
         runtime_session_json = COALESCE(excluded.runtime_session_json, sessions.runtime_session_json),
         runtime_session_display_id = COALESCE(excluded.runtime_session_display_id, sessions.runtime_session_display_id),
         chat_type = COALESCE(excluded.chat_type, sessions.chat_type),
@@ -266,6 +270,9 @@ function getStatements(): SessionStatements {
     ),
     updateRuntimeProviderOnly: db.prepare(
       "UPDATE sessions SET runtime_provider = ?, updated_at = ? WHERE session_key = ?",
+    ),
+    updateRuntimeProviderOverride: db.prepare(
+      "UPDATE sessions SET runtime_provider_override = ?, updated_at = ? WHERE session_key = ?",
     ),
     clearProviderState: db.prepare(
       "UPDATE sessions SET sdk_session_id = NULL, runtime_provider = NULL, runtime_session_json = NULL, runtime_session_display_id = NULL, updated_at = ? WHERE session_key = ?",
@@ -342,6 +349,7 @@ export function getOrCreateSession(
     defaults?.name ?? null,
     defaults?.providerSessionId ?? defaults?.sdkSessionId ?? null,
     defaults?.runtimeProvider ?? null,
+    defaults?.runtimeProviderOverride ?? null,
     serializeRuntimeSessionParams(defaults?.runtimeSessionParams),
     defaults?.runtimeSessionDisplayId ?? defaults?.providerSessionId ?? defaults?.sdkSessionId ?? null,
     agentId,
@@ -484,6 +492,18 @@ export function updateRuntimeProviderState(
     runtimeProvider,
     providerSessionId,
     runtimeSessionDisplayId,
+  });
+}
+
+export function updateSessionRuntimeProviderOverride(
+  sessionKey: string,
+  runtimeProvider: SessionEntry["runtimeProviderOverride"] | null,
+): void {
+  const s = getStatements();
+  s.updateRuntimeProviderOverride.run(runtimeProvider ?? null, Date.now(), sessionKey);
+  log.debug("Updated session runtime provider override", {
+    sessionKey,
+    runtimeProvider,
   });
 }
 

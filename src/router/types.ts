@@ -218,6 +218,7 @@ export interface SessionEntry {
   /** Human-readable unique session name (used in NATS topics) */
   name?: string;
   runtimeProvider?: RuntimeProviderId;
+  runtimeProviderOverride?: RuntimeProviderId;
   runtimeSessionParams?: Record<string, unknown>;
   runtimeSessionDisplayId?: string;
   providerSessionId?: string;
@@ -298,5 +299,7 @@ export interface ResolvedRoute {
   sessionKey: string;
   /** Human-readable session name (used in NATS topics) */
   sessionName: string;
+  /** True when committing this route created the underlying session row. */
+  createdSession?: boolean;
   route?: RouteConfig;
 }

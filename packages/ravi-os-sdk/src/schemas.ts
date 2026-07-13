@@ -52152,6 +52152,443 @@ export const SessionsSetModelReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `sessions.set-provider`. */
+export const SessionsSetProviderInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "nameOrKey": {
+      "description": "Session name or key",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Runtime provider id (codex, claude, pi) or 'clear' to remove override",
+      "type": "string"
+    }
+  },
+  "required": [
+    "nameOrKey",
+    "provider"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.set-provider`. */
+export const SessionsSetProviderReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "set-provider",
+      "type": "string"
+    },
+    "after": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "effectiveModel": {
+              "type": "string"
+            },
+            "effectiveProvider": {
+              "type": "string"
+            },
+            "effortOverride": {
+              "enum": [
+                "none",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max",
+                "ultra"
+              ],
+              "type": "string"
+            },
+            "ephemeral": {
+              "type": "boolean"
+            },
+            "expiresAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "label": {
+              "type": "string"
+            },
+            "modelOverride": {
+              "type": "string"
+            },
+            "modelPresetId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "modelPresetVersion": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "modelSource": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "runtimeOptions": {
+              "additionalProperties": false,
+              "properties": {
+                "effort": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "source": {
+                      "enum": [
+                        "session_override",
+                        "agent_default",
+                        "runtime_default"
+                      ],
+                      "type": "string"
+                    },
+                    "value": {
+                      "enum": [
+                        "none",
+                        "minimal",
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max",
+                        "ultra"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "source"
+                  ],
+                  "type": "object"
+                },
+                "model": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "source": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "source"
+                  ],
+                  "type": "object"
+                },
+                "thinking": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "source": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "value": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "source"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "model",
+                "effort",
+                "thinking"
+              ],
+              "type": "object"
+            },
+            "sessionKey": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionKey",
+            "label",
+            "agentId",
+            "effectiveProvider",
+            "effectiveModel",
+            "modelSource",
+            "modelPresetId",
+            "modelPresetVersion",
+            "ephemeral",
+            "expiresAt",
+            "runtimeOptions"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "appliesOn": {
+      "const": "next-turn-runtime-restart",
+      "type": "string"
+    },
+    "before": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "effectiveModel": {
+          "type": "string"
+        },
+        "effectiveProvider": {
+          "type": "string"
+        },
+        "effortOverride": {
+          "enum": [
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra"
+          ],
+          "type": "string"
+        },
+        "ephemeral": {
+          "type": "boolean"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "modelOverride": {
+          "type": "string"
+        },
+        "modelPresetId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelPresetVersion": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelSource": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "runtimeOptions": {
+          "additionalProperties": false,
+          "properties": {
+            "effort": {
+              "additionalProperties": false,
+              "properties": {
+                "source": {
+                  "enum": [
+                    "session_override",
+                    "agent_default",
+                    "runtime_default"
+                  ],
+                  "type": "string"
+                },
+                "value": {
+                  "enum": [
+                    "none",
+                    "minimal",
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh",
+                    "max",
+                    "ultra"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "source"
+              ],
+              "type": "object"
+            },
+            "model": {
+              "additionalProperties": false,
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "source"
+              ],
+              "type": "object"
+            },
+            "thinking": {
+              "additionalProperties": false,
+              "properties": {
+                "source": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "value",
+                "source"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "model",
+            "effort",
+            "thinking"
+          ],
+          "type": "object"
+        },
+        "sessionKey": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionKey",
+        "label",
+        "agentId",
+        "effectiveProvider",
+        "effectiveModel",
+        "modelSource",
+        "modelPresetId",
+        "modelPresetVersion",
+        "ephemeral",
+        "expiresAt",
+        "runtimeOptions"
+      ],
+      "type": "object"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "effectiveProvider": {
+      "type": "string"
+    },
+    "runtimeProviderOverride": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionKey": {
+      "type": "string"
+    },
+    "sessionName": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "sessionKey",
+    "sessionName",
+    "before",
+    "after",
+    "runtimeProviderOverride",
+    "effectiveProvider",
+    "appliesOn"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.set-thinking`. */
 export const SessionsSetThinkingInputSchema = {
   "additionalProperties": false,
@@ -55274,6 +55711,10 @@ export const SlackBlocksSendInputSchema = {
       "description": "Slack channel/conversation ID",
       "type": "string"
     },
+    "connection": {
+      "description": "Ravi channel config; SDK-safe alias for --channel",
+      "type": "string"
+    },
     "ephemeralUser": {
       "description": "Send as an ephemeral message visible only to this Slack user",
       "type": "string"
@@ -57507,6 +57948,10 @@ export const SlackChannelsInviteInputSchema = {
       "description": "Slack channel/conversation ID",
       "type": "string"
     },
+    "connection": {
+      "description": "Ravi channel config; SDK-safe alias for --channel",
+      "type": "string"
+    },
     "execute": {
       "description": "Perform the mutation; default is dry-run",
       "type": "boolean"
@@ -59222,6 +59667,480 @@ export const SlackTopologyReturnSchema = {
     "channels",
     "ungroupedChannelIds",
     "capabilities"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.work-objects-present-details`. */
+export const SlackWorkObjectsPresentDetailsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Ravi channel config; SDK-safe alias for --channel",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "file": {
+      "description": "Path to Slack native Work Object detail metadata JSON",
+      "type": "string"
+    },
+    "triggerId": {
+      "description": "Slack entity_details_requested trigger_id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "file",
+    "triggerId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.work-objects-present-details`. */
+export const SlackWorkObjectsPresentDetailsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.work-objects-send`. */
+export const SlackWorkObjectsSendInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Slack channel/conversation ID",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Ravi channel config; SDK-safe alias for --channel",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "file": {
+      "description": "Path to Slack native Work Object message JSON",
+      "type": "string"
+    },
+    "text": {
+      "description": "Top-level fallback text for notifications/accessibility",
+      "type": "string"
+    },
+    "threadTs": {
+      "description": "Send inside a Slack thread",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel",
+    "file"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.work-objects-send`. */
+export const SlackWorkObjectsSendReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.work-objects-unfurl`. */
+export const SlackWorkObjectsUnfurlInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Slack channel/conversation ID containing the URL message",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Ravi channel config; SDK-safe alias for --channel",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "file": {
+      "description": "Path to Slack native Work Object metadata JSON",
+      "type": "string"
+    },
+    "ts": {
+      "description": "Slack message timestamp containing the URL",
+      "type": "string"
+    },
+    "url": {
+      "description": "URL in the message to unfurl",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel",
+    "file",
+    "ts",
+    "url"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.work-objects-unfurl`. */
+export const SlackWorkObjectsUnfurlReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.work-objects-validate`. */
+export const SlackWorkObjectsValidateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "file": {
+      "description": "Path to Slack native Work Object metadata JSON",
+      "type": "string"
+    },
+    "target": {
+      "default": "message",
+      "description": "Validation target: message or detail",
+      "type": "string"
+    }
+  },
+  "required": [
+    "file"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.work-objects-validate`. */
+export const SlackWorkObjectsValidateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "ok": {
+      "const": true,
+      "type": "boolean"
+    },
+    "outputFile": {
+      "type": "string"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

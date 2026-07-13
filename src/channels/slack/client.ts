@@ -13,6 +13,7 @@ export interface SlackPostMessageInput {
   readonly text: string;
   readonly threadTs?: string;
   readonly blocks?: readonly SlackBlockKitBlock[];
+  readonly metadata?: Record<string, unknown>;
 }
 
 export interface SlackPostEphemeralInput extends SlackPostMessageInput {
@@ -24,6 +25,23 @@ export interface SlackUpdateMessageInput {
   readonly ts: string;
   readonly text: string;
   readonly blocks?: readonly SlackBlockKitBlock[];
+}
+
+export interface SlackChatUnfurlInput {
+  readonly channel?: string;
+  readonly ts?: string;
+  readonly unfurlId?: string;
+  readonly source?: string;
+  readonly unfurls?: Record<string, unknown>;
+  readonly metadata?: Record<string, unknown>;
+}
+
+export interface SlackEntityPresentDetailsInput {
+  readonly triggerId: string;
+  readonly metadata?: Record<string, unknown>;
+  readonly error?: Record<string, unknown>;
+  readonly userAuthRequired?: boolean;
+  readonly userAuthUrl?: string;
 }
 
 export interface SlackBlocksValidateInput {
@@ -220,6 +238,10 @@ export interface SlackViewsResponse extends SlackApiResponse {
   readonly view?: Record<string, unknown>;
 }
 
+export interface SlackChatUnfurlResponse extends SlackApiResponse {}
+
+export interface SlackEntityPresentDetailsResponse extends SlackApiResponse {}
+
 interface SlackReactionResponse extends SlackApiResponse {}
 
 interface SlackAssistantThreadStatusResponse extends SlackApiResponse {}
@@ -315,6 +337,9 @@ export class SlackWebApiClient {
     if (input.blocks) {
       body.blocks = JSON.stringify(input.blocks);
     }
+    if (input.metadata) {
+      body.metadata = JSON.stringify(input.metadata);
+    }
 
     const response = await this.apiRequest<SlackPostMessageResponse>("chat.postMessage", this.botToken, body);
     if (!response.channel || !response.ts) {
@@ -377,6 +402,29 @@ export class SlackWebApiClient {
       messageId: response.ts,
       raw: response,
     };
+  }
+
+  async unfurl(input: SlackChatUnfurlInput): Promise<SlackChatUnfurlResponse> {
+    const body = compactBody({
+      channel: input.channel,
+      ts: input.ts,
+      unfurl_id: input.unfurlId,
+      source: input.source,
+      unfurls: input.unfurls ? JSON.stringify(input.unfurls) : undefined,
+      metadata: input.metadata ? JSON.stringify(input.metadata) : undefined,
+    });
+    return this.apiRequest<SlackChatUnfurlResponse>("chat.unfurl", this.botToken, body);
+  }
+
+  async entityPresentDetails(input: SlackEntityPresentDetailsInput): Promise<SlackEntityPresentDetailsResponse> {
+    const body = compactBody({
+      trigger_id: input.triggerId,
+      metadata: input.metadata ? JSON.stringify(input.metadata) : undefined,
+      error: input.error ? JSON.stringify(input.error) : undefined,
+      user_auth_required: input.userAuthRequired,
+      user_auth_url: input.userAuthUrl,
+    });
+    return this.apiRequest<SlackEntityPresentDetailsResponse>("entity.presentDetails", this.botToken, body);
   }
 
   async blocksValidate(input: SlackBlocksValidateInput): Promise<SlackBlocksValidateResponse> {

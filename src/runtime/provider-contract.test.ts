@@ -193,7 +193,7 @@ describe("runtime provider contract", () => {
         loadedState: "instruction-sources",
       },
       supportsSessionResume: true,
-      supportsSessionFork: false,
+      supportsSessionFork: true,
       supportsPartialText: true,
       supportsToolHooks: true,
       supportsHostSessionHooks: false,

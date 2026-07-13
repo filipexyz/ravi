@@ -6,6 +6,7 @@ description: |
   - Enviar, ler, inspecionar ou dar replay em mensagens Slack
   - Criar, validar, enviar ou atualizar mensagens Slack Block Kit
   - Trabalhar com botoes, selects e eventos interativos do Slack nativo
+  - Validar, publicar, unfurl e apresentar Work Objects nativos do Slack
   - Criar, publicar, editar ou gerenciar Slack Canvas
   - Publicar artifacts Markdown como Slack Canvas
   - Entender rotas, sessoes, threads, presenca/status ou topology do Slack nativo
@@ -51,6 +52,8 @@ Leia apenas a referencia relevante para a tarefa:
 - `references/operations.md` - criar/renomear/convidar canais, membros, files.
 - `references/messages-replay.md` - envio, historico, inspect e replay.
 - `references/block-kit.md` - mensagens ricas, botoes/selects e eventos interativos.
+- `references/work-objects.md` - Work Objects nativos do Slack via metadata,
+  chat.postMessage, chat.unfurl e entity.presentDetails.
 - `references/block-kit-workflows.md` - workflows externos com Block Kit,
   triggers shell, state local e exemplos paralelos.
 - `references/topology.md` - rotas, sessoes, ownership e diagnostico.
@@ -94,6 +97,15 @@ ravi slack modals-open <triggerId> ./view.json --execute --json
 ravi slack modals-update <viewId> ./view.json --hash <hash> --execute --json
 ravi slack modals-push <triggerId> ./view.json --execute --json
 ravi slack blocks-showcase <channel> --execute --json
+```
+
+### Work Objects Nativos Do Slack
+
+```bash
+ravi slack work-objects-validate ./metadata.json --json
+ravi slack work-objects-send <channel> ./message.json --execute --json
+ravi slack work-objects-unfurl <channel> <messageTs> <url> ./metadata.json --execute --json
+ravi slack work-objects-present-details <triggerId> ./detail.json --execute --json
 ```
 
 ### Canais

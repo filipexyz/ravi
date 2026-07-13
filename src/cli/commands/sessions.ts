@@ -41,6 +41,8 @@ import {
   updateSessionModelOverride,
   updateSessionEffortOverride,
   updateSessionThinkingLevel,
+  updateSessionRuntimeProviderOverride,
+  clearProviderSession,
   setSessionEphemeral,
   extendSession,
   makeSessionPermanent,
@@ -55,7 +57,12 @@ import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { loadRouterConfig, expandHome } from "../../router/index.js";
 import { loadConfig } from "../../utils/config.js";
 import { resolveEffectiveAgentModel } from "../../runtime/model-preset-resolver.js";
-import { DEFAULT_RUNTIME_PROVIDER_ID } from "../../runtime/provider-registry.js";
+import {
+  createRuntimeProvider,
+  DEFAULT_RUNTIME_PROVIDER_ID,
+  listRegisteredRuntimeProviderIds,
+} from "../../runtime/provider-registry.js";
+import { getDefaultModelForProvider } from "../../runtime/model-catalog.js";
 import type { ChannelContext, ResponseMessage } from "../../runtime/message-types.js";
 import { revokeAgentRuntimeContextsForSession } from "../../runtime/context-registry.js";
 import {
@@ -217,6 +224,17 @@ const sessionSetEffortReturnSchema = z.object({
   effortOverride: runtimeEffortReturnSchema.nullable(),
   effectiveEffort: runtimeEffortReturnSchema,
   effectiveEffortSource: sessionEffortSourceReturnSchema,
+  appliesOn: z.literal("next-turn-runtime-restart"),
+});
+const sessionSetProviderReturnSchema = z.object({
+  action: z.literal("set-provider"),
+  changed: z.boolean(),
+  sessionKey: z.string(),
+  sessionName: z.string().nullable(),
+  before: sessionMutationSnapshotReturnSchema,
+  after: sessionMutationSnapshotReturnSchema.nullable(),
+  runtimeProviderOverride: z.string().nullable(),
+  effectiveProvider: z.string(),
   appliesOn: z.literal("next-turn-runtime-restart"),
 });
 
@@ -916,10 +934,13 @@ function resolveEffectiveSessionSelection(session: SessionEntry, modelOverride: 
         modelPresetVersion: null,
       };
 
+  const providerOverride = session.runtimeProviderOverride?.trim() || undefined;
+  const effectiveProvider = providerOverride ?? agentEffective.effectiveProvider;
+
   // Session model override wins over the agent-level selection.
   if (modelOverride) {
     return {
-      effectiveProvider: agentEffective.effectiveProvider,
+      effectiveProvider,
       effectiveModel: modelOverride,
       modelSource: "session_override",
       modelPresetId: agentEffective.modelPresetId,
@@ -927,8 +948,18 @@ function resolveEffectiveSessionSelection(session: SessionEntry, modelOverride: 
     };
   }
 
+  if (providerOverride && providerOverride !== agentEffective.effectiveProvider) {
+    return {
+      effectiveProvider: providerOverride,
+      effectiveModel: getDefaultModelForProvider(providerOverride),
+      modelSource: "session_override",
+      modelPresetId: agentEffective.modelPresetId,
+      modelPresetVersion: agentEffective.modelPresetVersion,
+    };
+  }
+
   return {
-    effectiveProvider: agentEffective.effectiveProvider,
+    effectiveProvider,
     effectiveModel: agentEffective.effectiveModel ?? runtimeConfig.model,
     modelSource: agentEffective.modelSource ?? "global_default",
     modelPresetId: agentEffective.modelPresetId,
@@ -997,6 +1028,7 @@ interface SessionMutationAuditSnapshot {
   groupIdHash?: string;
   displayName?: string;
   runtimeProvider?: string;
+  runtimeProviderOverride?: string;
   runtimeSessionDisplayIdHash?: string;
   providerSessionIdHash?: string;
   sdkSessionIdHash?: string;
@@ -1020,6 +1052,7 @@ function buildSessionMutationAuditSnapshot(session: SessionEntry): SessionMutati
     ...(session.groupId ? { groupIdHash: hashForAudit(session.groupId) } : {}),
     ...(session.displayName ? { displayName: session.displayName } : {}),
     ...(session.runtimeProvider ? { runtimeProvider: session.runtimeProvider } : {}),
+    ...(session.runtimeProviderOverride ? { runtimeProviderOverride: session.runtimeProviderOverride } : {}),
     ...(session.runtimeSessionDisplayId
       ? {
           runtimeSessionDisplayIdHash: hashForAudit(session.runtimeSessionDisplayId),
@@ -2691,6 +2724,86 @@ export class SessionCommands {
       console.log(`Updated ${result.routeReferencesUpdated} route session reference(s).`);
     }
     console.log(`Session key unchanged: ${s.sessionKey}`);
+  }
+
+  @Command({ name: "set-provider", description: "Set session runtime provider override" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "set-provider",
+    risk: "medium",
+  })
+  setProvider(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Arg("provider", {
+      description: "Runtime provider id (codex, claude, pi) or 'clear' to remove override",
+    })
+    provider: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    const s = resolveSession(nameOrKey);
+    if (!s) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, s.name ?? s.sessionKey)) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    const normalized = provider.trim().toLowerCase();
+    if (!normalized) {
+      fail(`Invalid provider: ${provider}. Valid providers: ${listRegisteredRuntimeProviderIds().join(", ")}, clear`);
+      return;
+    }
+    const providerOverride = normalized === "clear" ? null : normalized;
+    if (providerOverride) {
+      try {
+        createRuntimeProvider(providerOverride);
+      } catch {
+        fail(
+          `Unknown runtime provider: ${providerOverride}. Valid providers: ${listRegisteredRuntimeProviderIds().join(", ")}`,
+        );
+        return;
+      }
+    }
+
+    const label = s.name ?? s.sessionKey;
+    const beforeProviderOverride = s.runtimeProviderOverride ?? null;
+    updateSessionRuntimeProviderOverride(s.sessionKey, providerOverride);
+    if (providerOverride && s.providerSessionId && s.runtimeProvider && s.runtimeProvider !== providerOverride) {
+      clearProviderSession(s.sessionKey);
+    }
+
+    if (!asJson) {
+      if (providerOverride) {
+        console.log(`Set runtime provider to "${providerOverride}" for: ${label}`);
+      } else {
+        console.log(`Cleared runtime provider override for: ${label}`);
+      }
+      console.log("Note: takes effect on the next turn; existing provider session state is cleared when incompatible.");
+    }
+
+    const after =
+      resolveSession(s.sessionKey) ??
+      ({
+        ...s,
+        ...(providerOverride === null
+          ? { runtimeProviderOverride: undefined }
+          : { runtimeProviderOverride: providerOverride }),
+      } as SessionEntry);
+    if (asJson) {
+      const payload = buildSessionMutationJson("set-provider", s, after, beforeProviderOverride !== providerOverride, {
+        runtimeProviderOverride: providerOverride,
+        effectiveProvider: resolveEffectiveSessionSelection(after, after.modelOverride ?? null).effectiveProvider,
+        appliesOn: "next-turn-runtime-restart",
+      });
+      printJson(payload);
+      return payload;
+    }
   }
 
   @Command({ name: "set-model", description: "Set session model override" })
@@ -5619,6 +5732,7 @@ declareCommandReturns(SessionCommands, {
   reset: commandEnvelopeReturnSchema,
   send: commandEnvelopeReturnSchema,
   setDisplay: commandEnvelopeReturnSchema,
+  setProvider: sessionSetProviderReturnSchema,
   setModel: commandEnvelopeReturnSchema,
   setEffort: sessionSetEffortReturnSchema,
   setThinking: commandEnvelopeReturnSchema,

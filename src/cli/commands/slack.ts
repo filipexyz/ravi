@@ -13,6 +13,12 @@ import {
   normalizeSlackBlockKitValidationPayload,
   parseSlackBlockKitJson,
 } from "../../channels/slack/block-kit.js";
+import {
+  normalizeSlackNativeWorkObjectDetailMetadata,
+  normalizeSlackNativeWorkObjectMessagePayload,
+  normalizeSlackNativeWorkObjectMetadata,
+  normalizeSlackNativeWorkObjectUnfurlPayload,
+} from "../../channels/slack/work-objects.js";
 import { respondToSlackInteraction } from "../../channels/slack/interactions.js";
 import {
   SlackWebApiClient,
@@ -109,6 +115,16 @@ const slackCanvasArtifactStatusReturnSchema = z
   })
   .strict();
 
+const slackWorkObjectReturnSchema = z
+  .object({
+    ok: z.literal(true),
+    provider: z.literal("slack"),
+    dryRun: z.boolean().optional(),
+    item: jsonValueSchema.optional(),
+    outputFile: z.string().optional(),
+  })
+  .strict();
+
 interface SlackOpsContext {
   client: SlackWebApiClient;
   config: SlackCredentialConfig;
@@ -199,6 +215,12 @@ function parseRequiredCsvOption(value: string, label: string): string[] {
 
 function readSlackBlockKitJsonFile(path: string): unknown {
   return parseSlackBlockKitJson(readFileSync(path, "utf8"));
+}
+
+function readJsonObjectFile(path: string, label: string): Record<string, unknown> {
+  const parsed = parseSlackBlockKitJson(readFileSync(path, "utf8"));
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) fail(`${label} must be a JSON object`);
+  return parsed as Record<string, unknown>;
 }
 
 function readSlackViewJsonFile(path: string): Record<string, unknown> {
@@ -1228,6 +1250,8 @@ export class SlackCommands {
     @Arg("channel", { description: "Slack channel/conversation ID" }) channel: string,
     @Arg("file", { description: "Path to a Block Kit message JSON file" }) file: string,
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
+    @Option({ flags: "--connection <name>", description: "Ravi channel config; SDK-safe alias for --channel" })
+    connection?: string,
     @Option({ flags: "--text <text>", description: "Top-level fallback text for notifications/accessibility" })
     text?: string,
     @Option({ flags: "--thread-ts <ts>", description: "Send inside a Slack thread" }) threadTs?: string,
@@ -1249,7 +1273,7 @@ export class SlackCommands {
       ...(threadTs ? { threadTs } : {}),
       ...(ephemeralUser ? { ephemeralUser } : {}),
     };
-    const { client, config } = await createSlackOpsContext(raviChannel, method);
+    const { client, config } = await createSlackOpsContext(connection || raviChannel, method);
     if (!execute) return this.printMutationDryRun(config, method, request, asJson);
     const raw = ephemeralUser
       ? await client.postEphemeral({
@@ -1484,6 +1508,178 @@ export class SlackCommands {
     const payload = this.mutationPayload(config, false, "slack.block-kit.showcase", request, raw, raw.raw);
     if (asJson) printJson(payload);
     else console.log(`${raw.channel} ${raw.ts}`);
+    return payload;
+  }
+
+  @Command({ name: "work-objects-validate", description: "Validate Slack native Work Object metadata JSON" })
+  @CommandAccess({ kind: "read", resource: "slack.work-objects", action: "validate", risk: "low" })
+  @Returns(slackWorkObjectReturnSchema)
+  async workObjectsValidate(
+    @Arg("file", { description: "Path to Slack native Work Object metadata JSON" }) file: string,
+    @Option({
+      flags: "--target <target>",
+      description: "Validation target: message or detail",
+      defaultValue: "message",
+    })
+    target?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const input = readJsonObjectFile(file, "Slack Work Object metadata");
+    const normalizedTarget = target?.trim() || "message";
+    if (normalizedTarget !== "message" && normalizedTarget !== "detail") {
+      fail("Slack Work Object validation target must be message or detail.");
+    }
+    const normalized =
+      normalizedTarget === "detail"
+        ? normalizeSlackNativeWorkObjectDetailMetadata(input)
+        : normalizeSlackNativeWorkObjectMetadata(input);
+    const payload = {
+      ok: true,
+      provider: "slack" as const,
+      item: {
+        file,
+        target: normalizedTarget,
+        metadata: normalized,
+      },
+    };
+    if (asJson) printJson(payload);
+    else console.log("valid");
+    return payload;
+  }
+
+  @Command({
+    name: "work-objects-send",
+    description: "Send Slack native Work Object metadata with chat.postMessage; dry-run unless --execute is set",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "slack.work-objects",
+    action: "send",
+    risk: "high",
+    requiresConfirmation: true,
+  })
+  @Returns(slackMutationReturnSchema)
+  async workObjectsSend(
+    @Arg("channel", { description: "Slack channel/conversation ID" }) channel: string,
+    @Arg("file", { description: "Path to Slack native Work Object message JSON" }) file: string,
+    @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
+    @Option({ flags: "--connection <name>", description: "Ravi channel config; SDK-safe alias for --channel" })
+    connection?: string,
+    @Option({ flags: "--text <text>", description: "Top-level fallback text for notifications/accessibility" })
+    text?: string,
+    @Option({ flags: "--thread-ts <ts>", description: "Send inside a Slack thread" }) threadTs?: string,
+    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const message = normalizeSlackNativeWorkObjectMessagePayload(
+      readJsonObjectFile(file, "Slack Work Object message payload"),
+      text,
+    );
+    const request = {
+      channel,
+      file,
+      text: message.text,
+      metadata: message.metadata,
+      ...(threadTs ? { threadTs } : {}),
+    };
+    const { client, config } = await createSlackOpsContext(connection || raviChannel, "chat.postMessage");
+    if (!execute) return this.printMutationDryRun(config, "chat.postMessage", request, asJson, message.metadata);
+    const raw = await client.postMessage({
+      channel,
+      text: message.text,
+      metadata: message.metadata,
+      ...(threadTs ? { threadTs } : {}),
+    });
+    const payload = this.mutationPayload(config, false, "chat.postMessage", request, raw, raw.raw);
+    if (asJson) printJson(payload);
+    else console.log(`${raw.channel} ${raw.ts}`);
+    return payload;
+  }
+
+  @Command({
+    name: "work-objects-unfurl",
+    description: "Attach Slack native Work Object metadata with chat.unfurl; dry-run unless --execute is set",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "slack.work-objects",
+    action: "unfurl",
+    risk: "high",
+    requiresConfirmation: true,
+  })
+  @Returns(slackMutationReturnSchema)
+  async workObjectsUnfurl(
+    @Arg("channel", { description: "Slack channel/conversation ID containing the URL message" }) channel: string,
+    @Arg("ts", { description: "Slack message timestamp containing the URL" }) ts: string,
+    @Arg("url", { description: "URL in the message to unfurl" }) url: string,
+    @Arg("file", { description: "Path to Slack native Work Object metadata JSON" }) file: string,
+    @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
+    @Option({ flags: "--connection <name>", description: "Ravi channel config; SDK-safe alias for --channel" })
+    connection?: string,
+    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const unfurl = normalizeSlackNativeWorkObjectUnfurlPayload(
+      readJsonObjectFile(file, "Slack Work Object unfurl payload"),
+      url,
+    );
+    const request = { channel, ts, url, file, ...unfurl };
+    const { client, config } = await createSlackOpsContext(connection || raviChannel, "chat.unfurl");
+    if (!execute) return this.printMutationDryRun(config, "chat.unfurl", request, asJson, unfurl.metadata);
+    let raw;
+    try {
+      raw = await client.unfurl({
+        channel,
+        ts,
+        metadata: unfurl.metadata,
+        unfurls: unfurl.unfurls,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("cannot_unfurl_url")) {
+        fail(
+          "Slack chat.unfurl failed: cannot_unfurl_url. Work Object unfurls must be applied to a URL from a real Slack link_shared event for a domain registered on the Slack app; arbitrary or bot-posted URL messages may not be unfurlable.",
+        );
+      }
+      throw error;
+    }
+    const payload = this.mutationPayload(config, false, "chat.unfurl", request, raw, raw);
+    if (asJson) printJson(payload);
+    else console.log(raw.ok === true ? "unfurled" : JSON.stringify(raw, null, 2));
+    return payload;
+  }
+
+  @Command({
+    name: "work-objects-present-details",
+    description: "Present Slack native Work Object flexpane details; dry-run unless --execute is set",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "slack.work-objects",
+    action: "present-details",
+    risk: "high",
+    requiresConfirmation: true,
+  })
+  @Returns(slackMutationReturnSchema)
+  async workObjectsPresentDetails(
+    @Arg("triggerId", { description: "Slack entity_details_requested trigger_id" }) triggerId: string,
+    @Arg("file", { description: "Path to Slack native Work Object detail metadata JSON" }) file: string,
+    @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
+    @Option({ flags: "--connection <name>", description: "Ravi channel config; SDK-safe alias for --channel" })
+    connection?: string,
+    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const metadata = normalizeSlackNativeWorkObjectDetailMetadata(
+      readJsonObjectFile(file, "Slack Work Object detail metadata"),
+    );
+    const request = { triggerId, file, metadata };
+    const { client, config } = await createSlackOpsContext(connection || raviChannel, "entity.presentDetails");
+    if (!execute) return this.printMutationDryRun(config, "entity.presentDetails", request, asJson, metadata);
+    const raw = await client.entityPresentDetails({ triggerId, metadata });
+    const payload = this.mutationPayload(config, false, "entity.presentDetails", request, raw, raw);
+    if (asJson) printJson(payload);
+    else console.log(raw.ok === true ? "presented" : JSON.stringify(raw, null, 2));
     return payload;
   }
 
@@ -1812,11 +2008,13 @@ export class SlackCommands {
     @Arg("channel", { description: "Slack channel/conversation ID" }) channel: string,
     @Arg("users", { description: "Comma-separated Slack user IDs" }) usersValue: string,
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
+    @Option({ flags: "--connection <name>", description: "Ravi channel config; SDK-safe alias for --channel" })
+    connection?: string,
     @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const request = { channel, userIds: parseRequiredCsvOption(usersValue, "Slack user ids") };
-    const { client, config } = await createSlackOpsContext(raviChannel, "conversations.invite");
+    const { client, config } = await createSlackOpsContext(connection || raviChannel, "conversations.invite");
     if (!execute) return this.printMutationDryRun(config, "conversations.invite", request, asJson);
     const raw = await client.conversationsInvite(request);
     const payload = this.mutationPayload(config, false, "conversations.invite", request, raw.channel, raw);

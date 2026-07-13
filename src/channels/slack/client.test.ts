@@ -240,6 +240,67 @@ describe("Slack Web API client", () => {
     });
   });
 
+  it("sends native Work Object metadata through Slack Web API", async () => {
+    const calls: Array<{ method: string; init: RequestInit }> = [];
+    const fetchImpl = mock(async (url: string | URL | Request, init?: RequestInit) => {
+      const method = String(url).split("/").pop() ?? "";
+      calls.push({ method, init: init ?? {} });
+      if (method === "chat.postMessage") return jsonResponse({ ok: true, channel: "C123", ts: "1713000000.000100" });
+      return jsonResponse({ ok: true });
+    }) as unknown as typeof fetch;
+    const client = new SlackWebApiClient({
+      appToken: "xapp-secret",
+      botToken: "xoxb-secret",
+      fetchImpl,
+    });
+    const metadata = {
+      entities: [
+        {
+          url: "https://example.com/tasks/123",
+          external_ref: { id: "123", type: "task" },
+          entity_type: "slack#/entities/task",
+          entity_payload: {
+            attributes: { title: { text: "Task 123" } },
+          },
+        },
+      ],
+    };
+
+    await expect(client.postMessage({ channel: "C123", text: "Task 123", metadata })).resolves.toMatchObject({
+      channel: "C123",
+      ts: "1713000000.000100",
+    });
+    await expect(
+      client.unfurl({
+        channel: "C123",
+        ts: "1713000000.000100",
+        metadata,
+      }),
+    ).resolves.toEqual({ ok: true });
+    await expect(
+      client.entityPresentDetails({
+        triggerId: "trigger-1",
+        metadata: metadata.entities[0] as Record<string, unknown>,
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(calls.map((call) => call.method)).toEqual(["chat.postMessage", "chat.unfurl", "entity.presentDetails"]);
+    expect(formBody(calls[0]?.init.body)).toEqual({
+      channel: "C123",
+      text: "Task 123",
+      metadata: JSON.stringify(metadata),
+    });
+    expect(formBody(calls[1]?.init.body)).toEqual({
+      channel: "C123",
+      ts: "1713000000.000100",
+      metadata: JSON.stringify(metadata),
+    });
+    expect(formBody(calls[2]?.init.body)).toEqual({
+      trigger_id: "trigger-1",
+      metadata: JSON.stringify(metadata.entities[0]),
+    });
+  });
+
   it("opens, updates and pushes modal views through Slack Web API", async () => {
     const calls: Array<{ method: string; init: RequestInit }> = [];
     const fetchImpl = mock(async (url: string | URL | Request, init?: RequestInit) => {

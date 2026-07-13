@@ -29,6 +29,19 @@ describe("triggers native automation support", () => {
     expect(entry?.examples.some((example) => example.includes("--shell"))).toBe(true);
   });
 
+  it("catalogs Slack thread creation as a first-class trigger event", () => {
+    const entry = findTriggerTopicCatalogEntry("ravi.inbound.thread.created");
+    const fields = new Set(entry?.schema?.fields.map((field) => field.path));
+
+    expect(entry?.category).toBe("inbound");
+    expect(entry?.payload).toContain("sessionKey");
+    expect(fields).toContain("provider");
+    expect(fields).toContain("threadTs");
+    expect(fields).toContain("sessionKey");
+    expect(fields).toContain("canonicalChatId");
+    expect(entry?.examples.some((example) => example.includes("ravi.inbound.thread.created"))).toBe(true);
+  });
+
   it("persists shell trigger command fields and clears them for agent triggers", () => {
     const trigger = dbCreateTrigger({
       name: "shell-ticket-flow",

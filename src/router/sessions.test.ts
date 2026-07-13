@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { getOrCreateSession, getSession, updateSessionEffortOverride } from "./sessions.js";
+import {
+  getOrCreateSession,
+  getSession,
+  updateSessionEffortOverride,
+  updateSessionRuntimeProviderOverride,
+} from "./sessions.js";
 
 let stateDir: string | null = null;
 
@@ -34,5 +39,26 @@ describe("sessions store", () => {
 
     expect(session.effortOverride).toBe("medium");
     expect(getSession(session.sessionKey)?.effortOverride).toBe("medium");
+  });
+
+  it("persists runtime provider overrides separately from observed provider state", () => {
+    const session = getOrCreateSession("agent:dev:provider-override", "dev", "/tmp/dev", {
+      runtimeProvider: "codex",
+    });
+
+    expect(session.runtimeProvider).toBe("codex");
+    expect(session.runtimeProviderOverride).toBeUndefined();
+
+    updateSessionRuntimeProviderOverride(session.sessionKey, "claude");
+    expect(getSession(session.sessionKey)).toMatchObject({
+      runtimeProvider: "codex",
+      runtimeProviderOverride: "claude",
+    });
+
+    updateSessionRuntimeProviderOverride(session.sessionKey, null);
+    expect(getSession(session.sessionKey)).toMatchObject({
+      runtimeProvider: "codex",
+      runtimeProviderOverride: undefined,
+    });
   });
 });

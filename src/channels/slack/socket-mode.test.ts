@@ -406,6 +406,138 @@ describe("Slack Socket Mode routing", () => {
     expect(JSON.stringify(interactions[0]?.payload)).not.toContain("hooks.slack.test");
   });
 
+  it("publishes Slack Work Object link and detail events as inbound interactions", async () => {
+    const interactions: Array<{ topic: string; payload: Record<string, unknown> }> = [];
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "ravi-rbbt-slack",
+      routeAccountId: "ravi-rbbt-slack",
+      instanceId: "slack-instance-1",
+      getRouterConfig: () => ({
+        agents: {},
+        routes: [],
+        defaultAgent: "ravi-hil",
+        defaultDmScope: "per-peer",
+        accountAgents: {},
+        instanceToAccount: {},
+        instances: {},
+      }),
+      publishInteraction: async (topic, payload) => {
+        interactions.push({ topic, payload });
+      },
+      webClient: {} as never,
+    });
+
+    await expect(
+      service.handleEnvelope({
+        envelope_id: "env-link-shared-1",
+        payload: {
+          team_id: "T1",
+          event_id: "EvLinkShared1",
+          event: {
+            type: "link_shared",
+            user: "U123",
+            channel: "C123",
+            message_ts: "1713000000.000100",
+            links: [{ url: "https://example.com/tasks/123", domain: "example.com" }],
+          },
+        },
+      }),
+    ).resolves.toBe("processed");
+
+    await expect(
+      service.handleEnvelope({
+        envelope_id: "env-entity-details-1",
+        payload: {
+          team_id: "T1",
+          event_id: "EvEntityDetails1",
+          event: {
+            type: "entity_details_requested",
+            user: "U123",
+            channel: "C123",
+            message_ts: "1713000000.000100",
+            thread_ts: "1713000000.000100",
+            trigger_id: "trigger-entity-1",
+            entity_url: "https://example.com/tasks/123",
+            app_unfurl_url: "https://example.com/tasks/123?source=slack",
+            external_ref: { id: "123", type: "task" },
+            link: { url: "https://example.com/tasks/123", domain: "example.com" },
+            user_locale: "en-US",
+          },
+        },
+      }),
+    ).resolves.toBe("processed");
+
+    await expect(
+      service.handleEnvelope({
+        envelope_id: "env-entity-details-direct-1",
+        payload: {
+          type: "entity_details_requested",
+          team: { id: "T1" },
+          user: "U123",
+          channel: "C123",
+          message_ts: "1713000000.000100",
+          trigger_id: "trigger-entity-direct-1",
+          entity_url: "https://example.com/tasks/123",
+          external_ref: { id: "123", type: "task" },
+        },
+      }),
+    ).resolves.toBe("processed");
+
+    expect(interactions).toHaveLength(3);
+    expect(interactions[0]).toMatchObject({
+      topic: "ravi.inbound.interaction",
+      payload: {
+        provider: "slack",
+        source: "slack.socket_mode",
+        accountId: "ravi-rbbt-slack",
+        instanceId: "slack-instance-1",
+        envelopeId: "env-link-shared-1",
+        eventId: "EvLinkShared1",
+        interactionType: "link_shared",
+        teamId: "T1",
+        userId: "U123",
+        channelId: "C123",
+        messageTs: "1713000000.000100",
+        linkCount: 1,
+        links: [{ url: "https://example.com/tasks/123", domain: "example.com" }],
+      },
+    });
+    expect(interactions[1]).toMatchObject({
+      topic: "ravi.inbound.interaction",
+      payload: {
+        provider: "slack",
+        interactionType: "entity_details_requested",
+        envelopeId: "env-entity-details-1",
+        eventId: "EvEntityDetails1",
+        channelId: "C123",
+        messageTs: "1713000000.000100",
+        threadTs: "1713000000.000100",
+        triggerId: "trigger-entity-1",
+        entityUrl: "https://example.com/tasks/123",
+        appUnfurlUrl: "https://example.com/tasks/123?source=slack",
+        userLocale: "en-US",
+        externalRef: { id: "123", type: "task" },
+        link: { url: "https://example.com/tasks/123", domain: "example.com" },
+      },
+    });
+    expect(interactions[2]).toMatchObject({
+      topic: "ravi.inbound.interaction",
+      payload: {
+        provider: "slack",
+        interactionType: "entity_details_requested",
+        envelopeId: "env-entity-details-direct-1",
+        teamId: "T1",
+        channelId: "C123",
+        messageTs: "1713000000.000100",
+        triggerId: "trigger-entity-direct-1",
+        entityUrl: "https://example.com/tasks/123",
+        externalRef: { id: "123", type: "task" },
+      },
+    });
+  });
+
   it("forks Slack thread replies from a forced route session", async () => {
     getOrCreateSession("ravi-hil", "ravi-hil", "/tmp/ravi-hil", { name: "ravi-hil" });
     const config: RouterConfig = {
@@ -434,6 +566,7 @@ describe("Slack Socket Mode routing", () => {
       instances: {},
     };
     const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const inboundEvents: Array<{ topic: string; payload: Record<string, unknown> }> = [];
     const service = new SlackSocketModeService({
       appToken: "xapp-test",
       botToken: "xoxb-test",
@@ -443,6 +576,9 @@ describe("Slack Socket Mode routing", () => {
       getRouterConfig: () => config,
       publishPrompt: async (sessionName, payload) => {
         published.push({ sessionName, payload });
+      },
+      publishInteraction: async (topic, payload) => {
+        inboundEvents.push({ topic, payload });
       },
       webClient: {} as never,
     });
@@ -493,6 +629,57 @@ describe("Slack Socket Mode routing", () => {
         speechMode: "speak",
       }),
     ]);
+    expect(inboundEvents).toEqual([
+      {
+        topic: "ravi.inbound.thread.created",
+        payload: expect.objectContaining({
+          provider: "slack",
+          eventType: "thread.created",
+          accountId: "ravi-rbbt-slack",
+          routeAccountId: "ravi-rbbt-slack",
+          instanceId: "slack-instance-1",
+          teamId: "T1",
+          channelId: "C123",
+          channelType: "channel",
+          peerKind: "group",
+          userId: "U123",
+          messageTs: "1713000030.000200",
+          sourceMessageTs: "1713000030.000200",
+          threadTs: "1713000000.000100",
+          canonicalChatId,
+          sessionKey: "ravi-hil:thread:1713000000.000100",
+          sessionName: "ravi-hil-t-1713000000000100",
+          agentId: "ravi-hil",
+          routePattern: "group:C123",
+          routeSession: "ravi-hil",
+          envelopeId: "env-thread-1",
+          eventId: "EvThread1",
+          eventTimeMs: 1_713_000_030_000,
+        }),
+      },
+    ]);
+
+    await service.handleEnvelope({
+      envelope_id: "env-thread-2",
+      payload: {
+        team_id: "T1",
+        event_id: "EvThread2",
+        event_time: 1_713_000_031,
+        event: {
+          type: "message",
+          channel: "C123",
+          channel_type: "channel",
+          user: "U123",
+          text: "segunda mensagem",
+          ts: "1713000031.000300",
+          thread_ts: "1713000000.000100",
+        },
+      },
+    });
+
+    expect(published).toHaveLength(2);
+    expect(published[1]?.sessionName).toBe("ravi-hil-t-1713000000000100");
+    expect(inboundEvents).toHaveLength(1);
   });
 
   it("uses a temporary Slack reaction as the native working presence indicator", async () => {

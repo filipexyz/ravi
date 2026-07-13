@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { join } from "node:path";
 import { writeFileSync } from "node:fs";
-import { getOrCreateSession, getSession, updateProviderSession } from "../router/sessions.js";
+import {
+  getOrCreateSession,
+  getSession,
+  updateProviderSession,
+  updateSessionRuntimeProviderOverride,
+} from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { configStore } from "../config-store.js";
 import { resolveRuntimeSession } from "./session-resolver.js";
@@ -113,6 +118,23 @@ describe("runtime session resolver", () => {
       staleCleared: true,
     });
     expect(getSession(SESSION_KEY)?.providerSessionId).toBeUndefined();
+  });
+
+  it("uses session runtime provider override before agent/default provider", () => {
+    getOrCreateSession(SESSION_KEY, "main", stateDir ?? "/tmp", { name: SESSION_NAME });
+    updateSessionRuntimeProviderOverride(SESSION_KEY, "claude");
+
+    const resolved = resolveRuntimeSession({
+      sessionName: SESSION_NAME,
+      prompt: { prompt: "use session provider override" },
+      defaultRuntimeProviderId: "codex",
+    });
+
+    expect(resolved?.runtimeProviderId).toBe("claude");
+    expect(resolved?.resumeDecision).toMatchObject({
+      requestedRuntimeProvider: "claude",
+      reason: "missing_provider_session",
+    });
   });
 
   it("resumes file-backed provider state only when the file exists and cwd matches", () => {
