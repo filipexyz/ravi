@@ -5830,6 +5830,7 @@ export class RaviClient {
   readonly slack = {
     /** Send a Slack Block Kit message; dry-run unless --execute is set */
     blocksSend: async (channel: string, file: string, options?: {
+      connection?: string;
       ephemeralUser?: string;
       execute?: boolean;
       text?: string;
@@ -6056,6 +6057,7 @@ export class RaviClient {
     },
     /** Invite Slack users to a channel; dry-run unless --execute is set */
     channelsInvite: async (channel: string, users: string, options?: {
+      connection?: string;
       execute?: boolean;
     }): Promise<SlackChannelsInviteReturn> => {
       return this.transport.call({
