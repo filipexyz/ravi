@@ -3,13 +3,18 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import {
   dbCreateAgent,
   dbCreateContext,
+  dbDeleteChannel,
+  dbDeleteInstance,
   dbGetAgent,
   dbGetChannel,
+  dbListChannels,
   dbListContexts,
   dbPruneContexts,
   dbUpdateAgent,
   dbUpdateChannel,
   dbUpsertChannel,
+  dbUpsertInstance,
+  closeRouterDb,
   getDb,
 } from "./router-db.js";
 import { getOrCreateSession } from "./sessions.js";
@@ -172,6 +177,65 @@ describe("router context queries", () => {
     const cleared = dbUpdateChannel("ravi-rbbt-slack", { credentialConnection: null });
     expect(cleared.credentialConnection).toBeUndefined();
     expect(dbGetChannel("ravi-rbbt-slack")?.provider).toBe("slack");
+  });
+
+  it("backfills legacy Slack instances into channel configs without overwriting explicit channels", () => {
+    dbUpsertInstance({ name: "legacy-slack", channel: "slack" });
+    dbUpsertInstance({
+      name: "legacy-slack-disabled",
+      channel: "slack",
+      enabled: false,
+      defaults: { credentials: { slackConnection: "legacy-slack-secret" } },
+    });
+    dbUpsertInstance({ name: "legacy-whatsapp", channel: "whatsapp" });
+    dbUpsertInstance({ name: "legacy-slack-deleted", channel: "slack" });
+    dbDeleteInstance("legacy-slack-deleted");
+    dbUpsertInstance({ name: "deleted-channel-slack", channel: "slack" });
+    dbUpsertChannel({
+      name: "deleted-channel-slack",
+      provider: "slack",
+      credentialConnection: "deleted-channel-secret",
+    });
+    dbDeleteChannel("deleted-channel-slack");
+
+    dbUpsertInstance({
+      name: "configured-slack",
+      channel: "slack",
+      defaults: { slackCredentialConnection: "legacy-connection" },
+    });
+    const configured = dbUpsertChannel({
+      name: "configured-slack",
+      provider: "slack",
+      enabled: false,
+      credentialConnection: "explicit-connection",
+      defaults: { subscriptionScope: "chat_and_thread" },
+    });
+
+    closeRouterDb();
+    getDb();
+
+    expect(dbGetChannel("legacy-slack")).toMatchObject({
+      name: "legacy-slack",
+      provider: "slack",
+      enabled: true,
+      credentialConnection: "legacy-slack",
+    });
+    expect(dbGetChannel("legacy-slack")?.defaults).toBeUndefined();
+    expect(dbGetChannel("legacy-slack-disabled")).toMatchObject({
+      name: "legacy-slack-disabled",
+      provider: "slack",
+      enabled: false,
+      credentialConnection: "legacy-slack-secret",
+    });
+    expect(dbGetChannel("legacy-whatsapp")).toBeNull();
+    expect(dbGetChannel("legacy-slack-deleted")).toBeNull();
+    expect(dbGetChannel("deleted-channel-slack")).toBeNull();
+    expect(dbGetChannel("configured-slack")).toEqual(configured);
+
+    const firstPass = dbListChannels();
+    closeRouterDb();
+    getDb();
+    expect(dbListChannels()).toEqual(firstPass);
   });
 });
 

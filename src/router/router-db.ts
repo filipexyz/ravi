@@ -2488,6 +2488,7 @@ function getDb(): Database {
   ensureColumn(db, "channels", "credential_connection", "TEXT");
   ensureColumn(db, "channels", "defaults", "TEXT");
   ensureColumn(db, "channels", "deleted_at", "INTEGER");
+  backfillLegacySlackInstancesToChannels(db);
 
   const contextColumns = db.prepare("PRAGMA table_info(contexts)").all() as Array<{ name: string }>;
   if (contextColumns.length > 0 && !contextColumns.some((c) => c.name === "context_id")) {
@@ -2680,6 +2681,81 @@ function ensureColumn(database: Database, table: string, column: string, definit
       throw error;
     }
   }
+}
+
+function backfillLegacySlackInstancesToChannels(database: Database): void {
+  const legacyInstances = database
+    .prepare(
+      `SELECT name, enabled, defaults, created_at, updated_at
+       FROM instances
+       WHERE LOWER(TRIM(channel)) = 'slack'
+         AND deleted_at IS NULL
+       ORDER BY name`,
+    )
+    .all() as Array<{
+    name: string;
+    enabled: number | null;
+    defaults: string | null;
+    created_at: number;
+    updated_at: number;
+  }>;
+
+  if (legacyInstances.length === 0) return;
+
+  const insertChannel = database.prepare(
+    `INSERT OR IGNORE INTO channels (
+       name, provider, enabled, credential_connection, defaults,
+       created_at, updated_at, deleted_at
+     )
+     VALUES (?, 'slack', ?, ?, NULL, ?, ?, NULL)`,
+  );
+
+  let migrated = 0;
+  database.transaction(() => {
+    for (const instance of legacyInstances) {
+      migrated += insertChannel.run(
+        instance.name,
+        instance.enabled === 0 ? 0 : 1,
+        legacySlackCredentialConnection(instance.name, instance.defaults),
+        instance.created_at,
+        instance.updated_at,
+      ).changes;
+    }
+  })();
+
+  if (migrated > 0) {
+    log.info("Backfilled Slack channel configs from legacy instances", { count: migrated });
+  }
+}
+
+function legacySlackCredentialConnection(instanceName: string, defaultsJson: string | null): string {
+  if (!defaultsJson) return instanceName;
+
+  try {
+    const parsed = JSON.parse(defaultsJson) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return instanceName;
+    const defaults = parsed as Record<string, unknown>;
+    const credentials = asStringRecord(defaults.credentials);
+    return (
+      firstNonEmptyString(defaults, "slackCredentialConnection", "credentialConnection") ??
+      firstNonEmptyString(credentials, "slackConnection", "slackCredentialConnection", "connection") ??
+      instanceName
+    );
+  } catch {
+    return instanceName;
+  }
+}
+
+function asStringRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function firstNonEmptyString(record: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
 }
 
 function isDuplicateColumnRace(error: unknown): boolean {
