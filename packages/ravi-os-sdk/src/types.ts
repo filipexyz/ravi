@@ -11468,6 +11468,7 @@ export type SkillsWhoReturn = {
 /** Input shape for `slack.blocks-send`. */
 export type SlackBlocksSendInput = {
   channel: string;
+  connection?: string;
   ephemeralUser?: string;
   execute?: boolean;
   file: string;
@@ -11856,6 +11857,7 @@ export type SlackChannelsInfoReturn = {
 /** Input shape for `slack.channels-invite`. */
 export type SlackChannelsInviteInput = {
   channel: string;
+  connection?: string;
   execute?: boolean;
   users: string;
 };

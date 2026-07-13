@@ -55274,6 +55274,10 @@ export const SlackBlocksSendInputSchema = {
       "description": "Slack channel/conversation ID",
       "type": "string"
     },
+    "connection": {
+      "description": "Ravi channel config; SDK-safe alias for --channel",
+      "type": "string"
+    },
     "ephemeralUser": {
       "description": "Send as an ephemeral message visible only to this Slack user",
       "type": "string"
@@ -57505,6 +57509,10 @@ export const SlackChannelsInviteInputSchema = {
   "properties": {
     "channel": {
       "description": "Slack channel/conversation ID",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Ravi channel config; SDK-safe alias for --channel",
       "type": "string"
     },
     "execute": {

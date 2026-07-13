@@ -1228,6 +1228,8 @@ export class SlackCommands {
     @Arg("channel", { description: "Slack channel/conversation ID" }) channel: string,
     @Arg("file", { description: "Path to a Block Kit message JSON file" }) file: string,
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
+    @Option({ flags: "--connection <name>", description: "Ravi channel config; SDK-safe alias for --channel" })
+    connection?: string,
     @Option({ flags: "--text <text>", description: "Top-level fallback text for notifications/accessibility" })
     text?: string,
     @Option({ flags: "--thread-ts <ts>", description: "Send inside a Slack thread" }) threadTs?: string,
@@ -1249,7 +1251,7 @@ export class SlackCommands {
       ...(threadTs ? { threadTs } : {}),
       ...(ephemeralUser ? { ephemeralUser } : {}),
     };
-    const { client, config } = await createSlackOpsContext(raviChannel, method);
+    const { client, config } = await createSlackOpsContext(connection || raviChannel, method);
     if (!execute) return this.printMutationDryRun(config, method, request, asJson);
     const raw = ephemeralUser
       ? await client.postEphemeral({
@@ -1812,11 +1814,13 @@ export class SlackCommands {
     @Arg("channel", { description: "Slack channel/conversation ID" }) channel: string,
     @Arg("users", { description: "Comma-separated Slack user IDs" }) usersValue: string,
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
+    @Option({ flags: "--connection <name>", description: "Ravi channel config; SDK-safe alias for --channel" })
+    connection?: string,
     @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const request = { channel, userIds: parseRequiredCsvOption(usersValue, "Slack user ids") };
-    const { client, config } = await createSlackOpsContext(raviChannel, "conversations.invite");
+    const { client, config } = await createSlackOpsContext(connection || raviChannel, "conversations.invite");
     if (!execute) return this.printMutationDryRun(config, "conversations.invite", request, asJson);
     const raw = await client.conversationsInvite(request);
     const payload = this.mutationPayload(config, false, "conversations.invite", request, raw.channel, raw);
