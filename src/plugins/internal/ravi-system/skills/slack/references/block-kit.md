@@ -20,6 +20,12 @@ Enviar:
 ravi slack blocks-send C123 ./message.json --execute --json
 ```
 
+Enviar privado/ephemeral para um usuario no canal:
+
+```bash
+ravi slack blocks-send C123 ./message.json --ephemeral-user U123 --execute --json
+```
+
 Atualizar:
 
 ```bash
@@ -118,6 +124,10 @@ O shell recebe `RAVI_TRIGGER_EVENT_FILE` com o payload canonico e pode atualizar
 a mensagem via `ravi slack blocks-update` ou cliente Slack nativo. Nao use
 prompt de agent para fluxo que e puro estado + mutacao.
 Use conexao explicita apenas fora de um contexto Slack resolvivel.
+Para handlers TypeScript que chamam o SDK, prefira `createInheritedClient()`.
+Se o trigger shell nao trouxer `RAVI_CONTEXT_KEY`, emita um contexto curto
+`interaction-runtime` com source Slack e `slackUserId` em metadata; nao use
+admin/default credentials para representar uma acao humana.
 
 Para fluxos multi-etapa com state local, idempotencia, filtros em paralelo e
 exemplos de tickets/aprovacoes/deploy, leia `references/block-kit-workflows.md`.
@@ -132,5 +142,8 @@ tratado como input de usuario.
 - Nao exponha token Slack nem `response_url`.
 - Use `responseUrlId` quando precisar substituir/apagar a mensagem interativa
   original sem vazar `response_url`.
+- Para feedback privado em canal factory/origem, use
+  `blocks-send --ephemeral-user <userId>` em vez de publicar uma mensagem
+  normal no canal novo.
 - Use `action_id` e `block_id` estaveis para automacoes.
 - Prefira `blocks-update` para atualizar estado visual de uma mensagem existente.

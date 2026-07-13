@@ -18,6 +18,15 @@ export {
   type HttpTransportConfig,
 } from "./transport/http.js";
 export {
+  createInheritedClient,
+  resolveInheritedBaseUrl,
+  resolveInheritedContextKey,
+  type CreateInheritedClientOptions,
+  type InheritedClientChildOptions,
+  type InheritedClientResult,
+  type RaviInheritedClientEnv,
+} from "./inherit.js";
+export {
   RaviStreamClient,
   createStreamClient,
   parseSse,

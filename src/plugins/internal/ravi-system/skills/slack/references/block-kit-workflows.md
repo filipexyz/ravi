@@ -9,10 +9,12 @@ regra de negocio dentro do core do canal.
 O core do Ravi deve fornecer primitives genericas:
 
 - enviar e atualizar Block Kit;
+- enviar Block Kit ephemeral para um usuario no canal origem via
+  `ravi slack blocks-send <channel> <json> --ephemeral-user <user>`;
 - receber `ravi.inbound.interaction`;
 - resolver credenciais Slack via broker;
 - executar triggers shell;
-- criar rotas, canais, sessoes e artifacts por CLI/API local.
+- criar rotas, canais, sessoes e artifacts por SDK/API local.
 
 O workflow de negocio deve ficar fora do core, por exemplo em
 `.ravi/workflows/<nome>/handler.ts`, com state local e idempotencia.
@@ -25,17 +27,19 @@ O workflow de negocio deve ficar fora do core, por exemplo em
    `actionId`.
 4. Executar handler shell versionado no workspace.
 5. Ler `RAVI_TRIGGER_EVENT_FILE`.
-6. Resolver state local por chave de dominio.
-7. Executar mutacoes nativas: Slack, routes, artifacts, tasks ou bash externo.
-8. Atualizar a mensagem de origem ou publicar follow-up.
-9. Marcar state como processado antes de aceitar novo clique equivalente.
-10. Notificar uma sessao apenas em erro operacional.
+6. Resolver contexto runtime para o handler.
+7. Resolver state local por chave de dominio.
+8. Executar mutacoes nativas: Slack, routes, artifacts, tasks ou bash externo.
+9. Atualizar a mensagem de origem ou publicar follow-up.
+10. Marcar state como processado antes de aceitar novo clique equivalente.
+11. Notificar uma sessao apenas em erro operacional.
 
 ## Fronteira Core vs Workflow
 
 Fica no core:
 
 - `ravi slack blocks-send`;
+- `ravi slack blocks-send --ephemeral-user`;
 - `ravi slack blocks-update`;
 - `ravi slack interactions-respond`;
 - evento `ravi.inbound.interaction`;
@@ -52,8 +56,68 @@ Fica no workflow:
 - arquivo SQLite/JSON de state;
 - mapping `messageTs -> domain id`;
 - regra de negocio;
+- emissao de contexto curto para a interacao quando o trigger shell nao herdar
+  `RAVI_CONTEXT_KEY`;
 - scripts de bash deterministico;
 - decisoes de quando chamar ou nao um agent.
+
+## Contexto Runtime Para Handlers
+
+Handlers TypeScript chamados por trigger shell devem preferir o SDK em vez de
+abrir varios subprocessos `ravi ...`:
+
+```ts
+import { createInheritedClient } from "@ravi-os/sdk";
+
+const { client: ravi } = await createInheritedClient();
+```
+
+Quando o trigger herdar `RAVI_CONTEXT_KEY`, `createInheritedClient()` reutiliza
+o contexto do runtime chamador. Alguns triggers shell, porem, podem executar sem
+`RAVI_CONTEXT_KEY`. Nesse caso, o handler deve emitir um contexto curto para a
+interacao atual, usando o usuario Slack que clicou/submeteu como metadata:
+
+```ts
+import { createInheritedClient } from "@ravi-os/sdk";
+import { createRuntimeContext, snapshotAgentCapabilities } from "<ravi>/src/runtime/context-registry";
+
+const interactionContext = createRuntimeContext({
+  kind: "interaction-runtime",
+  agentId: "ravi-workflows",
+  sessionName: "ravi-workflows",
+  source: {
+    channel: "slack",
+    accountId: "hana-slack",
+    chatId: data.channelId,
+  },
+  capabilities: snapshotAgentCapabilities("ravi-workflows"),
+  metadata: {
+    issuedFor: "agent-factory",
+    actorType: "slack_user",
+    slackUserId: data.userId,
+    sourceMessageTs: data.messageTs,
+    issuanceMode: "slack-interaction",
+  },
+  ttlMs: 10 * 60 * 1000,
+});
+
+const { client: ravi } = await createInheritedClient({
+  contextKey: interactionContext.contextKey,
+});
+```
+
+Regras:
+
+- Nao use admin/default credentials como fallback para interacoes humanas.
+- Nao sintetize `RAVI_AGENT_ID`, `RAVI_SESSION_KEY` ou identidade de usuario por
+  env solto; o contexto emitido deve carregar source e metadata auditavel.
+- TTL deve ser curto; evite revogar sincronicamente em handlers one-shot se a
+  revogacao for mais lenta que o proprio workflow.
+- Nunca logue `contextKey` ou retorno bruto de `context.issue`.
+- Reuse um unico client SDK por execucao do handler.
+- Se o SDK gerado ainda nao expuser uma option nova do CLI, use o transport do
+  SDK para chamar a command path com body explicito e anote o drift para o
+  proximo `ravi sdk client generate`.
 
 ## Response URL E Ephemeral
 
@@ -301,3 +365,63 @@ Faz sentido quando:
   para ephemeral.
 - Erro notifica sessao operacional via `--on-error`.
 - Sucesso deterministico nao chama agent.
+
+## Padrao: Factory De Canais
+
+Quando um canal factory cria um canal novo, nao deixe a confirmacao principal
+apenas no canal recem-criado. Publique uma ephemeral no canal factory para o
+usuario solicitante:
+
+```bash
+ravi slack blocks-send <factory-channel-id> ./channel-created.json \
+  --ephemeral-user <requester-user-id> \
+  --execute --json
+```
+
+O card deve ter:
+
+- resumo curto: canal, agent, sessao e route, quando existirem;
+- botao URL `Abrir canal` usando
+  `https://slack.com/app_redirect?channel=<new-channel-id>`;
+- botao interativo `Configurar permissoes` com
+  `block_id: ravi_channel_created_actions` e
+  `action_id: ravi_channel_configure_permissions`;
+- `value` contendo um identificador estavel do canal/sessao, nunca tokens ou
+  contexto sensivel.
+
+Exemplo minimo:
+
+```json
+{
+  "text": "Canal criado",
+  "blocks": [
+    {
+      "type": "section",
+      "block_id": "ravi_channel_created_summary",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Canal criado:* <#CNEW>\n*Agent:* agente\n*Sessao:* sessao\n*Route:* group:CNEW"
+      }
+    },
+    {
+      "type": "actions",
+      "block_id": "ravi_channel_created_actions",
+      "elements": [
+        {
+          "type": "button",
+          "action_id": "ravi_channel_open",
+          "text": { "type": "plain_text", "text": "Abrir canal" },
+          "url": "https://slack.com/app_redirect?channel=CNEW",
+          "value": "CNEW"
+        },
+        {
+          "type": "button",
+          "action_id": "ravi_channel_configure_permissions",
+          "text": { "type": "plain_text", "text": "Configurar permissoes" },
+          "value": "CNEW"
+        }
+      ]
+    }
+  ]
+}
+```

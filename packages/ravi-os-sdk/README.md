@@ -121,6 +121,38 @@ import { RaviClient } from "@ravi-os/sdk/client";
 import { createHttpTransport } from "@ravi-os/sdk/transport/http";
 ```
 
+## Inherit The Calling Ravi Runtime
+
+Handlers launched by Ravi already receive `RAVI_CONTEXT_KEY` plus the local
+gateway env. Use `createInheritedClient` to reuse that runtime context without
+manually wiring transport config:
+
+```ts
+import { createInheritedClient } from "@ravi-os/sdk";
+
+const { client: ravi } = await createInheritedClient();
+await ravi.context.whoami();
+```
+
+Child context mode is available when handing context to another process or
+subsystem. Make inheritance explicit, or pass a narrow `allow` list:
+
+```ts
+const inherited = await createInheritedClient({
+  child: {
+    cliName: "agent-factory",
+    ttl: "5m",
+    inherit: true,
+  },
+});
+
+try {
+  await inherited.client.agents.list({ limit: "10" });
+} finally {
+  await inherited.revoke?.();
+}
+```
+
 ## Examples
 
 ### Read Runtime State
