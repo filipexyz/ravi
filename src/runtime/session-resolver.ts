@@ -103,6 +103,10 @@ export function resolveRuntimeSession(options: {
     agentDefaults: agent.defaults,
     agentId,
   });
+  if (options.prompt._runtimeTargetPolicyResolution && resolvedTargetPolicy.policy) {
+    resolvedTargetPolicy.source = options.prompt._runtimeTargetPolicyResolution.source;
+    resolvedTargetPolicy.provenance = options.prompt._runtimeTargetPolicyResolution.provenance;
+  }
   const reconstructedTargetState =
     resolvedTargetPolicy.policy && options.prompt._resumeStashedMessages && sessionEntry
       ? reconstructRuntimeTargetTurnState(sessionEntry.sessionKey, resolvedTargetPolicy.policy.id)
@@ -118,15 +122,9 @@ export function resolveRuntimeSession(options: {
     : undefined;
   const registeredRuntimeProviders = new Set(listRegisteredRuntimeProviderIds());
   const agentCapabilities = materializeSubjectCapabilities("agent", agentId, { includeRoles: true });
-  const hasTargetPermissionConstraints = agentCapabilities.some(
-    (capability) => capability.objectType === "runtime.target",
-  );
   const permittedTargetIds = new Set(
     (resolvedTargetPolicy.policy?.targets ?? [])
-      .filter(
-        (target) =>
-          !hasTargetPermissionConstraints || canWithCapabilities(agentCapabilities, "use", "runtime.target", target.id),
-      )
+      .filter((target) => canWithCapabilities(agentCapabilities, "use", "runtime.target", target.id))
       .map((target) => target.id),
   );
   const targetSelection =

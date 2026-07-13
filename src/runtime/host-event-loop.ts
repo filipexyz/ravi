@@ -2135,7 +2135,36 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               kind: credentialFailureSignal.kind,
             });
           } else {
+            if (streaming.runtimeTargetState && streaming.runtimeTarget) {
+              let attemptIndex = -1;
+              for (let index = streaming.runtimeTargetState.attempts.length - 1; index >= 0; index--) {
+                const candidate = streaming.runtimeTargetState.attempts[index];
+                if (candidate?.targetId === streaming.runtimeTarget.id && candidate.completedAt === undefined) {
+                  attemptIndex = index;
+                  break;
+                }
+              }
+              if (attemptIndex >= 0) streaming.runtimeTargetState.attempts.splice(attemptIndex, 1);
+              recordTraceEvent({
+                turnId: streaming.currentTraceTurnId,
+                provider: runtimeSession.provider,
+                model,
+                eventType: "runtime.target.credential_recovery",
+                eventGroup: "runtime",
+                status: "recovering",
+                payloadJson: {
+                  policyId: streaming.runtimeTargetPolicy?.id ?? null,
+                  targetId: streaming.runtimeTarget.id,
+                  logicalTurnId: streaming.runtimeTargetState.logicalTurnId,
+                },
+              });
+            }
             const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages);
+            for (const message of stashedMessages.get(sessionName) ?? []) {
+              if (message.launchPrompt && streaming.runtimeTargetState) {
+                message.launchPrompt._runtimeTargetState = streaming.runtimeTargetState;
+              }
+            }
             if (stashedCount > 0 && streaming.currentRuntimeCredential?.credentialId) {
               try {
                 await refreshRuntimeCredential(streaming.currentRuntimeCredential.credentialId, {
@@ -2302,13 +2331,21 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             attempt.failureKind = classifiedFailure.scope;
           }
           const replayEligible = failureAction === "switch_target";
+          const retrySameTarget = failureAction === "recover_credential" || failureAction === "retry_same_target";
+          if (retrySameTarget && attempt) {
+            state.attempts.splice(state.attempts.indexOf(attempt), 1);
+          }
           recordTraceEvent({
             turnId: streaming.currentTraceTurnId,
             provider: runtimeSession.provider,
             model,
-            eventType: replayEligible ? "runtime.target.switch_requested" : "runtime.target.replay_blocked",
+            eventType: replayEligible
+              ? "runtime.target.switch_requested"
+              : retrySameTarget
+                ? "runtime.target.credential_recovery"
+                : "runtime.target.replay_blocked",
             eventGroup: "runtime",
-            status: replayEligible ? "recovering" : "blocked",
+            status: replayEligible || retrySameTarget ? "recovering" : "blocked",
             error: event.error,
             payloadJson: {
               policyId: streaming.runtimeTargetPolicy.id,
@@ -2322,6 +2359,28 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             },
           });
           if (replayEligible) {
+            const failures = state.attempts.filter(
+              (item) => item.targetId === streaming.runtimeTarget?.id && item.outcome === "recoverable_failure",
+            ).length;
+            recordTraceEvent({
+              turnId: streaming.currentTraceTurnId,
+              provider: runtimeSession.provider,
+              model,
+              eventType: "runtime.target.health_transition",
+              eventGroup: "runtime",
+              status: "recovering",
+              payloadJson: {
+                policyId: streaming.runtimeTargetPolicy.id,
+                targetId: streaming.runtimeTarget.id,
+                logicalTurnId: state.logicalTurnId,
+                healthStatus:
+                  failures >= (streaming.runtimeTargetPolicy.circuitBreakerThreshold ?? 3) ? "open" : "cooldown",
+                consecutiveFailures: failures,
+                cooldownMs: streaming.runtimeTargetPolicy.cooldownMs ?? 30_000,
+              },
+            });
+          }
+          if (replayEligible || retrySameTarget) {
             const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages);
             const stashed = stashedMessages.get(sessionName) ?? [];
             for (const message of stashed) {
@@ -2344,7 +2403,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                   logicalTurnId: state.logicalTurnId,
                 },
               });
-              restartStashedReason = "runtime_target_switch";
+              restartStashedReason = retrySameTarget ? "runtime_target_retry" : "runtime_target_switch";
               clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
               signalTurnComplete();
               clearTraceTurnState();

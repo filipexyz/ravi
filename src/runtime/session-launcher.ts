@@ -2,6 +2,7 @@ import { runWithContext } from "../cli/context.js";
 import { saveMessage } from "../db.js";
 import { nats } from "../nats.js";
 import {
+  getSessionByName,
   updateRuntimeProviderState,
   updateSessionContext,
   updateSessionDisplayName,
@@ -27,6 +28,7 @@ import { resolveRuntimeSession } from "./session-resolver.js";
 import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
 import { updateRuntimeLiveState } from "./live-state.js";
 import { ensureObserverBindingsForSession } from "./observation-plane.js";
+import { resolveSessionOutputTarget } from "./session-output-target.js";
 
 const log = logger.child("runtime:session-launcher");
 
@@ -101,10 +103,14 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       recoverable: false,
       ...(prompt.source ? { _source: prompt.source } : {}),
     });
-    if (prompt.source) {
+    const failedSession = getSessionByName(sessionName);
+    const failureTarget = failedSession
+      ? resolveSessionOutputTarget({ sessionKey: failedSession.sessionKey, fallback: prompt.source }).target
+      : prompt.source;
+    if (failureTarget) {
       await nats.emit(`ravi.session.${sessionName}.response`, {
         response: formatUserFacingTurnFailure(errorMessage),
-        target: prompt.source,
+        target: failureTarget,
         _emitId: Math.random().toString(36).slice(2, 8),
         _instanceId: instanceId,
         _pid: process.pid,
@@ -139,6 +145,10 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
 
   if (runtimeTargetPolicy && runtimeTarget && runtimeTargetState) {
     prompt._runtimeTargetPolicy = runtimeTargetPolicy;
+    prompt._runtimeTargetPolicyResolution = {
+      source: runtimeTargetPolicySource ?? "none",
+      provenance: runtimeTargetPolicyProvenance ?? null,
+    };
     prompt._runtimeTargetState = runtimeTargetState;
     prompt._runtimeProviderId = runtimeTarget.runtimeProvider;
     prompt._runtimeModel = runtimeTarget.model;

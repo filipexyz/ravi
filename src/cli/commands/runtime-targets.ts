@@ -37,9 +37,6 @@ export class RuntimeTargetsCommands {
     const resolved = resolveRuntimeTargetPolicy({ agentDefaults: agent.defaults, agentId });
     const registeredProviders = new Set(listRegisteredRuntimeProviderIds());
     const capabilities = materializeSubjectCapabilities("agent", agentId, { includeRoles: true });
-    const hasTargetPermissionConstraints = capabilities.some(
-      (capability) => capability.objectType === "runtime.target",
-    );
     const selection = resolved.policy
       ? selectRuntimeTarget(
           resolved.policy,
@@ -62,11 +59,7 @@ export class RuntimeTargetsCommands {
             ),
             permittedTargetIds: new Set(
               resolved.policy.targets
-                .filter(
-                  (target) =>
-                    !hasTargetPermissionConstraints ||
-                    canWithCapabilities(capabilities, "use", "runtime.target", target.id),
-                )
+                .filter((target) => canWithCapabilities(capabilities, "use", "runtime.target", target.id))
                 .map((target) => target.id),
             ),
           },

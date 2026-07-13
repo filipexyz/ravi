@@ -35,10 +35,11 @@ export function reconstructRuntimeTargetHealth(
         }
       }
       const cooldownUntil = lastFailureAt === undefined ? undefined : lastFailureAt + cooldownMs;
+      const cooling = cooldownUntil !== undefined && cooldownUntil > now;
       const status =
-        consecutiveFailures >= threshold
+        consecutiveFailures >= threshold && cooling
           ? ("open" as const)
-          : cooldownUntil !== undefined && cooldownUntil > now
+          : cooling
             ? ("cooldown" as const)
             : ("healthy" as const);
       return [
@@ -88,6 +89,19 @@ export function reconstructRuntimeTargetTurnState(
     });
   }
   for (const event of turnEvents) {
+    if (event.eventType === "runtime.target.credential_recovery") {
+      const targetId = readString(event.payloadJson, "targetId", "target_id");
+      let attemptIndex = -1;
+      for (let index = attempts.length - 1; index >= 0; index--) {
+        const candidate = attempts[index];
+        if (candidate?.targetId === targetId && !candidate.completedAt) {
+          attemptIndex = index;
+          break;
+        }
+      }
+      if (attemptIndex >= 0) attempts.splice(attemptIndex, 1);
+      continue;
+    }
     if (event.eventType !== "runtime.target.switch_requested" && event.eventType !== "runtime.target.replay_blocked") {
       continue;
     }

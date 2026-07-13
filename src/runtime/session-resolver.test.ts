@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { join } from "node:path";
 import { writeFileSync } from "node:fs";
 import { getOrCreateSession, getSession, updateProviderSession } from "../router/sessions.js";
+import { dbUpdateAgent } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { configStore } from "../config-store.js";
 import { recordRuntimeTraceEvent } from "../session-trace/runtime-trace.js";
@@ -59,6 +60,17 @@ describe("runtime session resolver", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-runtime-session-resolver-");
     configStore.refresh();
+    const agent = configStore.getConfig().agents.main;
+    if (agent) {
+      agent.defaults = {
+        ...(agent.defaults ?? {}),
+        runtimePermissions: {
+          profile: "full-access",
+          capabilities: [{ permission: "use", objectType: "runtime.target", objectId: "*" }],
+        },
+      };
+      dbUpdateAgent(agent.id, { defaults: agent.defaults });
+    }
   });
 
   afterEach(async () => {
@@ -218,6 +230,54 @@ describe("runtime session resolver", () => {
     expect(second?.runtimeProviderId).toBe("claude");
     expect(second?.runtimeTarget?.id).toBe("secondary");
     expect(second?.runtimeTargetState?.attempts.map((item) => item.targetId)).toEqual(["primary", "secondary"]);
+  });
+
+  it("preserves policy source and provenance across replay attempts", () => {
+    const agent = configStore.getConfig().agents.main;
+    if (!agent) throw new Error("default test agent missing");
+    const policy = {
+      id: "provenance-policy",
+      strategy: "ordered" as const,
+      maxAttemptsPerTarget: 1,
+      targets: [
+        { id: "primary", runtimeProvider: "codex", model: "primary-model" },
+        { id: "secondary", runtimeProvider: "claude", model: "secondary-model" },
+      ],
+    };
+    agent.defaults = { ...(agent.defaults ?? {}), runtimeTargetPolicy: policy };
+    dbUpdateAgent(agent.id, { defaults: agent.defaults });
+
+    const first = resolveRuntimeSession({
+      sessionName: SESSION_NAME,
+      prompt: { prompt: "try configured policy" },
+      defaultRuntimeProviderId: "codex",
+    });
+    expect(first?.runtimeTargetPolicySource).toBe("agent_default");
+    expect(first?.runtimeTargetPolicyProvenance).toBe("agent:main.defaults.runtimeTargetPolicy");
+
+    const state = first?.runtimeTargetState;
+    if (!state) throw new Error("runtime target state missing");
+    const attempt = state.attempts[0];
+    if (!attempt) throw new Error("runtime target attempt missing");
+    attempt.completedAt = Date.now();
+    attempt.outcome = "recoverable_failure";
+
+    const replayed = resolveRuntimeSession({
+      sessionName: SESSION_NAME,
+      prompt: {
+        prompt: "replay configured policy",
+        _runtimeTargetPolicy: policy,
+        _runtimeTargetPolicyResolution: {
+          source: first?.runtimeTargetPolicySource ?? "none",
+          provenance: first?.runtimeTargetPolicyProvenance ?? null,
+        },
+        _runtimeTargetState: state,
+      },
+      defaultRuntimeProviderId: "codex",
+    });
+    expect(replayed?.runtimeTarget?.id).toBe("secondary");
+    expect(replayed?.runtimeTargetPolicySource).toBe("agent_default");
+    expect(replayed?.runtimeTargetPolicyProvenance).toBe("agent:main.defaults.runtimeTargetPolicy");
   });
 
   it("reconstructs failover after daemon restart and does not repeat the failed target", () => {

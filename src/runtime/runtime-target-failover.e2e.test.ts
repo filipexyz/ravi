@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { configStore } from "../config-store.js";
 import { nats } from "../nats.js";
 import { dbUpsertChat } from "../router/router-db.js";
+import { dbUpdateAgent } from "../router/router-db.js";
 import { attachChatToSession, getOrCreateSession } from "../router/sessions.js";
+import type { AgentConfig } from "../router/types.js";
+import { recordRuntimeTraceEvent } from "../session-trace/runtime-trace.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { RuntimeSessionDispatcher } from "./session-dispatcher.js";
 import { registerRuntimeProvider, unregisterRuntimeProvider } from "./provider-registry.js";
@@ -32,6 +35,17 @@ const capabilities: RuntimeCapabilities = {
   supportsMcpServers: false,
   supportsRemoteSpawn: false,
 };
+
+function grantRuntimeTargets(agent: AgentConfig): void {
+  agent.defaults = {
+    ...(agent.defaults ?? {}),
+    runtimePermissions: {
+      profile: "full-access",
+      capabilities: [{ permission: "use", objectType: "runtime.target", objectId: "*" }],
+    },
+  };
+  dbUpdateAgent(agent.id, { defaults: agent.defaults });
+}
 
 function provider(
   id: string,
@@ -69,7 +83,7 @@ describe("runtime target failover E2E", () => {
     stateDir = null;
   });
 
-  it("fails primary, completes on secondary and emits exactly one final response", async () => {
+  it("fails primary, starts an incompatible secondary without stale resume state, and emits exactly one response", async () => {
     let secondaryRequest: RuntimeStartRequest | undefined;
     registerRuntimeProvider(primary, () =>
       provider(primary, [{ type: "turn.failed", error: "synthetic primary outage", recoverable: true }]),
@@ -88,6 +102,7 @@ describe("runtime target failover E2E", () => {
     );
     const agent = configStore.getConfig().agents.main;
     if (!agent) throw new Error("default test agent missing");
+    grantRuntimeTargets(agent);
     agent.defaults = {
       ...(agent.defaults ?? {}),
       runtimeTargetPolicy: {
@@ -151,6 +166,116 @@ describe("runtime target failover E2E", () => {
     }
   });
 
+  it("reconstructs an unfinished turn in a fresh dispatcher after restart", async () => {
+    let primaryStarts = 0;
+    let secondaryStarts = 0;
+    registerRuntimeProvider(primary, () =>
+      provider(primary, [], () => {
+        primaryStarts++;
+      }),
+    );
+    registerRuntimeProvider(secondary, () => ({
+      id: secondary,
+      getCapabilities: () => capabilities,
+      startSession: () => {
+        secondaryStarts++;
+        return {
+          provider: secondary,
+          events: (async function* () {
+            yield { type: "assistant.message", text: "resumed by secondary" } as const;
+            yield { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 1 } } as const;
+          })(),
+          interrupt: async () => {},
+        };
+      },
+    }));
+    const agent = configStore.getConfig().agents.main;
+    if (!agent) throw new Error("default test agent missing");
+    grantRuntimeTargets(agent);
+    agent.defaults = {
+      ...(agent.defaults ?? {}),
+      runtimeTargetPolicy: {
+        id: "restart-e2e-policy",
+        strategy: "ordered",
+        maxAttemptsPerTarget: 1,
+        targets: [
+          { id: "primary", runtimeProvider: primary, model: "primary-model" },
+          { id: "secondary", runtimeProvider: secondary, model: "secondary-model" },
+        ],
+      },
+    };
+    dbUpdateAgent(agent.id, { defaults: agent.defaults });
+    const sessionKey = "target-restart-e2e";
+    const sessionName = "target-restart-e2e";
+    const logicalTurnId = "turn-before-dispatcher-restart";
+    getOrCreateSession(sessionKey, "main", stateDir ?? "/tmp", { name: sessionName });
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "restart-e2e@s.whatsapp.net",
+      chatType: "dm",
+      title: "restart failover e2e",
+    });
+    attachChatToSession({ sessionKey, chatId: chat.id, setOutputTarget: true });
+    recordRuntimeTraceEvent({
+      sessionKey,
+      sessionName,
+      agentId: "main",
+      eventType: "runtime.start",
+      eventGroup: "runtime",
+      status: "starting",
+      payloadJson: {
+        runtimeTargetPolicyId: "restart-e2e-policy",
+        runtimeTargetId: "primary",
+        logicalTurnId,
+      },
+    });
+    recordRuntimeTraceEvent({
+      sessionKey,
+      sessionName,
+      agentId: "main",
+      eventType: "runtime.target.switch_requested",
+      eventGroup: "runtime",
+      status: "recovering",
+      payloadJson: {
+        policyId: "restart-e2e-policy",
+        targetId: "primary",
+        logicalTurnId,
+      },
+    });
+
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic, data) => {
+      emitted.push({ topic, data: data as Record<string, unknown> });
+    });
+    const restartedDispatcher = new RuntimeSessionDispatcher({
+      instanceId: "restart-e2e",
+      maxConcurrentSessions: 2,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      getConfigModel: () => "fallback-model",
+    });
+    try {
+      await restartedDispatcher.startStreamingSession(sessionName, {
+        prompt: "continue after restart",
+        _agentId: "main",
+        _resumeStashedMessages: true,
+      });
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (emitted.some((event) => event.topic === `ravi.session.${sessionName}.response`)) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(primaryStarts).toBe(0);
+      expect(secondaryStarts).toBe(1);
+      const responses = emitted.filter((event) => event.topic === `ravi.session.${sessionName}.response`);
+      expect(responses).toHaveLength(1);
+      expect(responses[0]?.data.response).toBe("resumed by secondary");
+    } finally {
+      restartedDispatcher.shutdownAll();
+      emitSpy.mockRestore();
+    }
+  });
+
   it("does not replay after a tool execution boundary", async () => {
     let secondaryStarts = 0;
     registerRuntimeProvider(primary, () =>
@@ -166,6 +291,7 @@ describe("runtime target failover E2E", () => {
     );
     const agent = configStore.getConfig().agents.main;
     if (!agent) throw new Error("default test agent missing");
+    grantRuntimeTargets(agent);
     agent.defaults = {
       ...(agent.defaults ?? {}),
       runtimeTargetPolicy: {
@@ -209,6 +335,77 @@ describe("runtime target failover E2E", () => {
     }
   });
 
+  it("recovers a credential on the same target without consuming failover budget", async () => {
+    let starts = 0;
+    registerRuntimeProvider(primary, () => {
+      starts++;
+      return provider(
+        primary,
+        starts === 1
+          ? [
+              {
+                type: "turn.failed",
+                error: "synthetic account refresh",
+                recoverable: true,
+                metadata: { failureScope: "credential" },
+              },
+            ]
+          : [
+              { type: "assistant.message", text: "credential recovered" },
+              { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 1 } },
+            ],
+      );
+    });
+    const agent = configStore.getConfig().agents.main;
+    if (!agent) throw new Error("default test agent missing");
+    grantRuntimeTargets(agent);
+    agent.defaults = {
+      ...(agent.defaults ?? {}),
+      runtimeTargetPolicy: {
+        id: "credential-policy",
+        strategy: "ordered",
+        maxAttemptsPerTarget: 1,
+        targets: [{ id: "primary", runtimeProvider: primary, model: "primary-model" }],
+      },
+    };
+    dbUpdateAgent(agent.id, { defaults: agent.defaults });
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic, data) => {
+      emitted.push({ topic, data: data as Record<string, unknown> });
+    });
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "credential",
+      maxConcurrentSessions: 2,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      getConfigModel: () => "fallback-model",
+    });
+    getOrCreateSession("target-credential", "main", stateDir ?? "/tmp", { name: "target-credential" });
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "credential@s.whatsapp.net",
+      chatType: "dm",
+      title: "credential",
+    });
+    attachChatToSession({ sessionKey: "target-credential", chatId: chat.id, setOutputTarget: true });
+    try {
+      await dispatcher.startStreamingSession("target-credential", { prompt: "retry credential", _agentId: "main" });
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (emitted.some((event) => event.topic === "ravi.session.target-credential.response")) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(starts).toBe(2);
+      expect(emitted.filter((event) => event.topic === "ravi.session.target-credential.response")).toHaveLength(1);
+      expect(emitted.find((event) => event.topic === "ravi.session.target-credential.response")?.data.response).toBe(
+        "credential recovered",
+      );
+    } finally {
+      dispatcher.shutdownAll();
+      emitSpy.mockRestore();
+    }
+  });
+
   it("advances across multiple recoverable failures and terminates once", async () => {
     const startedProviders: string[] = [];
     registerRuntimeProvider(primary, () =>
@@ -222,12 +419,13 @@ describe("runtime target failover E2E", () => {
       ),
     );
     registerRuntimeProvider(tertiary, () =>
-      provider(tertiary, [{ type: "turn.failed", error: "tertiary terminal", recoverable: false }], () =>
+      provider(tertiary, [{ type: "turn.failed", error: "tertiary outage", recoverable: true }], () =>
         startedProviders.push(tertiary),
       ),
     );
     const agent = configStore.getConfig().agents.main;
     if (!agent) throw new Error("default test agent missing");
+    grantRuntimeTargets(agent);
     agent.defaults = {
       ...(agent.defaults ?? {}),
       runtimeTargetPolicy: {

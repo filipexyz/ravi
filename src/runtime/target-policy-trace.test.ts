@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { recordRuntimeTraceEvent } from "../session-trace/runtime-trace.js";
-import { reconstructRuntimeTargetTurnState } from "./target-policy-trace.js";
+import { reconstructRuntimeTargetHealth, reconstructRuntimeTargetTurnState } from "./target-policy-trace.js";
 
 let stateDir: string | null = null;
 const sessionKey = "agent:main:target-restart";
@@ -42,5 +42,29 @@ describe("runtime target trace reconstruction", () => {
       sideEffectBoundaryCrossed: false,
       terminal: false,
     });
+  });
+
+  it("allows a circuit-open target to re-enter after its cooldown", () => {
+    const policy = {
+      id: "recovering-circuit",
+      strategy: "health-aware" as const,
+      maxAttemptsPerTarget: 1,
+      cooldownMs: 100,
+      circuitBreakerThreshold: 1,
+      targets: [{ id: "primary", runtimeProvider: "codex", model: "primary" }],
+    };
+    const beforeFailure = Date.now();
+    recordRuntimeTraceEvent({
+      sessionKey,
+      sessionName: "target-restart",
+      agentId: "main",
+      eventType: "runtime.target.switch_requested",
+      eventGroup: "runtime",
+      status: "recovering",
+      payloadJson: { policyId: policy.id, targetId: "primary", logicalTurnId: "logical-circuit" },
+    });
+
+    expect(reconstructRuntimeTargetHealth(sessionKey, policy, beforeFailure).get("primary")?.status).toBe("open");
+    expect(reconstructRuntimeTargetHealth(sessionKey, policy, Date.now() + 101).get("primary")?.status).toBe("healthy");
   });
 });
