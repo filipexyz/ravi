@@ -1831,6 +1831,30 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           session.runtimeProvider = runtimeSession.provider;
         }
         clearRuntimeCredentialAttempt(streaming, completedCredentialAttemptId);
+        if (streaming.runtimeTargetState && streaming.runtimeTarget) {
+          const attempt = [...streaming.runtimeTargetState.attempts]
+            .reverse()
+            .find((item) => item.targetId === streaming.runtimeTarget?.id && item.completedAt === undefined);
+          if (attempt) {
+            attempt.completedAt = Date.now();
+            attempt.outcome = "success";
+          }
+          streaming.runtimeTargetState.terminal = true;
+          recordTraceEvent({
+            turnId: streaming.currentTraceTurnId,
+            provider: runtimeSession.provider,
+            model,
+            eventType: "runtime.target.succeeded",
+            eventGroup: "runtime",
+            status: "complete",
+            payloadJson: {
+              policyId: streaming.runtimeTargetPolicy?.id ?? null,
+              targetId: streaming.runtimeTarget.id,
+              logicalTurnId: streaming.runtimeTargetState.logicalTurnId,
+              attempts: streaming.runtimeTargetState.attempts.length,
+            },
+          });
+        }
         updateTokens(session.sessionKey, inputTokens, outputTokens, inputTokens + cacheRead + cacheCreation);
 
         const executionModel = resolveCostTrackingModel(runtimeSession.provider, event.execution?.model, model);
@@ -2246,6 +2270,69 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           clearTraceTurnState();
           streaming.done = true;
           break;
+        }
+
+        if (streaming.runtimeTargetPolicy && streaming.runtimeTargetState && streaming.runtimeTarget) {
+          const state = streaming.runtimeTargetState;
+          state.sideEffectBoundaryCrossed = currentTurnHadToolStarted;
+          const attempt = [...state.attempts]
+            .reverse()
+            .find((item) => item.targetId === streaming.runtimeTarget?.id && item.completedAt === undefined);
+          if (attempt) {
+            attempt.completedAt = Date.now();
+            attempt.outcome = event.recoverable === true ? "recoverable_failure" : "terminal_failure";
+            attempt.failureKind = "target";
+          }
+          const replayEligible = event.recoverable === true && !currentTurnHadToolStarted;
+          recordTraceEvent({
+            turnId: streaming.currentTraceTurnId,
+            provider: runtimeSession.provider,
+            model,
+            eventType: replayEligible ? "runtime.target.switch_requested" : "runtime.target.replay_blocked",
+            eventGroup: "runtime",
+            status: replayEligible ? "recovering" : "blocked",
+            error: event.error,
+            payloadJson: {
+              policyId: streaming.runtimeTargetPolicy.id,
+              targetId: streaming.runtimeTarget.id,
+              logicalTurnId: state.logicalTurnId,
+              recoverable: event.recoverable === true,
+              sideEffectBoundaryCrossed: currentTurnHadToolStarted,
+              attempts: state.attempts.length,
+            },
+          });
+          if (replayEligible) {
+            const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages);
+            const stashed = stashedMessages.get(sessionName) ?? [];
+            for (const message of stashed) {
+              if (!message.launchPrompt) continue;
+              message.launchPrompt._runtimeTargetPolicy = streaming.runtimeTargetPolicy;
+              message.launchPrompt._runtimeTargetState = state;
+              message.launchPrompt._runtimeProviderId = undefined;
+              message.launchPrompt._runtimeModel = undefined;
+            }
+            if (stashedCount > 0) {
+              recordTerminalTraceOnce({
+                status: "aborted",
+                eventType: "turn.interrupted",
+                abortReason: "runtime_target_switch",
+                error: null,
+                payloadJson: {
+                  autoRecovered: true,
+                  policyId: streaming.runtimeTargetPolicy.id,
+                  targetId: streaming.runtimeTarget.id,
+                  logicalTurnId: state.logicalTurnId,
+                },
+              });
+              restartStashedReason = "runtime_target_switch";
+              clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
+              signalTurnComplete();
+              clearTraceTurnState();
+              streaming.done = true;
+              break;
+            }
+          }
+          state.terminal = true;
         }
 
         await emitRuntimeEvent({

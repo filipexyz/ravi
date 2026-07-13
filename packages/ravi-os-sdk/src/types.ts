@@ -9876,6 +9876,30 @@ export type RuntimePresetsShowReturn = {
   referencingAgentsTotal: number;
 };
 
+/** Input shape for `runtime.targets.explain`. */
+export type RuntimeTargetsExplainInput = {
+  agent?: string;
+};
+
+/** Return shape for `runtime.targets.explain`. */
+export type RuntimeTargetsExplainReturn = {
+  agentId: string;
+  enabled: boolean;
+  policyId: string | null;
+  provenance: string | null;
+  rejected: Array<{
+    detail?: string;
+    reason: string;
+    targetId: string;
+  }>;
+  selectedTarget: ({
+    id: string;
+    model: string;
+    runtimeProvider: string;
+  }) | null;
+  source: "session_override" | "task_profile" | "agent_default" | "none";
+};
+
 /** Input shape for `sdk.client.check`. */
 export type SdkClientCheckInput = {
   out?: string;

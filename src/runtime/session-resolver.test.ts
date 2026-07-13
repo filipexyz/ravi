@@ -178,4 +178,44 @@ describe("runtime session resolver", () => {
     });
     expect(getSession(SESSION_KEY)?.providerSessionId).toBeUndefined();
   });
+
+  it("selects the next registered target from the replay envelope", () => {
+    const policy = {
+      id: "ordered-failover",
+      strategy: "ordered" as const,
+      maxAttemptsPerTarget: 1,
+      targets: [
+        { id: "primary", runtimeProvider: "codex", model: "primary-model" },
+        { id: "secondary", runtimeProvider: "claude", model: "secondary-model" },
+      ],
+    };
+    const first = resolveRuntimeSession({
+      sessionName: SESSION_NAME,
+      prompt: { prompt: "try primary", _runtimeTargetPolicy: policy },
+      defaultRuntimeProviderId: "codex",
+    });
+    expect(first?.runtimeProviderId).toBe("codex");
+    expect(first?.runtimeTarget?.id).toBe("primary");
+
+    const state = first?.runtimeTargetState;
+    expect(state).toBeDefined();
+    if (!state) return;
+    const attempt = state.attempts[0];
+    if (attempt) {
+      attempt.completedAt = Date.now();
+      attempt.outcome = "recoverable_failure";
+    }
+    const second = resolveRuntimeSession({
+      sessionName: SESSION_NAME,
+      prompt: {
+        prompt: "try secondary",
+        _runtimeTargetPolicy: policy,
+        _runtimeTargetState: state,
+      },
+      defaultRuntimeProviderId: "codex",
+    });
+    expect(second?.runtimeProviderId).toBe("claude");
+    expect(second?.runtimeTarget?.id).toBe("secondary");
+    expect(second?.runtimeTargetState?.attempts.map((item) => item.targetId)).toEqual(["primary", "secondary"]);
+  });
 });

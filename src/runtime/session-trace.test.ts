@@ -42,6 +42,7 @@ import type {
   RuntimeSkillVisibilitySnapshot,
   SessionRuntimeProvider,
 } from "./types.js";
+import type { RuntimeTargetPolicy, RuntimeTargetTurnState } from "./target-policy.js";
 
 let stateDir: string | null = null;
 
@@ -1294,6 +1295,104 @@ describe("runtime session trace instrumentation", () => {
       rawEvent: { type: "error", message: "provider down" },
     });
     expect(getSessionTurn("turn-failed")?.status).toBe("failed");
+  });
+
+  it("switches runtime targets and replays exactly the current turn before tools", async () => {
+    const policy: RuntimeTargetPolicy = {
+      id: "provider-failover",
+      strategy: "ordered",
+      maxAttemptsPerTarget: 1,
+      targets: [
+        { id: "primary", runtimeProvider: PROVIDER, model: MODEL },
+        { id: "secondary", runtimeProvider: "trace-secondary", model: "trace-secondary-model" },
+      ],
+    };
+    const state: RuntimeTargetTurnState = {
+      logicalTurnId: "logical-turn-1",
+      attempts: [{ targetId: "primary", attempt: 1, startedAt: Date.now() }],
+      sideEffectBoundaryCrossed: false,
+      terminal: false,
+    };
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "replay on secondary",
+      source,
+      _agentId: AGENT_ID,
+      _runtimeTargetPolicy: policy,
+      _runtimeTargetState: state,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      runtimeTargetPolicy: policy,
+      runtimeTarget: policy.targets[0],
+      runtimeTargetState: state,
+    });
+    seedAdapterTrace(streaming, "turn-target-switch");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([{ type: "turn.failed", error: "provider unavailable", recoverable: true }]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "runtime_target_switch" }]);
+    expect(stashedMessages.get(SESSION_NAME)?.[0]?.launchPrompt?._runtimeTargetState?.attempts[0]?.outcome).toBe(
+      "recoverable_failure",
+    );
+    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "runtime.target.switch_requested")).toBe(
+      true,
+    );
+    expect(getSessionTurn("turn-target-switch")?.status).toBe("aborted");
+  });
+
+  it("blocks target replay after any tool starts", async () => {
+    const policy: RuntimeTargetPolicy = {
+      id: "safe-failover",
+      strategy: "ordered",
+      maxAttemptsPerTarget: 1,
+      targets: [
+        { id: "primary", runtimeProvider: PROVIDER, model: MODEL },
+        { id: "secondary", runtimeProvider: "trace-secondary", model: "trace-secondary-model" },
+      ],
+    };
+    const state: RuntimeTargetTurnState = {
+      logicalTurnId: "logical-turn-side-effect",
+      attempts: [{ targetId: "primary", attempt: 1, startedAt: Date.now() }],
+      sideEffectBoundaryCrossed: false,
+      terminal: false,
+    };
+    const streaming = makeStreamingSession({
+      currentTurnToolStarted: true,
+      runtimeTargetPolicy: policy,
+      runtimeTarget: policy.targets[0],
+      runtimeTargetState: state,
+    });
+    seedAdapterTrace(streaming, "turn-target-side-effect");
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([{ type: "turn.failed", error: "provider unavailable", recoverable: true }]),
+      {
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(restartRequests).toEqual([]);
+    expect(state.sideEffectBoundaryCrossed).toBe(true);
+    expect(state.terminal).toBe(true);
+    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "runtime.target.replay_blocked")).toBe(
+      true,
+    );
   });
 
   it("deduplicates user-facing provider session limit failures within the same reset window", () => {

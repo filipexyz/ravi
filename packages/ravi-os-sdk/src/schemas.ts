@@ -48765,6 +48765,119 @@ export const RuntimePresetsShowReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `runtime.targets.explain`. */
+export const RuntimeTargetsExplainInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent whose defaults should be evaluated",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.targets.explain`. */
+export const RuntimeTargetsExplainReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "policyId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "provenance": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "rejected": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "targetId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "targetId",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "selectedTarget": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "runtimeProvider": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "runtimeProvider",
+            "model"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "enum": [
+        "session_override",
+        "task_profile",
+        "agent_default",
+        "none"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "agentId",
+    "enabled",
+    "source",
+    "provenance",
+    "policyId",
+    "selectedTarget",
+    "rejected"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sdk.client.check`. */
 export const SdkClientCheckInputSchema = {
   "additionalProperties": false,

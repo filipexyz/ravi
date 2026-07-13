@@ -85,11 +85,35 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
   const runId = createSessionTraceRunId();
   const resumeStashedMessages = prompt._resumeStashedMessages === true;
 
-  const resolvedSession = resolveRuntimeSession({
-    sessionName,
-    prompt,
-    defaultRuntimeProviderId: DEFAULT_RUNTIME_PROVIDER_ID,
-  });
+  let resolvedSession: ReturnType<typeof resolveRuntimeSession>;
+  try {
+    resolvedSession = resolveRuntimeSession({
+      sessionName,
+      prompt,
+      defaultRuntimeProviderId: DEFAULT_RUNTIME_PROVIDER_ID,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    log.warn("Runtime target resolution failed", { sessionName, error: errorMessage });
+    await safeEmit(`ravi.session.${sessionName}.runtime`, {
+      type: "turn.failed",
+      error: errorMessage,
+      recoverable: false,
+      ...(prompt.source ? { _source: prompt.source } : {}),
+    });
+    if (prompt.source) {
+      await nats.emit(`ravi.session.${sessionName}.response`, {
+        response: formatUserFacingTurnFailure(errorMessage),
+        target: prompt.source,
+        _emitId: Math.random().toString(36).slice(2, 8),
+        _instanceId: instanceId,
+        _pid: process.pid,
+        _v: 2,
+      });
+    }
+    drainPendingStarts();
+    return;
+  }
   if (!resolvedSession) {
     return;
   }
@@ -106,7 +130,17 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     storedProviderSessionId,
     canResumeStoredSession,
     resumeDecision,
+    runtimeTargetPolicy,
+    runtimeTarget,
+    runtimeTargetState,
   } = resolvedSession;
+
+  if (runtimeTargetPolicy && runtimeTarget && runtimeTargetState) {
+    prompt._runtimeTargetPolicy = runtimeTargetPolicy;
+    prompt._runtimeTargetState = runtimeTargetState;
+    prompt._runtimeProviderId = runtimeTarget.runtimeProvider;
+    prompt._runtimeModel = runtimeTarget.model;
+  }
 
   log.info("startRuntimeSession", {
     sessionName,
@@ -132,13 +166,30 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     });
   }
 
-  const runtimeResolution = resolveRuntimeForPrompt({
+  const baseRuntimeResolution = resolveRuntimeForPrompt({
     sessionName,
     prompt,
     session,
     agent,
     configModel,
   });
+  const runtimeResolution = runtimeTarget
+    ? {
+        ...baseRuntimeResolution,
+        options: {
+          ...baseRuntimeResolution.options,
+          model: runtimeTarget.model,
+          ...(runtimeTarget.effort ? { effort: runtimeTarget.effort } : {}),
+          ...(runtimeTarget.thinking ? { thinking: runtimeTarget.thinking } : {}),
+        },
+        sources: {
+          ...baseRuntimeResolution.sources,
+          model: "prompt_override" as const,
+          ...(runtimeTarget.effort ? { effort: "prompt_override" as const } : {}),
+          ...(runtimeTarget.thinking ? { thinking: "prompt_override" as const } : {}),
+        },
+      }
+    : baseRuntimeResolution;
   const model = runtimeResolution.options.model ?? configModel;
   try {
     const observation = ensureObserverBindingsForSession({
@@ -196,6 +247,9 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     pendingAbort: false,
     agentMode: agent.mode,
     traceRunId: runId,
+    runtimeTargetPolicy,
+    runtimeTarget,
+    runtimeTargetState,
   };
   streamingSessions.set(sessionName, streamingSession);
   updateRuntimeLiveState(sessionName, {
@@ -233,6 +287,9 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
         storedProviderSessionId: canResumeStoredSession ? storedProviderSessionId : null,
         resumeDecision,
         taskBarrierTaskId: normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId) ?? null,
+        runtimeTargetPolicyId: runtimeTargetPolicy?.id ?? null,
+        runtimeTargetId: runtimeTarget?.id ?? null,
+        logicalTurnId: runtimeTargetState?.logicalTurnId ?? null,
       },
     });
 

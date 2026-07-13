@@ -11,6 +11,7 @@ import type {
   RuntimeSessionHandle,
   RuntimeThinking,
 } from "./types.js";
+import type { RuntimeTarget, RuntimeTargetPolicy, RuntimeTargetTurnState } from "./target-policy.js";
 
 export interface RuntimeMessageTarget extends MessageActorMetadata {
   channel: string;
@@ -122,6 +123,12 @@ export interface RuntimeHostStreamingSession {
   currentTraceTurnTerminalRecorded?: boolean;
   /** Managed runtime credential selected for this provider process, if any. */
   currentRuntimeCredential?: RuntimeCredentialAttemptBinding;
+  /** Effective opt-in failover policy for the current logical turn. */
+  runtimeTargetPolicy?: RuntimeTargetPolicy;
+  /** Selected target for this provider process. */
+  runtimeTarget?: RuntimeTarget;
+  /** Durable-in-envelope attempt state used when a turn is replayed. */
+  runtimeTargetState?: RuntimeTargetTurnState;
   /** Recovery timer for the narrow state where a provider is alive but not accepting queued input. */
   idleGapRecoveryTimer?: ReturnType<typeof setTimeout>;
   /** Timer that evicts an idle provider process from the runtime pool. */

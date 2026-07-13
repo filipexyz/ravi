@@ -8,13 +8,22 @@ import {
   type SessionEntry,
 } from "../router/index.js";
 import { logger } from "../utils/logger.js";
-import { createRuntimeProvider } from "./provider-registry.js";
+import { createRuntimeProvider, listRegisteredRuntimeProviderIds } from "./provider-registry.js";
 import { resolveAgentModelSelection } from "./model-preset-resolver.js";
 import type { RuntimeProviderId } from "./types.js";
 import { resolveStoredRuntimeProvider } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import type { RuntimeCapabilities, SessionRuntimeProvider } from "./types.js";
 import { validateRuntimeSessionState, type RuntimeSessionStateInvalidReason } from "./session-state.js";
+import { resolveRuntimeTargetPolicy } from "./target-policy-config.js";
+import {
+  selectRuntimeTarget,
+  collectRuntimeCapabilityNames,
+  type RuntimeTarget,
+  type RuntimeTargetPolicy,
+  type RuntimeTargetTurnState,
+} from "./target-policy.js";
+import { reconstructRuntimeTargetTurnState } from "./target-policy-trace.js";
 
 const log = logger.child("runtime:session-resolver");
 
@@ -34,6 +43,9 @@ export interface RuntimeSessionResolution {
   storedRuntimeProvider?: RuntimeProviderId;
   canResumeStoredSession: boolean;
   resumeDecision: RuntimeResumeDecision;
+  runtimeTargetPolicy?: RuntimeTargetPolicy;
+  runtimeTarget?: RuntimeTarget;
+  runtimeTargetState?: RuntimeTargetTurnState;
 }
 
 export interface RuntimeResumeDecision {
@@ -73,12 +85,58 @@ export function resolveRuntimeSession(options: {
 
   const agentCwd = expandHome(agent.cwd);
   const agentSelection = resolveAgentModelSelection(agent);
+  const resolvedTargetPolicy = resolveRuntimeTargetPolicy({
+    sessionOverride: options.prompt._runtimeTargetPolicy,
+    agentDefaults: agent.defaults,
+    agentId,
+  });
+  const reconstructedTargetState =
+    resolvedTargetPolicy.policy && options.prompt._resumeStashedMessages && sessionEntry
+      ? reconstructRuntimeTargetTurnState(sessionEntry.sessionKey, resolvedTargetPolicy.policy.id)
+      : undefined;
+  const targetState: RuntimeTargetTurnState | undefined = resolvedTargetPolicy.policy
+    ? (options.prompt._runtimeTargetState ??
+      reconstructedTargetState ?? {
+        logicalTurnId: crypto.randomUUID(),
+        attempts: [],
+        sideEffectBoundaryCrossed: false,
+        terminal: false,
+      })
+    : undefined;
+  const registeredRuntimeProviders = new Set(listRegisteredRuntimeProviderIds());
+  const targetSelection =
+    resolvedTargetPolicy.policy && targetState
+      ? selectRuntimeTarget(resolvedTargetPolicy.policy, targetState, {
+          now: Date.now(),
+          registeredProviders: registeredRuntimeProviders,
+          availableCapabilities: new Map(
+            resolvedTargetPolicy.policy.targets
+              .filter((target) => registeredRuntimeProviders.has(target.runtimeProvider))
+              .map((target) => [
+                target.runtimeProvider,
+                collectRuntimeCapabilityNames(createRuntimeProvider(target.runtimeProvider).getCapabilities()),
+              ]),
+          ),
+        })
+      : undefined;
+  if (targetSelection?.status === "exhausted") {
+    throw new Error(`Runtime target policy '${resolvedTargetPolicy.policy?.id}' is exhausted.`);
+  }
+  const runtimeTarget = targetSelection?.status === "selected" ? targetSelection.target : undefined;
+  if (runtimeTarget && targetState) {
+    targetState.attempts.push({
+      targetId: runtimeTarget.id,
+      attempt: targetState.attempts.filter((attempt) => attempt.targetId === runtimeTarget.id).length + 1,
+      startedAt: Date.now(),
+    });
+  }
   const runtimeProviderId: RuntimeProviderId =
-    options.prompt._observation && options.prompt._runtimeProviderId
+    runtimeTarget?.runtimeProvider ??
+    (options.prompt._runtimeProviderId
       ? options.prompt._runtimeProviderId
       : agentSelection.modelSource === "agent_preset"
         ? agentSelection.effectiveProvider
-        : (agent.provider ?? options.defaultRuntimeProviderId);
+        : (agent.provider ?? options.defaultRuntimeProviderId));
   const runtimeProvider = createRuntimeProvider(runtimeProviderId);
   const runtimeCapabilities = runtimeProvider.getCapabilities();
 
@@ -160,6 +218,9 @@ export function resolveRuntimeSession(options: {
     storedRuntimeProvider,
     canResumeStoredSession,
     resumeDecision,
+    ...(resolvedTargetPolicy.policy ? { runtimeTargetPolicy: resolvedTargetPolicy.policy } : {}),
+    ...(runtimeTarget ? { runtimeTarget } : {}),
+    ...(targetState ? { runtimeTargetState: targetState } : {}),
   };
 }
 
