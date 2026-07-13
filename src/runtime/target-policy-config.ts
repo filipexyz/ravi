@@ -59,6 +59,8 @@ export function parseRuntimeTargetPolicy(value: unknown): RuntimeTargetPolicy {
     id: requireString(value.id, "policy id"),
     strategy,
     maxAttemptsPerTarget: Number(maxAttemptsPerTarget),
+    cooldownMs: readNonNegativeInteger(value.cooldownMs, 30_000, "cooldownMs"),
+    circuitBreakerThreshold: readPositiveInteger(value.circuitBreakerThreshold, 3, "circuitBreakerThreshold"),
     targets: value.targets.map((target, index) => {
       if (!isRecord(target)) throw new Error(`Runtime target at index ${index} must be an object.`);
       return {
@@ -77,6 +79,19 @@ export function parseRuntimeTargetPolicy(value: unknown): RuntimeTargetPolicy {
       };
     }),
   };
+}
+
+function readNonNegativeInteger(value: unknown, fallback: number, label: string): number {
+  if (value === undefined) return fallback;
+  if (!Number.isInteger(value) || Number(value) < 0)
+    throw new Error(`Runtime target policy ${label} must be a non-negative integer.`);
+  return Number(value);
+}
+
+function readPositiveInteger(value: unknown, fallback: number, label: string): number {
+  const parsed = readNonNegativeInteger(value, fallback, label);
+  if (parsed < 1) throw new Error(`Runtime target policy ${label} must be a positive integer.`);
+  return parsed;
 }
 
 function requireString(value: unknown, label: string): string {

@@ -45,6 +45,7 @@ import {
   type RuntimeUserMessage,
 } from "./host-session.js";
 import { resolveSessionOutputTarget } from "./session-output-target.js";
+import { classifyRuntimeTargetFailure, decideRuntimeTargetFailure } from "./target-policy.js";
 import { resolveRuntimeIdleSessionTtlMs } from "./session-pool.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
 import {
@@ -2275,15 +2276,32 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         if (streaming.runtimeTargetPolicy && streaming.runtimeTargetState && streaming.runtimeTarget) {
           const state = streaming.runtimeTargetState;
           state.sideEffectBoundaryCrossed = currentTurnHadToolStarted;
+          const classifiedFailure = classifyRuntimeTargetFailure({
+            error: event.error,
+            recoverable: event.recoverable,
+            rawEvent: event.rawEvent,
+            metadata: event.metadata,
+          });
+          const attemptsOnTarget = state.attempts.filter(
+            (item) => item.targetId === streaming.runtimeTarget?.id,
+          ).length;
+          const failureAction = decideRuntimeTargetFailure({
+            recoverable: classifiedFailure.recoverable,
+            replayEligible: !currentTurnHadToolStarted,
+            scope: classifiedFailure.scope,
+            sideEffectBoundaryCrossed: currentTurnHadToolStarted,
+            attemptsOnTarget,
+            maxAttemptsPerTarget: streaming.runtimeTargetPolicy.maxAttemptsPerTarget,
+          });
           const attempt = [...state.attempts]
             .reverse()
             .find((item) => item.targetId === streaming.runtimeTarget?.id && item.completedAt === undefined);
           if (attempt) {
             attempt.completedAt = Date.now();
-            attempt.outcome = event.recoverable === true ? "recoverable_failure" : "terminal_failure";
-            attempt.failureKind = "target";
+            attempt.outcome = failureAction === "switch_target" ? "recoverable_failure" : "terminal_failure";
+            attempt.failureKind = classifiedFailure.scope;
           }
-          const replayEligible = event.recoverable === true && !currentTurnHadToolStarted;
+          const replayEligible = failureAction === "switch_target";
           recordTraceEvent({
             turnId: streaming.currentTraceTurnId,
             provider: runtimeSession.provider,
@@ -2297,6 +2315,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               targetId: streaming.runtimeTarget.id,
               logicalTurnId: state.logicalTurnId,
               recoverable: event.recoverable === true,
+              failureScope: classifiedFailure.scope,
+              failureAction,
               sideEffectBoundaryCrossed: currentTurnHadToolStarted,
               attempts: state.attempts.length,
             },

@@ -1,9 +1,10 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { configStore } from "../../config-store.js";
-import { listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
+import { createRuntimeProvider, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
+import { canWithCapabilities, materializeSubjectCapabilities } from "../../permissions/provider-runtime.js";
 import { resolveRuntimeTargetPolicy } from "../../runtime/target-policy-config.js";
-import { selectRuntimeTarget } from "../../runtime/target-policy.js";
+import { collectRuntimeCapabilityNames, selectRuntimeTarget } from "../../runtime/target-policy.js";
 import { fail } from "../context.js";
 import { Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 
@@ -34,6 +35,11 @@ export class RuntimeTargetsCommands {
     const agent = configStore.getConfig().agents[agentId];
     if (!agent) fail(`Agent not found: ${agentId}`);
     const resolved = resolveRuntimeTargetPolicy({ agentDefaults: agent.defaults, agentId });
+    const registeredProviders = new Set(listRegisteredRuntimeProviderIds());
+    const capabilities = materializeSubjectCapabilities("agent", agentId, { includeRoles: true });
+    const hasTargetPermissionConstraints = capabilities.some(
+      (capability) => capability.objectType === "runtime.target",
+    );
     const selection = resolved.policy
       ? selectRuntimeTarget(
           resolved.policy,
@@ -45,8 +51,24 @@ export class RuntimeTargetsCommands {
           },
           {
             now: Date.now(),
-            registeredProviders: new Set(listRegisteredRuntimeProviderIds()),
-            availableCapabilities: new Map(),
+            registeredProviders,
+            availableCapabilities: new Map(
+              resolved.policy.targets
+                .filter((target) => registeredProviders.has(target.runtimeProvider))
+                .map((target) => [
+                  target.runtimeProvider,
+                  collectRuntimeCapabilityNames(createRuntimeProvider(target.runtimeProvider).getCapabilities()),
+                ]),
+            ),
+            permittedTargetIds: new Set(
+              resolved.policy.targets
+                .filter(
+                  (target) =>
+                    !hasTargetPermissionConstraints ||
+                    canWithCapabilities(capabilities, "use", "runtime.target", target.id),
+                )
+                .map((target) => target.id),
+            ),
           },
         )
       : null;

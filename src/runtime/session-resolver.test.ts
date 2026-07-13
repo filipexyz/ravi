@@ -4,6 +4,7 @@ import { writeFileSync } from "node:fs";
 import { getOrCreateSession, getSession, updateProviderSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { configStore } from "../config-store.js";
+import { recordRuntimeTraceEvent } from "../session-trace/runtime-trace.js";
 import { resolveRuntimeSession } from "./session-resolver.js";
 import { registerRuntimeProvider, unregisterRuntimeProvider } from "./provider-registry.js";
 import type { RuntimeCapabilities, SessionRuntimeProvider } from "./types.js";
@@ -217,5 +218,48 @@ describe("runtime session resolver", () => {
     expect(second?.runtimeProviderId).toBe("claude");
     expect(second?.runtimeTarget?.id).toBe("secondary");
     expect(second?.runtimeTargetState?.attempts.map((item) => item.targetId)).toEqual(["primary", "secondary"]);
+  });
+
+  it("reconstructs failover after daemon restart and does not repeat the failed target", () => {
+    const policy = {
+      id: "restart-policy",
+      strategy: "ordered" as const,
+      maxAttemptsPerTarget: 1,
+      targets: [
+        { id: "primary", runtimeProvider: "codex", model: "primary-model" },
+        { id: "secondary", runtimeProvider: "claude", model: "secondary-model" },
+      ],
+    };
+    getOrCreateSession(SESSION_KEY, "main", stateDir ?? "/tmp", { name: SESSION_NAME });
+    recordRuntimeTraceEvent({
+      sessionKey: SESSION_KEY,
+      sessionName: SESSION_NAME,
+      agentId: "main",
+      eventType: "runtime.start",
+      eventGroup: "runtime",
+      status: "starting",
+      payloadJson: {
+        runtimeTargetPolicyId: policy.id,
+        runtimeTargetId: "primary",
+        logicalTurnId: "turn-before-restart",
+      },
+    });
+    recordRuntimeTraceEvent({
+      sessionKey: SESSION_KEY,
+      sessionName: SESSION_NAME,
+      agentId: "main",
+      eventType: "runtime.target.switch_requested",
+      eventGroup: "runtime",
+      status: "recovering",
+      payloadJson: { policyId: policy.id, targetId: "primary", logicalTurnId: "turn-before-restart" },
+    });
+
+    const resumed = resolveRuntimeSession({
+      sessionName: SESSION_NAME,
+      prompt: { prompt: "resume after restart", _runtimeTargetPolicy: policy, _resumeStashedMessages: true },
+      defaultRuntimeProviderId: "codex",
+    });
+    expect(resumed?.runtimeTarget?.id).toBe("secondary");
+    expect(resumed?.runtimeTargetState?.attempts.map((attempt) => attempt.targetId)).toEqual(["primary", "secondary"]);
   });
 });

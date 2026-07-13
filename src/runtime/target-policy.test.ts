@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+  classifyRuntimeTargetFailure,
   decideRuntimeTargetFailure,
   selectRuntimeTarget,
   type RuntimeTargetPolicy,
@@ -35,6 +36,33 @@ describe("runtime target policy", () => {
     expect(selectRuntimeTarget(policy, emptyState, context)).toMatchObject({
       status: "selected",
       target: { id: "primary" },
+    });
+  });
+
+  it("orders health-aware targets by consecutive failures with stable tie-breaking", () => {
+    expect(
+      selectRuntimeTarget({ ...policy, strategy: "health-aware" }, emptyState, {
+        ...context,
+        health: new Map([
+          ["primary", { targetId: "primary", status: "healthy", consecutiveFailures: 2 }],
+          ["secondary", { targetId: "secondary", status: "healthy", consecutiveFailures: 0 }],
+        ]),
+      }),
+    ).toMatchObject({ status: "selected", target: { id: "secondary" } });
+  });
+
+  it("classifies request and session failures as non-replayable scopes", () => {
+    expect(classifyRuntimeTargetFailure({ error: "unsupported schema", recoverable: true })).toEqual({
+      recoverable: false,
+      scope: "request",
+    });
+    expect(classifyRuntimeTargetFailure({ error: "session resume incompatible", recoverable: true })).toEqual({
+      recoverable: false,
+      scope: "session",
+    });
+    expect(classifyRuntimeTargetFailure({ error: "provider unavailable", recoverable: true })).toEqual({
+      recoverable: true,
+      scope: "target",
     });
   });
 

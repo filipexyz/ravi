@@ -133,6 +133,8 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     runtimeTargetPolicy,
     runtimeTarget,
     runtimeTargetState,
+    runtimeTargetPolicySource,
+    runtimeTargetPolicyProvenance,
   } = resolvedSession;
 
   if (runtimeTargetPolicy && runtimeTarget && runtimeTargetState) {
@@ -288,6 +290,8 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
         resumeDecision,
         taskBarrierTaskId: normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId) ?? null,
         runtimeTargetPolicyId: runtimeTargetPolicy?.id ?? null,
+        runtimeTargetPolicySource: runtimeTargetPolicySource ?? null,
+        runtimeTargetPolicyProvenance: runtimeTargetPolicyProvenance ?? null,
         runtimeTargetId: runtimeTarget?.id ?? null,
         logicalTurnId: runtimeTargetState?.logicalTurnId ?? null,
       },

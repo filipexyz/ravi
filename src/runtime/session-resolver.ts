@@ -1,4 +1,5 @@
 import { configStore } from "../config-store.js";
+import { canWithCapabilities, materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 import {
   clearProviderSession,
   expandHome,
@@ -8,6 +9,8 @@ import {
   type SessionEntry,
 } from "../router/index.js";
 import { logger } from "../utils/logger.js";
+import { dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
+import { resolveTaskProfileForTask } from "../tasks/profiles.js";
 import { createRuntimeProvider, listRegisteredRuntimeProviderIds } from "./provider-registry.js";
 import { resolveAgentModelSelection } from "./model-preset-resolver.js";
 import type { RuntimeProviderId } from "./types.js";
@@ -19,11 +22,13 @@ import { resolveRuntimeTargetPolicy } from "./target-policy-config.js";
 import {
   selectRuntimeTarget,
   collectRuntimeCapabilityNames,
+  deriveRuntimeTargetHealth,
   type RuntimeTarget,
   type RuntimeTargetPolicy,
   type RuntimeTargetTurnState,
 } from "./target-policy.js";
-import { reconstructRuntimeTargetTurnState } from "./target-policy-trace.js";
+import type { RuntimeTargetPolicySource } from "./target-policy-config.js";
+import { reconstructRuntimeTargetHealth, reconstructRuntimeTargetTurnState } from "./target-policy-trace.js";
 
 const log = logger.child("runtime:session-resolver");
 
@@ -46,6 +51,8 @@ export interface RuntimeSessionResolution {
   runtimeTargetPolicy?: RuntimeTargetPolicy;
   runtimeTarget?: RuntimeTarget;
   runtimeTargetState?: RuntimeTargetTurnState;
+  runtimeTargetPolicySource?: RuntimeTargetPolicySource;
+  runtimeTargetPolicyProvenance?: string | null;
 }
 
 export interface RuntimeResumeDecision {
@@ -85,8 +92,14 @@ export function resolveRuntimeSession(options: {
 
   const agentCwd = expandHome(agent.cwd);
   const agentSelection = resolveAgentModelSelection(agent);
+  const taskBinding = options.prompt.taskBarrierTaskId
+    ? dbResolveActiveTaskBindingForSession(options.sessionName, options.prompt.taskBarrierTaskId)
+    : null;
+  const taskProfile = taskBinding ? resolveTaskProfileForTask(taskBinding.task) : null;
   const resolvedTargetPolicy = resolveRuntimeTargetPolicy({
     sessionOverride: options.prompt._runtimeTargetPolicy,
+    taskProfilePolicy: taskProfile?.runtimeTargetPolicy,
+    taskProfileId: taskProfile?.id,
     agentDefaults: agent.defaults,
     agentId,
   });
@@ -104,6 +117,18 @@ export function resolveRuntimeSession(options: {
       })
     : undefined;
   const registeredRuntimeProviders = new Set(listRegisteredRuntimeProviderIds());
+  const agentCapabilities = materializeSubjectCapabilities("agent", agentId, { includeRoles: true });
+  const hasTargetPermissionConstraints = agentCapabilities.some(
+    (capability) => capability.objectType === "runtime.target",
+  );
+  const permittedTargetIds = new Set(
+    (resolvedTargetPolicy.policy?.targets ?? [])
+      .filter(
+        (target) =>
+          !hasTargetPermissionConstraints || canWithCapabilities(agentCapabilities, "use", "runtime.target", target.id),
+      )
+      .map((target) => target.id),
+  );
   const targetSelection =
     resolvedTargetPolicy.policy && targetState
       ? selectRuntimeTarget(resolvedTargetPolicy.policy, targetState, {
@@ -117,6 +142,10 @@ export function resolveRuntimeSession(options: {
                 collectRuntimeCapabilityNames(createRuntimeProvider(target.runtimeProvider).getCapabilities()),
               ]),
           ),
+          permittedTargetIds,
+          health: sessionEntry
+            ? reconstructRuntimeTargetHealth(sessionEntry.sessionKey, resolvedTargetPolicy.policy, Date.now())
+            : deriveRuntimeTargetHealth(resolvedTargetPolicy.policy, targetState),
         })
       : undefined;
   if (targetSelection?.status === "exhausted") {
@@ -219,6 +248,8 @@ export function resolveRuntimeSession(options: {
     canResumeStoredSession,
     resumeDecision,
     ...(resolvedTargetPolicy.policy ? { runtimeTargetPolicy: resolvedTargetPolicy.policy } : {}),
+    ...(resolvedTargetPolicy.policy ? { runtimeTargetPolicySource: resolvedTargetPolicy.source } : {}),
+    ...(resolvedTargetPolicy.policy ? { runtimeTargetPolicyProvenance: resolvedTargetPolicy.provenance } : {}),
     ...(runtimeTarget ? { runtimeTarget } : {}),
     ...(targetState ? { runtimeTargetState: targetState } : {}),
   };

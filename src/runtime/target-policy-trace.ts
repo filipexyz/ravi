@@ -1,5 +1,53 @@
 import { listSessionEvents } from "../session-trace/session-trace-db.js";
-import type { RuntimeTargetAttempt, RuntimeTargetTurnState } from "./target-policy.js";
+import type {
+  RuntimeTargetAttempt,
+  RuntimeTargetHealth,
+  RuntimeTargetPolicy,
+  RuntimeTargetTurnState,
+} from "./target-policy.js";
+
+/** Build cooldown/circuit state from the append-only trace without new persistence. */
+export function reconstructRuntimeTargetHealth(
+  sessionKey: string,
+  policy: RuntimeTargetPolicy,
+  now: number,
+): Map<string, RuntimeTargetHealth> {
+  const relevant = listSessionEvents(sessionKey).filter(
+    (event) =>
+      readString(event.payloadJson, "policyId", "policy_id", "runtimeTargetPolicyId", "runtime_target_policy_id") ===
+      policy.id,
+  );
+  const cooldownMs = policy.cooldownMs ?? 30_000;
+  const threshold = policy.circuitBreakerThreshold ?? 3;
+  return new Map(
+    policy.targets.map((target) => {
+      let consecutiveFailures = 0;
+      let lastFailureAt: number | undefined;
+      for (const event of relevant) {
+        const targetId = readString(event.payloadJson, "targetId", "target_id", "runtimeTargetId", "runtime_target_id");
+        if (targetId !== target.id) continue;
+        if (event.eventType === "runtime.target.succeeded") {
+          consecutiveFailures = 0;
+          lastFailureAt = undefined;
+        } else if (event.eventType === "runtime.target.switch_requested") {
+          consecutiveFailures++;
+          lastFailureAt = event.timestamp;
+        }
+      }
+      const cooldownUntil = lastFailureAt === undefined ? undefined : lastFailureAt + cooldownMs;
+      const status =
+        consecutiveFailures >= threshold
+          ? ("open" as const)
+          : cooldownUntil !== undefined && cooldownUntil > now
+            ? ("cooldown" as const)
+            : ("healthy" as const);
+      return [
+        target.id,
+        { targetId: target.id, status, ...(cooldownUntil ? { cooldownUntil } : {}), consecutiveFailures },
+      ];
+    }),
+  );
+}
 
 /** Reconstruct the latest unfinished logical target turn from the append-only Session Trace. */
 export function reconstructRuntimeTargetTurnState(
@@ -8,7 +56,9 @@ export function reconstructRuntimeTargetTurnState(
 ): RuntimeTargetTurnState | undefined {
   const events = listSessionEvents(sessionKey).filter((event) => {
     const payload = event.payloadJson;
-    return readString(payload, "policyId", "policy_id") === policyId;
+    return (
+      readString(payload, "policyId", "policy_id", "runtimeTargetPolicyId", "runtime_target_policy_id") === policyId
+    );
   });
   const latestStart = [...events]
     .reverse()

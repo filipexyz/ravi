@@ -24,7 +24,7 @@ describe("runtime target trace reconstruction", () => {
       eventType: "runtime.start",
       eventGroup: "runtime",
       status: "starting",
-      payloadJson: { policyId: "p1", runtimeTargetId: "primary", logicalTurnId: "logical-1" },
+      payloadJson: { runtimeTargetPolicyId: "p1", runtimeTargetId: "primary", logicalTurnId: "logical-1" },
     });
     recordRuntimeTraceEvent({
       sessionKey,

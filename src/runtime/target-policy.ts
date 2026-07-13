@@ -16,6 +16,8 @@ export interface RuntimeTargetPolicy {
   strategy: "ordered" | "health-aware";
   targets: RuntimeTarget[];
   maxAttemptsPerTarget: number;
+  cooldownMs?: number;
+  circuitBreakerThreshold?: number;
 }
 
 export interface RuntimeTargetHealth {
@@ -77,7 +79,19 @@ export function selectRuntimeTarget(
     state.attempts.filter((attempt) => attempt.outcome === "success").map((attempt) => attempt.targetId),
   );
 
-  for (const target of policy.targets) {
+  const targets =
+    policy.strategy === "health-aware"
+      ? policy.targets
+          .map((target, index) => ({
+            target,
+            index,
+            failures: context.health?.get(target.id)?.consecutiveFailures ?? 0,
+          }))
+          .sort((left, right) => left.failures - right.failures || left.index - right.index)
+          .map((entry) => entry.target)
+      : policy.targets;
+
+  for (const target of targets) {
     if (successful.has(target.id)) {
       rejected.push({ targetId: target.id, reason: "already_succeeded" });
       continue;
@@ -124,6 +138,56 @@ export interface RuntimeTargetFailureDecisionInput {
   maxAttemptsPerTarget: number;
 }
 
+export type RuntimeTargetFailureScope = RuntimeTargetFailureDecisionInput["scope"];
+
+/** Normalize provider failures before policy decides whether replay is safe. */
+export function classifyRuntimeTargetFailure(input: {
+  error: string;
+  recoverable?: boolean;
+  rawEvent?: Record<string, unknown>;
+  metadata?: { failureScope?: RuntimeTargetFailureScope };
+}): { recoverable: boolean; scope: RuntimeTargetFailureScope } {
+  if (input.metadata?.failureScope) {
+    return { recoverable: input.recoverable === true, scope: input.metadata.failureScope };
+  }
+  const detail = [input.error, input.rawEvent?.type, input.rawEvent?.subtype, input.rawEvent?.status]
+    .filter((value) => value !== undefined && value !== null)
+    .join(" ")
+    .toLowerCase();
+  if (/invalid|malformed|schema|safety|refus|context.window|context length|too many tokens/.test(detail)) {
+    return { recoverable: false, scope: "request" };
+  }
+  if (/session|resume|thread.*mismatch|incompatib/.test(detail)) {
+    return { recoverable: false, scope: "session" };
+  }
+  if (/credential|unauthori|forbidden|api.?key|token expired|quota.*account/.test(detail)) {
+    return { recoverable: input.recoverable === true, scope: "credential" };
+  }
+  return { recoverable: input.recoverable === true, scope: input.recoverable === true ? "target" : "unknown" };
+}
+
+/** Derive health deterministically from the current logical turn journal. */
+export function deriveRuntimeTargetHealth(
+  policy: RuntimeTargetPolicy,
+  state: RuntimeTargetTurnState,
+): Map<string, RuntimeTargetHealth> {
+  return new Map(
+    policy.targets.map((target) => {
+      const attempts = state.attempts.filter((attempt) => attempt.targetId === target.id);
+      const failures = attempts.filter((attempt) => attempt.outcome === "recoverable_failure").length;
+      const terminal = attempts.some((attempt) => attempt.outcome === "terminal_failure");
+      return [
+        target.id,
+        {
+          targetId: target.id,
+          status: terminal ? ("open" as const) : ("healthy" as const),
+          consecutiveFailures: failures,
+        },
+      ];
+    }),
+  );
+}
+
 export type RuntimeTargetFailureAction = "recover_credential" | "retry_same_target" | "switch_target" | "terminate";
 
 export function decideRuntimeTargetFailure(input: RuntimeTargetFailureDecisionInput): RuntimeTargetFailureAction {
@@ -152,6 +216,14 @@ function validatePolicy(policy: RuntimeTargetPolicy): void {
   if (!policy.id.trim()) throw new Error("Runtime target policy id is required.");
   if (!Number.isInteger(policy.maxAttemptsPerTarget) || policy.maxAttemptsPerTarget < 1) {
     throw new Error("maxAttemptsPerTarget must be a positive integer.");
+  }
+  if (policy.cooldownMs !== undefined && (!Number.isInteger(policy.cooldownMs) || policy.cooldownMs < 0))
+    throw new Error("cooldownMs must be a non-negative integer.");
+  if (
+    policy.circuitBreakerThreshold !== undefined &&
+    (!Number.isInteger(policy.circuitBreakerThreshold) || policy.circuitBreakerThreshold < 1)
+  ) {
+    throw new Error("circuitBreakerThreshold must be a positive integer.");
   }
   if (policy.targets.length === 0) throw new Error("Runtime target policy requires at least one target.");
   const ids = new Set<string>();

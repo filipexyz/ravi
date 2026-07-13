@@ -135,6 +135,7 @@ const TaskProfileManifestSchema = z.object({
   description: z.string().trim().min(1),
   sessionNameTemplate: z.string().trim().min(1),
   runtimeDefaults: TaskRuntimeDefaultsSchema.optional(),
+  runtimeTargetPolicy: z.record(z.string(), z.unknown()).optional(),
   workspaceBootstrap: z.object({
     mode: z.enum(["inherit", "task_dir", "path"]),
     path: z.string().trim().min(1).optional(),
@@ -449,6 +450,7 @@ function resolveManifestToProfile(manifest: TaskProfileManifest, source: Profile
     description: manifest.description,
     sessionNameTemplate: manifest.sessionNameTemplate,
     ...(manifest.runtimeDefaults ? { runtimeDefaults: normalizeTaskRuntimeOptions(manifest.runtimeDefaults) } : {}),
+    ...(manifest.runtimeTargetPolicy ? { runtimeTargetPolicy: structuredClone(manifest.runtimeTargetPolicy) } : {}),
     workspaceBootstrap: manifest.workspaceBootstrap,
     sync: normalizeTaskProfileSyncPolicy(manifest.sync),
     rendererHints: manifest.rendererHints,

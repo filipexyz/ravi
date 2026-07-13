@@ -391,6 +391,8 @@ export interface RuntimeEventMetadata {
   thread?: RuntimeThreadMetadata;
   turn?: RuntimeTurnMetadata;
   item?: RuntimeItemMetadata;
+  /** Provider-normalized failure scope used by the core replay policy. */
+  failureScope?: "credential" | "target" | "request" | "session" | "unknown";
 }
 
 interface RuntimeEventBase {
