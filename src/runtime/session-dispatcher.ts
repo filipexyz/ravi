@@ -652,12 +652,16 @@ export class RuntimeSessionDispatcher {
       return;
     }
     const agentSelection = resolveAgentModelSelection(agent);
+    const sessionRuntimeProviderOverride =
+      prompt._observation && prompt._runtimeProviderId ? undefined : sessionEntry?.runtimeProviderOverride;
     const requestedProvider: RuntimeProviderId =
       prompt._observation && prompt._runtimeProviderId
         ? prompt._runtimeProviderId
-        : agentSelection.modelSource === "agent_preset"
-          ? agentSelection.effectiveProvider
-          : (agent.provider ?? DEFAULT_RUNTIME_PROVIDER_ID);
+        : sessionRuntimeProviderOverride
+          ? sessionRuntimeProviderOverride
+          : agentSelection.modelSource === "agent_preset"
+            ? agentSelection.effectiveProvider
+            : (agent.provider ?? DEFAULT_RUNTIME_PROVIDER_ID);
     let retainReleasedSlot = false;
 
     if (existing && !existing.done) {

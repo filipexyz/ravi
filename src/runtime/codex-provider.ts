@@ -120,6 +120,7 @@ interface CodexCliTurnRequest {
   effort?: string;
   prompt: string;
   resume?: string;
+  forkFrom?: string;
   systemPromptAppend: string;
   approveRuntimeRequest?: RuntimeApprovalHandler;
   dynamicTools?: RuntimeDynamicToolSpec[];
@@ -242,7 +243,7 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
           loadedState: "instruction-sources",
         },
         supportsSessionResume: true,
-        supportsSessionFork: false,
+        supportsSessionFork: true,
         supportsPartialText: true,
         supportsToolHooks: true,
         supportsHostSessionHooks: false,
@@ -552,6 +553,7 @@ async function* normalizeCodexEvents(
   closeTransport: () => Promise<void>,
 ): AsyncGenerator<RuntimeEvent> {
   let previousSessionId = resolveCodexResumeId(input.resumeSession, input.resume, input.cwd);
+  let forkFromSessionId = input.forkSession ? previousSessionId : undefined;
   const outerAbortSignal = input.abortController.signal;
   const systemPromptAppend = await buildCodexSystemPromptAppend(input.cwd, input.systemPromptAppend, syncedSkillNames);
   const effort = toCodexRuntimeEffort(input.effort);
@@ -574,11 +576,13 @@ async function* normalizeCodexEvents(
         effort,
         prompt: promptText,
         resume: previousSessionId,
+        forkFrom: forkFromSessionId,
         systemPromptAppend,
         approveRuntimeRequest: input.approveRuntimeRequest,
         dynamicTools: undefined,
         handleRuntimeToolCall: undefined,
       });
+      forkFromSessionId = undefined;
 
       state.activeTurn = turn;
 
@@ -1571,46 +1575,75 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
   }
 
-  async function bootstrapThread(input: CodexCliTurnRequest, resumeThreadId: string | null): Promise<void> {
+  async function bootstrapThread(
+    input: CodexCliTurnRequest,
+    resumeThreadId: string | null,
+    forkThreadId: string | null = null,
+  ): Promise<void> {
     const effort = toCodexRuntimeEffort(input.effort);
-    if (!resumeThreadId) {
+    if (!resumeThreadId && !forkThreadId) {
       // Do not let a rejected resumed thread leak into the fresh-thread fallback.
       currentThreadId = undefined;
     }
 
-    const threadResponse = resumeThreadId
-      ? await sendRequest("thread/resume", {
-          threadId: resumeThreadId,
-          model: input.model ?? null,
+    const threadResponse = forkThreadId
+      ? await sendRequest("thread/fork", {
+          threadId: forkThreadId,
+          path: null,
+          model: null,
           modelProvider: null,
+          serviceTier: null,
           cwd: input.cwd,
           approvalPolicy: "never",
+          approvalsReviewer: null,
           sandbox: CODEX_APP_SERVER_SANDBOX,
           config: { model_reasoning_effort: effort },
           baseInstructions: null,
-          developerInstructions: input.systemPromptAppend || null,
-          dynamicTools: null,
-          personality: null,
-          persistExtendedHistory: false,
-        })
-      : await sendRequest("thread/start", {
-          model: input.model ?? null,
-          modelProvider: null,
-          cwd: input.cwd,
-          approvalPolicy: "never",
-          sandbox: CODEX_APP_SERVER_SANDBOX,
-          config: { model_reasoning_effort: effort },
-          serviceName: null,
-          baseInstructions: null,
-          developerInstructions: input.systemPromptAppend || null,
-          dynamicTools: null,
-          personality: null,
+          developerInstructions: null,
           ephemeral: false,
-          experimentalRawEvents: false,
-          persistExtendedHistory: false,
-        });
+          persistExtendedHistory: true,
+        })
+      : resumeThreadId
+        ? await sendRequest("thread/resume", {
+            threadId: resumeThreadId,
+            model: input.model ?? null,
+            modelProvider: null,
+            cwd: input.cwd,
+            approvalPolicy: "never",
+            sandbox: CODEX_APP_SERVER_SANDBOX,
+            config: { model_reasoning_effort: effort },
+            baseInstructions: null,
+            developerInstructions: input.systemPromptAppend || null,
+            dynamicTools: null,
+            personality: null,
+            persistExtendedHistory: false,
+          })
+        : await sendRequest("thread/start", {
+            model: input.model ?? null,
+            modelProvider: null,
+            cwd: input.cwd,
+            approvalPolicy: "never",
+            sandbox: CODEX_APP_SERVER_SANDBOX,
+            config: { model_reasoning_effort: effort },
+            serviceName: null,
+            baseInstructions: null,
+            developerInstructions: input.systemPromptAppend || null,
+            dynamicTools: null,
+            personality: null,
+            ephemeral: false,
+            experimentalRawEvents: false,
+            persistExtendedHistory: false,
+          });
 
-    currentThreadId = firstString(asRecord(threadResponse.thread)?.id, currentThreadId, resumeThreadId ?? undefined);
+    const nextThreadId = firstString(asRecord(threadResponse.thread)?.id);
+    if (forkThreadId && !nextThreadId) {
+      throw new Error("Codex app-server did not return a forked thread id");
+    }
+    currentThreadId = firstString(
+      nextThreadId,
+      forkThreadId ? undefined : currentThreadId,
+      forkThreadId ? undefined : (resumeThreadId ?? undefined),
+    );
     currentInstructionSources = stringArray(threadResponse.instructionSources);
     resolvedModel = firstString(threadResponse.model, input.model) ?? null;
     resolvedModelProvider = firstString(threadResponse.modelProvider, resolvedModelProvider) ?? "openai";
@@ -1662,7 +1695,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           params: {},
         });
 
-        await bootstrapThread(input, currentThreadId ?? input.resume ?? null);
+        await bootstrapThread(input, currentThreadId ?? input.resume ?? null, input.forkFrom ?? null);
       } finally {
         bootstrapPromise = null;
       }

@@ -134,6 +134,57 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     notes: ["Subscriber support exists in approval flows; publisher availability depends on the channel provider."],
   },
   {
+    id: "inbound.thread.created",
+    category: "inbound",
+    pattern: "ravi.inbound.thread.created",
+    title: "Inbound thread created",
+    description: "A native channel thread was bound to a newly created Ravi session.",
+    payload:
+      "{ provider, eventType, channelId, threadTs, messageTs, userId, sessionKey, sessionName, agentId, canonicalChatId }",
+    schema: {
+      version: 1,
+      fields: [
+        { path: "provider", type: "string", required: true, description: "Channel provider, for example slack." },
+        {
+          path: "eventType",
+          type: "string",
+          required: true,
+          description: "Normalized lifecycle event type. Currently thread.created.",
+        },
+        { path: "accountId", type: "string", description: "Provider account/workspace route identifier." },
+        { path: "instanceId", type: "string", description: "Ravi channel instance identifier." },
+        { path: "channelId", type: "string", required: true, description: "Provider channel/conversation id." },
+        { path: "threadTs", type: "string", required: true, description: "Provider thread identifier." },
+        {
+          path: "messageTs",
+          type: "string",
+          required: true,
+          description: "Provider message id that caused the thread/session creation.",
+        },
+        { path: "userId", type: "string", description: "Provider user id that sent the message." },
+        { path: "canonicalChatId", type: "string", description: "Ravi canonical chat id for the thread." },
+        { path: "sessionKey", type: "string", required: true, description: "Created Ravi session key." },
+        { path: "sessionName", type: "string", required: true, description: "Created Ravi session name." },
+        { path: "agentId", type: "string", required: true, description: "Agent selected by routing." },
+        { path: "routePattern", type: "string", description: "Route pattern that matched the inbound message." },
+        { path: "createdAt", type: "number", description: "Local timestamp when the event was emitted." },
+      ],
+    },
+    examples: [
+      'ravi triggers add "Slack thread bootstrap" --topic "ravi.inbound.thread.created" --filter \'data.provider == "slack"\' --message "..."',
+      'ravi triggers add "Ravi workflow thread" --topic "ravi.inbound.thread.created" --filter \'data.provider == "slack" && data.channelId == "C123"\' --shell "bun scripts/thread-created.ts"',
+    ],
+    filters: [
+      'data.provider == "slack"',
+      'data.provider == "slack" && data.channelId == "C123"',
+      'data.provider == "slack" && data.agentId == "ravi-hil"',
+    ],
+    notes: [
+      "The event is emitted once per newly created session-backed thread, not for every message in the thread.",
+      "Use canonicalChatId/sessionKey/sessionName to recover durable state instead of parsing Slack timestamps.",
+    ],
+  },
+  {
     id: "inbound.interaction",
     category: "inbound",
     pattern: "ravi.inbound.interaction",

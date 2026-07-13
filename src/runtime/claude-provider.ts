@@ -42,10 +42,7 @@ const CLAUDE_CODE_AUTH_ENV_KEYS = ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY
  * these filesystem sources, so the Claude adapter unions them back in: an agent
  * must never lose the skills placed directly in its own workspace.
  */
-function listLocalSkillNames(
-  cwd: string | undefined,
-  settingSources: ("user" | "project")[] | undefined,
-): string[] {
+function listLocalSkillNames(cwd: string | undefined, settingSources: ("user" | "project")[] | undefined): string[] {
   const sources = settingSources ?? ["project"];
   const dirs: string[] = [];
   if (sources.includes("project") && cwd) {

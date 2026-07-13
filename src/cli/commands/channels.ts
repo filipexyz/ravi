@@ -18,7 +18,7 @@ import {
   runPm2,
 } from "../../pm2.js";
 import { dbGetChannel, dbListChannels, dbUpdateChannel, dbUpsertChannel } from "../../router/router-db.js";
-import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns, Scope } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { jsonObjectSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
@@ -567,6 +567,7 @@ export class ChannelsCommands {
 
   @Command({ name: "run", description: "Run channel runner in foreground (used by PM2)" })
   @CommandAccess({ kind: "mutate", resource: "channels", action: "run", risk: "high" })
+  @Scope("open")
   @CliOnly()
   async run() {
     await runChannelRunnerFromEnv();

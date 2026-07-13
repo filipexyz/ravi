@@ -7,7 +7,7 @@
 import type { RouterConfig, AgentConfig, RouteConfig, MatchedRoute, ResolvedRoute, DmScope } from "./types.js";
 import { buildSessionKey } from "./session-key.js";
 import { generateSessionName, ensureUniqueName, slugify } from "./session-name.js";
-import { getOrCreateSession, updateSessionName, getSessionByName } from "./sessions.js";
+import { getOrCreateSession, getSession, updateSessionName, getSessionByName } from "./sessions.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("router");
@@ -243,6 +243,7 @@ export function commitMatchedRoute(
     forcedRouteSessionName,
     forcedRouteParentSessionKey: forcedRouteSession?.sessionKey ?? null,
   });
+  const createdSession = !getSession(effectiveSessionKey);
   const existing = getOrCreateSession(effectiveSessionKey, agentId, agentCwd, {
     ...(threadId ? { lastThreadId: threadId } : {}),
   });
@@ -284,6 +285,7 @@ export function commitMatchedRoute(
     dmScope,
     sessionKey: effectiveSessionKey,
     sessionName,
+    createdSession,
     route,
   };
 }

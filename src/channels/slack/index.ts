@@ -7,12 +7,28 @@ export {
   validateSlackBlockKitMessage,
 } from "./block-kit.js";
 export type { SlackBlockKitBlock, SlackBlockKitMessagePayload, SlackBlockKitValidationPayload } from "./block-kit.js";
+export {
+  SLACK_NATIVE_WORK_OBJECT_ENTITY_TYPES,
+  normalizeSlackNativeWorkObjectDetailMetadata,
+  normalizeSlackNativeWorkObjectMessagePayload,
+  normalizeSlackNativeWorkObjectMetadata,
+  normalizeSlackNativeWorkObjectUnfurlPayload,
+} from "./work-objects.js";
+export type {
+  SlackNativeWorkObjectEntityType,
+  SlackNativeWorkObjectMessagePayload,
+  SlackNativeWorkObjectUnfurlPayload,
+} from "./work-objects.js";
 export type {
   SlackAssistantThreadStatusInput,
   SlackBlocksValidateInput,
   SlackBlocksValidateResponse,
+  SlackChatUnfurlInput,
+  SlackChatUnfurlResponse,
   SlackDownloadFileInput,
   SlackDownloadFileResult,
+  SlackEntityPresentDetailsInput,
+  SlackEntityPresentDetailsResponse,
   SlackPostMessageInput,
   SlackPostMessageResult,
   SlackUpdateMessageInput,

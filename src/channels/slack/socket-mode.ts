@@ -19,7 +19,7 @@ import {
   dbUpsertChatParticipant,
   type ChannelConfig,
 } from "../../router/router-db.js";
-import type { MatchedRoute, RouterConfig } from "../../router/types.js";
+import type { MatchedRoute, ResolvedRoute, RouterConfig } from "../../router/types.js";
 import type { MessageActorMetadata, MessageContext, MessageTarget } from "../../runtime/message-types.js";
 import { transcribeAudio } from "../../transcribe/openai.js";
 import { logger } from "../../utils/logger.js";
@@ -47,6 +47,7 @@ import {
 import type { SlackNormalizedFile, SlackNormalizedMessage, SlackRoutingPolicy, SlackSocketEnvelope } from "./types.js";
 
 const log = logger.child("channels:slack");
+const SLACK_THREAD_CREATED_TOPIC = "ravi.inbound.thread.created";
 
 type PublishPrompt = typeof publishSessionPrompt;
 type PublishInteraction = (topic: string, payload: Record<string, unknown>) => Promise<void>;
@@ -431,6 +432,12 @@ export class SlackSocketModeService {
       return "processed";
     }
 
+    const workObjectEvent = this.normalizeWorkObjectEventEnvelope(envelope);
+    if (workObjectEvent) {
+      await this.publishInteraction("ravi.inbound.interaction", workObjectEvent);
+      return "processed";
+    }
+
     const normalized = this.normalizeEnvelope(envelope);
     if (!normalized) return "ignored";
 
@@ -579,6 +586,54 @@ export class SlackSocketModeService {
     });
   }
 
+  private normalizeWorkObjectEventEnvelope(envelope: SlackSocketEnvelope): Record<string, unknown> | null {
+    const event = envelopeEvent(envelope) ?? directSlackWorkObjectEvent(envelope.payload);
+    const eventType = stringField(event, "type");
+    if (eventType !== "link_shared" && eventType !== "entity_details_requested") return null;
+
+    const payload = envelope.payload as { team_id?: string; event_id?: string; event_time?: number } | undefined;
+    const team = recordField(event, "team");
+    const teamId =
+      cleanSlackId(event?.team) ?? stringField(team, "id") ?? cleanSlackId(payload?.team_id) ?? this.options.accountId;
+    const common = {
+      provider: "slack",
+      source: "slack.socket_mode",
+      accountId: this.options.accountId,
+      instanceId: this.options.instanceId ?? this.options.accountId,
+      envelopeId: cleanSlackId(envelope.envelope_id),
+      eventId: cleanSlackId(payload?.event_id),
+      interactionType: eventType,
+      teamId,
+      userId: stringField(event, "user"),
+      channelId: stringField(event, "channel"),
+      messageTs: stringField(event, "message_ts"),
+      threadTs: stringField(event, "thread_ts"),
+      triggerId: stringField(event, "trigger_id"),
+      eventTs: stringField(event, "event_ts"),
+      receivedAt: Date.now(),
+    };
+
+    if (eventType === "link_shared") {
+      const links = Array.isArray(event?.links) ? event.links.map(summarizeSlackLinkSharedLink) : [];
+      return compactInteractionPayload({
+        ...common,
+        links,
+        linkCount: links.length,
+      });
+    }
+
+    const externalRef = recordField(event, "external_ref");
+    const link = recordField(event, "link");
+    return compactInteractionPayload({
+      ...common,
+      userLocale: stringField(event, "user_locale"),
+      entityUrl: stringField(event, "entity_url"),
+      appUnfurlUrl: stringField(event, "app_unfurl_url"),
+      externalRef,
+      link,
+    });
+  }
+
   private async routeMessage(message: SlackNormalizedMessage): Promise<void> {
     const routerConfig = this.getRouterConfig();
     const peerKind = slackPeerKindForChannelType(message.channelType);
@@ -720,6 +775,23 @@ export class SlackSocketModeService {
       },
       seenAt: message.eventTimeMs,
     });
+    if (routeThreadId && resolved.createdSession) {
+      await this.publishSlackThreadCreatedEvent({
+        message,
+        resolved,
+        canonicalChatId: canonicalChat.id,
+        instanceId,
+        peerKind,
+        threadTs: routeThreadId,
+      }).catch((error) => {
+        log.warn("Failed to publish Slack thread created event", {
+          channelId: message.channelId,
+          threadTs: routeThreadId,
+          sessionKey: resolved.sessionKey,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
 
     if (this.routingPolicy.subscriptionScope === "chat_and_thread" && routeThreadId) {
       const rootChat = dbUpsertChat({
@@ -784,6 +856,45 @@ export class SlackSocketModeService {
       deliveryBarrier: "after_tool",
       deliveryBarrierSource: "default",
     });
+  }
+
+  private async publishSlackThreadCreatedEvent(input: {
+    message: SlackNormalizedMessage;
+    resolved: ResolvedRoute;
+    canonicalChatId: string;
+    instanceId: string;
+    peerKind: "dm" | "group";
+    threadTs: string;
+  }): Promise<void> {
+    await this.publishInteraction(
+      SLACK_THREAD_CREATED_TOPIC,
+      compactInteractionPayload({
+        provider: "slack",
+        source: "slack.socket_mode",
+        eventType: "thread.created",
+        accountId: this.options.accountId,
+        routeAccountId: this.options.routeAccountId ?? this.options.accountId,
+        instanceId: input.instanceId,
+        teamId: input.message.teamId,
+        channelId: input.message.channelId,
+        channelType: input.message.channelType,
+        peerKind: input.peerKind,
+        userId: input.message.userId,
+        messageTs: input.message.ts,
+        sourceMessageTs: input.message.ts,
+        threadTs: input.threadTs,
+        canonicalChatId: input.canonicalChatId,
+        sessionKey: input.resolved.sessionKey,
+        sessionName: input.resolved.sessionName,
+        agentId: input.resolved.agent.id,
+        routePattern: input.resolved.route?.pattern,
+        routeSession: input.resolved.route?.session,
+        envelopeId: input.message.envelopeId,
+        eventId: input.message.eventId,
+        eventTimeMs: input.message.eventTimeMs,
+        createdAt: Date.now(),
+      }),
+    );
   }
 
   private async processFiles(
@@ -956,6 +1067,21 @@ function summarizeSlackInteractionAction(value: unknown): Record<string, unknown
     selectedConversation: stringField(action, "selected_conversation"),
     actionTs: stringField(action, "action_ts"),
   });
+}
+
+function summarizeSlackLinkSharedLink(value: unknown): Record<string, unknown> {
+  const link = asRecord(value);
+  if (!link) return {};
+  return compactInteractionPayload({
+    url: stringField(link, "url"),
+    domain: stringField(link, "domain"),
+  });
+}
+
+function directSlackWorkObjectEvent(value: unknown): Record<string, unknown> | undefined {
+  const record = asRecord(value);
+  const type = stringField(record, "type");
+  return type === "link_shared" || type === "entity_details_requested" ? record : undefined;
 }
 
 function selectedOptionValue(action: Record<string, unknown> | undefined): unknown {

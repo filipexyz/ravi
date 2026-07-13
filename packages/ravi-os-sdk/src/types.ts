@@ -10802,6 +10802,81 @@ export type SessionsSetModelInput = {
 /** Return shape for `sessions.set-model`. */
 export type SessionsSetModelReturn = Record<string, unknown>;
 
+/** Input shape for `sessions.set-provider`. */
+export type SessionsSetProviderInput = {
+  nameOrKey: string;
+  provider: string;
+};
+
+/** Return shape for `sessions.set-provider`. */
+export type SessionsSetProviderReturn = {
+  action: "set-provider";
+  after: ({
+    agentId: string;
+    effectiveModel: string;
+    effectiveProvider: string;
+    effortOverride?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+    ephemeral: boolean;
+    expiresAt: number | null;
+    label: string;
+    modelOverride?: string;
+    modelPresetId: string | null;
+    modelPresetVersion: number | null;
+    modelSource: string;
+    name?: string;
+    runtimeOptions: {
+      effort: {
+        source: "session_override" | "agent_default" | "runtime_default";
+        value: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+      };
+      model: {
+        source: string;
+        value: string;
+      };
+      thinking: {
+        source: string | null;
+        value: string | null;
+      };
+    };
+    sessionKey: string;
+  }) | null;
+  appliesOn: "next-turn-runtime-restart";
+  before: {
+    agentId: string;
+    effectiveModel: string;
+    effectiveProvider: string;
+    effortOverride?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+    ephemeral: boolean;
+    expiresAt: number | null;
+    label: string;
+    modelOverride?: string;
+    modelPresetId: string | null;
+    modelPresetVersion: number | null;
+    modelSource: string;
+    name?: string;
+    runtimeOptions: {
+      effort: {
+        source: "session_override" | "agent_default" | "runtime_default";
+        value: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+      };
+      model: {
+        source: string;
+        value: string;
+      };
+      thinking: {
+        source: string | null;
+        value: string | null;
+      };
+    };
+    sessionKey: string;
+  };
+  changed: boolean;
+  effectiveProvider: string;
+  runtimeProviderOverride: string | null;
+  sessionKey: string;
+  sessionName: string | null;
+};
+
 /** Input shape for `sessions.set-thinking`. */
 export type SessionsSetThinkingInput = {
   level: string;
@@ -11468,6 +11543,7 @@ export type SkillsWhoReturn = {
 /** Input shape for `slack.blocks-send`. */
 export type SlackBlocksSendInput = {
   channel: string;
+  connection?: string;
   ephemeralUser?: string;
   execute?: boolean;
   file: string;
@@ -11856,6 +11932,7 @@ export type SlackChannelsInfoReturn = {
 /** Input shape for `slack.channels-invite`. */
 export type SlackChannelsInviteInput = {
   channel: string;
+  connection?: string;
   execute?: boolean;
   users: string;
 };
@@ -12145,6 +12222,89 @@ export type SlackTopologyReturn = {
   provider: "slack";
   source: string;
   ungroupedChannelIds: string[];
+};
+
+/** Input shape for `slack.work-objects-present-details`. */
+export type SlackWorkObjectsPresentDetailsInput = {
+  channel?: string;
+  connection?: string;
+  execute?: boolean;
+  file: string;
+  triggerId: string;
+};
+
+/** Return shape for `slack.work-objects-present-details`. */
+export type SlackWorkObjectsPresentDetailsReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.work-objects-send`. */
+export type SlackWorkObjectsSendInput = {
+  channel: string;
+  connection?: string;
+  execute?: boolean;
+  file: string;
+  text?: string;
+  threadTs?: string;
+};
+
+/** Return shape for `slack.work-objects-send`. */
+export type SlackWorkObjectsSendReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.work-objects-unfurl`. */
+export type SlackWorkObjectsUnfurlInput = {
+  channel: string;
+  connection?: string;
+  execute?: boolean;
+  file: string;
+  ts: string;
+  url: string;
+};
+
+/** Return shape for `slack.work-objects-unfurl`. */
+export type SlackWorkObjectsUnfurlReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.work-objects-validate`. */
+export type SlackWorkObjectsValidateInput = {
+  file: string;
+  target?: string;
+};
+
+/** Return shape for `slack.work-objects-validate`. */
+export type SlackWorkObjectsValidateReturn = {
+  dryRun?: boolean;
+  item?: unknown;
+  ok: true;
+  outputFile?: string;
+  provider: "slack";
 };
 
 /** Input shape for `specs.get`. */

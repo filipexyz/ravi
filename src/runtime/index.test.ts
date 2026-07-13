@@ -131,4 +131,9 @@ describe("runtime compatibility preflight", () => {
       unregisterRuntimeProvider("test-provider");
     }
   });
+
+  it("keeps built-in runtime providers registered", () => {
+    expect(() => unregisterRuntimeProvider("codex")).toThrow("Cannot unregister built-in runtime provider 'codex'");
+    expect(createRuntimeProvider("codex").id).toBe("codex");
+  });
 });

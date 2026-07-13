@@ -149,6 +149,7 @@ export {
   updateSdkSessionId,
   updateProviderSession,
   updateRuntimeProviderState,
+  updateSessionRuntimeProviderOverride,
   updateProviderSessionId,
   clearProviderSession,
   updateTokens,

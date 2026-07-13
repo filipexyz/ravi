@@ -105,6 +105,7 @@ o subject no registry antes de documentar ou usar em trigger.
 | `ravi.inbound.reaction` | `{ targetMessageId, emoji, senderId }` |
 | `ravi.inbound.reply` | `{ targetMessageId, text, senderId }` |
 | `ravi.inbound.pollVote` | `{ pollMessageId, votes: [{ name, voters[] }] }` — subscriber existe, publisher vem do omni |
+| `ravi.inbound.thread.created` | `{ provider, eventType, channelId, threadTs, messageTs, userId, canonicalChatId, sessionKey, sessionName, agentId }` — thread nativa de canal criou uma nova sessao Ravi |
 
 > As mensagens inbound dos canais chegam via **omni JetStream** nos subjects `message.received.{channelType}.{instanceId}`, não via pub/sub ravi. O `OmniConsumer` consome esses streams e traduz para prompts de sessão.
 > Reações são normalizadas em `ravi.inbound.reaction`. Aliases como `whatsapp.*.reaction` não são publicados.

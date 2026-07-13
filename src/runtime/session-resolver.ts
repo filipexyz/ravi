@@ -73,12 +73,18 @@ export function resolveRuntimeSession(options: {
 
   const agentCwd = expandHome(agent.cwd);
   const agentSelection = resolveAgentModelSelection(agent);
+  const sessionRuntimeProviderOverride =
+    options.prompt._observation && options.prompt._runtimeProviderId
+      ? undefined
+      : sessionEntry?.runtimeProviderOverride;
   const runtimeProviderId: RuntimeProviderId =
     options.prompt._observation && options.prompt._runtimeProviderId
       ? options.prompt._runtimeProviderId
-      : agentSelection.modelSource === "agent_preset"
-        ? agentSelection.effectiveProvider
-        : (agent.provider ?? options.defaultRuntimeProviderId);
+      : sessionRuntimeProviderOverride
+        ? sessionRuntimeProviderOverride
+        : agentSelection.modelSource === "agent_preset"
+          ? agentSelection.effectiveProvider
+          : (agent.provider ?? options.defaultRuntimeProviderId);
   const runtimeProvider = createRuntimeProvider(runtimeProviderId);
   const runtimeCapabilities = runtimeProvider.getCapabilities();
 
