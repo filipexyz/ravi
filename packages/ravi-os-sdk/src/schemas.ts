@@ -29360,6 +29360,2505 @@ export const FeedbackSendReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `gbp.account-get`. */
+export const GbpAccountGetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Account id or accounts/{id} resource name",
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "account"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.account-get`. */
+export const GbpAccountGetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.accounts`. */
+export const GbpAccountsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "cursor": {
+      "description": "Provider page token from the previous response",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size from 1 to 100 (default: 50)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.accounts`. */
+export const GbpAccountsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.admin-add`. */
+export const GbpAdminAddInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "email": {
+      "format": "email",
+      "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$",
+      "type": "string"
+    },
+    "parent": {
+      "description": "Full accounts/{id} or locations/{id} resource name",
+      "minLength": 1,
+      "type": "string"
+    },
+    "role": {
+      "default": "MANAGER",
+      "description": "Official AdminRole value (default: MANAGER)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "email",
+    "parent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.admin-add`. */
+export const GbpAdminAddReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.admin-delete`. */
+export const GbpAdminDeleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "admin": {
+      "description": "Full accounts/.../admins/... or locations/.../admins/... name",
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "admin"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.admin-delete`. */
+export const GbpAdminDeleteReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.admin-update`. */
+export const GbpAdminUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "admin": {
+      "description": "Full accounts/.../admins/... or locations/.../admins/... name",
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "role": {
+      "description": "Required official AdminRole value",
+      "type": "string"
+    }
+  },
+  "required": [
+    "admin"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.admin-update`. */
+export const GbpAdminUpdateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.admins`. */
+export const GbpAdminsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "parent": {
+      "description": "Full accounts/{id} or locations/{id} resource name",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "parent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.admins`. */
+export const GbpAdminsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.attributes`. */
+export const GbpAttributesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "location": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "location"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.attributes`. */
+export const GbpAttributesReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.categories`. */
+export const GbpCategoriesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "cursor": {
+      "type": "string"
+    },
+    "filter": {
+      "description": "Display-name filter",
+      "type": "string"
+    },
+    "language": {
+      "default": "pt-BR",
+      "description": "BCP-47 language code (default: pt-BR)",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size from 1 to 100 (default: 50)",
+      "type": "string"
+    },
+    "region": {
+      "default": "BR",
+      "description": "CLDR region code (default: BR)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.categories`. */
+export const GbpCategoriesReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.location-delete`. */
+export const GbpLocationDeleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "location": {
+      "description": "Location id or locations/{id} resource name",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "location"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.location-delete`. */
+export const GbpLocationDeleteReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.location-get`. */
+export const GbpLocationGetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "location": {
+      "description": "Location id or locations/{id} resource name",
+      "minLength": 1,
+      "type": "string"
+    },
+    "mask": {
+      "description": "Business Information read mask",
+      "type": "string"
+    }
+  },
+  "required": [
+    "location"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.location-get`. */
+export const GbpLocationGetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.location-update`. */
+export const GbpLocationUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "location": {
+      "description": "Location id or locations/{id} resource name",
+      "minLength": 1,
+      "type": "string"
+    },
+    "mask": {
+      "description": "Required update mask",
+      "type": "string"
+    },
+    "payload": {
+      "description": "Location JSON object",
+      "type": "string"
+    }
+  },
+  "required": [
+    "location"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.location-update`. */
+export const GbpLocationUpdateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.locations`. */
+export const GbpLocationsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Account id or accounts/{id} resource name",
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "cursor": {
+      "description": "Provider page token from the previous response",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size from 1 to 100 (default: 50)",
+      "type": "string"
+    },
+    "mask": {
+      "description": "Business Information read mask",
+      "type": "string"
+    }
+  },
+  "required": [
+    "account"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.locations`. */
+export const GbpLocationsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.media`. */
+export const GbpMediaInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "cursor": {
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size from 1 to 2500 (default: 50)",
+      "type": "string"
+    },
+    "location": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "location"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.media`. */
+export const GbpMediaReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.media-create`. */
+export const GbpMediaCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "location": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "payload": {
+      "description": "MediaItem JSON object",
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "location"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.media-create`. */
+export const GbpMediaCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.media-delete`. */
+export const GbpMediaDeleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "location": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "media": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "location",
+    "media"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.media-delete`. */
+export const GbpMediaDeleteReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.media-get`. */
+export const GbpMediaGetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "location": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "media": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "location",
+    "media"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.media-get`. */
+export const GbpMediaGetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.media-update`. */
+export const GbpMediaUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "location": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "mask": {
+      "description": "Required update mask",
+      "type": "string"
+    },
+    "media": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "payload": {
+      "description": "MediaItem JSON object",
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "location",
+    "media"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.media-update`. */
+export const GbpMediaUpdateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.performance`. */
+export const GbpPerformanceInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "end": {
+      "description": "Required end date YYYY-MM-DD",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "type": "string"
+    },
+    "location": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "metrics": {
+      "description": "Required DailyMetric values, comma-separated",
+      "type": "string"
+    },
+    "start": {
+      "description": "Required start date YYYY-MM-DD",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "location"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.performance`. */
+export const GbpPerformanceReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.post-create`. */
+export const GbpPostCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "location": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "payload": {
+      "description": "LocalPost JSON object",
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "location"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.post-create`. */
+export const GbpPostCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.post-delete`. */
+export const GbpPostDeleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "location": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "post": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "location",
+    "post"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.post-delete`. */
+export const GbpPostDeleteReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.post-get`. */
+export const GbpPostGetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "location": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "post": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "location",
+    "post"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.post-get`. */
+export const GbpPostGetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.post-update`. */
+export const GbpPostUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "location": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "mask": {
+      "description": "Required update mask",
+      "type": "string"
+    },
+    "payload": {
+      "description": "LocalPost JSON object",
+      "type": "string"
+    },
+    "post": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "location",
+    "post"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.post-update`. */
+export const GbpPostUpdateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.posts`. */
+export const GbpPostsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "cursor": {
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size from 1 to 100 (default: 50)",
+      "type": "string"
+    },
+    "location": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "location"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.posts`. */
+export const GbpPostsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.review-get`. */
+export const GbpReviewGetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "location": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "review": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "location",
+    "review"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.review-get`. */
+export const GbpReviewGetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.review-reply`. */
+export const GbpReviewReplyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "comment": {
+      "description": "Public reply text",
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "location": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "review": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "location",
+    "review"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.review-reply`. */
+export const GbpReviewReplyReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.review-reply-delete`. */
+export const GbpReviewReplyDeleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "location": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "review": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "location",
+    "review"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.review-reply-delete`. */
+export const GbpReviewReplyDeleteReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.reviews`. */
+export const GbpReviewsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Account id or accounts/{id}",
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "cursor": {
+      "description": "Provider page token from the previous response",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size from 1 to 50 (default: 50)",
+      "type": "string"
+    },
+    "location": {
+      "description": "Location id or locations/{id}",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "location"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.reviews`. */
+export const GbpReviewsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.search-keywords`. */
+export const GbpSearchKeywordsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "cursor": {
+      "type": "string"
+    },
+    "endMonth": {
+      "description": "Required last month YYYY-MM",
+      "pattern": "^\\d{4}-\\d{2}$",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size from 1 to 100 (default: 50)",
+      "type": "string"
+    },
+    "location": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "startMonth": {
+      "description": "Required first month YYYY-MM",
+      "pattern": "^\\d{4}-\\d{2}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "location"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.search-keywords`. */
+export const GbpSearchKeywordsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.verification-complete`. */
+export const GbpVerificationCompleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "pin": {
+      "description": "Verification PIN",
+      "type": "string"
+    },
+    "verification": {
+      "description": "Full locations/.../verifications/... name",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "verification"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.verification-complete`. */
+export const GbpVerificationCompleteReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.verification-options`. */
+export const GbpVerificationOptionsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "language": {
+      "default": "pt-BR",
+      "type": "string"
+    },
+    "location": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "location"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.verification-options`. */
+export const GbpVerificationOptionsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.verifications`. */
+export const GbpVerificationsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "location": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "location"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.verifications`. */
+export const GbpVerificationsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gbp.verify`. */
+export const GbpVerifyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "language": {
+      "default": "pt-BR",
+      "type": "string"
+    },
+    "location": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "method": {
+      "description": "Official VerificationMethod value, for example SMS or ADDRESS",
+      "minLength": 1,
+      "type": "string"
+    },
+    "payload": {
+      "description": "Optional method input JSON object",
+      "type": "string"
+    }
+  },
+  "required": [
+    "location",
+    "method"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gbp.verify`. */
+export const GbpVerifyReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `gmail.list`. */
 export const GmailListInputSchema = {
   "additionalProperties": false,
