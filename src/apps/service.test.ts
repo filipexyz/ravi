@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkAppManifests, discoverAppManifests, getAppManifest } from "./service.js";
+import { checkAppManifests, discoverAppManifests, getAppManifest, isPackagedAppRuntime } from "./service.js";
 
 const tempRoots: string[] = [];
 const originalCwd = process.cwd();
@@ -66,6 +66,35 @@ afterEach(() => {
 });
 
 describe("Ravi app manifest service", () => {
+  it("distinguishes packaged discovery from source discovery", () => {
+    expect(isPackagedAppRuntime("/opt/ravi/dist/bundle/index.js")).toBe(true);
+    expect(isPackagedAppRuntime("C:\\ravi\\dist\\bundle\\index.js")).toBe(true);
+    expect(isPackagedAppRuntime("/opt/ravi/src/cli/index.ts")).toBe(false);
+  });
+
+  it("ignores cached mirrors of internal plugins during source discovery", () => {
+    const root = makeRepo();
+    writeManifest(root, "apps", validManifest());
+    const cachedAppDir = join(root, ".cache", "ravi", "plugins", "ravi-system", "apps", "apps");
+    mkdirSync(cachedAppDir, { recursive: true });
+    writeFileSync(join(cachedAppDir, "ravi.app.json"), JSON.stringify(validManifest(), null, 2));
+    const externalAppDir = join(root, ".cache", "ravi", "plugins", "partner-plugin", "apps", "partner");
+    mkdirSync(externalAppDir, { recursive: true });
+    writeFileSync(
+      join(externalAppDir, "ravi.app.json"),
+      JSON.stringify(validManifest({ id: "partner", name: "Partner App" }), null, 2),
+    );
+
+    const apps = discoverAppManifests({
+      cwd: root,
+      env: { ...process.env, HOME: root, RAVI_STATE_DIR: join(root, ".state") },
+    });
+
+    expect(apps.filter((app) => app.id === "apps")).toHaveLength(1);
+    expect(apps.find((app) => app.id === "apps")?.source).toBe("repo");
+    expect(apps.find((app) => app.id === "partner")?.source).toBe("plugin");
+  });
+
   it("discovers and validates repo app manifests", () => {
     const root = makeRepo();
     writeManifest(root, "apps", validManifest());

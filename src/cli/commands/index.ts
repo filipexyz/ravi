@@ -85,3 +85,4 @@ export * from "./watch.js";
 export * from "./whatsapp-dm.js";
 export * from "./work-objects.js";
 export * from "./workflows.js";
+export * from "./youtube.js";

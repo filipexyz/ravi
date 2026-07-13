@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { runWithContext } from "../cli/context.js";
 import type { ContextCapability, ContextRecord } from "../router/router-db.js";
 import { cleanupIsolatedRaviState } from "../test/ravi-state.js";
-import { maybeRunAppAliasRoute, resolveAppAliasInvocation, runAppOperation } from "./router.js";
+import { maybeRunAppAliasRoute, resolveAppAliasInvocation, resolveRaviCliCommand, runAppOperation } from "./router.js";
 
 const tempRoots: string[] = [];
 const tempStateDirs: string[] = [];
@@ -368,6 +368,27 @@ describe("Ravi app router", () => {
       result: { appRoot: appDir },
     });
     expect(realpathSync((result.result as { cwd: string }).cwd)).toBe(realpathSync(appDir));
+  });
+
+  it("runs Ravi CLI app operations through the current installation", () => {
+    expect(
+      resolveRaviCliCommand("ravi yt health --json", {
+        execPath: "/opt/bun/bin/bun",
+        entrypoint: "/opt/ravi current/dist/bundle/index.js",
+      }),
+    ).toBe("/opt/bun/bin/bun '/opt/ravi current/dist/bundle/index.js' yt health --json");
+    expect(
+      resolveRaviCliCommand("bun local-app.mjs --json", {
+        execPath: "/opt/bun/bin/bun",
+        entrypoint: "/opt/ravi/dist/bundle/index.js",
+      }),
+    ).toBe("bun local-app.mjs --json");
+    expect(
+      resolveRaviCliCommand("ravi yt info --json", {
+        execPath: "/opt/bun/bin/bun",
+        entrypoint: "dist/bundle/index.js",
+      }),
+    ).toBe(`/opt/bun/bin/bun ${join(process.cwd(), "dist/bundle/index.js")} yt info --json`);
   });
 
   it("resolves dotted operation ids from whitespace-separated CLI tokens", async () => {
