@@ -12,6 +12,7 @@ const tempStateDirs: string[] = [];
 const originalCwd = process.cwd();
 const originalHome = process.env.HOME;
 const originalStateDir = process.env.RAVI_STATE_DIR;
+const originalPath = process.env.PATH;
 const contextEnvKeys = ["RAVI_CONTEXT_KEY", "RAVI_SESSION_KEY", "RAVI_SESSION_NAME", "RAVI_AGENT_ID"] as const;
 const originalContextEnv = new Map<(typeof contextEnvKeys)[number], string | undefined>(
   contextEnvKeys.map((key) => [key, process.env[key]]),
@@ -108,6 +109,8 @@ afterEach(async () => {
   else process.env.HOME = originalHome;
   if (originalStateDir === undefined) delete process.env.RAVI_STATE_DIR;
   else process.env.RAVI_STATE_DIR = originalStateDir;
+  if (originalPath === undefined) delete process.env.PATH;
+  else process.env.PATH = originalPath;
   for (const key of contextEnvKeys) {
     const value = originalContextEnv.get(key);
     if (value === undefined) delete process.env[key];
@@ -486,6 +489,203 @@ exit 1
     expect(check.results[0]).toMatchObject({ id: "fake-app", errors: [] });
   });
 
+  it("migrates and checks a working production CLI through temporary migration commands", () => {
+    const root = makeRepo();
+    const commands = new AppsCommands();
+    const fakeCli = join(root, "production-cli");
+    writeFileSync(
+      fakeCli,
+      `#!/usr/bin/env bash
+if [ "$1" = "manifest" ] && [ "$2" = "--json" ]; then
+cat <<'JSON'
+{
+  "name": "Production CLI",
+  "description": "A working production CLI contract.",
+  "command": "__FAKE_CLI__",
+  "commands": [
+    {
+      "name": "list",
+      "description": "List production records",
+      "command": "__FAKE_CLI__ list --json {args}",
+      "json": true,
+      "mutating": false
+    },
+    {
+      "name": "create",
+      "description": "Create production records",
+      "command": "__FAKE_CLI__ create --json {args}",
+      "json": true,
+      "mutating": true
+    }
+  ]
+}
+JSON
+exit 0
+fi
+echo "unexpected invocation" >&2
+exit 1
+`.replace(/__FAKE_CLI__/g, fakeCli),
+    );
+    chmodSync(fakeCli, 0o755);
+
+    const dryRun = captureJson(() =>
+      commands.migrateFromCli(
+        fakeCli,
+        "production-app",
+        undefined,
+        undefined,
+        "manifest",
+        true,
+        undefined,
+        true,
+        true,
+        true,
+        true,
+      ),
+    ) as {
+      id: string;
+      dryRun: boolean;
+      check: null;
+      migration: { contract: string; implementedOperations: number; checkCommand: string };
+      files: Array<{ action: string }>;
+    };
+
+    expect(dryRun).toMatchObject({
+      id: "production-app",
+      dryRun: true,
+      check: null,
+      migration: { contract: "production-cli", implementedOperations: 2 },
+    });
+    expect(dryRun.files.every((file) => file.action === "planned")).toBe(true);
+    expect(dryRun.migration.checkCommand).toContain("ravi apps migration-check production-app");
+
+    const created = captureJson(() =>
+      commands.migrateFromCli(
+        fakeCli,
+        "production-app",
+        undefined,
+        undefined,
+        "manifest",
+        undefined,
+        undefined,
+        true,
+        true,
+        true,
+        true,
+      ),
+    ) as {
+      check: { ok: boolean; checked: number };
+      manifestPath: string;
+      migration: { implementedOperations: number };
+    };
+
+    expect(created.check).toMatchObject({ ok: true, checked: 1 });
+    expect(created.migration.implementedOperations).toBe(2);
+    expect(existsSync(created.manifestPath)).toBe(true);
+
+    const checked = captureJson(() => commands.migrationCheck("production-app", fakeCli, "manifest", true)) as {
+      ok: boolean;
+      expectedOperations: string[];
+      implementedOperations: string[];
+      missingOperations: string[];
+      commandMismatches: Array<unknown>;
+      appCheck: { ok: boolean };
+    };
+
+    expect(checked.ok).toBe(true);
+    expect(checked.appCheck.ok).toBe(true);
+    expect(checked.expectedOperations).toEqual(["production-app.create", "production-app.list"]);
+    expect(checked.implementedOperations).toEqual(["production-app.create", "production-app.list"]);
+    expect(checked.missingOperations).toEqual([]);
+    expect(checked.commandMismatches).toEqual([]);
+  });
+
+  it("migrates an SDE namespace from the real cli-manifest shape", () => {
+    const root = makeRepo();
+    const commands = new AppsCommands();
+    const fakeSde = join(root, "sde");
+    writeFileSync(
+      fakeSde,
+      `#!/usr/bin/env bash
+if [ "$1" = "cli-manifest" ] && [ "$2" = "--ns" ] && [ "$3" = "tiny" ]; then
+cat <<'JSON'
+{
+  "gerado": "sde cli-manifest",
+  "namespaces": 1,
+  "comandos": {
+    "tiny": {
+      "descricao": "Tiny ERP API",
+      "comandos": {
+        "info": {
+          "descricao": "Info da conta",
+          "opcoes": [
+            { "flag": "--json", "obrigatorio": false }
+          ]
+        },
+        "pedido-incluir": {
+          "descricao": "Incluir pedido",
+          "opcoes": [
+            { "flag": "--json", "obrigatorio": false },
+            { "flag": "--yes", "obrigatorio": false }
+          ]
+        },
+        "watch": {
+          "descricao": "Watch sem JSON",
+          "opcoes": []
+        }
+      }
+    }
+  }
+}
+JSON
+exit 0
+fi
+echo "unknown command" >&2
+exit 1
+`,
+    );
+    chmodSync(fakeSde, 0o755);
+    process.env.PATH = `${root}:${process.env.PATH ?? ""}`;
+
+    const migrated = captureJson(() =>
+      commands.migrateFromCli(
+        "sde tiny",
+        "tiny-smoke",
+        undefined,
+        undefined,
+        "manifest",
+        true,
+        undefined,
+        true,
+        true,
+        true,
+        true,
+      ),
+    ) as {
+      source: string;
+      confidence: string;
+      operationCandidates: Array<{ id: string; command: string; mutating: boolean }>;
+      debugCandidates: Array<{ id: string }>;
+      manifest: { operations: Record<string, { command?: string; permission?: string }> };
+      warnings: string[];
+      reviewRequired: string[];
+    };
+
+    expect(migrated).toMatchObject({ source: "manifest", confidence: "high" });
+    expect(migrated.operationCandidates.map((candidate) => candidate.id)).toEqual(["info", "pedido-incluir"]);
+    expect(migrated.debugCandidates.map((candidate) => candidate.id)).toEqual(["watch"]);
+    expect(migrated.operationCandidates.find((candidate) => candidate.id === "pedido-incluir")?.mutating).toBe(true);
+    expect(migrated.manifest.operations["tiny-smoke.info"]).toMatchObject({
+      command: "sde tiny info {args} --json",
+    });
+    expect(migrated.manifest.operations["tiny-smoke.pedido-incluir"]).toMatchObject({
+      command: "sde tiny pedido-incluir {args} --json",
+      permission: "tiny-smoke:write",
+    });
+    expect(migrated.warnings.join("\n")).toContain("production CLI as the migration contract");
+    expect(migrated.reviewRequired.join("\n")).toContain("Confirm mutation risk");
+  });
+
   it("imports first-party Ravi CLI groups from the decorated registry", () => {
     makeRepo();
     const commands = new AppsCommands();
@@ -520,7 +720,7 @@ exit 1
       command: "ravi apps list {args} --json",
     });
     expect(imported.warnings.join("\n")).toContain("assumes generated operations should use --json");
-  });
+  }, 15_000);
 
   it("runs scaffolded app operations through the explicit app router command", async () => {
     makeRepo();

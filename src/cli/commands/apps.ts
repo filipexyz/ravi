@@ -18,6 +18,8 @@ import {
   assertCanUseApp,
   filterVisibleAppChecks,
   filterVisibleAppManifests,
+  type RaviAppImportCliResult,
+  type RaviAppManifest,
   type RaviAppManifestRecord,
 } from "../../apps/index.js";
 
@@ -178,6 +180,42 @@ const appsImportCliReturnSchema = appsScaffoldReturnSchema.extend({
   debugCandidates: z.array(appImportCliOperationCandidateSchema),
   warnings: z.array(z.string()),
   reviewRequired: z.array(z.string()),
+});
+
+const appMigrationSummarySchema = z.object({
+  mode: z.literal("legacy-cli"),
+  contract: z.literal("production-cli"),
+  implementedOperations: z.number(),
+  debugOperations: z.number(),
+  checkCommand: z.string(),
+});
+
+const appsMigrateFromCliReturnSchema = appsImportCliReturnSchema.extend({
+  migration: appMigrationSummarySchema,
+  check: appsCheckReturnSchema.nullable(),
+});
+
+const appMigrationCommandMismatchSchema = z.object({
+  operationId: z.string(),
+  expectedCommand: z.string(),
+  actualCommand: z.string().nullable(),
+});
+
+const appsMigrationCheckReturnSchema = z.object({
+  ok: z.boolean(),
+  id: z.string(),
+  sourceCommand: z.string(),
+  source: z.enum(["manifest", "registry", "help"]),
+  confidence: z.enum(["high", "medium", "low"]),
+  expectedOperations: z.array(z.string()),
+  implementedOperations: z.array(z.string()),
+  missingOperations: z.array(z.string()),
+  extraCliOperations: z.array(z.string()),
+  commandMismatches: z.array(appMigrationCommandMismatchSchema),
+  debugCandidates: z.array(appImportCliOperationCandidateSchema),
+  warnings: z.array(z.string()),
+  reviewRequired: z.array(z.string()),
+  appCheck: appsCheckReturnSchema,
 });
 
 const appGuidePromptSchema = z.object({
@@ -610,6 +648,157 @@ export class AppsCommands {
     }
   }
 
+  @Command({
+    name: "migrate-from-cli",
+    description: "TEMP: migrate a working production CLI into a Ravi app draft",
+  })
+  @CommandAccess({ kind: "mutate", resource: "apps", action: "migrate-from-cli", risk: "high" })
+  @Returns(appsMigrateFromCliReturnSchema)
+  migrateFromCli(
+    @Arg("command", { description: "Working production CLI command to migrate, e.g. 'sde tiny'" }) command: string,
+    @Option({ flags: "--id <id>", description: "Stable app id to generate" }) id?: string,
+    @Option({ flags: "--name <name>", description: "Human display name" }) name?: string,
+    @Option({ flags: "--description <text>", description: "Short app description" }) description?: string,
+    @Option({ flags: "--source <source>", description: "Import source: auto|manifest|registry|help" }) source?: string,
+    @Option({ flags: "--dry-run", description: "Plan migration without writing files" }) dryRun?: boolean,
+    @Option({ flags: "--force", description: "Overwrite existing scaffold files" }) force?: boolean,
+    @Option({ flags: "--skip-ui", description: "Do not include interfaces.ui in the manifest" }) skipUi?: boolean,
+    @Option({ flags: "--skip-skill", description: "Do not create a skill skeleton" }) skipSkill?: boolean,
+    @Option({ flags: "--skip-spec", description: "Do not create an app spec skeleton" }) skipSpec?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    try {
+      const appId = id?.trim();
+      if (!appId) throw new Error("Missing --id <app-id> for CLI migration.");
+      const normalizedSource = normalizeImportSource(source);
+      const imported = importCliApp({
+        id: appId,
+        command,
+        name,
+        description,
+        ...(normalizedSource ? { source: normalizedSource } : {}),
+        dryRun,
+        force,
+        includeUi: skipUi !== true,
+        includeSkill: skipSkill !== true,
+        includeSpec: skipSpec !== true,
+      });
+      const check = imported.dryRun ? null : toAppsCheckPayload(filterVisibleAppChecks(checkAppManifests(imported.id)));
+      const payload = {
+        ...imported,
+        migration: {
+          mode: "legacy-cli" as const,
+          contract: "production-cli" as const,
+          implementedOperations: imported.operationCandidates.length,
+          debugOperations: imported.debugCandidates.length,
+          checkCommand: `ravi apps migration-check ${imported.id} --source-command ${shellQuote(imported.sourceCommand)} --source ${imported.source} --json`,
+        },
+        check,
+      };
+
+      if (asJson) {
+        printJson(payload);
+        if (check && !check.ok && getContext()?.suppressCliOutput !== true) process.exitCode = 1;
+        return payload;
+      }
+
+      console.log(`${payload.dryRun ? "Planned" : "Created"} CLI migration: ${payload.id}`);
+      console.log(`contract: production CLI (${payload.sourceCommand})`);
+      console.log(`source: ${payload.source} (${payload.confidence})`);
+      console.log(`operations: ${payload.operationCandidates.length}`);
+      if (payload.debugCandidates.length > 0) console.log(`debug candidates: ${payload.debugCandidates.length}`);
+      if (payload.check) console.log(`manifest check: ${payload.check.ok ? "ok" : "failed"}`);
+      for (const warning of payload.warnings) console.log(`warning: ${warning}`);
+      for (const item of payload.reviewRequired) console.log(`review: ${item}`);
+      for (const file of payload.files) console.log(`- ${file.action} ${file.kind}: ${file.path}`);
+      console.log("\nNext commands:");
+      for (const nextCommand of payload.nextCommands) console.log(`  ${nextCommand}`);
+      console.log(`  ${payload.migration.checkCommand}`);
+      return payload;
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  @Command({
+    name: "migration-check",
+    description: "TEMP: compare a migrated Ravi app against the working production CLI contract",
+  })
+  @CommandAccess({ kind: "read", resource: "apps", action: "migration-check", risk: "low" })
+  @Returns(appsMigrationCheckReturnSchema)
+  migrationCheck(
+    @Arg("id", { description: "Migrated app id" }) id: string,
+    @Option({ flags: "--source-command <command>", description: "Original working production CLI command" })
+    sourceCommand?: string,
+    @Option({ flags: "--source <source>", description: "Import source: auto|manifest|registry|help" }) source?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    try {
+      const command = sourceCommand?.trim();
+      if (!command) throw new Error("Missing --source-command <command> for migration check.");
+      const normalizedSource = normalizeImportSource(source);
+      const expected = importCliApp({
+        id,
+        command,
+        ...(normalizedSource ? { source: normalizedSource } : {}),
+        dryRun: true,
+        includeUi: false,
+        includeSkill: false,
+        includeSpec: false,
+      });
+      const app = getAppManifest(expected.id);
+      const appCheck = toAppsCheckPayload(filterVisibleAppChecks(checkAppManifests(expected.id)));
+      const comparison = compareMigratedOperations(expected, app.manifest);
+      const payload = {
+        ok: appCheck.ok && comparison.missingOperations.length === 0 && comparison.commandMismatches.length === 0,
+        id: expected.id,
+        sourceCommand: expected.sourceCommand,
+        source: expected.source,
+        confidence: expected.confidence,
+        expectedOperations: comparison.expectedOperations,
+        implementedOperations: comparison.implementedOperations,
+        missingOperations: comparison.missingOperations,
+        extraCliOperations: comparison.extraCliOperations,
+        commandMismatches: comparison.commandMismatches,
+        debugCandidates: expected.debugCandidates,
+        warnings: expected.warnings,
+        reviewRequired: expected.reviewRequired,
+        appCheck,
+      };
+
+      if (asJson) {
+        printJson(payload);
+        if (!payload.ok && getContext()?.suppressCliOutput !== true) process.exitCode = 1;
+        return payload;
+      }
+
+      console.log(`Migration check for ${payload.id}: ${payload.ok ? "ok" : "failed"}`);
+      console.log(`source: ${payload.sourceCommand}`);
+      console.log(`expected operations: ${payload.expectedOperations.length}`);
+      console.log(`implemented operations: ${payload.implementedOperations.length}`);
+      if (payload.missingOperations.length > 0) {
+        console.log("missing operations:");
+        for (const operation of payload.missingOperations) console.log(`  - ${operation}`);
+      }
+      if (payload.commandMismatches.length > 0) {
+        console.log("command mismatches:");
+        for (const mismatch of payload.commandMismatches) {
+          console.log(`  - ${mismatch.operationId}`);
+        }
+      }
+      for (const warning of payload.warnings) console.log(`warning: ${warning}`);
+      if (!payload.ok && getContext()?.suppressCliOutput !== true) process.exitCode = 1;
+      return payload;
+    } catch (error) {
+      if (error instanceof RaviAppError && asJson) {
+        printJson(error.toJSON());
+        if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
+        return;
+      }
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   @Command({ name: "guide", description: "Print agent guidance for discovering, scaffolding, and operating Ravi apps" })
   @CommandAccess({ kind: "read", resource: "apps", action: "guide", risk: "low" })
   @Returns(appsGuideReturnSchema)
@@ -668,4 +857,71 @@ function normalizeImportSource(value?: string): "auto" | "manifest" | "registry"
     return normalized;
   }
   throw new Error(`Invalid import source: ${value}. Use auto|manifest|registry|help.`);
+}
+
+function toAppsCheckPayload(results: z.infer<typeof appCheckResultSchema>[]): z.infer<typeof appsCheckReturnSchema> {
+  return {
+    ok: results.every((result) => result.ok),
+    checked: results.length,
+    results,
+  };
+}
+
+function compareMigratedOperations(
+  expected: RaviAppImportCliResult,
+  manifest: RaviAppManifest | null,
+): {
+  expectedOperations: string[];
+  implementedOperations: string[];
+  missingOperations: string[];
+  extraCliOperations: string[];
+  commandMismatches: z.infer<typeof appMigrationCommandMismatchSchema>[];
+} {
+  const operationPrefix = expected.id.replace(/\//g, ".");
+  const expectedCommands = new Map(
+    expected.operationCandidates.map((candidate) => [`${operationPrefix}.${candidate.id}`, candidate.command]),
+  );
+  const operations = isRecord(manifest?.operations) ? manifest.operations : {};
+  const implementedOperations = Object.entries(operations)
+    .filter(([operationId, operation]) => operationId.startsWith(`${operationPrefix}.`) && isCliOperation(operation))
+    .map(([operationId]) => operationId)
+    .sort();
+  const expectedOperations = Array.from(expectedCommands.keys()).sort();
+  const implementedSet = new Set(implementedOperations);
+  const missingOperations = expectedOperations.filter((operationId) => !implementedSet.has(operationId));
+  const expectedSet = new Set(expectedOperations);
+  const extraCliOperations = implementedOperations.filter((operationId) => !expectedSet.has(operationId));
+  const commandMismatches = expectedOperations
+    .filter((operationId) => implementedSet.has(operationId))
+    .map((operationId) => {
+      const operation = operations[operationId];
+      const actualCommand = isRecord(operation) && typeof operation.command === "string" ? operation.command : null;
+      return {
+        operationId,
+        expectedCommand: expectedCommands.get(operationId) ?? "",
+        actualCommand,
+      };
+    })
+    .filter((item) => item.actualCommand !== item.expectedCommand);
+
+  return {
+    expectedOperations,
+    implementedOperations,
+    missingOperations,
+    extraCliOperations,
+    commandMismatches,
+  };
+}
+
+function isCliOperation(value: unknown): boolean {
+  return isRecord(value) && value.interface === "cli";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function shellQuote(value: string): string {
+  if (/^[A-Za-z0-9_./:=@+-]+$/.test(value)) return value;
+  return `'${value.replace(/'/g, "'\\''")}'`;
 }
