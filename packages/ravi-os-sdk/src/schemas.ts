@@ -55274,6 +55274,10 @@ export const SlackBlocksSendInputSchema = {
       "description": "Slack channel/conversation ID",
       "type": "string"
     },
+    "ephemeralUser": {
+      "description": "Send as an ephemeral message visible only to this Slack user",
+      "type": "string"
+    },
     "execute": {
       "description": "Perform the mutation; default is dry-run",
       "type": "boolean"
@@ -58519,6 +58523,10 @@ export const SlackMessagesSendInputSchema = {
       "description": "Slack channel/conversation ID",
       "type": "string"
     },
+    "ephemeralUser": {
+      "description": "Send as an ephemeral message visible only to this Slack user",
+      "type": "string"
+    },
     "execute": {
       "description": "Perform the mutation; default is dry-run",
       "type": "boolean"
@@ -58541,6 +58549,380 @@ export const SlackMessagesSendInputSchema = {
 
 /** JSON Schema for the return shape of `slack.messages-send`. */
 export const SlackMessagesSendReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.modals-open`. */
+export const SlackModalsOpenInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "file": {
+      "description": "Path to a Block Kit view JSON file",
+      "type": "string"
+    },
+    "triggerId": {
+      "description": "Slack interaction trigger_id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "file",
+    "triggerId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.modals-open`. */
+export const SlackModalsOpenReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.modals-push`. */
+export const SlackModalsPushInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "file": {
+      "description": "Path to a Block Kit view JSON file",
+      "type": "string"
+    },
+    "triggerId": {
+      "description": "Slack interaction trigger_id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "file",
+    "triggerId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.modals-push`. */
+export const SlackModalsPushReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.modals-update`. */
+export const SlackModalsUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "externalId": {
+      "description": "Treat <view> as an external_id instead of a view_id",
+      "type": "boolean"
+    },
+    "file": {
+      "description": "Path to a Block Kit view JSON file",
+      "type": "string"
+    },
+    "hash": {
+      "description": "Slack view.hash for optimistic concurrency control",
+      "type": "string"
+    },
+    "view": {
+      "description": "Slack view_id, or external_id when --external-id is set",
+      "type": "string"
+    }
+  },
+  "required": [
+    "file",
+    "view"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.modals-update`. */
+export const SlackModalsUpdateReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [

@@ -11,6 +11,8 @@ O core do Ravi deve fornecer primitives genericas:
 - enviar e atualizar Block Kit;
 - enviar Block Kit ephemeral para um usuario no canal origem via
   `ravi slack blocks-send <channel> <json> --ephemeral-user <user>`;
+- abrir, atualizar e empilhar modais via `ravi slack modals-open`,
+  `modals-update` e `modals-push`;
 - receber `ravi.inbound.interaction`;
 - resolver credenciais Slack via broker;
 - executar triggers shell;
@@ -42,6 +44,9 @@ Fica no core:
 - `ravi slack blocks-send --ephemeral-user`;
 - `ravi slack blocks-update`;
 - `ravi slack interactions-respond`;
+- `ravi slack modals-open`;
+- `ravi slack modals-update --hash`;
+- `ravi slack modals-push`;
 - evento `ravi.inbound.interaction`;
 - envs de trigger como `RAVI_TRIGGER_ACTION_ID`,
   `RAVI_TRIGGER_CHANNEL_ID`, `RAVI_TRIGGER_MESSAGE_TS` e
@@ -160,9 +165,36 @@ Limite observado: `chat.update` nao edita ephemeral interativa comum; Slack pode
 retornar `message_not_found`. Se `responseUrlId` nao existir, use fallback:
 
 - publicar nova ephemeral;
-- abrir modal com `views.open`;
+- abrir modal com `ravi slack modals-open`;
 - responder no ACK do Socket Mode quando a acao puder ser resolvida
   imediatamente.
+
+## Modais
+
+Use modal quando a acao precisa coletar input, confirmar uma configuracao mais
+longa ou mostrar um estado dismissible sem poluir o canal.
+
+```bash
+ravi slack modals-open <triggerId> ./view.json --execute --json
+ravi slack modals-update <viewId> ./view.json --hash <hash> --execute --json
+ravi slack modals-push <triggerId> ./view.json --execute --json
+```
+
+Regras:
+
+- `triggerId` vem do payload `ravi.inbound.interaction` e expira rapido; abra o
+  modal no handler deterministico, sem esperar julgamento de agent.
+- Guarde apenas ponteiros curtos em `private_metadata` (por exemplo `requestId`
+  ou `stateKey`). O CLI redige `private_metadata` em outputs, mas o valor ainda
+  vai para o Slack.
+- Use `view.hash` recebido no evento ao chamar `modals-update --hash`; isso
+  protege contra update velho sobrescrevendo modal novo.
+- `view_submission` e `view_closed` chegam como interacoes normais. Extraia
+  inputs de `stateValues`.
+- Erros por campo em `view_submission`, `response_action: clear/update/push` e
+  respostas de `block_suggestion` dependem de ACK rico no Socket Mode. Isso fica
+  fora deste primitive CLI e deve ser implementado no dispatcher antes de usar
+  para validacao sincrona ou selects dinamicos.
 
 ## Trigger Split
 

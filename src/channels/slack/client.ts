@@ -15,6 +15,10 @@ export interface SlackPostMessageInput {
   readonly blocks?: readonly SlackBlockKitBlock[];
 }
 
+export interface SlackPostEphemeralInput extends SlackPostMessageInput {
+  readonly user: string;
+}
+
 export interface SlackUpdateMessageInput {
   readonly channel: string;
   readonly ts: string;
@@ -195,6 +199,27 @@ export interface SlackBlocksValidateResponse extends SlackApiResponse {
   readonly response_metadata?: Record<string, unknown>;
 }
 
+export interface SlackViewsOpenInput {
+  readonly triggerId: string;
+  readonly view: Record<string, unknown>;
+}
+
+export interface SlackViewsUpdateInput {
+  readonly view: Record<string, unknown>;
+  readonly viewId?: string;
+  readonly externalId?: string;
+  readonly hash?: string;
+}
+
+export interface SlackViewsPushInput {
+  readonly triggerId: string;
+  readonly view: Record<string, unknown>;
+}
+
+export interface SlackViewsResponse extends SlackApiResponse {
+  readonly view?: Record<string, unknown>;
+}
+
 interface SlackReactionResponse extends SlackApiResponse {}
 
 interface SlackAssistantThreadStatusResponse extends SlackApiResponse {}
@@ -304,6 +329,33 @@ export class SlackWebApiClient {
     };
   }
 
+  async postEphemeral(input: SlackPostEphemeralInput): Promise<SlackPostMessageResult> {
+    const body: Record<string, unknown> = {
+      channel: input.channel,
+      user: input.user,
+      text: input.text,
+    };
+    if (input.threadTs) {
+      body.thread_ts = input.threadTs;
+    }
+    if (input.blocks) {
+      body.blocks = JSON.stringify(input.blocks);
+    }
+
+    const response = await this.apiRequest<SlackPostMessageResponse>("chat.postEphemeral", this.botToken, body);
+    const ts = typeof response.message_ts === "string" ? response.message_ts : response.ts;
+    if (!ts) {
+      throw new Error("Slack chat.postEphemeral did not return message_ts");
+    }
+
+    return {
+      channel: input.channel,
+      ts,
+      messageId: ts,
+      raw: response,
+    };
+  }
+
   async updateMessage(input: SlackUpdateMessageInput): Promise<SlackPostMessageResult> {
     const body: Record<string, unknown> = {
       channel: input.channel,
@@ -344,6 +396,36 @@ export class SlackWebApiClient {
         view: input.view ? JSON.stringify(input.view) : undefined,
       }),
     );
+  }
+
+  async viewsOpen(input: SlackViewsOpenInput): Promise<SlackViewsResponse> {
+    return this.apiJsonRequest<SlackViewsResponse>("views.open", this.botToken, {
+      trigger_id: input.triggerId,
+      view: input.view,
+    });
+  }
+
+  async viewsUpdate(input: SlackViewsUpdateInput): Promise<SlackViewsResponse> {
+    if (!input.viewId && !input.externalId) {
+      throw new Error("Slack views.update requires viewId or externalId");
+    }
+    return this.apiJsonRequest<SlackViewsResponse>(
+      "views.update",
+      this.botToken,
+      compactBody({
+        view_id: input.viewId,
+        external_id: input.externalId,
+        hash: input.hash,
+        view: input.view,
+      }),
+    );
+  }
+
+  async viewsPush(input: SlackViewsPushInput): Promise<SlackViewsResponse> {
+    return this.apiJsonRequest<SlackViewsResponse>("views.push", this.botToken, {
+      trigger_id: input.triggerId,
+      view: input.view,
+    });
   }
 
   async authTest(): Promise<SlackAuthTestResponse> {

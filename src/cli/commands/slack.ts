@@ -201,12 +201,51 @@ function readSlackBlockKitJsonFile(path: string): unknown {
   return parseSlackBlockKitJson(readFileSync(path, "utf8"));
 }
 
+function readSlackViewJsonFile(path: string): Record<string, unknown> {
+  const validation = normalizeSlackBlockKitValidationPayload(readSlackBlockKitJsonFile(path), "view");
+  if (!validation.view) fail("Block Kit view payload must be a JSON object");
+  return validation.view;
+}
+
+export function redactSlackPrivateMetadata(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => redactSlackPrivateMetadata(item));
+  if (!value || typeof value !== "object") return value;
+  const record = value as Record<string, unknown>;
+  const redacted: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(record)) {
+    redacted[key] =
+      key === "private_metadata" && child !== undefined && child !== null && child !== ""
+        ? "[redacted]"
+        : redactSlackPrivateMetadata(child);
+  }
+  return redacted;
+}
+
 function slackBlockKitValidationRequest(
   payload: ReturnType<typeof normalizeSlackBlockKitValidationPayload>,
 ): Record<string, unknown> {
   if (payload.target === "blocks") return { blocks: payload.blocks ?? [] };
   if (payload.target === "view") return { view: payload.view ?? {} };
   return { message: payload.message ?? {} };
+}
+
+export function slackViewMutationItem(raw: Record<string, unknown>): Record<string, unknown> {
+  const safeRaw = redactSlackPrivateMetadata(raw) as Record<string, unknown>;
+  const view = recordValue(safeRaw.view);
+  if (!view) return { ok: safeRaw.ok === true };
+  return {
+    viewId: stringField(view, "id") ?? null,
+    hash: stringField(view, "hash") ?? null,
+    callbackId: stringField(view, "callback_id") ?? null,
+    externalId: stringField(view, "external_id") ?? null,
+    type: stringField(view, "type") ?? null,
+  };
+}
+
+function formatSlackViewMutationItem(item: Record<string, unknown>): string {
+  const viewId = typeof item.viewId === "string" ? item.viewId : undefined;
+  const hash = typeof item.hash === "string" ? item.hash : undefined;
+  return [viewId, hash].filter(Boolean).join(" ") || JSON.stringify(item, null, 2);
 }
 
 const SLACK_CANVAS_EDIT_OPERATIONS = new Set<SlackCanvasEditOperation>([
@@ -1125,14 +1164,22 @@ export class SlackCommands {
     @Arg("text", { description: "Message text" }) text: string,
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
     @Option({ flags: "--thread-ts <ts>", description: "Send inside a Slack thread" }) threadTs?: string,
+    @Option({
+      flags: "--ephemeral-user <user>",
+      description: "Send as an ephemeral message visible only to this Slack user",
+    })
+    ephemeralUser?: string,
     @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const request = { channel, text, ...(threadTs ? { threadTs } : {}) };
-    const { client, config } = await createSlackOpsContext(raviChannel, "chat.postMessage");
-    if (!execute) return this.printMutationDryRun(config, "chat.postMessage", request, asJson);
-    const raw = await client.postMessage(request);
-    const payload = this.mutationPayload(config, false, "chat.postMessage", request, raw, raw.raw);
+    const method = ephemeralUser ? "chat.postEphemeral" : "chat.postMessage";
+    const request = { channel, text, ...(threadTs ? { threadTs } : {}), ...(ephemeralUser ? { ephemeralUser } : {}) };
+    const { client, config } = await createSlackOpsContext(raviChannel, method);
+    if (!execute) return this.printMutationDryRun(config, method, request, asJson);
+    const raw = ephemeralUser
+      ? await client.postEphemeral({ channel, user: ephemeralUser, text, ...(threadTs ? { threadTs } : {}) })
+      : await client.postMessage({ channel, text, ...(threadTs ? { threadTs } : {}) });
+    const payload = this.mutationPayload(config, false, method, request, raw, raw.raw);
     if (asJson) printJson(payload);
     else console.log(`${raw.channel} ${raw.ts}`);
     return payload;
@@ -1184,20 +1231,41 @@ export class SlackCommands {
     @Option({ flags: "--text <text>", description: "Top-level fallback text for notifications/accessibility" })
     text?: string,
     @Option({ flags: "--thread-ts <ts>", description: "Send inside a Slack thread" }) threadTs?: string,
+    @Option({
+      flags: "--ephemeral-user <user>",
+      description: "Send as an ephemeral message visible only to this Slack user",
+    })
+    ephemeralUser?: string,
     @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const message = normalizeSlackBlockKitMessagePayload(readSlackBlockKitJsonFile(file), text);
-    const request = { channel, file, text: message.text, blocks: message.blocks, ...(threadTs ? { threadTs } : {}) };
-    const { client, config } = await createSlackOpsContext(raviChannel, "chat.postMessage");
-    if (!execute) return this.printMutationDryRun(config, "chat.postMessage", request, asJson);
-    const raw = await client.postMessage({
+    const method = ephemeralUser ? "chat.postEphemeral" : "chat.postMessage";
+    const request = {
       channel,
+      file,
       text: message.text,
       blocks: message.blocks,
       ...(threadTs ? { threadTs } : {}),
-    });
-    const payload = this.mutationPayload(config, false, "chat.postMessage", request, raw, raw.raw);
+      ...(ephemeralUser ? { ephemeralUser } : {}),
+    };
+    const { client, config } = await createSlackOpsContext(raviChannel, method);
+    if (!execute) return this.printMutationDryRun(config, method, request, asJson);
+    const raw = ephemeralUser
+      ? await client.postEphemeral({
+          channel,
+          user: ephemeralUser,
+          text: message.text,
+          blocks: message.blocks,
+          ...(threadTs ? { threadTs } : {}),
+        })
+      : await client.postMessage({
+          channel,
+          text: message.text,
+          blocks: message.blocks,
+          ...(threadTs ? { threadTs } : {}),
+        });
+    const payload = this.mutationPayload(config, false, method, request, raw, raw.raw);
     if (asJson) printJson(payload);
     else console.log(`${raw.channel} ${raw.ts}`);
     return payload;
@@ -1274,6 +1342,116 @@ export class SlackCommands {
     const payload = this.mutationPayload(config, false, "slack.interactions.respond", request, raw, raw);
     if (asJson) printJson(payload);
     else console.log(`responded ${responseUrlId}`);
+    return payload;
+  }
+
+  @Command({
+    name: "modals-open",
+    description: "Open a Slack modal from an interaction trigger_id; dry-run unless --execute is set",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "slack.modals",
+    action: "open",
+    risk: "high",
+    requiresConfirmation: true,
+  })
+  @Returns(slackMutationReturnSchema)
+  async modalsOpen(
+    @Arg("triggerId", { description: "Slack interaction trigger_id" }) triggerId: string,
+    @Arg("file", { description: "Path to a Block Kit view JSON file" }) file: string,
+    @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
+    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const view = readSlackViewJsonFile(file);
+    const request = { triggerId, file, view: redactSlackPrivateMetadata(view) };
+    const { client, config } = await createSlackOpsContext(raviChannel, "views.open");
+    if (!execute) return this.printMutationDryRun(config, "views.open", request, asJson);
+    const raw = await client.viewsOpen({ triggerId, view });
+    const safeRaw = redactSlackPrivateMetadata(raw) as Record<string, unknown>;
+    const item = slackViewMutationItem(safeRaw);
+    const payload = this.mutationPayload(config, false, "views.open", request, item, safeRaw);
+    if (asJson) printJson(payload);
+    else console.log(formatSlackViewMutationItem(item));
+    return payload;
+  }
+
+  @Command({
+    name: "modals-update",
+    description: "Update a Slack modal view; dry-run unless --execute is set",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "slack.modals",
+    action: "update",
+    risk: "high",
+    requiresConfirmation: true,
+  })
+  @Returns(slackMutationReturnSchema)
+  async modalsUpdate(
+    @Arg("view", { description: "Slack view_id, or external_id when --external-id is set" }) viewTarget: string,
+    @Arg("file", { description: "Path to a Block Kit view JSON file" }) file: string,
+    @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
+    @Option({ flags: "--external-id", description: "Treat <view> as an external_id instead of a view_id" })
+    useExternalId?: boolean,
+    @Option({ flags: "--hash <hash>", description: "Slack view.hash for optimistic concurrency control" })
+    hash?: string,
+    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const view = readSlackViewJsonFile(file);
+    const request = {
+      ...(useExternalId ? { externalId: viewTarget } : { viewId: viewTarget }),
+      file,
+      ...(hash ? { hash } : {}),
+      view: redactSlackPrivateMetadata(view),
+    };
+    const { client, config } = await createSlackOpsContext(raviChannel, "views.update");
+    if (!execute) return this.printMutationDryRun(config, "views.update", request, asJson);
+    const raw = await client.viewsUpdate({
+      view,
+      viewId: useExternalId ? undefined : viewTarget,
+      externalId: useExternalId ? viewTarget : undefined,
+      hash,
+    });
+    const safeRaw = redactSlackPrivateMetadata(raw) as Record<string, unknown>;
+    const item = slackViewMutationItem(safeRaw);
+    const payload = this.mutationPayload(config, false, "views.update", request, item, safeRaw);
+    if (asJson) printJson(payload);
+    else console.log(formatSlackViewMutationItem(item));
+    return payload;
+  }
+
+  @Command({
+    name: "modals-push",
+    description: "Push a Slack modal view onto an existing modal stack; dry-run unless --execute is set",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "slack.modals",
+    action: "push",
+    risk: "high",
+    requiresConfirmation: true,
+  })
+  @Returns(slackMutationReturnSchema)
+  async modalsPush(
+    @Arg("triggerId", { description: "Slack interaction trigger_id" }) triggerId: string,
+    @Arg("file", { description: "Path to a Block Kit view JSON file" }) file: string,
+    @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
+    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const view = readSlackViewJsonFile(file);
+    const request = { triggerId, file, view: redactSlackPrivateMetadata(view) };
+    const { client, config } = await createSlackOpsContext(raviChannel, "views.push");
+    if (!execute) return this.printMutationDryRun(config, "views.push", request, asJson);
+    const raw = await client.viewsPush({ triggerId, view });
+    const safeRaw = redactSlackPrivateMetadata(raw) as Record<string, unknown>;
+    const item = slackViewMutationItem(safeRaw);
+    const payload = this.mutationPayload(config, false, "views.push", request, item, safeRaw);
+    if (asJson) printJson(payload);
+    else console.log(formatSlackViewMutationItem(item));
     return payload;
   }
 
