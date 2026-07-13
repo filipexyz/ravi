@@ -77,6 +77,7 @@ ravi slack permissions-list --json
 
 ```bash
 ravi slack messages-send <channel> "texto" --execute --json
+ravi slack messages-send <channel> "texto" --ephemeral-user <userId> --execute --json
 ravi slack messages-inspect <channel> <ts> --json
 ravi slack messages-replay <channel> <ts> --execute --json
 ```
@@ -86,8 +87,12 @@ ravi slack messages-replay <channel> <ts> --execute --json
 ```bash
 ravi slack blocks-validate ./message.json --json
 ravi slack blocks-send <channel> ./message.json --execute --json
+ravi slack blocks-send <channel> ./message.json --ephemeral-user <userId> --execute --json
 ravi slack blocks-update <channel> <ts> ./message.json --execute --json
 ravi slack interactions-respond <responseUrlId> ./response.json --execute --json
+ravi slack modals-open <triggerId> ./view.json --execute --json
+ravi slack modals-update <viewId> ./view.json --hash <hash> --execute --json
+ravi slack modals-push <triggerId> ./view.json --execute --json
 ravi slack blocks-showcase <channel> --execute --json
 ```
 

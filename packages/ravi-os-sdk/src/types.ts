@@ -11468,6 +11468,7 @@ export type SkillsWhoReturn = {
 /** Input shape for `slack.blocks-send`. */
 export type SlackBlocksSendInput = {
   channel: string;
+  ephemeralUser?: string;
   execute?: boolean;
   file: string;
   text?: string;
@@ -12026,6 +12027,7 @@ export type SlackMessagesReplayReturn = {
 /** Input shape for `slack.messages-send`. */
 export type SlackMessagesSendInput = {
   channel: string;
+  ephemeralUser?: string;
   execute?: boolean;
   text: string;
   threadTs?: string;
@@ -12033,6 +12035,71 @@ export type SlackMessagesSendInput = {
 
 /** Return shape for `slack.messages-send`. */
 export type SlackMessagesSendReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.modals-open`. */
+export type SlackModalsOpenInput = {
+  channel?: string;
+  execute?: boolean;
+  file: string;
+  triggerId: string;
+};
+
+/** Return shape for `slack.modals-open`. */
+export type SlackModalsOpenReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.modals-push`. */
+export type SlackModalsPushInput = {
+  channel?: string;
+  execute?: boolean;
+  file: string;
+  triggerId: string;
+};
+
+/** Return shape for `slack.modals-push`. */
+export type SlackModalsPushReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.modals-update`. */
+export type SlackModalsUpdateInput = {
+  channel?: string;
+  execute?: boolean;
+  externalId?: boolean;
+  file: string;
+  hash?: string;
+  view: string;
+};
+
+/** Return shape for `slack.modals-update`. */
+export type SlackModalsUpdateReturn = {
   connection: string;
   dryRun: boolean;
   item?: unknown;

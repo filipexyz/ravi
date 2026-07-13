@@ -171,6 +171,7 @@ describe("Slack Web API client", () => {
       const method = String(url).split("/").pop() ?? "";
       calls.push({ method, init: init ?? {} });
       if (method === "blocks.validate") return jsonResponse({ ok: true });
+      if (method === "chat.postEphemeral") return jsonResponse({ ok: true, message_ts: "1713000000.000200" });
       return jsonResponse({ ok: true, channel: "C123", ts: "1713000000.000100" });
     }) as unknown as typeof fetch;
     const client = new SlackWebApiClient({
@@ -199,13 +200,24 @@ describe("Slack Web API client", () => {
       ts: "1713000000.000100",
     });
     await expect(
+      client.postEphemeral({ channel: "C123", user: "U123", text: "Private fallback", blocks }),
+    ).resolves.toMatchObject({
+      channel: "C123",
+      ts: "1713000000.000200",
+    });
+    await expect(
       client.updateMessage({ channel: "C123", ts: "1713000000.000100", text: "Updated", blocks }),
     ).resolves.toMatchObject({
       channel: "C123",
       ts: "1713000000.000100",
     });
 
-    expect(calls.map((call) => call.method)).toEqual(["blocks.validate", "chat.postMessage", "chat.update"]);
+    expect(calls.map((call) => call.method)).toEqual([
+      "blocks.validate",
+      "chat.postMessage",
+      "chat.postEphemeral",
+      "chat.update",
+    ]);
     expect(formBody(calls[0]?.init.body)).toEqual({
       message: JSON.stringify({ text: "Fallback", blocks }),
     });
@@ -216,9 +228,74 @@ describe("Slack Web API client", () => {
     });
     expect(formBody(calls[2]?.init.body)).toEqual({
       channel: "C123",
+      user: "U123",
+      text: "Private fallback",
+      blocks: JSON.stringify(blocks),
+    });
+    expect(formBody(calls[3]?.init.body)).toEqual({
+      channel: "C123",
       ts: "1713000000.000100",
       text: "Updated",
       blocks: JSON.stringify(blocks),
+    });
+  });
+
+  it("opens, updates and pushes modal views through Slack Web API", async () => {
+    const calls: Array<{ method: string; init: RequestInit }> = [];
+    const fetchImpl = mock(async (url: string | URL | Request, init?: RequestInit) => {
+      const method = String(url).split("/").pop() ?? "";
+      calls.push({ method, init: init ?? {} });
+      return jsonResponse({
+        ok: true,
+        view: {
+          id: "V123",
+          hash: "hash-1",
+          callback_id: "modal_callback",
+        },
+      });
+    }) as unknown as typeof fetch;
+    const client = new SlackWebApiClient({
+      appToken: "xapp-secret",
+      botToken: "xoxb-secret",
+      fetchImpl,
+    });
+    const view = {
+      type: "modal",
+      callback_id: "modal_callback",
+      private_metadata: "context-key",
+      title: { type: "plain_text", text: "Ravi" },
+      blocks: [{ type: "divider" }],
+    };
+
+    await expect(client.viewsOpen({ triggerId: "trigger-1", view })).resolves.toMatchObject({
+      view: { id: "V123", hash: "hash-1" },
+    });
+    await expect(client.viewsUpdate({ viewId: "V123", hash: "hash-1", view })).resolves.toMatchObject({
+      view: { id: "V123", hash: "hash-1" },
+    });
+    await expect(client.viewsPush({ triggerId: "trigger-2", view })).resolves.toMatchObject({
+      view: { id: "V123", hash: "hash-1" },
+    });
+
+    expect(calls.map((call) => call.method)).toEqual(["views.open", "views.update", "views.push"]);
+    for (const call of calls) {
+      expect(call.init.headers).toMatchObject({
+        authorization: "Bearer xoxb-secret",
+        "content-type": "application/json; charset=utf-8",
+      });
+    }
+    expect(jsonBody(calls[0]?.init.body)).toEqual({
+      trigger_id: "trigger-1",
+      view,
+    });
+    expect(jsonBody(calls[1]?.init.body)).toEqual({
+      view_id: "V123",
+      hash: "hash-1",
+      view,
+    });
+    expect(jsonBody(calls[2]?.init.body)).toEqual({
+      trigger_id: "trigger-2",
+      view,
     });
   });
 

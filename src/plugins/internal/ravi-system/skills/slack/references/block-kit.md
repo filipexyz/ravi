@@ -12,6 +12,7 @@ Validar:
 
 ```bash
 ravi slack blocks-validate ./message.json --json
+ravi slack blocks-validate ./view.json --target view --json
 ```
 
 Enviar:
@@ -42,6 +43,14 @@ Responder uma interacao via handle seguro:
 
 ```bash
 ravi slack interactions-respond <responseUrlId> ./response.json --execute --json
+```
+
+Abrir ou atualizar modal:
+
+```bash
+ravi slack modals-open <triggerId> ./view.json --execute --json
+ravi slack modals-update <viewId> ./view.json --hash <hash> --execute --json
+ravi slack modals-push <triggerId> ./view.json --execute --json
 ```
 
 ## Payload De Mensagem
@@ -81,6 +90,49 @@ Formato recomendado:
 
 `text` top-level e obrigatorio para fallback de notificacao/acessibilidade.
 
+## Payload De Modal
+
+Formato recomendado:
+
+```json
+{
+  "type": "modal",
+  "callback_id": "agent_factory_create",
+  "private_metadata": "{\"requestId\":\"req_123\"}",
+  "title": {
+    "type": "plain_text",
+    "text": "Novo agent"
+  },
+  "submit": {
+    "type": "plain_text",
+    "text": "Criar"
+  },
+  "close": {
+    "type": "plain_text",
+    "text": "Cancelar"
+  },
+  "blocks": [
+    {
+      "type": "input",
+      "block_id": "agent_name",
+      "label": {
+        "type": "plain_text",
+        "text": "Nome"
+      },
+      "element": {
+        "type": "plain_text_input",
+        "action_id": "value"
+      }
+    }
+  ]
+}
+```
+
+`private_metadata` e enviado ao Slack, mas o CLI redige esse campo nos outputs
+de dry-run/JSON para evitar vazar contexto curto ou IDs internos em logs.
+Use `--hash <hash>` em `modals-update` quando o payload recebido trouxer
+`view.hash`; isso evita sobrescrever uma view que ja mudou no Slack.
+
 ## Interacoes
 
 Cliques e selects chegam via Socket Mode e sao publicados como:
@@ -97,10 +149,14 @@ Campos uteis para triggers:
 - `channelId`
 - `messageTs`
 - `threadTs`
+- `triggerId`
+- `viewId`
+- `viewCallbackId`
 - `actionId`
 - `blockId`
 - `value`
 - `selectedOption`
+- `stateValues`
 - `responseUrlId`
 
 Exemplo:
@@ -145,5 +201,10 @@ tratado como input de usuario.
 - Para feedback privado em canal factory/origem, use
   `blocks-send --ephemeral-user <userId>` em vez de publicar uma mensagem
   normal no canal novo.
+- `modals-open` precisa ser chamado enquanto o `triggerId` ainda e valido; em
+  workflows Slack, execute o handler deterministico imediatamente.
+- Erros por campo em `view_submission` e respostas de `block_suggestion`
+  exigem ACK rico no Socket Mode; ainda nao sao substituidos por
+  `modals-update`.
 - Use `action_id` e `block_id` estaveis para automacoes.
 - Prefira `blocks-update` para atualizar estado visual de uma mensagem existente.

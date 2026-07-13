@@ -8,7 +8,9 @@ import {
   hashSlackCanvasMarkdown,
   isSlackCanvasArtifactId,
   parseSlackCanvasAccessTargets,
+  redactSlackPrivateMetadata,
   resolveSlackCanvasMarkdownInput,
+  slackViewMutationItem,
   validateSlackCanvasAccessLevelTargets,
 } from "./slack.js";
 
@@ -70,6 +72,42 @@ describe("Slack CLI Canvas helpers", () => {
     expect(resolveSlackCanvasMarkdownInput("hello", undefined)).toBe("hello");
     expect(() => resolveSlackCanvasMarkdownInput("hello", "canvas.md")).toThrow("only one");
     expect(() => resolveSlackCanvasMarkdownInput(undefined, "canvas.md", "art_abc_123")).toThrow("only one");
+  });
+
+  it("redacts modal private metadata from CLI-facing payloads", () => {
+    expect(
+      redactSlackPrivateMetadata({
+        view: {
+          id: "V123",
+          private_metadata: { contextKey: "ctx_secret" },
+          blocks: [{ type: "section", private_metadata: ["nested_secret"] }],
+        },
+      }),
+    ).toEqual({
+      view: {
+        id: "V123",
+        private_metadata: "[redacted]",
+        blocks: [{ type: "section", private_metadata: "[redacted]" }],
+      },
+    });
+
+    expect(
+      slackViewMutationItem({
+        ok: true,
+        view: {
+          id: "V123",
+          hash: "hash-1",
+          callback_id: "callback",
+          private_metadata: "ctx_secret",
+        },
+      }),
+    ).toEqual({
+      viewId: "V123",
+      hash: "hash-1",
+      callbackId: "callback",
+      externalId: null,
+      type: null,
+    });
   });
 
   it("extracts Canvas IDs from conversation metadata shapes", () => {
