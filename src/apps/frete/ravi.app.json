@@ -1,0 +1,83 @@
+{
+  "schema": "ravi.app/v1",
+  "id": "frete",
+  "name": "Frete",
+  "version": "0.1.0",
+  "description": "Cota frete pela API oficial da Olist sem contratar transporte.",
+  "interfaces": {
+    "cli": {
+      "command": "ravi frete",
+      "json": true,
+      "health": "ravi apps check frete --json"
+    },
+    "sdk": {
+      "namespace": "frete"
+    }
+  },
+  "operations": {
+    "frete.help": {
+      "interface": "builtin",
+      "handler": "apps.help",
+      "mutating": false
+    },
+    "frete.show": {
+      "interface": "builtin",
+      "handler": "apps.manifest.show",
+      "mutating": false
+    },
+    "frete.check": {
+      "interface": "builtin",
+      "handler": "apps.manifest.check",
+      "mutating": false
+    },
+    "frete.quote": {
+      "interface": "sdk",
+      "namespace": "frete",
+      "method": "quote",
+      "mutating": false,
+      "permission": "frete:quotes:read",
+      "authorization": {
+        "resource": {
+          "type": "frete.quote",
+          "id": "olist"
+        },
+        "input": { "includeArgs": true, "includeOptions": ["quantity"] }
+      }
+    }
+  },
+  "permissions": {
+    "required": ["frete:quotes:read"],
+    "optional": ["frete:shipments:write", "frete:shipments:destructive", "frete:charges:financial"],
+    "mutating": ["frete:shipments:write", "frete:shipments:destructive", "frete:charges:financial"]
+  },
+  "storage": {
+    "sqlite": [],
+    "files": []
+  },
+  "artifacts": [],
+  "events": {
+    "emits": [],
+    "consumes": []
+  },
+  "skills": ["ravi-system-frete"],
+  "health": {
+    "checks": [
+      {
+        "type": "builtin",
+        "handler": "apps.manifest.check"
+      }
+    ]
+  },
+  "externalContracts": [
+    {
+      "provider": "olist-tiny",
+      "documentation": "https://tiny.com.br/api-docs/api2-cotacao-fretes",
+      "verifiedAt": "2026-07-13",
+      "operations": ["frete.quote"]
+    }
+  ],
+  "versioning": {
+    "compatibility": "semver",
+    "migrations": []
+  }
+}

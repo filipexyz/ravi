@@ -32,6 +32,7 @@ export * from "./doctor.js";
 export * from "./eval.js";
 export * from "./events.js";
 export * from "./feedback.js";
+export * from "./frete.js";
 export * from "./gmail.js";
 export * from "./group.js";
 export * from "./heartbeat.js";
