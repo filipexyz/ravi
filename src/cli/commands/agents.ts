@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { isDeepStrictEqual } from "node:util";
 import { Group, Command, CommandAccess, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
@@ -58,7 +59,7 @@ import {
   type AgentInstructionState,
 } from "../../runtime/agent-instructions.js";
 import { formatCliRuntimeTarget, getCliRuntimeMismatchMessage, inspectCliRuntimeTarget } from "../runtime-target.js";
-import type { AgentConfig, AgentUpdateInput } from "../../router/types.js";
+import type { AgentConfig, AgentUpdateInput, SessionEntry } from "../../router/types.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { searchTagBindingsForSelector } from "../../tags/service.js";
 import type { TagBinding } from "../../tags/types.js";
@@ -131,6 +132,23 @@ interface AgentInstructionSyncSummary {
   changed: boolean;
 }
 
+interface AgentSessionOverrideSummary {
+  sessionName: string;
+  model?: string;
+  effort?: NonNullable<SessionEntry["effortOverride"]>;
+  thinking?: NonNullable<SessionEntry["thinkingLevel"]>;
+}
+
+interface AgentSetMutationPayload {
+  action: "set";
+  changed: boolean;
+  agentId: string;
+  key: string;
+  value: unknown;
+  agent?: AgentConfig;
+  sessionOverrides: AgentSessionOverrideSummary[];
+}
+
 type AgentJsonSummary = Omit<AgentConfig, "modelPresetId"> & {
   isDefault: boolean;
   effectiveProvider: string;
@@ -143,6 +161,64 @@ type AgentJsonSummary = Omit<AgentConfig, "modelPresetId"> & {
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+function listActiveAgentSessionOverrides(agentId: string): AgentSessionOverrideSummary[] {
+  return getSessionsByAgent(agentId)
+    .flatMap((session) => {
+      const summary: AgentSessionOverrideSummary = {
+        sessionName: session.name?.trim() || "(canonical name unavailable)",
+      };
+
+      if (typeof session.modelOverride === "string" && session.modelOverride.length > 0) {
+        summary.model = session.modelOverride;
+      }
+      if (session.effortOverride !== null && session.effortOverride !== undefined) {
+        summary.effort = session.effortOverride;
+      }
+      if (session.thinkingLevel !== null && session.thinkingLevel !== undefined) {
+        summary.thinking = session.thinkingLevel;
+      }
+
+      return summary.model !== undefined || summary.effort !== undefined || summary.thinking !== undefined
+        ? [summary]
+        : [];
+    })
+    .sort((left, right) => left.sessionName.localeCompare(right.sessionName));
+}
+
+function buildAgentSetMutationPayload(input: {
+  before: AgentConfig;
+  agentId: string;
+  key: string;
+  value: unknown;
+}): AgentSetMutationPayload {
+  const updatedAgent = getAgent(input.agentId) ?? undefined;
+  return {
+    action: "set",
+    changed: !isDeepStrictEqual(input.before, updatedAgent),
+    agentId: input.agentId,
+    key: input.key,
+    value: input.value ?? null,
+    agent: updatedAgent,
+    sessionOverrides: listActiveAgentSessionOverrides(input.agentId),
+  };
+}
+
+function printAgentSessionOverrideSummary(sessionOverrides: AgentSessionOverrideSummary[]): void {
+  if (sessionOverrides.length === 0) {
+    console.log("  Session overrides: none");
+    return;
+  }
+
+  const subject = sessionOverrides.length === 1 ? "session has" : "sessions have";
+  console.log(`Warning: ${sessionOverrides.length} ${subject} runtime overrides:`);
+  for (const session of sessionOverrides) {
+    const fields = (["model", "effort", "thinking"] as const)
+      .flatMap((field) => (session[field] === undefined ? [] : [`${field}=${session[field]}`]))
+      .join(", ");
+    console.log(`  - ${session.sessionName}: ${fields}`);
+  }
 }
 
 function formatTagSlugs(tags: TagBinding[]): string {
@@ -771,7 +847,7 @@ export class AgentsCommands {
     }
   }
 
-  @Command({ name: "set", description: "Set agent property" })
+  @Command({ name: "set", description: "Set agent property and report active session runtime overrides" })
   @CommandAccess({
     kind: "mutate",
     resource: "agents",
@@ -841,18 +917,25 @@ export class AgentsCommands {
           fail(`Error: ${err instanceof Error ? err.message : err}`);
         }
       }
-      const presetPayload = {
-        action: "set" as const,
-        changed: true as const,
+      const presetPayload = buildAgentSetMutationPayload({
+        before: agent,
         agentId: id,
         key,
         value: cleared ? null : value,
-        agent: getAgent(id),
-      };
+      });
       if (asJson) {
         printJson(presetPayload);
       } else {
-        console.log(cleared ? `\u2713 modelPreset cleared: ${id}` : `\u2713 modelPreset set: ${id} -> ${value}`);
+        console.log(
+          presetPayload.changed
+            ? cleared
+              ? `\u2713 modelPreset cleared: ${id}`
+              : `\u2713 modelPreset set: ${id} -> ${value}`
+            : cleared
+              ? `\u2713 modelPreset already clear: ${id}`
+              : `\u2713 modelPreset unchanged: ${id} -> ${value}`,
+        );
+        printAgentSessionOverrideSummary(presetPayload.sessionOverrides);
       }
       emitConfigChanged();
       return presetPayload;
@@ -866,22 +949,25 @@ export class AgentsCommands {
       }
       try {
         updateAgent(id, { groupDebounceMs: parsed === 0 ? undefined : parsed });
-        const debouncePayload = {
-          action: "set" as const,
-          changed: true as const,
+        const debouncePayload = buildAgentSetMutationPayload({
+          before: agent,
           agentId: id,
           key,
           value: parsed === 0 ? null : parsed,
-          agent: getAgent(id),
-        };
+        });
         if (asJson) {
           printJson(debouncePayload);
         } else {
           console.log(
-            parsed === 0
-              ? `\u2713 groupDebounceMs disabled: ${id}`
-              : `\u2713 groupDebounceMs set: ${id} -> ${parsed}ms`,
+            debouncePayload.changed
+              ? parsed === 0
+                ? `\u2713 groupDebounceMs disabled: ${id}`
+                : `\u2713 groupDebounceMs set: ${id} -> ${parsed}ms`
+              : parsed === 0
+                ? `\u2713 groupDebounceMs already disabled: ${id}`
+                : `\u2713 groupDebounceMs unchanged: ${id} -> ${parsed}ms`,
           );
+          printAgentSessionOverrideSummary(debouncePayload.sessionOverrides);
         }
         emitConfigChanged();
         return debouncePayload;
@@ -1006,20 +1092,21 @@ export class AgentsCommands {
       if (key === "cwd" || key === "provider") {
         ensureAgentDirs(loadRouterConfig());
       }
-      const payload = {
-        action: "set" as const,
-        changed: true as const,
+      const payload = buildAgentSetMutationPayload({
+        before: agent,
         agentId: id,
         key,
         value: parsedValue,
-        agent: getAgent(id),
-      };
+      });
       if (asJson) {
         printJson(payload);
       } else {
         console.log(
-          `\u2713 ${key} set: ${id} -> ${typeof parsedValue === "string" ? parsedValue : JSON.stringify(parsedValue)}`,
+          `\u2713 ${key} ${payload.changed ? "set" : "unchanged"}: ${id} -> ${
+            typeof parsedValue === "string" ? parsedValue : JSON.stringify(parsedValue)
+          }`,
         );
+        printAgentSessionOverrideSummary(payload.sessionOverrides);
       }
       emitConfigChanged();
       return payload;

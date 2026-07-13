@@ -25,6 +25,9 @@ type SessionLike = {
   providerSessionId?: string | null;
   sdkSessionId?: string | null;
   runtimeProvider?: string | null;
+  modelOverride?: string | null;
+  effortOverride?: string | null;
+  thinkingLevel?: "off" | "normal" | "verbose" | null;
   lastChannel?: string | null;
   lastTo?: string | null;
   inputTokens?: number | null;
@@ -217,6 +220,7 @@ mock.module("../../runtime/model-preset-store.js", () => ({
 }));
 
 const { AgentsCommands } = await import("./agents.js");
+const { agentSetReturnSchema } = await import("./operational-return-schemas.js");
 
 describe("AgentsCommands set model validation", () => {
   beforeEach(() => {
@@ -339,6 +343,190 @@ describe("AgentsCommands set model validation", () => {
     );
 
     expect(createAgentCalls).toHaveLength(0);
+  });
+});
+
+describe("AgentsCommands set session override reporting", () => {
+  beforeEach(() => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "codex", model: "gpt-5.5" };
+    allAgents = [];
+    createAgentCalls = [];
+    updateAgentCalls = [];
+    sessionsByAgent = [];
+  });
+
+  it("returns every active session override by canonical session name in JSON", async () => {
+    sessionsByAgent = [
+      {
+        sessionKey: "agent:dev:raw-channel-829a",
+        name: "zeta-session",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        modelOverride: "gpt-5.6",
+        effortOverride: "high",
+        thinkingLevel: "verbose",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        sessionKey: "agent:dev:another-raw-channel",
+        name: "alpha-session",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        modelOverride: null,
+        effortOverride: "max",
+        thinkingLevel: null,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        sessionKey: "agent:dev:no-overrides",
+        name: "idle-session",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        modelOverride: null,
+        effortOverride: null,
+        thinkingLevel: null,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const commands = new AgentsCommands();
+    const logCalls: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => logCalls.push(args.map(String).join(" "));
+
+    try {
+      const payload = await commands.set("dev", "model", "gpt-5.6", true);
+
+      expect(payload).toMatchObject({
+        changed: true,
+        sessionOverrides: [
+          { sessionName: "alpha-session", effort: "max" },
+          {
+            sessionName: "zeta-session",
+            model: "gpt-5.6",
+            effort: "high",
+            thinking: "verbose",
+          },
+        ],
+      });
+      expect(Object.keys(payload?.sessionOverrides[0] ?? {})).toEqual(["sessionName", "effort"]);
+      expect(agentSetReturnSchema.safeParse(payload).success).toBe(true);
+      expect(logCalls.join("\n")).not.toContain("raw-channel");
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
+  it("reports changed=false while preserving current session overrides for an idempotent set", async () => {
+    sessionsByAgent = [
+      {
+        sessionKey: "agent:dev:main",
+        name: "dev-main",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        thinkingLevel: "off",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+
+    try {
+      const payload = await commands.set("dev", "model", "gpt-5.5", true);
+
+      expect(payload).toMatchObject({
+        changed: false,
+        sessionOverrides: [{ sessionName: "dev-main", thinking: "off" }],
+      });
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
+  it("prints a concise human warning with all active fields across sessions", async () => {
+    sessionsByAgent = [
+      {
+        sessionKey: "agent:dev:raw-bravo",
+        name: "bravo-session",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        modelOverride: "gpt-5.5",
+        thinkingLevel: "verbose",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        sessionKey: "agent:dev:raw-alpha",
+        name: "alpha-session",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        effortOverride: "max",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        sessionKey: "agent:dev:raw-idle",
+        name: "idle-session",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        modelOverride: null,
+        effortOverride: null,
+        thinkingLevel: null,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const commands = new AgentsCommands();
+    const logCalls: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => logCalls.push(args.map(String).join(" "));
+
+    try {
+      await commands.set("dev", "model", "gpt-5.6", false);
+
+      expect(logCalls).toEqual([
+        "\u2713 model set: dev -> gpt-5.6",
+        "Warning: 2 sessions have runtime overrides:",
+        "  - alpha-session: effort=max",
+        "  - bravo-session: model=gpt-5.5, thinking=verbose",
+      ]);
+      expect(logCalls.join("\n")).not.toContain("raw-");
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
+  it("confirms the absence of overrides without a warning on an idempotent human mutation", async () => {
+    sessionsByAgent = [
+      {
+        sessionKey: "agent:dev:main",
+        name: "dev-main",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        modelOverride: null,
+        effortOverride: null,
+        thinkingLevel: null,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const commands = new AgentsCommands();
+    const logCalls: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => logCalls.push(args.map(String).join(" "));
+
+    try {
+      await commands.set("dev", "model", "gpt-5.5", false);
+
+      expect(logCalls).toEqual(["\u2713 model unchanged: dev -> gpt-5.5", "  Session overrides: none"]);
+      expect(logCalls.some((line) => line.startsWith("Warning:"))).toBe(false);
+    } finally {
+      console.log = originalLog;
+    }
   });
 });
 

@@ -1395,6 +1395,45 @@ export const AgentsSetReturnSchema = {
     "key": {
       "type": "string"
     },
+    "sessionOverrides": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "effort": {
+            "enum": [
+              "none",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max",
+              "ultra"
+            ],
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "sessionName": {
+            "type": "string"
+          },
+          "thinking": {
+            "enum": [
+              "off",
+              "normal",
+              "verbose"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionName"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
     "value": {}
   },
   "required": [
@@ -1402,7 +1441,8 @@ export const AgentsSetReturnSchema = {
     "changed",
     "agentId",
     "key",
-    "value"
+    "value",
+    "sessionOverrides"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
