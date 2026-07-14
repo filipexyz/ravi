@@ -58,6 +58,7 @@
     "docs:dev": "cd docs && bunx mintlify dev",
     "docs:list": "bun scripts/docs-list.js",
     "docs:check-links": "bun scripts/docs-link-audit.mjs",
+    "release:check-consolidated": "bun scripts/check-consolidated-release.ts",
     "lint:docs": "bunx markdownlint-cli2 \"**/*.{md,mdx}\" \"#node_modules\" \"#docs/node_modules\"",
     "lint:docs:fix": "bunx markdownlint-cli2 --fix",
     "check:docs": "bun run lint:docs && bun run docs:check-links"
