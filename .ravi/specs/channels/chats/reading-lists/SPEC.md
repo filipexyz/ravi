@@ -223,9 +223,9 @@ Dynamic membership MUST be materialized or evaluated consistently enough that cu
 
 Before materializing dynamic membership, Ravi MUST expose a read-only selector preview containing deterministic validation, current membership and the prospective add/remove/keep/preserve diff.
 
-The public `show`, `preview`, and `recompute` commands MUST accept a canonical `crl_...` list id and MUST require authorization to that exact reading-list resource. Semantic command grants and legacy group grants MUST NOT substitute for the concrete resource grant. An optional owner argument is an assertion against the resolved record, not a name-resolution mechanism.
+The public `show`, `preview`, and `recompute` commands MUST accept a canonical `crl_...` list id and MUST require authorization to that exact reading-list resource. Semantic command grants and legacy group grants MUST NOT substitute for the concrete resource grant. Canonical list refs MUST resolve by primary-key id only; a canonical-looking name MUST NOT substitute for the authorized id. An optional owner argument is an assertion against the resolved record, not a name-resolution mechanism.
 
-Their public DTOs MUST omit raw selector and metadata objects and expose only safe list metadata, deterministic validation, and count-only membership summaries. Callers that need selector refs or item-level chat/contact data MUST use an independently authorized resource path.
+Their public DTOs MUST omit raw selector and metadata objects and expose only safe list metadata, deterministic validation, and count-only membership summaries. Validation issues and recompute errors MUST expose stable codes/paths without echoing persisted selector values. Callers that need selector refs or item-level chat/contact data MUST use an independently authorized resource path.
 
 An invalid selector MUST NOT be evaluated into a membership diff and MUST NOT reach the write path. In particular, `match:any` MUST NOT accept `not-has-tag` conditions: each negative branch can match almost the entire scope, so their union can silently over-expand the list. The preview MUST report this pattern as high risk with `canApply=false` and no diff.
 

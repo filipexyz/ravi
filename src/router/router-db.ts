@@ -6128,6 +6128,24 @@ export function dbFindChatReadingList(input: {
   return rows[0] ? rowToChatReadingList(rows[0]) : null;
 }
 
+export function dbGetChatReadingList(input: {
+  id: string;
+  ownerType?: string | null;
+  ownerId?: string | null;
+}): ChatReadingListRecord | null {
+  const id = input.id.trim();
+  if (!id) return null;
+  const ownerType = input.ownerType?.trim();
+  const ownerId = input.ownerId?.trim();
+  const row = getDb().prepare("SELECT * FROM chat_reading_lists WHERE id = ? AND archived_at IS NULL").get(id) as
+    | ChatReadingListRow
+    | undefined;
+  if (!row) return null;
+  if (ownerType && row.owner_type !== ownerType) return null;
+  if (ownerId && row.owner_id !== ownerId) return null;
+  return rowToChatReadingList(row);
+}
+
 export function dbAddChatToReadingList(input: {
   listId: string;
   chatId: string;

@@ -102,5 +102,7 @@ Implementation is not complete until:
 - dynamic selector preview is read-only and exposes the prospective diff
 - `show` and `preview` MUST authorize the requested list resource and MUST NOT expose chat/contact ids in their public count-only summaries
 - a semantic or legacy group grant without the canonical reading-list grant MUST be denied for `show`, `preview`, and `recompute`
+- a canonical-looking reading-list name MUST NOT substitute for the exact authorized reading-list id
 - public `show`, `preview`, and `recompute` DTOs MUST omit raw selector and metadata objects at every nesting
+- validation issues and recompute errors MUST expose stable codes/paths without interpolating persisted selector values
 - invalid or unsafe selectors cannot reach membership writes

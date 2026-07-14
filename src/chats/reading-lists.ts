@@ -173,7 +173,7 @@ function canonicalAlias<T extends string>(input: {
         code: input.unsupportedCode,
         severity: "error",
         path: key,
-        message: `Unsupported selector ${input.label}: ${raw.trim()}.`,
+        message: `Selector ${input.label} uses an unsupported value.`,
       });
       continue;
     }
@@ -357,7 +357,7 @@ function selectorCriteria(
       code: "unsupported_chat_type",
       severity: "error",
       path: "chatType",
-      message: `Unsupported selector chatType: ${chatType}.`,
+      message: "Selector chatType uses an unsupported value.",
     });
   }
   const criteria: ReadingListSelectorCriteria = {
@@ -697,7 +697,7 @@ function inspectReadingListWithParsed(list: ChatReadingListRecord): {
       code: "unsupported_list_mode",
       severity: "error",
       path: "mode",
-      message: `Reading list ${list.name} is ${list.mode}; preview/recompute requires dynamic or hybrid mode.`,
+      message: "Reading-list mode must be dynamic or hybrid for preview/recompute.",
     });
     validation.valid = false;
     validation.canApply = false;

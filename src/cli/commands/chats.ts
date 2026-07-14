@@ -20,6 +20,7 @@ import {
   dbFindChatByRef,
   dbFindChatReadingList,
   dbGetChat,
+  dbGetChatReadingList,
   dbGetInstance,
   dbGetChatReadingDelta,
   dbListChatMessagesPage,
@@ -244,7 +245,17 @@ function resolveReadingListById(listId: string, owner?: string): ChatReadingList
       "Reading-list show, preview, and recompute require the canonical crl_<24 hex> id from `ravi chats lists list`.",
     );
   }
-  return resolveReadingList(parsed.data, owner);
+  const parsedOwner = owner ? parseScopedRef(owner, defaultOwner()) : undefined;
+  const list = dbGetChatReadingList({
+    id: parsed.data,
+    ownerType: parsedOwner?.type,
+    ownerId: parsedOwner?.id,
+  });
+  if (!list) {
+    const ownerSuffix = parsedOwner ? ` (${parsedOwner.type}:${parsedOwner.id})` : "";
+    fail(`Reading list not found: ${parsed.data}${ownerSuffix}`);
+  }
+  return list;
 }
 
 function resolveInstanceId(instance?: string): string | undefined {

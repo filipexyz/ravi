@@ -303,6 +303,9 @@ describe("ChatsCommands --json", () => {
   });
 
   it("omits raw selector and metadata from every public show and preview nesting", () => {
+    const scopeSentinel = "contact_secret_scope";
+    const matchSentinel = "contact_secret_match";
+    const chatTypeSentinel = "chat_secret_type";
     const list = dbCreateChatReadingList({
       name: "private-selector-refs",
       ownerType: "system",
@@ -310,6 +313,9 @@ describe("ChatsCommands --json", () => {
       visibility: "private",
       mode: "dynamic",
       selector: {
+        scope: scopeSentinel,
+        match: matchSentinel,
+        chatType: chatTypeSentinel,
         chatIds: ["chat_secret"],
         contactIds: ["contact_secret"],
       },
@@ -325,6 +331,9 @@ describe("ChatsCommands --json", () => {
       expect(serialized).not.toContain("contact_secret");
       expect(serialized).not.toContain("metadata_chat_secret");
       expect(serialized).not.toContain("metadata_contact_secret");
+      expect(serialized).not.toContain(scopeSentinel);
+      expect(serialized).not.toContain(matchSentinel);
+      expect(serialized).not.toContain(chatTypeSentinel);
     }
     expect((showPayload.list as Record<string, unknown>).selector).toBeUndefined();
     expect((showPayload.list as Record<string, unknown>).metadata).toBeUndefined();
@@ -333,6 +342,17 @@ describe("ChatsCommands --json", () => {
     expect(
       ((previewPayload.preview as Record<string, unknown>).list as Record<string, unknown>).metadata,
     ).toBeUndefined();
+
+    let recomputeError = "";
+    try {
+      lists.recompute(list.id, "system:other", true);
+    } catch (error) {
+      recomputeError = error instanceof Error ? error.message : String(error);
+    }
+    expect(recomputeError).toContain("Unsafe reading-list selector");
+    expect(recomputeError).not.toContain(scopeSentinel);
+    expect(recomputeError).not.toContain(matchSentinel);
+    expect(recomputeError).not.toContain(chatTypeSentinel);
   });
 
   it("rejects name-based refs before show, preview, or recompute resolution", () => {
@@ -340,6 +360,24 @@ describe("ChatsCommands --json", () => {
     expect(() => lists.show("same-name", "system:one", true)).toThrow(/canonical crl_/);
     expect(() => lists.preview("same-name", "system:two", true)).toThrow(/canonical crl_/);
     expect(() => lists.recompute("same-name", "system:two", true)).toThrow(/canonical crl_/);
+  });
+
+  it("never resolves a canonical list id through a same-named different list", () => {
+    const authorizedButMissingId = "crl_0123456789abcdef01234567";
+    const differentList = dbCreateChatReadingList({
+      name: authorizedButMissingId,
+      ownerType: "system",
+      ownerId: "other",
+      visibility: "private",
+      mode: "dynamic",
+      selector: { chatIds: ["chat_secret_fallback"] },
+    });
+    expect(differentList.id).not.toBe(authorizedButMissingId);
+
+    const lists = new ChatReadingListCommands();
+    expect(() => lists.show(authorizedButMissingId, "system:other", true)).toThrow(/Reading list not found/);
+    expect(() => lists.preview(authorizedButMissingId, "system:other", true)).toThrow(/Reading list not found/);
+    expect(() => lists.recompute(authorizedButMissingId, "system:other", true)).toThrow(/Reading list not found/);
   });
 
   it("does not truncate contact-tag exclusions after 500 related chats", () => {
