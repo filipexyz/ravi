@@ -2198,7 +2198,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const cadenceDeferredForRuntimeTarget = Boolean(
           streaming.runtimeTargetPolicy && streaming.runtimeTargetState && streaming.runtimeTarget,
         );
-        if (!cadenceDeferredForRuntimeTarget) noteTerminalTurnForCadence();
         const interruptedRecoverable = streaming.interrupted && isRecoverableInterruptionFailure(event);
         const internalAbortReason = streaming.internalAbortReason;
         const internalRecoverable = Boolean(internalAbortReason) && isRecoverableInterruptionFailure(event);
@@ -2316,7 +2315,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           // can drain them instead of losing the interrupted turn.
           stashPendingRuntimeMessages(sessionName, streaming, stashedMessages);
           restartStashedReason = restartReason;
-          if (cadenceDeferredForRuntimeTarget) noteTerminalTurnForCadence();
+          noteTerminalTurnForCadence();
           signalTurnComplete();
           clearTraceTurnState();
           streaming.done = true;
@@ -2422,6 +2421,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           rawEvent: event.rawEvent,
         });
         if (contextWindowFailure) {
+          // Preserve the pre-reset cadence semantics for non-target recovery;
+          // target-backed turns defer their tick until after reset below.
+          if (!cadenceDeferredForRuntimeTarget) noteTerminalTurnForCadence();
           const history = getRecentHistory(sessionName, 48);
           const recovery = buildRuntimeContextRecoveryPrompt({
             sessionName,
@@ -2698,7 +2700,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           }
         }
 
-        if (cadenceDeferredForRuntimeTarget) noteTerminalTurnForCadence();
+        // All replay/recovery exits above preserve the current logical turn.
+        // Only attempts that converge here are terminal and advance cadence.
+        noteTerminalTurnForCadence();
         await emitRuntimeEvent({
           ...event,
           provider: runtimeSession.provider,

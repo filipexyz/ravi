@@ -1584,35 +1584,79 @@ describe("runtime session trace instrumentation", () => {
     const stashedMessages = new Map<string, RuntimeUserMessage[]>();
     const restartRequests: Array<{ sessionName: string; reason: string }> = [];
     const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const responses: string[] = [];
+    const outputChat = dbUpsertChat({
+      channel: source.channel,
+      instanceId: source.accountId,
+      platformChatId: source.chatId,
+      chatType: "dm",
+      title: "credential retry cadence e2e",
+    });
+    attachChatToSession({ sessionKey: SESSION_KEY, chatId: outputChat.id, setOutputTarget: true });
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
+      if (topic !== `ravi.session.${SESSION_NAME}.response` || !data || typeof data !== "object") return;
+      const response = (data as { response?: unknown }).response;
+      if (typeof response === "string") responses.push(response);
+    });
     const before = Date.now();
 
-    await runTraceLoop(
-      streaming,
-      makeRuntimeSession([
-        {
-          type: "turn.failed",
-          error: "rate limited",
-          recoverable: true,
-          rawEvent: {
-            type: "error",
-            status: 429,
-            headers: {
-              "retry-after": "2",
-              "x-request-id": "req_credential_retry",
+    try {
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          {
+            type: "turn.failed",
+            error: "rate limited",
+            recoverable: true,
+            rawEvent: {
+              type: "error",
+              status: 429,
+              headers: {
+                "retry-after": "2",
+                "x-request-id": "req_credential_retry",
+              },
             },
           },
+        ]),
+        {
+          stashedMessages,
+          restartStashedSession: async (input) => {
+            restartRequests.push(input);
+          },
+          safeEmit: async (topic, data) => {
+            emitted.push({ topic, data });
+          },
         },
-      ]),
-      {
-        stashedMessages,
-        restartStashedSession: async (input) => {
-          restartRequests.push(input);
+      );
+
+      const replayedMessages = stashedMessages.get(SESSION_NAME) ?? [];
+      const recoveredStreaming = makeStreamingSession({
+        agentMode: "active",
+        pendingMessages: replayedMessages,
+        currentTurnPendingIds: replayedMessages.flatMap((message) =>
+          message.pendingId === undefined ? [] : [message.pendingId],
+        ),
+      });
+      seedAdapterTrace(recoveredStreaming, "turn-credential-retry-success");
+      await runTraceLoop(
+        recoveredStreaming,
+        makeRuntimeSession([
+          { type: "assistant.message", text: "credential retry succeeded" },
+          {
+            type: "turn.complete",
+            providerSessionId: "credential-retry-success-session",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          },
+        ]),
+        {
+          safeEmit: async (topic, data) => {
+            emitted.push({ topic, data });
+          },
         },
-        safeEmit: async (topic, data) => {
-          emitted.push({ topic, data });
-        },
-      },
-    );
+      );
+    } finally {
+      emitSpy.mockRestore();
+    }
 
     expect(emitted.map((event) => event.data.type)).not.toContain("turn.failed");
     expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.failed")).toBe(false);
@@ -1628,6 +1672,8 @@ describe("runtime session trace instrumentation", () => {
     const health = getRuntimeCredentialHealth("rcred_retry_before_tool");
     expect(health?.lastRequestId).toBe("req_credential_retry");
     expect(health?.cooldownUntil ?? 0).toBeGreaterThanOrEqual(before + 1_500);
+    expect(responses).toEqual(["credential retry succeeded"]);
+    expect(readLearningLoopCadenceState(getSession(SESSION_KEY)?.runtimeSessionParams)?.terminalTurnCount).toBe(1);
     const attempt = getDb()
       .prepare("SELECT status, completed_at FROM runtime_credential_attempts WHERE credential_id = ?")
       .get("rcred_retry_before_tool") as { status: string; completed_at: number | null } | undefined;

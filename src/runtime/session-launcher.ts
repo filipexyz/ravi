@@ -771,12 +771,6 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
           error: runtimeTargetState.pendingTaskQuota.error,
         });
       }
-      noteTerminalTurnForLearningLoop({
-        sessionKey: dbSessionKey,
-        sessionName,
-        agentId: agent.id,
-        agentCwd: agent.cwd,
-      });
       recordRuntimeTraceEvent({
         sessionKey: dbSessionKey,
         sessionName,
@@ -799,6 +793,15 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
         },
       });
     }
+
+    // Recovery/replay returned above. Every startup failure that reaches this
+    // point is terminal, with or without a runtime target policy.
+    noteTerminalTurnForLearningLoop({
+      sessionKey: dbSessionKey,
+      sessionName,
+      agentId: agent.id,
+      agentCwd: agent.cwd,
+    });
 
     log.error("Failed to start streaming session", {
       sessionName,

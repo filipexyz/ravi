@@ -432,6 +432,10 @@ describe("runtime target failover E2E", () => {
       assignedBy: "test",
     });
     getOrCreateSession(sessionName, "main", stateDir ?? "/tmp", { name: sessionName });
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic, data) => {
+      emitted.push({ topic, data: data as Record<string, unknown> });
+    });
     const dispatcher = new RuntimeSessionDispatcher({
       instanceId: "startup-quota-exhaustion",
       maxConcurrentSessions: 2,
@@ -514,20 +518,40 @@ describe("runtime target failover E2E", () => {
         assignedBy: "test",
       });
       getOrCreateSession(noPolicySessionName, "main", stateDir ?? "/tmp", { name: noPolicySessionName });
+      const noPolicyChat = dbUpsertChat({
+        channel: "whatsapp",
+        instanceId: "main",
+        platformChatId: "startup-quota-without-policy@s.whatsapp.net",
+        chatType: "dm",
+        title: "startup quota without policy e2e",
+      });
+      attachChatToSession({ sessionKey: noPolicySessionName, chatId: noPolicyChat.id, setOutputTarget: true });
       await dispatcher.startStreamingSession(noPolicySessionName, {
         prompt: "block startup quota immediately",
         _agentId: "main",
         _runtimeProviderId: primary,
         taskBarrierTaskId: noPolicyTask.task.id,
+        source: {
+          channel: "whatsapp",
+          accountId: "main",
+          chatId: "startup-quota-without-policy@s.whatsapp.net",
+          canonicalChatId: noPolicyChat.id,
+        },
       });
       for (let attempt = 0; attempt < 200; attempt++) {
-        if (dbGetTask(noPolicyTask.task.id)?.status === "blocked") break;
+        const responseEmitted = emitted.some((event) => event.topic === `ravi.session.${noPolicySessionName}.response`);
+        if (dbGetTask(noPolicyTask.task.id)?.status === "blocked" && responseEmitted) break;
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
       expect(primaryStarts).toBe(1);
       expect(dbGetTask(noPolicyTask.task.id)?.status).toBe("blocked");
+      expect(
+        readLearningLoopCadenceState(getSession(noPolicySessionName)?.runtimeSessionParams)?.terminalTurnCount,
+      ).toBe(1);
+      expect(emitted.filter((event) => event.topic === `ravi.session.${noPolicySessionName}.response`)).toHaveLength(1);
     } finally {
       dispatcher.shutdownAll();
+      emitSpy.mockRestore();
       if (previousCredentialSecret === undefined) delete process.env[credentialSecretEnv];
       else process.env[credentialSecretEnv] = previousCredentialSecret;
     }
