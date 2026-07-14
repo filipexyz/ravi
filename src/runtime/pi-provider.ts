@@ -135,13 +135,31 @@ interface PendingRequest {
   timeout: ReturnType<typeof setTimeout>;
 }
 
+class PiTransportStartFailure extends Error {
+  constructor(readonly failure: unknown) {
+    super(failure instanceof Error ? failure.message : String(failure));
+    this.name = "PiTransportStartFailure";
+  }
+}
+
+class PiPostStartBootstrapFailure extends Error {
+  constructor(readonly failure: unknown) {
+    super(failure instanceof Error ? failure.message : String(failure));
+    this.name = "PiPostStartBootstrapFailure";
+  }
+}
+
 interface PiSessionRuntimeState {
   activeTurn: boolean;
-  interrupted: boolean;
+  turnGeneration: number;
+  interruptedGeneration: number | null;
+  interruptNextTurn: boolean;
+  pendingInterruptDecisions: Map<number, Set<Promise<boolean>>>;
   currentState?: PiRpcSessionState;
   started: boolean;
   transport?: PiRpcTransport;
   pendingSteers: string[];
+  discardTrailingAgentEnd: boolean;
 }
 
 interface CreatePiRpcSubprocessTransportOptions {
@@ -226,10 +244,14 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
       const skillVisibility = emptySkillVisibilitySnapshot();
       const state: PiSessionRuntimeState = {
         activeTurn: false,
-        interrupted: false,
+        turnGeneration: 0,
+        interruptedGeneration: null,
+        interruptNextTurn: false,
+        pendingInterruptDecisions: new Map(),
         started: false,
         transport: initialTransport,
         pendingSteers: [],
+        discardTrailingAgentEnd: false,
       };
 
       const requireTransport = () => {
@@ -245,7 +267,11 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
         concurrentInputStrategy: "native_steer",
         events: runPiTurns(input, createTransport, state, { canRestartTransport, skillVisibility }),
         interrupt: async () => {
-          state.interrupted = true;
+          if (state.activeTurn) {
+            state.interruptedGeneration = state.turnGeneration;
+          } else {
+            state.interruptNextTurn = true;
+          }
           const transport = state.transport;
           if (transport) {
             await safePiCommand(transport, { type: "abort" });
@@ -449,13 +475,22 @@ async function* runPiTurns(
   let eventIterator = transport.events[Symbol.asyncIterator]();
 
   const startTransport = async () => {
-    await transport.start(startInput);
-    state.started = true;
-    eventIterator = transport.events[Symbol.asyncIterator]();
-    await resumePiSessionIfNeeded(transport, input, state.currentState);
-    state.currentState = await readPiState(transport, state.currentState);
-    await configurePiQueueModes(transport, state);
-    await flushPendingPiSteers(transport, state);
+    try {
+      await transport.start(startInput);
+    } catch (error) {
+      throw new PiTransportStartFailure(error);
+    }
+    try {
+      state.started = true;
+      state.discardTrailingAgentEnd = false;
+      eventIterator = transport.events[Symbol.asyncIterator]();
+      await resumePiSessionIfNeeded(transport, input, state.currentState);
+      state.currentState = await readPiState(transport, state.currentState);
+      await configurePiQueueModes(transport, state);
+      await flushPendingPiSteers(transport, state);
+    } catch (error) {
+      throw new PiPostStartBootstrapFailure(error);
+    }
   };
 
   const restartTransport = async (): Promise<boolean> => {
@@ -470,7 +505,23 @@ async function* runPiTurns(
   };
 
   try {
-    await startTransport();
+    try {
+      await startTransport();
+    } catch (error) {
+      const transportStartFailure = error instanceof PiTransportStartFailure;
+      const postStartBootstrapFailure = error instanceof PiPostStartBootstrapFailure;
+      const failure = transportStartFailure || postStartBootstrapFailure ? error.failure : error;
+      const terminal = createRuntimeTerminalEventTracker().fail({
+        error: failure instanceof Error ? failure.message : String(failure),
+        ...(failure instanceof Error ? { errorName: failure.name } : {}),
+        caughtException: true,
+        ...(transportStartFailure ? { targetFailure: true } : {}),
+        recoverable: transportStartFailure,
+        rawEvent: { type: transportStartFailure ? "transport.start_failed" : "bootstrap.failed" },
+      });
+      if (terminal) yield terminal;
+      return;
+    }
     let turnIndex = 0;
 
     for await (const promptMessage of input.prompt) {
@@ -485,6 +536,8 @@ async function* runPiTurns(
 
       const terminalTracker = createRuntimeTerminalEventTracker();
       turnIndex += 1;
+      state.turnGeneration += 1;
+      const turnGeneration = state.turnGeneration;
       const context: PiEventContext = {
         cwd: input.cwd,
         promptMessage,
@@ -494,8 +547,12 @@ async function* runPiTurns(
       };
 
       state.activeTurn = true;
+      if (state.interruptNextTurn) {
+        state.interruptedGeneration = turnGeneration;
+        state.interruptNextTurn = false;
+      }
       const abortListener = () => {
-        state.interrupted = true;
+        state.interruptedGeneration = turnGeneration;
         void safePiCommand(transport, { type: "abort" });
       };
       abortSignal.addEventListener("abort", abortListener, { once: true });
@@ -526,7 +583,7 @@ async function* runPiTurns(
         while (!terminalTracker.terminalEmitted) {
           const next = await eventIterator.next();
           if (next.done) {
-            const terminal = state.interrupted
+            const terminal = (await hasAcceptedPiInterrupt(state, turnGeneration))
               ? terminalTracker.interrupt({
                   rawEvent: { type: "stream.ended", reason: "interrupt" },
                   metadata: buildPiEventMetadata({ type: "stream.ended" }, context),
@@ -544,6 +601,12 @@ async function* runPiTurns(
           }
 
           const event = next.value;
+          if (state.discardTrailingAgentEnd) {
+            state.discardTrailingAgentEnd = false;
+            if (event.type === "agent_end") {
+              continue;
+            }
+          }
           for (const runtimeEvent of normalizePiEvent(event, context)) {
             if (!terminalTracker.accept(runtimeEvent)) {
               continue;
@@ -555,8 +618,18 @@ async function* runPiTurns(
             }
           }
 
-          const terminal = await maybeBuildPiTerminalEvent(event, context, transport, terminalTracker);
+          const terminal = await maybeBuildPiTerminalEvent(
+            event,
+            context,
+            transport,
+            terminalTracker,
+            state,
+            turnGeneration,
+          );
           if (terminal) {
+            if (event.type === "turn_end") {
+              state.discardTrailingAgentEnd = true;
+            }
             attachPiSkillVisibility(terminal, options.skillVisibility);
             if (terminal.type === "turn.complete") {
               state.currentState = context.state;
@@ -566,7 +639,7 @@ async function* runPiTurns(
           }
         }
       } catch (error) {
-        if (abortSignal.aborted || state.interrupted) {
+        if (abortSignal.aborted || (await hasAcceptedPiInterrupt(state, turnGeneration))) {
           const terminal = terminalTracker.interrupt({
             rawEvent: { type: "stream.error", reason: "interrupt" },
             metadata: buildPiEventMetadata({ type: "stream.error" }, context),
@@ -578,23 +651,38 @@ async function* runPiTurns(
           continue;
         }
 
-        const disconnected = isPiTransportDisconnectedError(error);
+        const transportStartFailure = error instanceof PiTransportStartFailure;
+        const postStartBootstrapFailure = error instanceof PiPostStartBootstrapFailure;
+        const failure = transportStartFailure || postStartBootstrapFailure ? error.failure : error;
+        const disconnected = isPiTransportDisconnectedError(failure);
+        const targetFailure = transportStartFailure || disconnected;
+        const rawEventType = postStartBootstrapFailure
+          ? "bootstrap.failed"
+          : transportStartFailure
+            ? "transport.start_failed"
+            : disconnected
+              ? "transport.disconnected"
+              : "stream.error";
         const terminal = terminalTracker.fail({
-          error: error instanceof Error ? error.message : String(error),
-          recoverable: true,
-          rawEvent: disconnected ? { type: "transport.disconnected" } : undefined,
-          metadata: buildPiEventMetadata({ type: disconnected ? "transport.disconnected" : "stream.error" }, context),
+          error: failure instanceof Error ? failure.message : String(failure),
+          ...(failure instanceof Error ? { errorName: failure.name } : {}),
+          caughtException: true,
+          ...(targetFailure ? { targetFailure: true } : {}),
+          recoverable: !postStartBootstrapFailure,
+          rawEvent: targetFailure || postStartBootstrapFailure ? { type: rawEventType } : undefined,
+          metadata: buildPiEventMetadata({ type: rawEventType }, context),
         });
         if (terminal) {
           yield terminal;
         }
-        if (disconnected) {
+        if (targetFailure || postStartBootstrapFailure) {
           return;
         }
       } finally {
         abortSignal.removeEventListener("abort", abortListener);
         state.activeTurn = false;
-        state.interrupted = false;
+        state.pendingInterruptDecisions.delete(turnGeneration);
+        if (state.interruptedGeneration === turnGeneration) state.interruptedGeneration = null;
       }
     }
   } finally {
@@ -703,11 +791,44 @@ function countPiQueuedMessages(event: PiRpcEvent): number {
   );
 }
 
+function trackPiInterruptDecision(
+  state: PiSessionRuntimeState,
+  turnGeneration: number,
+  decision: Promise<boolean>,
+): void {
+  const pending = state.pendingInterruptDecisions.get(turnGeneration) ?? new Set<Promise<boolean>>();
+  pending.add(decision);
+  state.pendingInterruptDecisions.set(turnGeneration, pending);
+}
+
+function untrackPiInterruptDecision(
+  state: PiSessionRuntimeState,
+  turnGeneration: number,
+  decision: Promise<boolean>,
+): void {
+  const pending = state.pendingInterruptDecisions.get(turnGeneration);
+  pending?.delete(decision);
+  if (pending?.size === 0) state.pendingInterruptDecisions.delete(turnGeneration);
+}
+
+async function hasAcceptedPiInterrupt(state: PiSessionRuntimeState, turnGeneration: number): Promise<boolean> {
+  if (state.interruptedGeneration === turnGeneration) return true;
+
+  while (true) {
+    const pending = [...(state.pendingInterruptDecisions.get(turnGeneration) ?? [])];
+    if (pending.length === 0) return state.interruptedGeneration === turnGeneration;
+    const decisions = await Promise.all(pending.map((decision) => decision.catch(() => false)));
+    if (decisions.some(Boolean) || state.interruptedGeneration === turnGeneration) return true;
+  }
+}
+
 async function maybeBuildPiTerminalEvent(
   event: PiRpcEvent,
   context: PiEventContext,
   transport: PiRpcTransport,
   terminalTracker: ReturnType<typeof createRuntimeTerminalEventTracker>,
+  state: PiSessionRuntimeState,
+  turnGeneration: number,
 ): Promise<Extract<RuntimeEvent, { type: "turn.complete" | "turn.failed" | "turn.interrupted" }> | null> {
   const rawEvent = event as Record<string, unknown>;
 
@@ -718,7 +839,16 @@ async function maybeBuildPiTerminalEvent(
     }
     const stopReason = firstString(message?.stopReason);
     if (stopReason === "aborted") {
-      return terminalTracker.interrupt({
+      if (await hasAcceptedPiInterrupt(state, turnGeneration)) {
+        return terminalTracker.interrupt({
+          rawEvent,
+          metadata: buildPiEventMetadata(rawEvent, context),
+        });
+      }
+      return terminalTracker.fail({
+        error: "Pi turn aborted without a local interrupt request",
+        targetFailure: true,
+        recoverable: true,
         rawEvent,
         metadata: buildPiEventMetadata(rawEvent, context),
       });
@@ -776,9 +906,29 @@ async function controlPiRuntime(
 
   try {
     switch (request.operation) {
-      case "turn.interrupt":
-        state.interrupted = true;
-        return okControl(request, await sendPiCommand(transport, { type: "abort" }), buildState());
+      case "turn.interrupt": {
+        const turnGeneration = state.activeTurn ? state.turnGeneration : state.turnGeneration + 1;
+        let resolveInterruptDecision!: (accepted: boolean) => void;
+        const interruptDecision = new Promise<boolean>((resolve) => {
+          resolveInterruptDecision = resolve;
+        });
+        trackPiInterruptDecision(state, turnGeneration, interruptDecision);
+        try {
+          const response = await sendPiCommand(transport, { type: "abort" });
+          if (state.activeTurn && state.turnGeneration === turnGeneration) {
+            state.interruptedGeneration = turnGeneration;
+          } else if (!state.activeTurn && state.turnGeneration < turnGeneration) {
+            state.interruptNextTurn = true;
+          }
+          resolveInterruptDecision(true);
+          return okControl(request, response, buildState());
+        } catch (error) {
+          resolveInterruptDecision(false);
+          throw error;
+        } finally {
+          untrackPiInterruptDecision(state, turnGeneration, interruptDecision);
+        }
+      }
       case "turn.steer":
         if (!state.activeTurn && !state.started) {
           state.pendingSteers.push(request.text ?? "");

@@ -1,24 +1,18 @@
 import { createHash } from "node:crypto";
 import { getDb } from "../router/router-db.js";
 import { normalizeLimitOffsetPage, normalizePageLimit, type ListPage } from "../utils/pagination.js";
+import { redactJson, redactText, toJsonValue } from "../utils/redaction.js";
 import type {
   JsonValue,
   RecordSessionBlobInput,
   RecordSessionEventInput,
-  RedactionResult,
   SessionEventRecord,
   SessionTraceBlobRecord,
   SessionTurnRecord,
   UpsertSessionTurnInput,
 } from "./types.js";
 
-const REDACTED = "[REDACTED]";
-
-const SECRET_KEY_PATTERN =
-  /(^|[_\-.\s])(api[_\-.\s]*key|token|secret|password|passwd|pwd|credential|credentials|cookie|authorization|auth|bearer|private[_\-.\s]*key|access[_\-.\s]*token|refresh[_\-.\s]*token|client[_\-.\s]*secret|context[_\-.\s]*key)([_\-.\s]|$)/i;
-
-const SECRET_ASSIGNMENT_PATTERN =
-  /\b([A-Z][A-Z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|CREDENTIAL|CREDENTIALS|COOKIE|AUTHORIZATION|ACCESS_TOKEN|REFRESH_TOKEN|CLIENT_SECRET|CONTEXT_KEY)[A-Z0-9_]*)=([^\s"']+)/g;
+export { redactJson, redactText } from "../utils/redaction.js";
 
 interface SessionEventRow {
   id: number;
@@ -164,118 +158,6 @@ function nullableText(value: string | undefined | null): string | null {
 
 function hasOwn<T extends object, K extends PropertyKey>(value: T, key: K): value is T & Record<K, unknown> {
   return Object.prototype.hasOwnProperty.call(value, key);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function isSecretKey(key: string): boolean {
-  return SECRET_KEY_PATTERN.test(key);
-}
-
-export function redactText(value: string): RedactionResult<string> {
-  let redacted = false;
-  let next = value.replace(SECRET_ASSIGNMENT_PATTERN, (_match, key: string) => {
-    redacted = true;
-    return `${key}=${REDACTED}`;
-  });
-
-  next = next.replace(/\b(authorization\s*[:=]\s*)bearer\s+[^\s,;]+/gi, (_match, prefix: string) => {
-    redacted = true;
-    return `${prefix}Bearer ${REDACTED}`;
-  });
-
-  next = next.replace(/\bbearer\s+[A-Za-z0-9._~+/=-]{8,}/gi, () => {
-    redacted = true;
-    return `Bearer ${REDACTED}`;
-  });
-
-  next = next.replace(
-    /(["']?(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|secret|token|authorization|cookie|context[_-]?key)["']?\s*[:=]\s*["'])([^"'\s,;}]+)/gi,
-    (_match, prefix: string) => {
-      redacted = true;
-      return `${prefix}${REDACTED}`;
-    },
-  );
-
-  return { value: next, redacted };
-}
-
-function toJsonValue(value: unknown, seen = new WeakSet<object>()): JsonValue {
-  if (value === null || typeof value === "string" || typeof value === "boolean") {
-    return value;
-  }
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? value : null;
-  }
-  if (typeof value === "bigint") {
-    return value.toString();
-  }
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
-  if (Array.isArray(value)) {
-    if (seen.has(value)) return "[Circular]";
-    seen.add(value);
-    const mapped = value.map((item) =>
-      item === undefined || typeof item === "function" || typeof item === "symbol" ? null : toJsonValue(item, seen),
-    );
-    seen.delete(value);
-    return mapped;
-  }
-  if (isRecord(value)) {
-    if (seen.has(value)) return "[Circular]";
-    seen.add(value);
-    const record: Record<string, JsonValue> = {};
-    for (const key of Object.keys(value).sort()) {
-      const item = value[key];
-      if (item === undefined || typeof item === "function" || typeof item === "symbol") {
-        continue;
-      }
-      record[key] = toJsonValue(item, seen);
-    }
-    seen.delete(value);
-    return record;
-  }
-  return String(value);
-}
-
-function redactJsonValue(value: JsonValue, keyHint?: string): RedactionResult<JsonValue> {
-  if (keyHint && isSecretKey(keyHint)) {
-    return { value: REDACTED, redacted: true };
-  }
-
-  if (typeof value === "string") {
-    return redactText(value);
-  }
-
-  if (Array.isArray(value)) {
-    let redacted = false;
-    const mapped = value.map((item) => {
-      const result = redactJsonValue(item, keyHint);
-      redacted ||= result.redacted;
-      return result.value;
-    });
-    return { value: mapped, redacted };
-  }
-
-  if (value !== null && typeof value === "object") {
-    let redacted = false;
-    const record: Record<string, JsonValue> = {};
-    for (const key of Object.keys(value).sort()) {
-      const result = redactJsonValue(value[key], key);
-      redacted ||= result.redacted;
-      record[key] = result.value;
-    }
-    return { value: record, redacted };
-  }
-
-  return { value, redacted: false };
-}
-
-export function redactJson(value: unknown): RedactionResult<JsonValue> {
-  return redactJsonValue(toJsonValue(value));
 }
 
 export function stableStringifyJson(value: unknown): string {
@@ -698,6 +580,35 @@ export function listRecentSessionEventsByType(
   const rows = getDb()
     .prepare("SELECT * FROM session_events WHERE session_key = ? AND event_type = ? ORDER BY id DESC LIMIT ?")
     .all(sessionKey, eventType, limit) as SessionEventRow[];
+  return rows.map(rowToSessionEvent);
+}
+
+/** Unacknowledged runtime-target response outbox rows, oldest first. */
+export function listPendingRuntimeTargetResponseEvents(
+  options: { limit?: number | string | null } = {},
+): SessionEventRecord[] {
+  const limit = normalizePageLimit(options.limit, { defaultLimit: 100, maxLimit: 1000 });
+  const rows = getDb()
+    .prepare(
+      `
+      SELECT pending.*
+      FROM session_events AS pending
+      WHERE pending.event_type = 'runtime.target.succeeded'
+        AND pending.status = 'complete'
+        AND pending.message_id IS NOT NULL
+        AND json_extract(pending.payload_json, '$.responseOutbox.emitId') IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM session_events AS dispatched
+          WHERE dispatched.session_key = pending.session_key
+            AND dispatched.event_type = 'runtime.target.response_dispatched'
+            AND dispatched.message_id = pending.message_id
+        )
+      ORDER BY pending.id ASC
+      LIMIT ?
+    `,
+    )
+    .all(limit) as SessionEventRow[];
   return rows.map(rowToSessionEvent);
 }
 

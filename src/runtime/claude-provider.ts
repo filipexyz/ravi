@@ -282,6 +282,8 @@ async function* runClaudeTurns(
           })
         : terminalTracker.fail({
             error: error instanceof Error ? error.message : String(error),
+            ...(error instanceof Error ? { errorName: error.name } : {}),
+            caughtException: true,
             recoverable: true,
           });
       if (terminal) {

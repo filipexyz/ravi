@@ -9876,6 +9876,115 @@ export type RuntimePresetsShowReturn = {
   referencingAgentsTotal: number;
 };
 
+/** Input shape for `runtime.targets.clear`. */
+export type RuntimeTargetsClearInput = {
+  agent?: string;
+};
+
+/** Return shape for `runtime.targets.clear`. */
+export type RuntimeTargetsClearReturn = {
+  action: "set" | "clear";
+  agentId: string;
+  changed: boolean;
+  inspectCommand: string;
+  policy: ({
+    circuitBreakerThreshold?: number;
+    cooldownMs?: number;
+    id: string;
+    maxAttemptsPerTarget: number;
+    maxCredentialRecoveryAttemptsPerTarget?: number;
+    strategy: "ordered" | "health-aware";
+    targets: Array<{
+      credentialRequirements?: {
+        authMethods?: string[];
+        credentialIds?: string[];
+        requireManaged?: boolean;
+        sessionCompatibilityKey?: string;
+      };
+      effort?: string;
+      id: string;
+      model: string;
+      modelPreset?: {
+        id: string;
+        version: number;
+      };
+      requiredCapabilities?: string[];
+      runtimeProvider: string;
+      thinking?: "off" | "normal" | "verbose";
+    }>;
+  }) | null;
+  preservedDefaultKeys: string[];
+  previousPolicyId: string | null;
+};
+
+/** Input shape for `runtime.targets.explain`. */
+export type RuntimeTargetsExplainInput = {
+  agent?: string;
+  sessionPolicyJson?: string;
+  taskProfile?: string;
+};
+
+/** Return shape for `runtime.targets.explain`. */
+export type RuntimeTargetsExplainReturn = {
+  agentId: string;
+  enabled: boolean;
+  policyId: string | null;
+  provenance: string | null;
+  rejected: Array<{
+    detail?: string;
+    reason: string;
+    targetId: string;
+  }>;
+  selectedTarget: ({
+    id: string;
+    model: string;
+    runtimeProvider: string;
+  }) | null;
+  source: "session_override" | "task_profile" | "agent_default" | "none";
+};
+
+/** Input shape for `runtime.targets.set`. */
+export type RuntimeTargetsSetInput = {
+  agent?: string;
+  policyJson?: string;
+};
+
+/** Return shape for `runtime.targets.set`. */
+export type RuntimeTargetsSetReturn = {
+  action: "set" | "clear";
+  agentId: string;
+  changed: boolean;
+  inspectCommand: string;
+  policy: ({
+    circuitBreakerThreshold?: number;
+    cooldownMs?: number;
+    id: string;
+    maxAttemptsPerTarget: number;
+    maxCredentialRecoveryAttemptsPerTarget?: number;
+    strategy: "ordered" | "health-aware";
+    targets: Array<{
+      credentialRequirements?: {
+        authMethods?: string[];
+        credentialIds?: string[];
+        requireManaged?: boolean;
+        sessionCompatibilityKey?: string;
+      };
+      effort?: string;
+      id: string;
+      model: string;
+      modelPreset?: {
+        id: string;
+        version: number;
+      };
+      requiredCapabilities?: string[];
+      runtimeProvider: string;
+      thinking?: "off" | "normal" | "verbose";
+    }>;
+  }) | null;
+  preservedDefaultKeys: string[];
+  previousPolicyId: string | null;
+};
+
 /** Input shape for `sdk.client.check`. */
 export type SdkClientCheckInput = {
   out?: string;

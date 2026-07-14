@@ -3,6 +3,7 @@ import type { SQLQueryBindings } from "bun:sqlite";
 import { getDb } from "../router/router-db.js";
 import { executeWrite } from "../db/write-retry.js";
 import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
+import { redactJson, redactText } from "../utils/redaction.js";
 import type {
   RuntimeCredentialFailureSignal,
   RuntimeCredentialHealth,
@@ -494,7 +495,7 @@ export function reserveRuntimeCredentialAttempt(input: RuntimeCredentialAttemptR
         input.model ?? null,
         input.credentialId,
         now,
-        input.metadata ? JSON.stringify(input.metadata) : null,
+        input.metadata ? JSON.stringify(redactJson(input.metadata).value) : null,
       );
     },
     { label: "runtime-credential-attempt-reserve" },
@@ -573,7 +574,7 @@ export function completeRuntimeCredentialAttempt(
         input.signal?.kind ?? null,
         input.signal?.confidence ?? null,
         now,
-        input.metadata ? JSON.stringify(input.metadata) : null,
+        input.metadata ? JSON.stringify(redactJson(input.metadata).value) : null,
         attemptId,
       );
     },
@@ -637,6 +638,9 @@ export function recordRuntimeCredentialFailure(
   const nextStatus = statusForFailure(credential, signal);
   const cooldownUntil = cooldownUntilForFailure(signal, now);
   const providerHealth = providerHealthForSignal(signal, now);
+  const safeProviderCode = sanitizeFailureScalar(signal.providerCode) ?? null;
+  const safeRequestId = sanitizeFailureScalar(signal.requestId) ?? null;
+  const safeMessage = sanitizeFailureScalar(signal.message) ?? null;
 
   executeWrite(
     getDb(),
@@ -654,9 +658,9 @@ export function recordRuntimeCredentialFailure(
       `,
       ).run(
         nextStatus,
-        signal.providerCode ?? null,
+        safeProviderCode,
         signal.kind,
-        signal.message ?? null,
+        safeMessage,
         signal.resetAt ?? cooldownUntil ?? null,
         now,
         credentialId,
@@ -685,7 +689,7 @@ export function recordRuntimeCredentialFailure(
         signal.resetAt ?? cooldownUntil ?? null,
         signal.kind,
         signal.confidence,
-        signal.requestId ?? null,
+        safeRequestId,
         now,
       );
 
@@ -735,6 +739,9 @@ export function recordRuntimeCredentialLimitPressure(
   const credential = getRuntimeCredential(credentialId);
   if (!credential) throw new Error(`Runtime credential not found: ${credentialId}`);
   const cooldownUntil = limitPressureCooldownUntil(signal, now);
+  const safeProviderCode = sanitizeFailureScalar(signal.providerCode) ?? null;
+  const safeRequestId = sanitizeFailureScalar(signal.requestId) ?? null;
+  const safeMessage = sanitizeFailureScalar(signal.message) ?? null;
 
   executeWrite(
     getDb(),
@@ -750,14 +757,7 @@ export function recordRuntimeCredentialLimitPressure(
             updated_at = ?
         WHERE id = ?
       `,
-      ).run(
-        signal.providerCode ?? null,
-        "near_limit",
-        signal.message ?? null,
-        signal.resetAt ?? cooldownUntil,
-        now,
-        credentialId,
-      );
+      ).run(safeProviderCode, "near_limit", safeMessage, signal.resetAt ?? cooldownUntil, now, credentialId);
       db.prepare(
         `
         INSERT INTO runtime_credential_health (
@@ -775,7 +775,7 @@ export function recordRuntimeCredentialLimitPressure(
           last_request_id = excluded.last_request_id,
           updated_at = excluded.updated_at
       `,
-      ).run(credentialId, cooldownUntil, signal.resetAt ?? cooldownUntil, signal.requestId ?? null, now);
+      ).run(credentialId, cooldownUntil, signal.resetAt ?? cooldownUntil, safeRequestId, now);
     },
     { label: "runtime-credential-limit-pressure" },
   );
@@ -859,6 +859,9 @@ function rowToCredential(
   row: RuntimeCredentialRow,
   bindingRows: RuntimeCredentialSecretBindingRow[],
 ): RuntimeCredentialRecord {
+  const lastErrorCode = sanitizeFailureScalar(row.last_error_code ?? undefined);
+  const lastErrorReason = sanitizeFailureScalar(row.last_error_reason ?? undefined);
+  const lastErrorMessage = sanitizeFailureScalar(row.last_error_message_redacted ?? undefined);
   return {
     id: row.id,
     label: row.label,
@@ -880,9 +883,9 @@ function rowToCredential(
     fingerprint: row.fingerprint,
     sensitiveEnvKeys: parseList(row.sensitive_env_keys_json),
     remoteForwardEnvKeys: parseList(row.remote_forward_env_keys_json),
-    ...(row.last_error_code ? { lastErrorCode: row.last_error_code } : {}),
-    ...(row.last_error_reason ? { lastErrorReason: row.last_error_reason } : {}),
-    ...(row.last_error_message_redacted ? { lastErrorMessageRedacted: row.last_error_message_redacted } : {}),
+    ...(lastErrorCode ? { lastErrorCode } : {}),
+    ...(lastErrorReason ? { lastErrorReason } : {}),
+    ...(lastErrorMessage ? { lastErrorMessageRedacted: lastErrorMessage } : {}),
     ...(row.reset_at !== null ? { resetAt: row.reset_at } : {}),
     ...(row.notes ? { notes: row.notes } : {}),
     createdAt: row.created_at,
@@ -908,6 +911,7 @@ function rowToBinding(row: RuntimeCredentialSecretBindingRow): RuntimeCredential
 }
 
 function rowToHealth(row: RuntimeCredentialHealthRow): RuntimeCredentialHealth {
+  const lastRequestId = sanitizeFailureScalar(row.last_request_id ?? undefined);
   return {
     credentialId: row.credential_id,
     ...(row.last_success_at !== null ? { lastSuccessAt: row.last_success_at } : {}),
@@ -918,22 +922,27 @@ function rowToHealth(row: RuntimeCredentialHealthRow): RuntimeCredentialHealth {
     requestCount: row.request_count,
     ...(row.last_failure_kind ? { lastFailureKind: row.last_failure_kind } : {}),
     ...(row.last_failure_confidence ? { lastFailureConfidence: row.last_failure_confidence } : {}),
-    ...(row.last_request_id ? { lastRequestId: row.last_request_id } : {}),
+    ...(lastRequestId ? { lastRequestId } : {}),
     updatedAt: row.updated_at,
   };
 }
 
 function rowToProviderHealth(row: RuntimeProviderHealthRow): RuntimeCredentialProviderHealth {
+  const runtimeProvider = sanitizeFailureScalar(row.runtime_provider) ?? "unknown";
+  const upstreamProvider = sanitizeFailureScalar(row.upstream_provider ?? undefined);
+  const model = sanitizeFailureScalar(row.model ?? undefined);
+  const lastRequestId = sanitizeFailureScalar(row.last_request_id ?? undefined);
+  const reason = sanitizeFailureScalar(row.reason ?? undefined);
   return {
     id: row.id,
-    runtimeProvider: row.runtime_provider,
-    ...(row.upstream_provider ? { upstreamProvider: row.upstream_provider } : {}),
-    ...(row.model ? { model: row.model } : {}),
+    runtimeProvider,
+    ...(upstreamProvider ? { upstreamProvider } : {}),
+    ...(model ? { model } : {}),
     ...(row.scope ? { scope: row.scope } : {}),
     kind: row.kind,
     ...(row.cooldown_until !== null ? { cooldownUntil: row.cooldown_until } : {}),
-    ...(row.last_request_id ? { lastRequestId: row.last_request_id } : {}),
-    ...(row.reason ? { reason: row.reason } : {}),
+    ...(lastRequestId ? { lastRequestId } : {}),
+    ...(reason ? { reason } : {}),
     updatedAt: row.updated_at,
   };
 }
@@ -974,25 +983,29 @@ function providerHealthForSignal(
   if (signal.scope !== "provider" && signal.kind !== "provider_overloaded" && signal.kind !== "network_transient") {
     return undefined;
   }
-  const id = [
-    "provider",
-    signal.runtimeProvider,
-    signal.upstreamProvider ?? "_",
-    signal.model ?? "_",
-    signal.scope ?? "provider",
-  ].join(":");
+  const runtimeProvider = sanitizeFailureScalar(signal.runtimeProvider) ?? "unknown";
+  const upstreamProvider = sanitizeFailureScalar(signal.upstreamProvider);
+  const model = sanitizeFailureScalar(signal.model);
+  const lastRequestId = sanitizeFailureScalar(signal.requestId);
+  const reason = sanitizeFailureScalar(signal.message);
+  const id = ["provider", runtimeProvider, upstreamProvider ?? "_", model ?? "_", signal.scope ?? "provider"].join(":");
   return {
     id,
-    runtimeProvider: signal.runtimeProvider,
-    ...(signal.upstreamProvider ? { upstreamProvider: signal.upstreamProvider } : {}),
-    ...(signal.model ? { model: signal.model } : {}),
+    runtimeProvider,
+    ...(upstreamProvider ? { upstreamProvider } : {}),
+    ...(model ? { model } : {}),
     scope: signal.scope ?? "provider",
     kind: signal.kind,
     cooldownUntil: cooldownUntilForFailure(signal, now) ?? now + 60_000,
-    ...(signal.requestId ? { lastRequestId: signal.requestId } : {}),
-    ...(signal.message ? { reason: signal.message } : {}),
+    ...(lastRequestId ? { lastRequestId } : {}),
+    ...(reason ? { reason } : {}),
     updatedAt: now,
   };
+}
+
+function sanitizeFailureScalar(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized ? redactText(normalized).value : undefined;
 }
 
 function computeRuntimeCredentialFingerprint(input: RuntimeCredentialInput & { id: string }): string {

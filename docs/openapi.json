@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "44d943d302e2d246"
+    "version": "572b41566a579818"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1792,6 +1792,45 @@
                     "key": {
                       "type": "string"
                     },
+                    "sessionOverrides": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "effort": {
+                            "enum": [
+                              "none",
+                              "minimal",
+                              "low",
+                              "medium",
+                              "high",
+                              "xhigh",
+                              "max",
+                              "ultra"
+                            ],
+                            "type": "string"
+                          },
+                          "model": {
+                            "type": "string"
+                          },
+                          "sessionName": {
+                            "type": "string"
+                          },
+                          "thinking": {
+                            "enum": [
+                              "off",
+                              "normal",
+                              "verbose"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "sessionName"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
                     "value": {}
                   },
                   "required": [
@@ -1799,7 +1838,8 @@
                     "changed",
                     "agentId",
                     "key",
-                    "value"
+                    "value",
+                    "sessionOverrides"
                   ],
                   "type": "object"
                 }
@@ -1825,7 +1865,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Set agent property",
+        "summary": "Set agent property and report active session runtime overrides",
         "tags": [
           "agents"
         ]
@@ -61593,6 +61633,609 @@
         ]
       }
     },
+    "/api/v1/runtime/targets/clear": {
+      "post": {
+        "operationId": "runtime.targets.clear",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "agent": {
+                    "description": "Agent whose runtime target policy should be removed",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "action": {
+                      "enum": [
+                        "set",
+                        "clear"
+                      ],
+                      "type": "string"
+                    },
+                    "agentId": {
+                      "type": "string"
+                    },
+                    "changed": {
+                      "type": "boolean"
+                    },
+                    "inspectCommand": {
+                      "type": "string"
+                    },
+                    "policy": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "circuitBreakerThreshold": {
+                              "type": "number"
+                            },
+                            "cooldownMs": {
+                              "type": "number"
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "maxAttemptsPerTarget": {
+                              "type": "number"
+                            },
+                            "maxCredentialRecoveryAttemptsPerTarget": {
+                              "type": "number"
+                            },
+                            "strategy": {
+                              "enum": [
+                                "ordered",
+                                "health-aware"
+                              ],
+                              "type": "string"
+                            },
+                            "targets": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "credentialRequirements": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "authMethods": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "credentialIds": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "requireManaged": {
+                                        "type": "boolean"
+                                      },
+                                      "sessionCompatibilityKey": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "type": "object"
+                                  },
+                                  "effort": {
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "model": {
+                                    "type": "string"
+                                  },
+                                  "modelPreset": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "id": {
+                                        "type": "string"
+                                      },
+                                      "version": {
+                                        "type": "number"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "version"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "requiredCapabilities": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "runtimeProvider": {
+                                    "type": "string"
+                                  },
+                                  "thinking": {
+                                    "enum": [
+                                      "off",
+                                      "normal",
+                                      "verbose"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "runtimeProvider",
+                                  "model"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "strategy",
+                            "targets",
+                            "maxAttemptsPerTarget"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "preservedDefaultKeys": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "previousPolicyId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "action",
+                    "changed",
+                    "agentId",
+                    "policy",
+                    "previousPolicyId",
+                    "preservedDefaultKeys",
+                    "inspectCommand"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Disable an agent runtime target policy while preserving unrelated defaults",
+        "tags": [
+          "runtime"
+        ]
+      }
+    },
+    "/api/v1/runtime/targets/explain": {
+      "post": {
+        "operationId": "runtime.targets.explain",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "agent": {
+                    "description": "Agent whose defaults should be evaluated",
+                    "type": "string"
+                  },
+                  "sessionPolicyJson": {
+                    "description": "Optional session override policy to evaluate first",
+                    "type": "string"
+                  },
+                  "taskProfile": {
+                    "description": "Optional task profile whose policy and credential scope apply",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "agentId": {
+                      "type": "string"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "policyId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "provenance": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "rejected": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "detail": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string"
+                          },
+                          "targetId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "targetId",
+                          "reason"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "selectedTarget": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "model": {
+                              "type": "string"
+                            },
+                            "runtimeProvider": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "runtimeProvider",
+                            "model"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "source": {
+                      "enum": [
+                        "session_override",
+                        "task_profile",
+                        "agent_default",
+                        "none"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "agentId",
+                    "enabled",
+                    "source",
+                    "provenance",
+                    "policyId",
+                    "selectedTarget",
+                    "rejected"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Explain which runtime target an agent would select without executing it",
+        "tags": [
+          "runtime"
+        ]
+      }
+    },
+    "/api/v1/runtime/targets/set": {
+      "post": {
+        "operationId": "runtime.targets.set",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "agent": {
+                    "description": "Agent whose opt-in runtime target policy should change",
+                    "type": "string"
+                  },
+                  "policyJson": {
+                    "description": "Complete runtime target policy as strict JSON",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "action": {
+                      "enum": [
+                        "set",
+                        "clear"
+                      ],
+                      "type": "string"
+                    },
+                    "agentId": {
+                      "type": "string"
+                    },
+                    "changed": {
+                      "type": "boolean"
+                    },
+                    "inspectCommand": {
+                      "type": "string"
+                    },
+                    "policy": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "circuitBreakerThreshold": {
+                              "type": "number"
+                            },
+                            "cooldownMs": {
+                              "type": "number"
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "maxAttemptsPerTarget": {
+                              "type": "number"
+                            },
+                            "maxCredentialRecoveryAttemptsPerTarget": {
+                              "type": "number"
+                            },
+                            "strategy": {
+                              "enum": [
+                                "ordered",
+                                "health-aware"
+                              ],
+                              "type": "string"
+                            },
+                            "targets": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "credentialRequirements": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "authMethods": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "credentialIds": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "requireManaged": {
+                                        "type": "boolean"
+                                      },
+                                      "sessionCompatibilityKey": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "type": "object"
+                                  },
+                                  "effort": {
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "model": {
+                                    "type": "string"
+                                  },
+                                  "modelPreset": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "id": {
+                                        "type": "string"
+                                      },
+                                      "version": {
+                                        "type": "number"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "version"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "requiredCapabilities": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "runtimeProvider": {
+                                    "type": "string"
+                                  },
+                                  "thinking": {
+                                    "enum": [
+                                      "off",
+                                      "normal",
+                                      "verbose"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "runtimeProvider",
+                                  "model"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "strategy",
+                            "targets",
+                            "maxAttemptsPerTarget"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "preservedDefaultKeys": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "previousPolicyId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "action",
+                    "changed",
+                    "agentId",
+                    "policy",
+                    "previousPolicyId",
+                    "preservedDefaultKeys",
+                    "inspectCommand"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Validate and set an agent runtime target policy while preserving unrelated defaults",
+        "tags": [
+          "runtime"
+        ]
+      }
+    },
     "/api/v1/sdk/client/check": {
       "post": {
         "operationId": "sdk.client.check",
@@ -66630,6 +67273,471 @@
         ]
       }
     },
+    "/api/v1/sessions/set-provider": {
+      "post": {
+        "operationId": "sessions.set-provider",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "nameOrKey": {
+                    "description": "Session name or key",
+                    "type": "string"
+                  },
+                  "provider": {
+                    "description": "Runtime provider id (codex, claude, pi) or 'clear' to remove override",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "nameOrKey",
+                  "provider"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "action": {
+                      "const": "set-provider",
+                      "type": "string"
+                    },
+                    "after": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "agentId": {
+                              "type": "string"
+                            },
+                            "effectiveModel": {
+                              "type": "string"
+                            },
+                            "effectiveProvider": {
+                              "type": "string"
+                            },
+                            "effortOverride": {
+                              "enum": [
+                                "none",
+                                "minimal",
+                                "low",
+                                "medium",
+                                "high",
+                                "xhigh",
+                                "max",
+                                "ultra"
+                              ],
+                              "type": "string"
+                            },
+                            "ephemeral": {
+                              "type": "boolean"
+                            },
+                            "expiresAt": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "label": {
+                              "type": "string"
+                            },
+                            "modelOverride": {
+                              "type": "string"
+                            },
+                            "modelPresetId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "modelPresetVersion": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "modelSource": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "runtimeOptions": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "effort": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "source": {
+                                      "enum": [
+                                        "session_override",
+                                        "agent_default",
+                                        "runtime_default"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "enum": [
+                                        "none",
+                                        "minimal",
+                                        "low",
+                                        "medium",
+                                        "high",
+                                        "xhigh",
+                                        "max",
+                                        "ultra"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "value",
+                                    "source"
+                                  ],
+                                  "type": "object"
+                                },
+                                "model": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "source": {
+                                      "type": "string"
+                                    },
+                                    "value": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "value",
+                                    "source"
+                                  ],
+                                  "type": "object"
+                                },
+                                "thinking": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "source": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "value": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "value",
+                                    "source"
+                                  ],
+                                  "type": "object"
+                                }
+                              },
+                              "required": [
+                                "model",
+                                "effort",
+                                "thinking"
+                              ],
+                              "type": "object"
+                            },
+                            "sessionKey": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "sessionKey",
+                            "label",
+                            "agentId",
+                            "effectiveProvider",
+                            "effectiveModel",
+                            "modelSource",
+                            "modelPresetId",
+                            "modelPresetVersion",
+                            "ephemeral",
+                            "expiresAt",
+                            "runtimeOptions"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "appliesOn": {
+                      "const": "next-turn-runtime-restart",
+                      "type": "string"
+                    },
+                    "before": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "agentId": {
+                          "type": "string"
+                        },
+                        "effectiveModel": {
+                          "type": "string"
+                        },
+                        "effectiveProvider": {
+                          "type": "string"
+                        },
+                        "effortOverride": {
+                          "enum": [
+                            "none",
+                            "minimal",
+                            "low",
+                            "medium",
+                            "high",
+                            "xhigh",
+                            "max",
+                            "ultra"
+                          ],
+                          "type": "string"
+                        },
+                        "ephemeral": {
+                          "type": "boolean"
+                        },
+                        "expiresAt": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "modelOverride": {
+                          "type": "string"
+                        },
+                        "modelPresetId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "modelPresetVersion": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "modelSource": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "runtimeOptions": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "effort": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "source": {
+                                  "enum": [
+                                    "session_override",
+                                    "agent_default",
+                                    "runtime_default"
+                                  ],
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "enum": [
+                                    "none",
+                                    "minimal",
+                                    "low",
+                                    "medium",
+                                    "high",
+                                    "xhigh",
+                                    "max",
+                                    "ultra"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "value",
+                                "source"
+                              ],
+                              "type": "object"
+                            },
+                            "model": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "source": {
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "value",
+                                "source"
+                              ],
+                              "type": "object"
+                            },
+                            "thinking": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "source": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "value": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "value",
+                                "source"
+                              ],
+                              "type": "object"
+                            }
+                          },
+                          "required": [
+                            "model",
+                            "effort",
+                            "thinking"
+                          ],
+                          "type": "object"
+                        },
+                        "sessionKey": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "sessionKey",
+                        "label",
+                        "agentId",
+                        "effectiveProvider",
+                        "effectiveModel",
+                        "modelSource",
+                        "modelPresetId",
+                        "modelPresetVersion",
+                        "ephemeral",
+                        "expiresAt",
+                        "runtimeOptions"
+                      ],
+                      "type": "object"
+                    },
+                    "changed": {
+                      "type": "boolean"
+                    },
+                    "effectiveProvider": {
+                      "type": "string"
+                    },
+                    "runtimeProviderOverride": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sessionKey": {
+                      "type": "string"
+                    },
+                    "sessionName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "action",
+                    "changed",
+                    "sessionKey",
+                    "sessionName",
+                    "before",
+                    "after",
+                    "runtimeProviderOverride",
+                    "effectiveProvider",
+                    "appliesOn"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Set session runtime provider override",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
     "/api/v1/sessions/set-thinking": {
       "post": {
         "operationId": "sessions.set-thinking",
@@ -70611,6 +71719,14 @@
                     "description": "Slack channel/conversation ID",
                     "type": "string"
                   },
+                  "connection": {
+                    "description": "Ravi channel config; SDK-safe alias for --channel",
+                    "type": "string"
+                  },
+                  "ephemeralUser": {
+                    "description": "Send as an ephemeral message visible only to this Slack user",
+                    "type": "string"
+                  },
                   "execute": {
                     "description": "Perform the mutation; default is dry-run",
                     "type": "boolean"
@@ -73524,6 +74640,10 @@
                     "description": "Slack channel/conversation ID",
                     "type": "string"
                   },
+                  "connection": {
+                    "description": "Ravi channel config; SDK-safe alias for --channel",
+                    "type": "string"
+                  },
                   "execute": {
                     "description": "Perform the mutation; default is dry-run",
                     "type": "boolean"
@@ -74844,6 +75964,10 @@
                     "description": "Slack channel/conversation ID",
                     "type": "string"
                   },
+                  "ephemeralUser": {
+                    "description": "Send as an ephemeral message visible only to this Slack user",
+                    "type": "string"
+                  },
                   "execute": {
                     "description": "Perform the mutation; default is dry-run",
                     "type": "boolean"
@@ -74986,6 +76110,494 @@
           }
         ],
         "summary": "Send a Slack message; dry-run unless --execute is set",
+        "tags": [
+          "slack"
+        ]
+      }
+    },
+    "/api/v1/slack/modals-open": {
+      "post": {
+        "operationId": "slack.modals-open",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "channel": {
+                    "description": "Ravi channel config",
+                    "type": "string"
+                  },
+                  "execute": {
+                    "description": "Perform the mutation; default is dry-run",
+                    "type": "boolean"
+                  },
+                  "file": {
+                    "description": "Path to a Block Kit view JSON file",
+                    "type": "string"
+                  },
+                  "triggerId": {
+                    "description": "Slack interaction trigger_id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "triggerId",
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$defs": {
+                    "__schema0": {
+                      "anyOf": [
+                        {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        {
+                          "items": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "properties": {
+                    "connection": {
+                      "type": "string"
+                    },
+                    "dryRun": {
+                      "type": "boolean"
+                    },
+                    "item": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "method": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "provider": {
+                      "const": "slack",
+                      "type": "string"
+                    },
+                    "raw": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "request": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "source": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "provider",
+                    "connection",
+                    "source",
+                    "dryRun",
+                    "method",
+                    "request"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Open a Slack modal from an interaction trigger_id; dry-run unless --execute is set",
+        "tags": [
+          "slack"
+        ]
+      }
+    },
+    "/api/v1/slack/modals-push": {
+      "post": {
+        "operationId": "slack.modals-push",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "channel": {
+                    "description": "Ravi channel config",
+                    "type": "string"
+                  },
+                  "execute": {
+                    "description": "Perform the mutation; default is dry-run",
+                    "type": "boolean"
+                  },
+                  "file": {
+                    "description": "Path to a Block Kit view JSON file",
+                    "type": "string"
+                  },
+                  "triggerId": {
+                    "description": "Slack interaction trigger_id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "triggerId",
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$defs": {
+                    "__schema0": {
+                      "anyOf": [
+                        {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        {
+                          "items": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "properties": {
+                    "connection": {
+                      "type": "string"
+                    },
+                    "dryRun": {
+                      "type": "boolean"
+                    },
+                    "item": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "method": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "provider": {
+                      "const": "slack",
+                      "type": "string"
+                    },
+                    "raw": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "request": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "source": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "provider",
+                    "connection",
+                    "source",
+                    "dryRun",
+                    "method",
+                    "request"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Push a Slack modal view onto an existing modal stack; dry-run unless --execute is set",
+        "tags": [
+          "slack"
+        ]
+      }
+    },
+    "/api/v1/slack/modals-update": {
+      "post": {
+        "operationId": "slack.modals-update",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "channel": {
+                    "description": "Ravi channel config",
+                    "type": "string"
+                  },
+                  "execute": {
+                    "description": "Perform the mutation; default is dry-run",
+                    "type": "boolean"
+                  },
+                  "externalId": {
+                    "description": "Treat <view> as an external_id instead of a view_id",
+                    "type": "boolean"
+                  },
+                  "file": {
+                    "description": "Path to a Block Kit view JSON file",
+                    "type": "string"
+                  },
+                  "hash": {
+                    "description": "Slack view.hash for optimistic concurrency control",
+                    "type": "string"
+                  },
+                  "view": {
+                    "description": "Slack view_id, or external_id when --external-id is set",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "view",
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$defs": {
+                    "__schema0": {
+                      "anyOf": [
+                        {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        {
+                          "items": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "properties": {
+                    "connection": {
+                      "type": "string"
+                    },
+                    "dryRun": {
+                      "type": "boolean"
+                    },
+                    "item": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "method": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "provider": {
+                      "const": "slack",
+                      "type": "string"
+                    },
+                    "raw": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "request": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "source": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "provider",
+                    "connection",
+                    "source",
+                    "dryRun",
+                    "method",
+                    "request"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Update a Slack modal view; dry-run unless --execute is set",
         "tags": [
           "slack"
         ]
@@ -75273,6 +76885,632 @@
           }
         ],
         "summary": "Show Slack channels and Ravi route/session ownership",
+        "tags": [
+          "slack"
+        ]
+      }
+    },
+    "/api/v1/slack/work-objects-present-details": {
+      "post": {
+        "operationId": "slack.work-objects-present-details",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "channel": {
+                    "description": "Ravi channel config",
+                    "type": "string"
+                  },
+                  "connection": {
+                    "description": "Ravi channel config; SDK-safe alias for --channel",
+                    "type": "string"
+                  },
+                  "execute": {
+                    "description": "Perform the mutation; default is dry-run",
+                    "type": "boolean"
+                  },
+                  "file": {
+                    "description": "Path to Slack native Work Object detail metadata JSON",
+                    "type": "string"
+                  },
+                  "triggerId": {
+                    "description": "Slack entity_details_requested trigger_id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "triggerId",
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$defs": {
+                    "__schema0": {
+                      "anyOf": [
+                        {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        {
+                          "items": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "properties": {
+                    "connection": {
+                      "type": "string"
+                    },
+                    "dryRun": {
+                      "type": "boolean"
+                    },
+                    "item": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "method": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "provider": {
+                      "const": "slack",
+                      "type": "string"
+                    },
+                    "raw": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "request": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "source": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "provider",
+                    "connection",
+                    "source",
+                    "dryRun",
+                    "method",
+                    "request"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Present Slack native Work Object flexpane details; dry-run unless --execute is set",
+        "tags": [
+          "slack"
+        ]
+      }
+    },
+    "/api/v1/slack/work-objects-send": {
+      "post": {
+        "operationId": "slack.work-objects-send",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "channel": {
+                    "description": "Slack channel/conversation ID",
+                    "type": "string"
+                  },
+                  "connection": {
+                    "description": "Ravi channel config; SDK-safe alias for --channel",
+                    "type": "string"
+                  },
+                  "execute": {
+                    "description": "Perform the mutation; default is dry-run",
+                    "type": "boolean"
+                  },
+                  "file": {
+                    "description": "Path to Slack native Work Object message JSON",
+                    "type": "string"
+                  },
+                  "text": {
+                    "description": "Top-level fallback text for notifications/accessibility",
+                    "type": "string"
+                  },
+                  "threadTs": {
+                    "description": "Send inside a Slack thread",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "channel",
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$defs": {
+                    "__schema0": {
+                      "anyOf": [
+                        {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        {
+                          "items": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "properties": {
+                    "connection": {
+                      "type": "string"
+                    },
+                    "dryRun": {
+                      "type": "boolean"
+                    },
+                    "item": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "method": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "provider": {
+                      "const": "slack",
+                      "type": "string"
+                    },
+                    "raw": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "request": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "source": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "provider",
+                    "connection",
+                    "source",
+                    "dryRun",
+                    "method",
+                    "request"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Send Slack native Work Object metadata with chat.postMessage; dry-run unless --execute is set",
+        "tags": [
+          "slack"
+        ]
+      }
+    },
+    "/api/v1/slack/work-objects-unfurl": {
+      "post": {
+        "operationId": "slack.work-objects-unfurl",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "channel": {
+                    "description": "Slack channel/conversation ID containing the URL message",
+                    "type": "string"
+                  },
+                  "connection": {
+                    "description": "Ravi channel config; SDK-safe alias for --channel",
+                    "type": "string"
+                  },
+                  "execute": {
+                    "description": "Perform the mutation; default is dry-run",
+                    "type": "boolean"
+                  },
+                  "file": {
+                    "description": "Path to Slack native Work Object metadata JSON",
+                    "type": "string"
+                  },
+                  "ts": {
+                    "description": "Slack message timestamp containing the URL",
+                    "type": "string"
+                  },
+                  "url": {
+                    "description": "URL in the message to unfurl",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "channel",
+                  "ts",
+                  "url",
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$defs": {
+                    "__schema0": {
+                      "anyOf": [
+                        {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        {
+                          "items": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "properties": {
+                    "connection": {
+                      "type": "string"
+                    },
+                    "dryRun": {
+                      "type": "boolean"
+                    },
+                    "item": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "method": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "provider": {
+                      "const": "slack",
+                      "type": "string"
+                    },
+                    "raw": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "request": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "source": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "provider",
+                    "connection",
+                    "source",
+                    "dryRun",
+                    "method",
+                    "request"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Attach Slack native Work Object metadata with chat.unfurl; dry-run unless --execute is set",
+        "tags": [
+          "slack"
+        ]
+      }
+    },
+    "/api/v1/slack/work-objects-validate": {
+      "post": {
+        "operationId": "slack.work-objects-validate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "file": {
+                    "description": "Path to Slack native Work Object metadata JSON",
+                    "type": "string"
+                  },
+                  "target": {
+                    "default": "message",
+                    "description": "Validation target: message or detail",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$defs": {
+                    "__schema0": {
+                      "anyOf": [
+                        {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        {
+                          "items": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "properties": {
+                    "dryRun": {
+                      "type": "boolean"
+                    },
+                    "item": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "ok": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "outputFile": {
+                      "type": "string"
+                    },
+                    "provider": {
+                      "const": "slack",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "provider"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Validate Slack native Work Object metadata JSON",
         "tags": [
           "slack"
         ]

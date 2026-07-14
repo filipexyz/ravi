@@ -10,6 +10,7 @@ let querySetModelCalls: Array<string | undefined> = [];
 let queryCloseCalls = 0;
 let queryGate: Promise<void> | null = null;
 let releaseQueryGate: (() => void) | null = null;
+let nextQueryError: unknown = null;
 
 mock.module("@anthropic-ai/claude-agent-sdk", () => ({
   createSdkMcpServer: (config: Record<string, unknown>) => ({
@@ -35,6 +36,9 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
       async *[Symbol.asyncIterator]() {
         if (queryGate) {
           await queryGate;
+        }
+        if (nextQueryError !== null) {
+          throw nextQueryError;
         }
         for (const message of messages) {
           yield message;
@@ -102,6 +106,7 @@ describe("createClaudeRuntimeProvider", () => {
     queryCloseCalls = 0;
     queryGate = null;
     releaseQueryGate = null;
+    nextQueryError = null;
     if (tempDir) {
       rmSync(tempDir, { recursive: true, force: true });
       tempDir = null;
@@ -273,6 +278,53 @@ describe("createClaudeRuntimeProvider", () => {
     expect(failures).toHaveLength(1);
     expect(failures[0]?.error).toContain("Tool execution failed");
     expect(findEventsByType(events, "turn.complete")).toHaveLength(0);
+  });
+
+  it("preserves trusted error identity when the provider stream throws", async () => {
+    nextQueryError = new RangeError("credential unavailable");
+    const session = createClaudeRuntimeProvider().startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "hello" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+      ),
+    );
+
+    expect((await collectEvents(session.events)).at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "credential unavailable",
+      errorName: "RangeError",
+      caughtException: true,
+      recoverable: true,
+    });
+  });
+
+  it("marks non-Error provider throws as caught exceptions", async () => {
+    nextQueryError = "token expired";
+    const session = createClaudeRuntimeProvider().startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "hello" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+      ),
+    );
+
+    expect((await collectEvents(session.events)).at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "token expired",
+      caughtException: true,
+      recoverable: true,
+    });
   });
 
   it("synthesizes a failed turn when the provider stream ends without a terminal result", async () => {

@@ -7,6 +7,7 @@ import type {
   RuntimeCredentialLimitPressure,
 } from "./credential-types.js";
 import type { RuntimeProviderId } from "./types.js";
+import { redactText } from "../utils/redaction.js";
 
 export interface RuntimeCredentialClassifierInput {
   runtimeProvider: RuntimeProviderId;
@@ -36,6 +37,12 @@ const TOKEN_REMAINING_HEADERS = [
   "anthropic-ratelimit-input-tokens-remaining",
   "anthropic-ratelimit-output-tokens-remaining",
 ];
+const STRUCTURED_CREDENTIAL_FAILURE_KINDS = new Set([
+  "authentication_error",
+  "billing_error",
+  "permission_error",
+  "rate_limit_error",
+]);
 
 export function classifyRuntimeCredentialFailure(
   input: RuntimeCredentialClassifierInput,
@@ -50,30 +57,53 @@ export function classifyRuntimeCredentialFailure(
   const resetAt = parseResetAt(headers);
   const limitDimensions = extractLimitDimensions(headers);
   const rawHeaders = redactHeaders(headers);
+  const runtimeProvider = sanitizeClassifierScalar(input.runtimeProvider) ?? "unknown";
+  const upstreamProvider = sanitizeClassifierScalar(input.upstreamProvider);
+  const model = sanitizeClassifierScalar(input.model);
+  const credentialId = sanitizeClassifierScalar(input.credentialId);
+  const safeProviderCode = sanitizeClassifierScalar(input.providerCode);
+  const safeProviderType = sanitizeClassifierScalar(input.providerType);
+  const safeMessage = sanitizeClassifierScalar(message);
+  const requestId = sanitizeClassifierScalar(input.requestId ?? headers["x-request-id"] ?? headers["request-id"]);
 
   const classified = classifyKind({ status, providerCode, providerType, text });
+  const structuredCredentialEvidence = hasStructuredCredentialFailureEvidence({
+    status,
+    providerCode,
+    providerType,
+  });
   return {
     kind: classified.kind,
     confidence: classified.confidence,
-    runtimeProvider: input.runtimeProvider,
-    ...(input.upstreamProvider ? { upstreamProvider: input.upstreamProvider } : {}),
-    ...(input.model ? { model: input.model } : {}),
-    ...(input.credentialId ? { credentialId: input.credentialId } : {}),
+    runtimeProvider,
+    ...(upstreamProvider ? { upstreamProvider } : {}),
+    ...(model ? { model } : {}),
+    ...(credentialId ? { credentialId } : {}),
     ...(status ? { httpStatus: status } : {}),
-    ...(input.providerCode ? { providerCode: input.providerCode } : {}),
-    ...(input.providerType ? { providerType: input.providerType } : {}),
-    ...(message ? { message: redactSecretLikeText(message) } : {}),
+    ...(safeProviderCode ? { providerCode: safeProviderCode } : {}),
+    ...(safeProviderType ? { providerType: safeProviderType } : {}),
+    ...(safeMessage ? { message: safeMessage } : {}),
     ...(retryAfterMs ? { retryAfterMs } : {}),
     ...(resetAt ? { resetAt } : {}),
-    ...((input.requestId ?? headers["x-request-id"] ?? headers["request-id"])
-      ? { requestId: String(input.requestId ?? headers["x-request-id"] ?? headers["request-id"]) }
-      : {}),
+    ...(requestId ? { requestId } : {}),
     ...(Object.keys(rawHeaders).length > 0 ? { rawHeaders } : {}),
     scope: classified.scope,
-    retryableByCredential: isRetryableByCredential(classified.kind, classified.scope),
+    retryableByCredential: structuredCredentialEvidence && isRetryableByCredential(classified.kind, classified.scope),
     source: input.source ?? (status ? "http" : "heuristic"),
     ...(limitDimensions.length > 0 ? { limitDimensions } : {}),
   };
+}
+
+function hasStructuredCredentialFailureEvidence(input: {
+  status?: number;
+  providerCode?: string;
+  providerType?: string;
+}): boolean {
+  if (input.status === 401 || input.status === 402 || input.status === 403 || input.status === 429) return true;
+  return (
+    STRUCTURED_CREDENTIAL_FAILURE_KINDS.has(input.providerCode ?? "") ||
+    STRUCTURED_CREDENTIAL_FAILURE_KINDS.has(input.providerType ?? "")
+  );
 }
 
 export function evaluateCredentialLimitPressure(
@@ -199,7 +229,7 @@ function normalizeHeaders(headers: RuntimeCredentialClassifierInput["headers"]):
 function redactHeaders(headers: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
-    out[key] = isSensitiveHeader(key) ? "[redacted]" : redactSecretLikeText(value);
+    out[key] = isSensitiveHeader(key) ? "[REDACTED]" : redactText(value).value;
   }
   return out;
 }
@@ -220,6 +250,11 @@ function isSensitiveHeader(key: string): boolean {
 function normalizeToken(value: string | undefined): string | undefined {
   const normalized = value?.trim().toLowerCase();
   return normalized || undefined;
+}
+
+function sanitizeClassifierScalar(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized ? redactText(normalized).value : undefined;
 }
 
 function parseRetryAfterMs(value: string | undefined): number | undefined {
@@ -287,10 +322,4 @@ function firstNumber(headers: Record<string, string>, keys: string[]): number | 
     if (Number.isFinite(parsed)) return parsed;
   }
   return undefined;
-}
-
-function redactSecretLikeText(value: string): string {
-  return value
-    .replace(/\b(sk-[A-Za-z0-9_-]{8,})\b/g, "[redacted-secret]")
-    .replace(/\b([A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{12,})\b/g, "[redacted-token]");
 }
