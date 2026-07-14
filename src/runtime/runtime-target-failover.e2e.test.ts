@@ -6,8 +6,10 @@ import { attachChatToSession, getOrCreateSession, getSession, updateRuntimeProvi
 import type { AgentConfig } from "../router/types.js";
 import { listSessionEvents } from "../session-trace/session-trace-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { dbCreateTask, dbDispatchTask, dbGetTask } from "../tasks/task-db.js";
 import { RuntimeSessionDispatcher } from "./session-dispatcher.js";
 import { createCodexRuntimeProvider } from "./codex-provider.js";
+import { createRuntimeCredential } from "./credential-store.js";
 import { formatUserFacingTurnFailure } from "./host-event-loop.js";
 import { readLearningLoopCadenceState } from "./learning-loop-cadence.js";
 import { registerRuntimeProvider, unregisterRuntimeProvider } from "./provider-registry.js";
@@ -236,6 +238,127 @@ describe("runtime target failover E2E", () => {
     }
   });
 
+  it("keeps a task active when structured quota recovers through target policy", async () => {
+    const credentialSecretEnv = "RAVI_TEST_TARGET_QUOTA_KEY";
+    const previousCredentialSecret = process.env[credentialSecretEnv];
+    process.env[credentialSecretEnv] = "sk-test_target_quota_secret";
+    createRuntimeCredential({
+      id: "rcred_target_quota_primary",
+      label: "Target quota primary",
+      runtimeProvider: primary,
+      priority: 100,
+      bindings: [
+        {
+          sourceKind: "env",
+          targetKind: "env",
+          targetName: "SYNTHETIC_API_KEY",
+          secretRef: `env:${credentialSecretEnv}`,
+          sourceHint: credentialSecretEnv,
+          sensitive: true,
+          remoteForward: false,
+        },
+      ],
+    });
+    let primaryExecutions = 0;
+    let secondaryExecutions = 0;
+    registerRuntimeProvider(primary, () =>
+      provider(primary, () => {
+        primaryExecutions++;
+        return [
+          {
+            type: "turn.failed",
+            error: "Exceeded your current quota",
+            recoverable: true,
+            rawEvent: { status: 429 },
+          },
+        ];
+      }),
+    );
+    registerRuntimeProvider(secondary, () =>
+      provider(secondary, () => {
+        secondaryExecutions++;
+        return [
+          { type: "assistant.message", text: "quota recovered by secondary" },
+          { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 1 } },
+        ];
+      }),
+    );
+    const agent = configStore.getConfig().agents.main;
+    if (!agent) throw new Error("default test agent missing");
+    grantRuntimeTargets(agent);
+    agent.defaults = {
+      ...(agent.defaults ?? {}),
+      runtimeTargetPolicy: {
+        id: "task-quota-recovery-policy",
+        strategy: "ordered",
+        maxAttemptsPerTarget: 1,
+        maxCredentialRecoveryAttemptsPerTarget: 1,
+        targets: [
+          {
+            id: "primary",
+            runtimeProvider: primary,
+            model: "primary-model",
+            credentialRequirements: { requireManaged: true, credentialIds: ["rcred_target_quota_primary"] },
+          },
+          { id: "secondary", runtimeProvider: secondary, model: "secondary-model" },
+        ],
+      },
+    };
+    dbUpdateAgent(agent.id, { defaults: agent.defaults });
+    const sessionName = "target-task-quota-recovery";
+    const created = dbCreateTask({
+      title: "Target policy quota recovery",
+      instructions: "Remain runnable while target policy recovers structured quota.",
+      createdBy: "test",
+    });
+    dbDispatchTask(created.task.id, {
+      agentId: "main",
+      sessionName,
+      assignedBy: "test",
+    });
+    getOrCreateSession(sessionName, "main", stateDir ?? "/tmp", { name: sessionName });
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "task-quota-recovery@s.whatsapp.net",
+      chatType: "dm",
+      title: "runtime target quota recovery",
+    });
+    attachChatToSession({ sessionKey: sessionName, chatId: chat.id, setOutputTarget: true });
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic, data) => {
+      emitted.push({ topic, data: data as Record<string, unknown> });
+    });
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "task-quota-recovery",
+      maxConcurrentSessions: 2,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      getConfigModel: () => "fallback-model",
+    });
+    try {
+      await dispatcher.startStreamingSession(sessionName, {
+        prompt: "finish despite primary quota",
+        _agentId: "main",
+        taskBarrierTaskId: created.task.id,
+      });
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (emitted.some((event) => event.topic === `ravi.session.${sessionName}.response`)) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(primaryExecutions).toBe(1);
+      expect(secondaryExecutions).toBe(1);
+      expect(emitted.filter((event) => event.topic === `ravi.session.${sessionName}.response`)).toHaveLength(1);
+      expect(dbGetTask(created.task.id)?.status).toBe("in_progress");
+      expect(readLearningLoopCadenceState(getSession(sessionName)?.runtimeSessionParams)?.terminalTurnCount).toBe(1);
+    } finally {
+      dispatcher.shutdownAll();
+      emitSpy.mockRestore();
+      if (previousCredentialSecret === undefined) delete process.env[credentialSecretEnv];
+      else process.env[credentialSecretEnv] = previousCredentialSecret;
+    }
+  });
+
   it("buffers a target response until success so a later failure cannot emit twice", async () => {
     registerRuntimeProvider(primary, () =>
       provider(primary, [
@@ -301,6 +424,7 @@ describe("runtime target failover E2E", () => {
       const responses = emitted.filter((event) => event.topic === `ravi.session.${sessionName}.response`);
       expect(responses).toHaveLength(1);
       expect(responses[0]?.data.response).toBe("secondary is authoritative");
+      expect(readLearningLoopCadenceState(getSession(sessionName)?.runtimeSessionParams)?.terminalTurnCount).toBe(1);
     } finally {
       dispatcher.shutdownAll();
       emitSpy.mockRestore();
