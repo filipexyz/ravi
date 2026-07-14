@@ -14374,6 +14374,418 @@ export const ChatsListsMembersReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `chats.lists.preview`. */
+export const ChatsListsPreviewInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "list": {
+      "description": "List id or name",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner scope when resolving list by name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "list"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `chats.lists.preview`. */
+export const ChatsListsPreviewReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "list": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "type": "string"
+        },
+        "selector": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "visibility": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "ownerType",
+        "ownerId",
+        "visibility",
+        "mode",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "preview": {
+      "additionalProperties": false,
+      "properties": {
+        "current": {
+          "additionalProperties": false,
+          "properties": {
+            "chatIds": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "preserved": {
+              "type": "number"
+            },
+            "selector": {
+              "type": "number"
+            },
+            "total": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "total",
+            "selector",
+            "preserved",
+            "chatIds"
+          ],
+          "type": "object"
+        },
+        "diff": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "added": {
+                  "type": "number"
+                },
+                "addedChatIds": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "eligible": {
+                  "type": "number"
+                },
+                "eligibleChatIds": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "kept": {
+                  "type": "number"
+                },
+                "keptChatIds": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "preserved": {
+                  "type": "number"
+                },
+                "preservedChatIds": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "removed": {
+                  "type": "number"
+                },
+                "removedChatIds": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "eligibleChatIds",
+                "addedChatIds",
+                "removedChatIds",
+                "keptChatIds",
+                "preservedChatIds",
+                "added",
+                "removed",
+                "kept",
+                "preserved",
+                "eligible"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dryRun": {
+          "const": true,
+          "type": "boolean"
+        },
+        "list": {
+          "additionalProperties": false,
+          "properties": {
+            "archivedAt": {
+              "type": "number"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "description": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "metadata": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "mode": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "ownerId": {
+              "type": "string"
+            },
+            "ownerType": {
+              "type": "string"
+            },
+            "selector": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "updatedAt": {
+              "type": "number"
+            },
+            "visibility": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "ownerType",
+            "ownerId",
+            "visibility",
+            "mode",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "selector": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "validation": {
+          "additionalProperties": false,
+          "properties": {
+            "canApply": {
+              "type": "boolean"
+            },
+            "conditions": {
+              "additionalProperties": false,
+              "properties": {
+                "negative": {
+                  "type": "number"
+                },
+                "positive": {
+                  "type": "number"
+                },
+                "supported": {
+                  "type": "number"
+                },
+                "total": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "total",
+                "supported",
+                "positive",
+                "negative"
+              ],
+              "type": "object"
+            },
+            "issues": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "severity": {
+                    "enum": [
+                      "error",
+                      "warning"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code",
+                  "severity",
+                  "message"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "match": {
+              "enum": [
+                "all",
+                "any"
+              ],
+              "type": "string"
+            },
+            "riskLevel": {
+              "enum": [
+                "low",
+                "high"
+              ],
+              "type": "string"
+            },
+            "scope": {
+              "enum": [
+                "contact",
+                "chat"
+              ],
+              "type": "string"
+            },
+            "valid": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "valid",
+            "canApply",
+            "riskLevel",
+            "scope",
+            "match",
+            "conditions",
+            "issues"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "list",
+        "selector",
+        "dryRun",
+        "validation",
+        "current",
+        "diff"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "list",
+    "preview"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `chats.lists.recompute`. */
 export const ChatsListsRecomputeInputSchema = {
   "additionalProperties": false,
@@ -14676,6 +15088,258 @@ export const ChatsListsRemoveInputSchema = {
 export const ChatsListsRemoveReturnSchema = {
   "additionalProperties": {},
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.lists.show`. */
+export const ChatsListsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "list": {
+      "description": "List id or name",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner scope when resolving list by name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "list"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `chats.lists.show`. */
+export const ChatsListsShowReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "current": {
+      "additionalProperties": false,
+      "properties": {
+        "chatIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "preserved": {
+          "type": "number"
+        },
+        "selector": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "total",
+        "selector",
+        "preserved",
+        "chatIds"
+      ],
+      "type": "object"
+    },
+    "list": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "type": "string"
+        },
+        "selector": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "visibility": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "ownerType",
+        "ownerId",
+        "visibility",
+        "mode",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "validation": {
+      "additionalProperties": false,
+      "properties": {
+        "canApply": {
+          "type": "boolean"
+        },
+        "conditions": {
+          "additionalProperties": false,
+          "properties": {
+            "negative": {
+              "type": "number"
+            },
+            "positive": {
+              "type": "number"
+            },
+            "supported": {
+              "type": "number"
+            },
+            "total": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "total",
+            "supported",
+            "positive",
+            "negative"
+          ],
+          "type": "object"
+        },
+        "issues": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "severity": {
+                "enum": [
+                  "error",
+                  "warning"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "severity",
+              "message"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "match": {
+          "enum": [
+            "all",
+            "any"
+          ],
+          "type": "string"
+        },
+        "riskLevel": {
+          "enum": [
+            "low",
+            "high"
+          ],
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "contact",
+            "chat"
+          ],
+          "type": "string"
+        },
+        "valid": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "valid",
+        "canApply",
+        "riskLevel",
+        "scope",
+        "match",
+        "conditions",
+        "issues"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "list",
+    "validation",
+    "current"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 

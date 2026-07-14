@@ -4,7 +4,11 @@ import { Arg, Command, CommandAccess, Group, Option, Scope } from "../decorators
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
 import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
-import { recomputeChatReadingListMembers } from "../../chats/reading-lists.js";
+import {
+  inspectChatReadingList,
+  previewChatReadingListMembers,
+  recomputeChatReadingListMembers,
+} from "../../chats/reading-lists.js";
 import {
   dbAddChatToReadingList,
   dbBackfillChatMessageProviderTimestamps,
@@ -74,6 +78,66 @@ const chatReadingListRecomputeReturnSchema = z.object({
     kept: z.number(),
     preserved: z.number(),
     eligible: z.number(),
+  }),
+});
+
+const chatReadingListSelectorIssueSchema = z.object({
+  code: z.string(),
+  severity: z.enum(["error", "warning"]),
+  message: z.string(),
+  path: z.string().optional(),
+});
+
+const chatReadingListSelectorValidationSchema = z.object({
+  valid: z.boolean(),
+  canApply: z.boolean(),
+  riskLevel: z.enum(["low", "high"]),
+  scope: z.enum(["contact", "chat"]),
+  match: z.enum(["all", "any"]),
+  conditions: z.object({
+    total: z.number(),
+    supported: z.number(),
+    positive: z.number(),
+    negative: z.number(),
+  }),
+  issues: z.array(chatReadingListSelectorIssueSchema),
+});
+
+const chatReadingListCurrentMembersSchema = z.object({
+  total: z.number(),
+  selector: z.number(),
+  preserved: z.number(),
+  chatIds: z.array(z.string()),
+});
+
+const chatReadingListMembershipDiffSchema = z.object({
+  eligibleChatIds: z.array(z.string()),
+  addedChatIds: z.array(z.string()),
+  removedChatIds: z.array(z.string()),
+  keptChatIds: z.array(z.string()),
+  preservedChatIds: z.array(z.string()),
+  added: z.number(),
+  removed: z.number(),
+  kept: z.number(),
+  preserved: z.number(),
+  eligible: z.number(),
+});
+
+const chatReadingListShowReturnSchema = z.object({
+  list: chatReadingListReturnSchema,
+  validation: chatReadingListSelectorValidationSchema,
+  current: chatReadingListCurrentMembersSchema,
+});
+
+const chatReadingListPreviewReturnSchema = z.object({
+  list: chatReadingListReturnSchema,
+  preview: z.object({
+    list: chatReadingListReturnSchema,
+    selector: z.record(z.string(), jsonValueReturnSchema),
+    dryRun: z.literal(true),
+    validation: chatReadingListSelectorValidationSchema,
+    current: chatReadingListCurrentMembersSchema,
+    diff: chatReadingListMembershipDiffSchema.nullable(),
   }),
 });
 
@@ -526,6 +590,117 @@ export class ChatReadingListCommands {
   }
 
   @Scope("admin")
+  @Command({
+    name: "show",
+    description: "Show one reading list and explain whether its selector is safe",
+    helpAfter: `
+USE
+  Inspect one list's selector and safety gate without changing membership.
+
+DO NOT USE
+  This command does not calculate the prospective diff. Use:
+  ravi chats lists preview <list> --json
+
+EXAMPLES
+  ravi chats lists show sde-cobranca --owner system:ravi --json
+  ravi chats lists show crl_86244e77d183316cb5034a6a --json
+
+OUTPUT
+  Returns the list, deterministic selector validation, and current member counts. Read-only; exit 0 even when canApply=false.
+
+ON ERROR
+  Reading list not found -> pass its id, or add --owner <type:id> when names are ambiguous.
+
+FONTES
+  .ravi/specs/channels/chats/reading-lists/SPEC.md
+  src/chats/reading-lists.ts
+`,
+  })
+  @CommandAccess({ kind: "read", resource: "chats.lists", action: "show", risk: "low" })
+  show(
+    @Arg("list", { description: "List id or name" }) listRef: string,
+    @Option({ flags: "--owner <type:id>", description: "Owner scope when resolving list by name" }) owner?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const list = resolveReadingList(listRef, owner);
+    const inspection = inspectChatReadingList(list);
+    const payload = { list, validation: inspection.validation, current: inspection.current };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(`Reading list: ${list.name} (${list.id})`);
+    console.log(`Mode: ${list.mode}; owner: ${list.ownerType}:${list.ownerId}`);
+    console.log(`Selector: ${JSON.stringify(inspection.selector)}`);
+    console.log(
+      `Safety: ${inspection.validation.canApply ? "SAFE" : "BLOCKED"} (${inspection.validation.riskLevel}); current=${inspection.current.total}`,
+    );
+    for (const issue of inspection.validation.issues) {
+      console.log(`- ${issue.severity.toUpperCase()} ${issue.code}: ${issue.message}`);
+    }
+    return payload;
+  }
+
+  @Scope("admin")
+  @Command({
+    name: "preview",
+    description: "Validate a dynamic selector and preview membership diff without writes",
+    helpAfter: `
+USE
+  Run before recompute to inspect eligible, added, removed, kept and preserved chats.
+
+DO NOT USE
+  This command never applies the diff. Apply only after reviewing canApply=true with:
+  ravi chats lists recompute <list> --owner <type:id> --json
+
+RULES HARD
+  match:any + any not-has-tag condition is BLOCKED because it can match almost the entire scope.
+  Invalid selectors return canApply=false and diff=null without changing membership.
+
+EXAMPLES
+  ravi chats lists preview sde-cobranca --owner system:ravi --json
+  ravi chats lists preview crl_86244e77d183316cb5034a6a --json
+
+OUTPUT
+  JSON includes dryRun=true, validation, current membership, and a nullable diff. This command is read-only.
+
+ON ERROR
+  canApply=false -> inspect validation.issues, correct the selector through an approved write path, then preview again.
+
+FONTES
+  .ravi/specs/channels/chats/reading-lists/SPEC.md
+  src/chats/reading-lists.ts
+`,
+  })
+  @CommandAccess({ kind: "read", resource: "chats.lists", action: "preview", risk: "low" })
+  preview(
+    @Arg("list", { description: "List id or name" }) listRef: string,
+    @Option({ flags: "--owner <type:id>", description: "Owner scope when resolving list by name" }) owner?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const list = resolveReadingList(listRef, owner);
+    const preview = previewChatReadingListMembers(list);
+    const payload = { list, preview };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(`Reading-list preview: ${list.name} (${list.id})`);
+    console.log(`Safety: ${preview.validation.canApply ? "SAFE" : "BLOCKED"}; dry-run: yes`);
+    for (const issue of preview.validation.issues) {
+      console.log(`- ${issue.severity.toUpperCase()} ${issue.code}: ${issue.message}`);
+    }
+    if (preview.diff) {
+      console.log(
+        `Diff: eligible=${preview.diff.eligible} add=${preview.diff.added} remove=${preview.diff.removed} keep=${preview.diff.kept} preserve=${preview.diff.preserved}`,
+      );
+    } else {
+      console.log("Diff: not evaluated because the selector is unsafe or invalid.");
+    }
+    return payload;
+  }
+
+  @Scope("admin")
   @Command({ name: "create", description: "Create or restore a chat reading list" })
   @CommandAccess({ kind: "mutate", resource: "chats.lists", action: "create", risk: "medium" })
   create(
@@ -660,7 +835,25 @@ export class ChatReadingListCommands {
   }
 
   @Scope("admin")
-  @Command({ name: "recompute", description: "Materialize dynamic reading-list selector membership" })
+  @Command({
+    name: "recompute",
+    description: "Materialize dynamic reading-list selector membership",
+    helpAfter: `
+RULES HARD
+  Unsafe or invalid selectors are blocked before writes. Always review the read-only diff first.
+
+EXAMPLES
+  ravi chats lists preview <list> --owner <type:id> --json
+  ravi chats lists recompute <list> --owner <type:id> --json
+
+ON ERROR
+  Unsafe reading-list selector -> run the preview command, inspect validation.issues, and correct the selector through an approved write path.
+
+FONTES
+  .ravi/specs/channels/chats/reading-lists/SPEC.md
+  src/chats/reading-lists.ts
+`,
+  })
   @CommandAccess({ kind: "mutate", resource: "chats.lists", action: "recompute", risk: "medium" })
   recompute(
     @Arg("list", { description: "List id or name" }) listRef: string,
@@ -789,6 +982,8 @@ declareCommandReturns(ChatReadingListCommands, {
   list: commandEnvelopeReturnSchema,
   markRead: commandEnvelopeReturnSchema,
   members: commandEnvelopeReturnSchema,
+  preview: chatReadingListPreviewReturnSchema,
   recompute: chatReadingListRecomputeReturnSchema,
   remove: commandEnvelopeReturnSchema,
+  show: chatReadingListShowReturnSchema,
 });

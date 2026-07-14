@@ -7,6 +7,8 @@
 - No delta query should advance a cursor unless the call explicitly requests mark-read behavior.
 - No cursor should depend only on `message_metadata`, raw timestamp, page number, or runtime transcript offset.
 - No reading-list API should bypass chat/contact/CRM permissions.
+- No dynamic membership write should bypass the selector validation used by preview.
+- No selector should combine `match:any` with `not-has-tag` and remain applyable.
 
 Suggested scan:
 
@@ -73,6 +75,20 @@ Expected:
 - reading-list cursor creation fails or returns degraded/unavailable status
 - system does not claim reliable unread delta
 
+### Unsafe Dynamic Selector
+
+Given:
+
+- a dynamic selector uses `scope:contact`
+- `match:any` combines positive `has-tag` and negative `not-has-tag` conditions
+
+Expected:
+
+- `show` and `preview` do not write membership
+- preview returns `canApply=false`, `riskLevel=high` and `diff=null`
+- validation includes `unsafe_any_with_negative`
+- recompute rejects the selector before entering the write path
+
 ## Acceptance Gate
 
 Implementation is not complete until:
@@ -83,3 +99,5 @@ Implementation is not complete until:
 - observer processing does not consume human review state
 - cursors survive dynamic membership removal/re-entry
 - cursor anchors refer to durable ordered messages/events
+- dynamic selector preview is read-only and exposes the prospective diff
+- invalid or unsafe selectors cannot reach membership writes

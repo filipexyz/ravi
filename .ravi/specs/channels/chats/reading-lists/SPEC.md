@@ -221,6 +221,12 @@ Dynamic lists MAY use selectors such as:
 
 Dynamic membership MUST be materialized or evaluated consistently enough that cursors remain meaningful. A chat leaving a dynamic list SHOULD keep cursor history for audit and for future re-entry.
 
+Before materializing dynamic membership, Ravi MUST expose a read-only selector preview containing deterministic validation, current membership and the prospective add/remove/keep/preserve diff.
+
+An invalid selector MUST NOT be evaluated into a membership diff and MUST NOT reach the write path. In particular, `match:any` MUST NOT accept `not-has-tag` conditions: each negative branch can match almost the entire scope, so their union can silently over-expand the list. The preview MUST report this pattern as high risk with `canApply=false` and no diff.
+
+The materialization path MUST reuse the same validation gate as preview. A CLI/API caller MUST be able to inspect one list and preview it without advancing cursors or changing membership.
+
 ## CRM And Observer Use
 
 Reading lists are a natural input queue for CRM/observer work.
@@ -245,6 +251,8 @@ Suggested CLI shape:
 ravi chats lists create <name> [--owner <type:id>] [--json]
 ravi chats lists add <list> <chat> [--owner <type:id>] [--reason <text>] [--json]
 ravi chats lists remove <list> <chat> [--owner <type:id>] [--json]
+ravi chats lists show <list> [--owner <type:id>] [--json]
+ravi chats lists preview <list> [--owner <type:id>] [--json]
 ravi chats lists members <list> [--owner <type:id>] [--json]
 ravi chats lists delta <list> <chat> [--owner <type:id>] [--reader <type:id>] [--json]
 ravi chats lists mark-read <list> <chat> --message <message-id> [--owner <type:id>] [--reader <type:id>] [--json]

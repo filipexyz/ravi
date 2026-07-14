@@ -34,3 +34,22 @@ If a chat appears read in the wrong workflow:
 - Human cursor and observer cursor are separate.
 - Removing a chat from a list keeps cursor history.
 - Dynamic selector changes do not delete cursor history.
+- Selector inspection and preview are read-only.
+- `match:any` combined with `not-has-tag` is blocked before evaluation or writes.
+
+## Preview Dynamic Membership Safely
+
+1. Inspect selector and current membership without writes:
+
+   ```bash
+   ravi chats lists show <list> --owner <type:id> --json
+   ```
+
+2. Calculate the read-only prospective diff:
+
+   ```bash
+   ravi chats lists preview <list> --owner <type:id> --json
+   ```
+
+3. Continue only when `preview.validation.canApply=true` and `preview.diff` is non-null.
+4. If `validation.issues` contains `unsafe_any_with_negative`, correct the selector through an approved write path and preview again. Do not recompute the unsafe list.

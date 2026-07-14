@@ -2616,6 +2616,85 @@ export type ChatsListsMembersInput = {
 /** Return shape for `chats.lists.members`. */
 export type ChatsListsMembersReturn = Record<string, unknown>;
 
+/** Input shape for `chats.lists.preview`. */
+export type ChatsListsPreviewInput = {
+  list: string;
+  owner?: string;
+};
+
+/** Return shape for `chats.lists.preview`. */
+export type ChatsListsPreviewReturn = {
+  list: {
+    archivedAt?: number;
+    createdAt: number;
+    description?: string;
+    id: string;
+    metadata?: Record<string, unknown>;
+    mode: string;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    selector?: Record<string, unknown>;
+    updatedAt: number;
+    visibility: string;
+  };
+  preview: {
+    current: {
+      chatIds: string[];
+      preserved: number;
+      selector: number;
+      total: number;
+    };
+    diff: ({
+      added: number;
+      addedChatIds: string[];
+      eligible: number;
+      eligibleChatIds: string[];
+      kept: number;
+      keptChatIds: string[];
+      preserved: number;
+      preservedChatIds: string[];
+      removed: number;
+      removedChatIds: string[];
+    }) | null;
+    dryRun: true;
+    list: {
+      archivedAt?: number;
+      createdAt: number;
+      description?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      mode: string;
+      name: string;
+      ownerId: string;
+      ownerType: string;
+      selector?: Record<string, unknown>;
+      updatedAt: number;
+      visibility: string;
+    };
+    selector: Record<string, unknown>;
+    validation: {
+      canApply: boolean;
+      conditions: {
+        negative: number;
+        positive: number;
+        supported: number;
+        total: number;
+      };
+      issues: Array<{
+        code: string;
+        message: string;
+        path?: string;
+        severity: "error" | "warning";
+      }>;
+      match: "all" | "any";
+      riskLevel: "low" | "high";
+      scope: "contact" | "chat";
+      valid: boolean;
+    };
+  };
+};
+
 /** Input shape for `chats.lists.recompute`. */
 export type ChatsListsRecomputeInput = {
   list: string;
@@ -2678,6 +2757,55 @@ export type ChatsListsRemoveInput = {
 
 /** Return shape for `chats.lists.remove`. */
 export type ChatsListsRemoveReturn = Record<string, unknown>;
+
+/** Input shape for `chats.lists.show`. */
+export type ChatsListsShowInput = {
+  list: string;
+  owner?: string;
+};
+
+/** Return shape for `chats.lists.show`. */
+export type ChatsListsShowReturn = {
+  current: {
+    chatIds: string[];
+    preserved: number;
+    selector: number;
+    total: number;
+  };
+  list: {
+    archivedAt?: number;
+    createdAt: number;
+    description?: string;
+    id: string;
+    metadata?: Record<string, unknown>;
+    mode: string;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    selector?: Record<string, unknown>;
+    updatedAt: number;
+    visibility: string;
+  };
+  validation: {
+    canApply: boolean;
+    conditions: {
+      negative: number;
+      positive: number;
+      supported: number;
+      total: number;
+    };
+    issues: Array<{
+      code: string;
+      message: string;
+      path?: string;
+      severity: "error" | "warning";
+    }>;
+    match: "all" | "any";
+    riskLevel: "low" | "high";
+    scope: "contact" | "chat";
+    valid: boolean;
+  };
+};
 
 /** Input shape for `chats.read`. */
 export type ChatsReadInput = {

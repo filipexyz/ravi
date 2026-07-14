@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import { validateChatReadingListSelector } from "../../chats/reading-lists.js";
 import {
   dbCreateChatReadingList,
   dbGetChatMessage,
+  dbListChatReadingListMembers,
   dbUpsertChat,
   dbUpsertChatMessage,
   dbUpsertChatParticipant,
@@ -160,6 +162,17 @@ describe("ChatsCommands --json", () => {
     });
 
     const lists = new ChatReadingListCommands();
+    const previewPayload = captureJson(() => {
+      lists.preview("crm-cli-dynamic", "agent:crm", true);
+    });
+    const preview = previewPayload.preview as Record<string, unknown>;
+    const previewDiff = preview.diff as Record<string, unknown>;
+    expect(preview.dryRun).toBe(true);
+    expect((preview.validation as Record<string, unknown>).canApply).toBe(true);
+    expect(previewDiff.added).toBe(1);
+    expect(previewDiff.addedChatIds).toEqual([chat.id]);
+    expect(dbListChatReadingListMembers({ listId: (previewPayload.list as Record<string, string>).id }).total).toBe(0);
+
     const payload = captureJson(() => {
       lists.recompute("crm-cli-dynamic", "agent:crm", true);
     });
@@ -167,6 +180,163 @@ describe("ChatsCommands --json", () => {
     expect((payload.recompute as Record<string, unknown>).eligible).toBe(1);
     expect((payload.recompute as Record<string, unknown>).added).toBe(1);
     expect((payload.recompute as Record<string, unknown>).addedChatIds).toEqual([chat.id]);
+  });
+
+  it("explains and blocks match:any selectors that contain negative conditions without writing", () => {
+    const list = dbCreateChatReadingList({
+      name: "sde-cobranca-unsafe",
+      ownerType: "system",
+      ownerId: "ravi",
+      mode: "dynamic",
+      selector: {
+        scope: "contact",
+        match: "any",
+        conditions: [
+          { kind: "has-tag", tag: "cobranca:em-aberto" },
+          { kind: "has-tag", tag: "boleto:emitido" },
+          { kind: "has-tag", tag: "boleto:vence-em-2d" },
+          { kind: "has-tag", tag: "boleto:vence-hoje" },
+          { kind: "not-has-tag", tag: "sinal:optout" },
+          { kind: "not-has-tag", tag: "lifecycle:perdido" },
+          { kind: "not-has-tag", tag: "perfil:colaborador" },
+        ],
+      },
+    });
+
+    const lists = new ChatReadingListCommands();
+    const showPayload = captureJson(() => {
+      lists.show(list.id, undefined, true);
+    });
+    expect((showPayload.validation as Record<string, unknown>).canApply).toBe(false);
+
+    const previewPayload = captureJson(() => {
+      lists.preview(list.id, undefined, true);
+    });
+    const preview = previewPayload.preview as Record<string, unknown>;
+    const validation = preview.validation as Record<string, unknown>;
+    expect(validation.canApply).toBe(false);
+    expect(validation.riskLevel).toBe("high");
+    expect(preview.diff).toBeNull();
+    expect(validation.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "unsafe_any_with_negative", severity: "error", path: "match" }),
+      ]),
+    );
+    expect(() => lists.recompute(list.id, undefined, true)).toThrow(/unsafe_any_with_negative/);
+    expect(dbListChatReadingListMembers({ listId: list.id }).total).toBe(0);
+  });
+
+  it("previews a safe positive-and-exclusion selector without materializing members", () => {
+    const safeChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "5511999999912@s.whatsapp.net",
+      chatType: "dm",
+      title: "Safe billing contact",
+    });
+    const excludedChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "5511999999913@s.whatsapp.net",
+      chatType: "dm",
+      title: "Opted-out billing contact",
+    });
+    dbUpsertChatParticipant({ chatId: safeChat.id, contactId: "contact_safe", source: "test" });
+    dbUpsertChatParticipant({ chatId: excludedChat.id, contactId: "contact_excluded", source: "test" });
+    attachTagSlugsToAsset({
+      assetType: "contact",
+      assetId: "contact_safe",
+      tags: ["cobranca:em-aberto"],
+      source: "test",
+    });
+    attachTagSlugsToAsset({
+      assetType: "contact",
+      assetId: "contact_excluded",
+      tags: ["cobranca:em-aberto", "sinal:optout"],
+      source: "test",
+    });
+    const list = dbCreateChatReadingList({
+      name: "sde-cobranca-safe",
+      ownerType: "system",
+      ownerId: "ravi",
+      mode: "dynamic",
+      selector: {
+        scope: "contact",
+        match: "all",
+        conditions: [
+          { kind: "has-tag", tag: "cobranca:em-aberto" },
+          { kind: "not-has-tag", tag: "sinal:optout" },
+        ],
+      },
+    });
+
+    const lists = new ChatReadingListCommands();
+    const payload = captureJson(() => lists.preview(list.id, undefined, true));
+    const preview = payload.preview as Record<string, unknown>;
+    const diff = preview.diff as Record<string, unknown>;
+    expect((preview.validation as Record<string, unknown>).canApply).toBe(true);
+    expect(diff.eligibleChatIds).toEqual([safeChat.id]);
+    expect(diff.addedChatIds).toEqual([safeChat.id]);
+    expect(dbListChatReadingListMembers({ listId: list.id }).total).toBe(0);
+  });
+
+  it("reports malformed selector fields without evaluating membership", () => {
+    const validation = validateChatReadingListSelector({
+      scope: "account",
+      match: "xor",
+      conditions: "not-an-array",
+    });
+
+    expect(validation.canApply).toBe(false);
+    expect(validation.riskLevel).toBe("high");
+    expect(validation.issues.map((issue) => issue.code)).toEqual(
+      expect.arrayContaining([
+        "unsupported_scope",
+        "unsupported_match",
+        "invalid_conditions",
+        "no_supported_predicates",
+      ]),
+    );
+  });
+
+  it("reports unsupported, incomplete, empty and negative-only conditions", () => {
+    const unsupported = validateChatReadingListSelector({
+      scope: "contact",
+      match: "all",
+      conditions: [
+        { kind: "contains", tag: "cobranca:em-aberto" },
+        { kind: "has-tag" },
+        { kind: "not-has-tag", tag: "sinal:optout" },
+      ],
+    });
+    expect(unsupported.issues.map((issue) => issue.code)).toEqual(
+      expect.arrayContaining(["unsupported_condition_kind", "missing_condition_tag", "negative_only_selector"]),
+    );
+
+    const empty = validateChatReadingListSelector({ scope: "contact", match: "all", conditions: [] });
+    expect(empty.issues.map((issue) => issue.code)).toEqual(
+      expect.arrayContaining(["empty_conditions", "no_supported_predicates"]),
+    );
+  });
+
+  it("rejects mixed structured and legacy syntax while accepting either syntax alone", () => {
+    const mixed = validateChatReadingListSelector({
+      scope: "contact",
+      match: "all",
+      conditions: [{ kind: "has-tag", tag: "cobranca:em-aberto" }],
+      contactTags: ["boleto:emitido"],
+    });
+    expect(mixed.canApply).toBe(false);
+    expect(mixed.issues.map((issue) => issue.code)).toContain("mixed_selector_syntax");
+
+    expect(
+      validateChatReadingListSelector({
+        scope: "contact",
+        match: "all",
+        conditions: [{ kind: "has-tag", tag: "cobranca:em-aberto" }],
+      }).canApply,
+    ).toBe(true);
+    expect(validateChatReadingListSelector({ contactTags: ["cobranca:em-aberto"] }).canApply).toBe(true);
   });
 
   it("backfills provider timestamps from raw message provenance", () => {

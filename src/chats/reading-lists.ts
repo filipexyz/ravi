@@ -31,9 +31,35 @@ interface ReadingListSelectorCriteria {
   chatType?: ChatType;
 }
 
-export interface ChatReadingListRecomputeResult {
-  list: ChatReadingListRecord;
-  selector: Record<string, unknown>;
+interface NormalizedTagCondition {
+  kind: "has-tag" | "not-has-tag";
+  tag: string;
+  target: TagTarget;
+}
+
+export interface ChatReadingListSelectorIssue {
+  code: string;
+  severity: "error" | "warning";
+  message: string;
+  path?: string;
+}
+
+export interface ChatReadingListSelectorValidation {
+  valid: boolean;
+  canApply: boolean;
+  riskLevel: "low" | "high";
+  scope: TagTarget;
+  match: SelectorMatchMode;
+  conditions: {
+    total: number;
+    supported: number;
+    positive: number;
+    negative: number;
+  };
+  issues: ChatReadingListSelectorIssue[];
+}
+
+export interface ChatReadingListMembershipDiff {
   eligibleChatIds: string[];
   addedChatIds: string[];
   removedChatIds: string[];
@@ -44,6 +70,32 @@ export interface ChatReadingListRecomputeResult {
   kept: number;
   preserved: number;
   eligible: number;
+}
+
+export interface ChatReadingListPreviewResult {
+  list: ChatReadingListRecord;
+  selector: Record<string, unknown>;
+  dryRun: true;
+  validation: ChatReadingListSelectorValidation;
+  current: {
+    total: number;
+    selector: number;
+    preserved: number;
+    chatIds: string[];
+  };
+  diff: ChatReadingListMembershipDiff | null;
+}
+
+export interface ChatReadingListInspectionResult {
+  list: ChatReadingListRecord;
+  selector: Record<string, unknown>;
+  validation: ChatReadingListSelectorValidation;
+  current: ChatReadingListPreviewResult["current"];
+}
+
+export interface ChatReadingListRecomputeResult extends ChatReadingListMembershipDiff {
+  list: ChatReadingListRecord;
+  selector: Record<string, unknown>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -89,6 +141,163 @@ function normalizeTagTargets(selector: Record<string, unknown>): TagTarget[] {
   if (raw === "chat" || raw === "chats") return ["chat"];
   if (raw === "contact" || raw === "contacts") return ["contact"];
   return ["contact"];
+}
+
+function selectorScope(selector: Record<string, unknown>): TagTarget {
+  const raw = stringValue(selector.scope) ?? stringValue(selector.tagTarget) ?? stringValue(selector.tagsTarget);
+  return raw === "chat" || raw === "chats" ? "chat" : "contact";
+}
+
+const LEGACY_TAG_KEYS = [
+  "tag",
+  "tags",
+  "allTags",
+  "anyTags",
+  "contactTag",
+  "contactTags",
+  "allContactTags",
+  "anyContactTags",
+  "chatTag",
+  "chatTags",
+  "allChatTags",
+  "anyChatTags",
+] as const;
+
+function normalizeStructuredConditions(
+  selector: Record<string, unknown>,
+  issues: ChatReadingListSelectorIssue[],
+): NormalizedTagCondition[] {
+  if (!("conditions" in selector)) return [];
+  if (!Array.isArray(selector.conditions)) {
+    issues.push({
+      code: "invalid_conditions",
+      severity: "error",
+      path: "conditions",
+      message: "Selector conditions must be an array.",
+    });
+    return [];
+  }
+
+  const target = selectorScope(selector);
+  const conditions: NormalizedTagCondition[] = [];
+  selector.conditions.forEach((raw, index) => {
+    const path = `conditions[${index}]`;
+    if (!isRecord(raw)) {
+      issues.push({ code: "invalid_condition", severity: "error", path, message: `${path} must be an object.` });
+      return;
+    }
+    const kind = stringValue(raw.kind);
+    const tag = stringValue(raw.tag);
+    if (kind !== "has-tag" && kind !== "not-has-tag") {
+      issues.push({
+        code: "unsupported_condition_kind",
+        severity: "error",
+        path: `${path}.kind`,
+        message: `${path}.kind must be has-tag or not-has-tag.`,
+      });
+      return;
+    }
+    if (!tag) {
+      issues.push({
+        code: "missing_condition_tag",
+        severity: "error",
+        path: `${path}.tag`,
+        message: `${path}.tag is required.`,
+      });
+      return;
+    }
+    conditions.push({ kind, tag, target });
+  });
+  return conditions;
+}
+
+export function validateChatReadingListSelector(selectorValue: unknown): ChatReadingListSelectorValidation {
+  const selector = isRecord(selectorValue) ? selectorValue : {};
+  const issues: ChatReadingListSelectorIssue[] = [];
+  const rawScope = stringValue(selector.scope) ?? stringValue(selector.tagTarget) ?? stringValue(selector.tagsTarget);
+  const scope = selectorScope(selector);
+  if (rawScope && !["contact", "contacts", "chat", "chats"].includes(rawScope)) {
+    issues.push({
+      code: "unsupported_scope",
+      severity: "error",
+      path: "scope",
+      message: `Unsupported selector scope: ${rawScope}. Use contact or chat.`,
+    });
+  }
+
+  const rawMatch = stringValue(selector.match) ?? stringValue(selector.tagMode) ?? stringValue(selector.tagsMode);
+  const match = normalizeMatchMode(selector);
+  if (rawMatch && !["all", "and", "any", "or"].includes(rawMatch)) {
+    issues.push({
+      code: "unsupported_match",
+      severity: "error",
+      path: "match",
+      message: `Unsupported selector match mode: ${rawMatch}. Use all or any.`,
+    });
+  }
+
+  const conditions = normalizeStructuredConditions(selector, issues);
+  const positive = conditions.filter((condition) => condition.kind === "has-tag").length;
+  const negative = conditions.filter((condition) => condition.kind === "not-has-tag").length;
+  if (Array.isArray(selector.conditions) && selector.conditions.length === 0) {
+    issues.push({
+      code: "empty_conditions",
+      severity: "error",
+      path: "conditions",
+      message: "Selector conditions cannot be empty.",
+    });
+  }
+  if (conditions.length > 0 && LEGACY_TAG_KEYS.some((key) => key in selector)) {
+    issues.push({
+      code: "mixed_selector_syntax",
+      severity: "error",
+      message: "Do not mix conditions[] with legacy tag/tag-list fields in one selector.",
+    });
+  }
+  if (match === "any" && negative > 0) {
+    issues.push({
+      code: "unsafe_any_with_negative",
+      severity: "error",
+      path: "match",
+      message:
+        "match:any cannot be combined with not-has-tag: each negative branch matches almost the entire scope and can over-expand the list.",
+    });
+  }
+  if (negative > 0 && positive === 0) {
+    issues.push({
+      code: "negative_only_selector",
+      severity: "error",
+      path: "conditions",
+      message: "A selector with exclusions must include at least one positive has-tag condition.",
+    });
+  }
+
+  const criteria = selectorCriteria(selector);
+  const hasSupportedPredicates = conditions.length > 0 || hasCriteria(criteria);
+  if (!hasSupportedPredicates) {
+    issues.push({
+      code: "no_supported_predicates",
+      severity: "error",
+      message:
+        "Selector has no supported predicates. Use conditions, contactTags/tags, chatTags, contacts, chats, channel, instanceId, or chatType.",
+    });
+  }
+
+  const valid = !issues.some((issue) => issue.severity === "error");
+  return {
+    valid,
+    canApply: valid,
+    riskLevel: valid ? "low" : "high",
+    scope,
+    match,
+    conditions: {
+      total: Array.isArray(selector.conditions) ? selector.conditions.length : 0,
+      supported: conditions.length,
+      positive,
+      negative,
+    },
+    issues,
+  };
 }
 
 function addTagsByMode(
@@ -181,6 +390,14 @@ function unionSets(sets: Set<string>[]): Set<string> {
   return result;
 }
 
+function subtractSet(left: Set<string>, right: Set<string>): Set<string> {
+  const result = new Set<string>();
+  for (const value of left) {
+    if (!right.has(value)) result.add(value);
+  }
+  return result;
+}
+
 function taggedAssetIds(assetType: "contact" | "chat", tags: string[], mode: SelectorMatchMode): Set<string> | null {
   const normalizedTags = [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))];
   if (normalizedTags.length === 0) return null;
@@ -229,13 +446,31 @@ function chatsForFilters(criteria: ReadingListSelectorCriteria): Set<string> | n
   return result;
 }
 
+function chatsForTagConditions(conditions: NormalizedTagCondition[], match: SelectorMatchMode): Set<string> | null {
+  const positives = conditions.filter((condition) => condition.kind === "has-tag");
+  if (positives.length === 0) return null;
+  const positiveSets = positives.map((condition) => {
+    const assetIds = taggedAssetIds(condition.target, [condition.tag], "all") ?? new Set<string>();
+    return condition.target === "contact" ? chatsForContactIds(assetIds) : chatsForChatIds(assetIds);
+  });
+  const included =
+    match === "any"
+      ? unionSets(positiveSets)
+      : positiveSets.slice(1).reduce((acc, set) => intersectSets(acc, set), positiveSets[0] ?? new Set<string>());
+
+  const excludedSets = conditions
+    .filter((condition) => condition.kind === "not-has-tag")
+    .map((condition) => {
+      const assetIds = taggedAssetIds(condition.target, [condition.tag], "all") ?? new Set<string>();
+      return condition.target === "contact" ? chatsForContactIds(assetIds) : chatsForChatIds(assetIds);
+    });
+  return subtractSet(included, unionSets(excludedSets));
+}
+
 function eligibleChatIdsForSelector(selector: Record<string, unknown>): string[] {
   const criteria = selectorCriteria(selector);
-  if (!hasCriteria(criteria)) {
-    throw new Error(
-      "Reading list selector has no supported predicates. Use contactTags/tags, chatTags, contacts, chats, channel, instanceId, or chatType.",
-    );
-  }
+  const issues: ChatReadingListSelectorIssue[] = [];
+  const conditions = normalizeStructuredConditions(selector, issues);
 
   const sets: Set<string>[] = [];
   if (criteria.chatIds.length > 0) sets.push(chatsForChatIds(criteria.chatIds));
@@ -254,6 +489,9 @@ function eligibleChatIdsForSelector(selector: Record<string, unknown>): string[]
   const filteredChats = chatsForFilters(criteria);
   if (filteredChats) sets.push(filteredChats);
 
+  const conditionChats = chatsForTagConditions(conditions, normalizeMatchMode(selector));
+  if (conditionChats) sets.push(conditionChats);
+
   const eligible = sets.slice(1).reduce((acc, set) => intersectSets(acc, set), sets[0] ?? new Set<string>());
   return [...eligible].sort();
 }
@@ -271,33 +509,103 @@ function activeReadingListMembers(listId: string): ActiveReadingListMemberRow[] 
     .all(listId) as ActiveReadingListMemberRow[];
 }
 
-export function recomputeChatReadingListMembers(list: ChatReadingListRecord): ChatReadingListRecomputeResult {
+function membershipDiff(
+  eligibleChatIds: string[],
+  activeRows: ActiveReadingListMemberRow[],
+): ChatReadingListMembershipDiff {
+  const eligible = new Set(eligibleChatIds);
+  const activeByChatId = new Map(activeRows.map((row) => [row.chat_id, row]));
+  const addedChatIds = eligibleChatIds.filter((chatId) => !activeByChatId.has(chatId)).sort();
+  const removedChatIds = activeRows
+    .filter((row) => row.source === "selector" && !eligible.has(row.chat_id))
+    .map((row) => row.chat_id)
+    .sort();
+  const keptChatIds = activeRows
+    .filter((row) => row.source === "selector" && eligible.has(row.chat_id))
+    .map((row) => row.chat_id)
+    .sort();
+  const preservedChatIds = activeRows
+    .filter((row) => row.source !== "selector")
+    .map((row) => row.chat_id)
+    .sort();
+  return {
+    eligibleChatIds,
+    addedChatIds,
+    removedChatIds,
+    keptChatIds,
+    preservedChatIds,
+    added: addedChatIds.length,
+    removed: removedChatIds.length,
+    kept: keptChatIds.length,
+    preserved: preservedChatIds.length,
+    eligible: eligibleChatIds.length,
+  };
+}
+
+export function inspectChatReadingList(list: ChatReadingListRecord): ChatReadingListInspectionResult {
+  const selector = isRecord(list.selector) ? list.selector : {};
+  const validation = validateChatReadingListSelector(selector);
   const mode = list.mode.trim().toLowerCase();
   if (mode !== "dynamic" && mode !== "hybrid") {
-    throw new Error(`Reading list ${list.name} is ${list.mode}; recompute requires dynamic or hybrid mode.`);
+    validation.issues.push({
+      code: "unsupported_list_mode",
+      severity: "error",
+      path: "mode",
+      message: `Reading list ${list.name} is ${list.mode}; preview/recompute requires dynamic or hybrid mode.`,
+    });
+    validation.valid = false;
+    validation.canApply = false;
+    validation.riskLevel = "high";
   }
-  const selector = isRecord(list.selector) ? list.selector : {};
-  const eligibleChatIds = eligibleChatIdsForSelector(selector);
-  const eligible = new Set(eligibleChatIds);
+
+  const activeRows = activeReadingListMembers(list.id);
+  const selectorRows = activeRows.filter((row) => row.source === "selector");
+  const preservedRows = activeRows.filter((row) => row.source !== "selector");
+  return {
+    list,
+    selector,
+    validation,
+    current: {
+      total: activeRows.length,
+      selector: selectorRows.length,
+      preserved: preservedRows.length,
+      chatIds: activeRows.map((row) => row.chat_id).sort(),
+    },
+  };
+}
+
+export function previewChatReadingListMembers(list: ChatReadingListRecord): ChatReadingListPreviewResult {
+  const inspection = inspectChatReadingList(list);
+  const activeRows = activeReadingListMembers(list.id);
+  return {
+    ...inspection,
+    dryRun: true,
+    diff: inspection.validation.canApply
+      ? membershipDiff(eligibleChatIdsForSelector(inspection.selector), activeRows)
+      : null,
+  };
+}
+
+export function recomputeChatReadingListMembers(list: ChatReadingListRecord): ChatReadingListRecomputeResult {
+  const preview = previewChatReadingListMembers(list);
+  if (!preview.validation.canApply || !preview.diff) {
+    const reasons = preview.validation.issues.map((issue) => `${issue.code}: ${issue.message}`).join("; ");
+    throw new Error(
+      `Unsafe reading-list selector; recompute blocked. ${reasons} Run ravi chats lists preview ${list.id} --json before applying.`,
+    );
+  }
+  const selector = preview.selector;
+  const eligibleChatIds = preview.diff.eligibleChatIds;
   const database = getDb();
   const now = Date.now();
 
-  const result = executeWrite(
+  const appliedDiff = executeWrite(
     database,
     () => {
-      const activeRows = activeReadingListMembers(list.id);
-      const activeByChatId = new Map(activeRows.map((row) => [row.chat_id, row]));
-      const addedChatIds: string[] = [];
-      const removedChatIds: string[] = [];
-      const keptChatIds: string[] = [];
-      const preservedChatIds: string[] = [];
-
-      for (const chatId of eligibleChatIds) {
-        const active = activeByChatId.get(chatId);
-        if (active) {
-          if (active.source === "selector") keptChatIds.push(chatId);
-          continue;
-        }
+      // Membership may change after a reviewed preview. Re-read it inside the
+      // write transaction while keeping the already validated eligible set.
+      const diff = membershipDiff(eligibleChatIds, activeReadingListMembers(list.id));
+      for (const chatId of diff.addedChatIds) {
         const id = `crlm_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
         database
           .prepare(
@@ -309,31 +617,20 @@ export function recomputeChatReadingListMembers(list: ChatReadingListRecord): Ch
           `,
           )
           .run(id, list.id, chatId, JSON.stringify({ selector, recomputedAt: now }), now);
-        addedChatIds.push(chatId);
       }
 
-      for (const row of activeRows) {
-        if (row.source !== "selector") {
-          preservedChatIds.push(row.chat_id);
-          continue;
-        }
-        if (eligible.has(row.chat_id)) continue;
+      for (const chatId of diff.removedChatIds) {
         database
-          .prepare("UPDATE chat_reading_list_members SET removed_at = ? WHERE id = ? AND removed_at IS NULL")
-          .run(now, row.id);
-        removedChatIds.push(row.chat_id);
+          .prepare(
+            "UPDATE chat_reading_list_members SET removed_at = ? WHERE list_id = ? AND chat_id = ? AND source = 'selector' AND removed_at IS NULL",
+          )
+          .run(now, list.id, chatId);
       }
 
-      if (addedChatIds.length > 0 || removedChatIds.length > 0) {
+      if (diff.added > 0 || diff.removed > 0) {
         database.prepare("UPDATE chat_reading_lists SET updated_at = ? WHERE id = ?").run(now, list.id);
       }
-
-      return {
-        addedChatIds: addedChatIds.sort(),
-        removedChatIds: removedChatIds.sort(),
-        keptChatIds: keptChatIds.sort(),
-        preservedChatIds: preservedChatIds.sort(),
-      };
+      return diff;
     },
     { label: "chats:recomputeReadingListMembers" },
   );
@@ -341,12 +638,6 @@ export function recomputeChatReadingListMembers(list: ChatReadingListRecord): Ch
   return {
     list,
     selector,
-    eligibleChatIds,
-    ...result,
-    added: result.addedChatIds.length,
-    removed: result.removedChatIds.length,
-    kept: result.keptChatIds.length,
-    preserved: result.preservedChatIds.length,
-    eligible: eligibleChatIds.length,
+    ...appliedDiff,
   };
 }
