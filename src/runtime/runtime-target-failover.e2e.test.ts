@@ -359,6 +359,180 @@ describe("runtime target failover E2E", () => {
     }
   });
 
+  it("preserves startup quota through exhaustion and clears it after successful failover", async () => {
+    const credentialSecretEnv = "RAVI_TEST_STARTUP_QUOTA_KEY";
+    const previousCredentialSecret = process.env[credentialSecretEnv];
+    process.env[credentialSecretEnv] = "sk-test_startup_quota_secret";
+    createRuntimeCredential({
+      id: "rcred_startup_quota_primary",
+      label: "Startup quota primary",
+      runtimeProvider: primary,
+      priority: 100,
+      bindings: [
+        {
+          sourceKind: "env",
+          targetKind: "env",
+          targetName: "SYNTHETIC_API_KEY",
+          secretRef: `env:${credentialSecretEnv}`,
+          sourceHint: credentialSecretEnv,
+          sensitive: true,
+          remoteForward: false,
+        },
+      ],
+    });
+    let primaryStarts = 0;
+    let secondaryStarts = 0;
+    registerRuntimeProvider(primary, () => ({
+      id: primary,
+      getCapabilities: () => capabilities,
+      startSession: () => {
+        primaryStarts++;
+        throw Object.assign(new Error("Exceeded your current quota during startup"), { status: 429 });
+      },
+    }));
+    registerRuntimeProvider(secondary, () => ({
+      id: secondary,
+      getCapabilities: () => capabilities,
+      startSession: () => {
+        secondaryStarts++;
+        throw Object.assign(new Error("secondary startup outage"), { status: 503 });
+      },
+    }));
+    const agent = configStore.getConfig().agents.main;
+    if (!agent) throw new Error("default test agent missing");
+    grantRuntimeTargets(agent);
+    agent.defaults = {
+      ...(agent.defaults ?? {}),
+      runtimeTargetPolicy: {
+        id: "startup-quota-exhaustion-policy",
+        strategy: "ordered",
+        maxAttemptsPerTarget: 1,
+        maxCredentialRecoveryAttemptsPerTarget: 0,
+        targets: [
+          {
+            id: "primary",
+            runtimeProvider: primary,
+            model: "primary-model",
+            credentialRequirements: { requireManaged: true, credentialIds: ["rcred_startup_quota_primary"] },
+          },
+          { id: "secondary", runtimeProvider: secondary, model: "secondary-model" },
+        ],
+      },
+    };
+    dbUpdateAgent(agent.id, { defaults: agent.defaults });
+    const sessionName = "target-startup-quota-exhaustion";
+    const created = dbCreateTask({
+      title: "Startup quota target exhaustion",
+      instructions: "Block only after target policy exhausts.",
+      createdBy: "test",
+    });
+    dbDispatchTask(created.task.id, {
+      agentId: "main",
+      sessionName,
+      assignedBy: "test",
+    });
+    getOrCreateSession(sessionName, "main", stateDir ?? "/tmp", { name: sessionName });
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "startup-quota-exhaustion",
+      maxConcurrentSessions: 2,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      getConfigModel: () => "fallback-model",
+    });
+    try {
+      await dispatcher.startStreamingSession(sessionName, {
+        prompt: "exhaust startup quota policy",
+        _agentId: "main",
+        taskBarrierTaskId: created.task.id,
+      });
+      for (let attempt = 0; attempt < 200; attempt++) {
+        if (dbGetTask(created.task.id)?.status === "blocked") break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(primaryStarts).toBe(1);
+      expect(secondaryStarts).toBe(1);
+      expect(dbGetTask(created.task.id)?.status).toBe("blocked");
+      expect(readLearningLoopCadenceState(getSession(sessionName)?.runtimeSessionParams)?.terminalTurnCount).toBe(1);
+
+      primaryStarts = 0;
+      secondaryStarts = 0;
+      registerRuntimeProvider(secondary, () =>
+        provider(
+          secondary,
+          [
+            { type: "assistant.message", text: "startup quota recovered" },
+            { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 1 } },
+          ],
+          () => {
+            secondaryStarts++;
+          },
+        ),
+      );
+      const recoveredSessionName = "target-startup-quota-recovered";
+      const recovered = dbCreateTask({
+        title: "Startup quota target recovery",
+        instructions: "Remain active when the fallback target succeeds.",
+        createdBy: "test",
+      });
+      dbDispatchTask(recovered.task.id, {
+        agentId: "main",
+        sessionName: recoveredSessionName,
+        assignedBy: "test",
+      });
+      getOrCreateSession(recoveredSessionName, "main", stateDir ?? "/tmp", { name: recoveredSessionName });
+      await dispatcher.startStreamingSession(recoveredSessionName, {
+        prompt: "recover startup quota policy",
+        _agentId: "main",
+        taskBarrierTaskId: recovered.task.id,
+      });
+      for (let attempt = 0; attempt < 200; attempt++) {
+        const cadence = readLearningLoopCadenceState(getSession(recoveredSessionName)?.runtimeSessionParams);
+        if (cadence?.terminalTurnCount === 1) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(primaryStarts).toBe(1);
+      expect(secondaryStarts).toBe(1);
+      expect(dbGetTask(recovered.task.id)?.status).toBe("in_progress");
+      expect(
+        readLearningLoopCadenceState(getSession(recoveredSessionName)?.runtimeSessionParams)?.terminalTurnCount,
+      ).toBe(1);
+
+      const noPolicyDefaults = { ...(agent.defaults ?? {}) };
+      delete noPolicyDefaults.runtimeTargetPolicy;
+      agent.defaults = noPolicyDefaults;
+      dbUpdateAgent(agent.id, { defaults: agent.defaults });
+      primaryStarts = 0;
+      const noPolicySessionName = "startup-quota-without-policy";
+      const noPolicyTask = dbCreateTask({
+        title: "Startup quota without target policy",
+        instructions: "Block immediately because there is no recovery policy.",
+        createdBy: "test",
+      });
+      dbDispatchTask(noPolicyTask.task.id, {
+        agentId: "main",
+        sessionName: noPolicySessionName,
+        assignedBy: "test",
+      });
+      getOrCreateSession(noPolicySessionName, "main", stateDir ?? "/tmp", { name: noPolicySessionName });
+      await dispatcher.startStreamingSession(noPolicySessionName, {
+        prompt: "block startup quota immediately",
+        _agentId: "main",
+        _runtimeProviderId: primary,
+        taskBarrierTaskId: noPolicyTask.task.id,
+      });
+      for (let attempt = 0; attempt < 200; attempt++) {
+        if (dbGetTask(noPolicyTask.task.id)?.status === "blocked") break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(primaryStarts).toBe(1);
+      expect(dbGetTask(noPolicyTask.task.id)?.status).toBe("blocked");
+    } finally {
+      dispatcher.shutdownAll();
+      if (previousCredentialSecret === undefined) delete process.env[credentialSecretEnv];
+      else process.env[credentialSecretEnv] = previousCredentialSecret;
+    }
+  });
+
   it("buffers a target response until success so a later failure cannot emit twice", async () => {
     registerRuntimeProvider(primary, () =>
       provider(primary, [

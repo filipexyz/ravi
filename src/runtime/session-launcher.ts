@@ -575,6 +575,23 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       credentialSignal.retryableByCredential === true || normalizedFailureScope === "credential";
     const structuredTargetFailure =
       normalizedFailureScope === "target" || (failureStatus !== undefined && failureStatus >= 500);
+    const taskBoundQuota =
+      credentialSignal.kind === "quota_exhausted" && Boolean(streamingSession.currentTaskBarrierTaskId);
+    if (taskBoundQuota && streamingSession.currentTaskBarrierTaskId) {
+      if (runtimeTargetPolicy && runtimeTargetState && runtimeTarget) {
+        runtimeTargetState.pendingTaskQuota = {
+          taskId: streamingSession.currentTaskBarrierTaskId,
+          error: errorMessage,
+        };
+      } else {
+        await blockTaskForProviderQuota({
+          taskId: streamingSession.currentTaskBarrierTaskId,
+          agentId: agent.id,
+          sessionName,
+          error: errorMessage,
+        });
+      }
+    }
     completeRuntimeCredentialAttempt(runtimeCredentialAttempt?.attemptId, {
       status: structuredCredentialFailure ? "failed" : "abandoned",
       ...(structuredCredentialFailure ? { signal: credentialSignal } : {}),
