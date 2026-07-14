@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "ed358f6a8597c75b"
+    "version": "ae1787fcbd424ab7"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -61644,14 +61644,18 @@
                 "properties": {
                   "agent": {
                     "description": "Agent whose runtime target policy should be removed",
+                    "minLength": 1,
                     "type": "string"
                   }
                 },
+                "required": [
+                  "agent"
+                ],
                 "type": "object"
               }
             }
           },
-          "required": false
+          "required": true
         },
         "responses": {
           "200": {
@@ -61663,6 +61667,7 @@
                     "action": {
                       "enum": [
                         "set",
+                        "reorder",
                         "clear"
                       ],
                       "type": "string"
@@ -61864,6 +61869,7 @@
                 "properties": {
                   "agent": {
                     "description": "Agent whose defaults should be evaluated",
+                    "minLength": 1,
                     "type": "string"
                   },
                   "sessionPolicyJson": {
@@ -61875,11 +61881,14 @@
                     "type": "string"
                   }
                 },
+                "required": [
+                  "agent"
+                ],
                 "type": "object"
               }
             }
           },
-          "required": false
+          "required": true
         },
         "responses": {
           "200": {
@@ -61893,6 +61902,10 @@
                     },
                     "enabled": {
                       "type": "boolean"
+                    },
+                    "evaluation": {
+                      "const": "stateless_preflight",
+                      "type": "string"
                     },
                     "policyId": {
                       "anyOf": [
@@ -61975,6 +61988,7 @@
                   },
                   "required": [
                     "agentId",
+                    "evaluation",
                     "enabled",
                     "source",
                     "provenance",
@@ -62012,9 +62026,9 @@
         ]
       }
     },
-    "/api/v1/runtime/targets/set": {
+    "/api/v1/runtime/targets/reorder": {
       "post": {
-        "operationId": "runtime.targets.set",
+        "operationId": "runtime.targets.reorder",
         "requestBody": {
           "content": {
             "application/json": {
@@ -62022,23 +62036,25 @@
                 "additionalProperties": false,
                 "properties": {
                   "agent": {
-                    "description": "Agent whose opt-in runtime target policy should change",
+                    "description": "Agent whose existing runtime target policy should be reordered",
+                    "minLength": 1,
                     "type": "string"
                   },
                   "order": {
                     "description": "Comma-separated exact permutation of stable ids from runtime targets show",
-                    "type": "string"
-                  },
-                  "policyJson": {
-                    "description": "Complete runtime target policy as strict JSON",
+                    "minLength": 1,
                     "type": "string"
                   }
                 },
+                "required": [
+                  "order",
+                  "agent"
+                ],
                 "type": "object"
               }
             }
           },
-          "required": false
+          "required": true
         },
         "responses": {
           "200": {
@@ -62050,6 +62066,238 @@
                     "action": {
                       "enum": [
                         "set",
+                        "reorder",
+                        "clear"
+                      ],
+                      "type": "string"
+                    },
+                    "agentId": {
+                      "type": "string"
+                    },
+                    "changed": {
+                      "type": "boolean"
+                    },
+                    "inspectCommand": {
+                      "type": "string"
+                    },
+                    "policy": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "circuitBreakerThreshold": {
+                              "type": "number"
+                            },
+                            "cooldownMs": {
+                              "type": "number"
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "maxAttemptsPerTarget": {
+                              "type": "number"
+                            },
+                            "maxCredentialRecoveryAttemptsPerTarget": {
+                              "type": "number"
+                            },
+                            "strategy": {
+                              "enum": [
+                                "ordered",
+                                "health-aware"
+                              ],
+                              "type": "string"
+                            },
+                            "targets": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "credentialRequirements": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "authMethods": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "credentialIds": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "requireManaged": {
+                                        "type": "boolean"
+                                      },
+                                      "sessionCompatibilityKey": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "type": "object"
+                                  },
+                                  "effort": {
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "model": {
+                                    "type": "string"
+                                  },
+                                  "modelPreset": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "id": {
+                                        "type": "string"
+                                      },
+                                      "version": {
+                                        "type": "number"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "version"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "requiredCapabilities": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "runtimeProvider": {
+                                    "type": "string"
+                                  },
+                                  "thinking": {
+                                    "enum": [
+                                      "off",
+                                      "normal",
+                                      "verbose"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "runtimeProvider",
+                                  "model"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "strategy",
+                            "targets",
+                            "maxAttemptsPerTarget"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "preservedDefaultKeys": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "previousPolicyId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "action",
+                    "changed",
+                    "agentId",
+                    "policy",
+                    "previousPolicyId",
+                    "preservedDefaultKeys",
+                    "inspectCommand"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Atomically reorder an existing runtime target policy by stable target ids",
+        "tags": [
+          "runtime"
+        ]
+      }
+    },
+    "/api/v1/runtime/targets/set": {
+      "post": {
+        "operationId": "runtime.targets.set",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "agent": {
+                    "description": "Agent whose opt-in runtime target policy should change",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "policyJson": {
+                    "description": "Complete runtime target policy as strict JSON",
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "policyJson",
+                  "agent"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "action": {
+                      "enum": [
+                        "set",
+                        "reorder",
                         "clear"
                       ],
                       "type": "string"
@@ -62251,14 +62499,18 @@
                 "properties": {
                   "agent": {
                     "description": "Agent whose configured policy should be shown",
+                    "minLength": 1,
                     "type": "string"
                   }
                 },
+                "required": [
+                  "agent"
+                ],
                 "type": "object"
               }
             }
           },
-          "required": false
+          "required": true
         },
         "responses": {
           "200": {

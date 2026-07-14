@@ -9878,12 +9878,12 @@ export type RuntimePresetsShowReturn = {
 
 /** Input shape for `runtime.targets.clear`. */
 export type RuntimeTargetsClearInput = {
-  agent?: string;
+  agent: string;
 };
 
 /** Return shape for `runtime.targets.clear`. */
 export type RuntimeTargetsClearReturn = {
-  action: "set" | "clear";
+  action: "set" | "reorder" | "clear";
   agentId: string;
   changed: boolean;
   inspectCommand: string;
@@ -9919,7 +9919,7 @@ export type RuntimeTargetsClearReturn = {
 
 /** Input shape for `runtime.targets.explain`. */
 export type RuntimeTargetsExplainInput = {
-  agent?: string;
+  agent: string;
   sessionPolicyJson?: string;
   taskProfile?: string;
 };
@@ -9928,6 +9928,7 @@ export type RuntimeTargetsExplainInput = {
 export type RuntimeTargetsExplainReturn = {
   agentId: string;
   enabled: boolean;
+  evaluation: "stateless_preflight";
   policyId: string | null;
   provenance: string | null;
   rejected: Array<{
@@ -9943,16 +9944,57 @@ export type RuntimeTargetsExplainReturn = {
   source: "session_override" | "task_profile" | "agent_default" | "none";
 };
 
+/** Input shape for `runtime.targets.reorder`. */
+export type RuntimeTargetsReorderInput = {
+  agent: string;
+  order: string;
+};
+
+/** Return shape for `runtime.targets.reorder`. */
+export type RuntimeTargetsReorderReturn = {
+  action: "set" | "reorder" | "clear";
+  agentId: string;
+  changed: boolean;
+  inspectCommand: string;
+  policy: ({
+    circuitBreakerThreshold?: number;
+    cooldownMs?: number;
+    id: string;
+    maxAttemptsPerTarget: number;
+    maxCredentialRecoveryAttemptsPerTarget?: number;
+    strategy: "ordered" | "health-aware";
+    targets: Array<{
+      credentialRequirements?: {
+        authMethods?: string[];
+        credentialIds?: string[];
+        requireManaged?: boolean;
+        sessionCompatibilityKey?: string;
+      };
+      effort?: string;
+      id: string;
+      model: string;
+      modelPreset?: {
+        id: string;
+        version: number;
+      };
+      requiredCapabilities?: string[];
+      runtimeProvider: string;
+      thinking?: "off" | "normal" | "verbose";
+    }>;
+  }) | null;
+  preservedDefaultKeys: string[];
+  previousPolicyId: string | null;
+};
+
 /** Input shape for `runtime.targets.set`. */
 export type RuntimeTargetsSetInput = {
-  agent?: string;
-  order?: string;
-  policyJson?: string;
+  agent: string;
+  policyJson: string;
 };
 
 /** Return shape for `runtime.targets.set`. */
 export type RuntimeTargetsSetReturn = {
-  action: "set" | "clear";
+  action: "set" | "reorder" | "clear";
   agentId: string;
   changed: boolean;
   inspectCommand: string;
@@ -9988,7 +10030,7 @@ export type RuntimeTargetsSetReturn = {
 
 /** Input shape for `runtime.targets.show`. */
 export type RuntimeTargetsShowInput = {
-  agent?: string;
+  agent: string;
 };
 
 /** Return shape for `runtime.targets.show`. */

@@ -1,4 +1,4 @@
-import { describe, expect, it, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { Command as CommanderCommand } from "commander";
 import { configStore } from "../../config-store.js";
 import { getDb } from "../../router/router-db.js";
@@ -14,39 +14,49 @@ import {
   getReturnsMetadata,
 } from "../decorators.js";
 import { runWithContext } from "../context.js";
+import { createSdkTools } from "../tool-definitions.js";
 import { registerCommands } from "../registry.js";
-import { extractTools } from "../tools-export.js";
+import { buildRegistry } from "../registry-snapshot.js";
+import { extractTools, generateManifest } from "../tools-export.js";
+import { dispatch } from "../../sdk/gateway/dispatcher.js";
+import { buildInputSchema } from "../../sdk/client-codegen/registry-shape.js";
 
+const emitConfigChangedMock = mock(async () => {});
 mock.module("../../nats.js", () => ({
-  nats: { emit: mock(async () => {}) },
+  nats: { emit: emitConfigChangedMock },
 }));
 
 const {
   buildRuntimeTargetPolicyDefaults,
   parseRuntimeTargetPolicyJson,
   reorderRuntimeTargetPolicy,
+  reorderRuntimeTargetPolicyDocument,
   RuntimeTargetsCommands,
 } = await import("./runtime-targets.js");
 
 describe("runtime targets CLI", () => {
+  beforeEach(() => {
+    emitConfigChangedMock.mockClear();
+  });
   it("is discoverable as nested CLI help and typed tools", () => {
     const program = new CommanderCommand();
     registerCommands(program, [RuntimeTargetsCommands]);
     const runtime = program.commands.find((entry) => entry.name() === "runtime");
     const targets = runtime?.commands.find((entry) => entry.name() === "targets");
-    const setCommand = targets?.commands.find((entry) => entry.name() === "set");
-    let setHelp = "";
-    setCommand?.configureOutput({ writeOut: (value) => (setHelp += value) });
-    setCommand?.outputHelp();
+    const reorderCommand = targets?.commands.find((entry) => entry.name() === "reorder");
+    let reorderHelp = "";
+    reorderCommand?.configureOutput({ writeOut: (value) => (reorderHelp += value) });
+    reorderCommand?.outputHelp();
 
-    expect(targets?.commands.map((entry) => entry.name())).toEqual(["show", "explain", "set", "clear"]);
+    expect(targets?.commands.map((entry) => entry.name())).toEqual(["show", "explain", "set", "reorder", "clear"]);
     expect(targets?.helpInformation()).toContain("show");
-    expect(setHelp).toContain("--order");
-    expect(setHelp).toContain("RULES HARD");
+    expect(reorderHelp).toContain("--order");
+    expect(reorderHelp).toContain("RULES HARD");
     expect(extractTools([RuntimeTargetsCommands]).map((tool) => tool.name)).toEqual([
       "runtime_targets_show",
       "runtime_targets_explain",
       "runtime_targets_set",
+      "runtime_targets_reorder",
       "runtime_targets_clear",
     ]);
   });
@@ -115,6 +125,7 @@ describe("runtime targets CLI", () => {
         }),
       );
 
+      expect(result.evaluation).toBe("stateless_preflight");
       expect(result.source).toBe("session_override");
       expect(result.provenance).toBe("session.runtimeTargetPolicy");
       expect(result.selectedTarget).toBeNull();
@@ -131,9 +142,9 @@ describe("runtime targets CLI", () => {
     }
   });
 
-  it("publishes typed show, set and clear commands with JSON output", () => {
+  it("publishes typed show, set, reorder and clear commands with JSON output", () => {
     const commands = getCommandsMetadata(RuntimeTargetsCommands);
-    for (const name of ["show", "set", "clear"]) {
+    for (const name of ["show", "set", "reorder", "clear"]) {
       const command = commands.find((entry) => entry.name === name);
       expect(command && getReturnsMetadata(RuntimeTargetsCommands).get(command.method)).toBeDefined();
       expect(command && getCommandAccessMetadata(RuntimeTargetsCommands).get(command.method)).toMatchObject({
@@ -145,13 +156,41 @@ describe("runtime targets CLI", () => {
           getOptionsMetadata(new RuntimeTargetsCommands(), command.method).some((option) => option.flags === "--json"),
       ).toBe(true);
     }
-    const set = commands.find((entry) => entry.name === "set");
+    const reorder = commands.find((entry) => entry.name === "reorder");
     expect(
-      set &&
-        getOptionsMetadata(new RuntimeTargetsCommands(), set.method).some(
+      reorder &&
+        getOptionsMetadata(new RuntimeTargetsCommands(), reorder.method).some(
           (option) => option.flags === "--order <target-ids>",
         ),
     ).toBe(true);
+  });
+
+  it("publishes required remote inputs and rejects invalid bodies as 400 validation errors", async () => {
+    const registry = buildRegistry([RuntimeTargetsCommands]);
+    const show = registry.commands.find((entry) => entry.fullName === "runtime.targets.show")!;
+    const set = registry.commands.find((entry) => entry.fullName === "runtime.targets.set")!;
+    const reorder = registry.commands.find((entry) => entry.fullName === "runtime.targets.reorder")!;
+
+    expect(buildInputSchema(show).required).toEqual(["agent"]);
+    expect(buildInputSchema(set).required).toEqual(["agent", "policyJson"]);
+    expect(buildInputSchema(reorder).required).toEqual(["agent", "order"]);
+
+    const tools = extractTools([RuntimeTargetsCommands]);
+    const setManifest = generateManifest(tools).find((entry) => entry.name === "runtime_targets_set")!;
+    const reorderTool = createSdkTools([RuntimeTargetsCommands]).find(
+      (entry) => entry.name === "runtime_targets_reorder",
+    )!;
+    expect(
+      setManifest.parameters
+        .filter((parameter) => parameter.required)
+        .map((parameter) => parameter.name)
+        .sort(),
+    ).toEqual(["agent", "policyJson"]);
+    expect(reorderTool.inputSchema.required.sort()).toEqual(["agent", "order"]);
+
+    expect((await dispatch(show, {}, {})).response.status).toBe(400);
+    expect((await dispatch(set, { agent: "main", policyJson: "{}", order: "a" }, {})).response.status).toBe(400);
+    expect((await dispatch(reorder, { agent: "main", order: "   " }, {})).response.status).toBe(400);
   });
 
   it("sets and clears only runtimeTargetPolicy while preserving unrelated defaults", () => {
@@ -199,6 +238,24 @@ describe("runtime targets CLI", () => {
       targets: [...policy.targets].sort((a, b) => a.id.localeCompare(b.id)),
     });
     expect(policy.targets.map((target) => target.id)).toEqual(["claude-main", "pi-main", "codex-live"]);
+  });
+
+  it("reorders the raw persisted document without materializing optional policy defaults", () => {
+    const document = {
+      id: "legacy-minimal",
+      strategy: "ordered",
+      targets: [
+        { id: "a", runtimeProvider: "claude", model: "sonnet" },
+        { id: "b", runtimeProvider: "codex", model: "gpt-5", requiredCapabilities: ["images"] },
+      ],
+      maxAttemptsPerTarget: 1,
+    };
+    const reordered = reorderRuntimeTargetPolicyDocument(document, "b,a");
+
+    expect(reordered.document).toEqual({ ...document, targets: [document.targets[1], document.targets[0]] });
+    expect(reordered.document).not.toHaveProperty("cooldownMs");
+    expect(reordered.document).not.toHaveProperty("circuitBreakerThreshold");
+    expect(document.targets.map((target) => target.id)).toEqual(["a", "b"]);
   });
 
   it("rejects partial, duplicate, unknown and empty reorder input", () => {
@@ -283,6 +340,7 @@ describe("runtime targets CLI", () => {
         }),
       );
       expect(result.changed).toBe(true);
+      expect(emitConfigChangedMock).toHaveBeenCalledTimes(1);
       expect(getAgent("main")?.defaults).toMatchObject({
         locale: "pt-BR",
         heartbeat: { enabled: true },
@@ -293,7 +351,20 @@ describe("runtime targets CLI", () => {
         order: ["primary"],
         policy: { id: "cli-persisted-policy" },
       });
+      expect(
+        commands.set(
+          "main",
+          JSON.stringify({
+            id: "cli-persisted-policy",
+            strategy: "ordered",
+            targets: [{ id: "primary", runtimeProvider: "codex", model: "gpt-5" }],
+            maxAttemptsPerTarget: 1,
+          }),
+        ).changed,
+      ).toBe(false);
+      expect(emitConfigChangedMock).toHaveBeenCalledTimes(1);
       commands.clear("main");
+      expect(emitConfigChangedMock).toHaveBeenCalledTimes(2);
       expect(getAgent("main")?.defaults).toEqual({ locale: "pt-BR", heartbeat: { enabled: true } });
       expect(commands.show("main")).toMatchObject({ enabled: false, order: [], policy: null });
     } finally {
@@ -320,29 +391,34 @@ describe("runtime targets CLI", () => {
           cooldownMs: 30_000,
         }),
       );
+      dbUpdateAgent("main", {
+        defaults: { ...getAgent("main")?.defaults, observerDefaults: { version: 2 } },
+      });
       const originalDefaults = structuredClone(getAgent("main")?.defaults);
 
-      expect(commands.set("main", undefined, "codex-live,claude-main,pi-main")).toMatchObject({
+      expect(commands.reorder("main", "codex-live,claude-main,pi-main")).toMatchObject({
         changed: true,
         policy: { id: "reorder-live", cooldownMs: 30_000 },
       });
       expect(commands.show("main").order).toEqual(["codex-live", "claude-main", "pi-main"]);
-      expect(commands.set("main", undefined, "claude-main,pi-main,codex-live").changed).toBe(true);
+      expect(commands.reorder("main", "claude-main,pi-main,codex-live").changed).toBe(true);
       expect(getAgent("main")?.defaults).toEqual(originalDefaults);
+      expect(getAgent("main")?.defaults?.observerDefaults).toEqual({ version: 2 });
+      expect(emitConfigChangedMock).toHaveBeenCalledTimes(3);
 
-      const invalidCalls = [
-        () => commands.set("main", undefined, "claude-main,pi-main"),
-        () => commands.set("main", undefined, "claude-main,pi-main,unknown"),
-        () => commands.set("main", undefined, "claude-main,claude-main,codex-live"),
-        () => commands.set("main"),
-        () =>
-          commands.set("main", JSON.stringify(originalDefaults?.runtimeTargetPolicy), "claude-main,pi-main,codex-live"),
+      const invalidCalls: Array<() => unknown> = [
+        () => commands.reorder("main", "claude-main,pi-main"),
+        () => commands.reorder("main", "claude-main,pi-main,unknown"),
+        () => commands.reorder("main", "claude-main,claude-main,codex-live"),
+        () => commands.reorder("main", "   "),
+        () => commands.set("main", "   "),
       ];
       for (const invoke of invalidCalls) {
         const before = structuredClone(getAgent("main")?.defaults);
         expect(() => runWithContext({}, invoke)).toThrow();
         expect(getAgent("main")?.defaults).toEqual(before);
       }
+      expect(emitConfigChangedMock).toHaveBeenCalledTimes(3);
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }
@@ -353,8 +429,8 @@ describe("runtime targets CLI", () => {
     try {
       configStore.refresh();
       const commands = new RuntimeTargetsCommands();
-      expect(() => runWithContext({}, () => commands.set("main", undefined, "codex-live"))).toThrow(
-        "Create one with --policy-json",
+      expect(() => runWithContext({}, () => commands.reorder("main", "codex-live"))).toThrow(
+        "Create one with set --policy-json",
       );
       expect(getAgent("main")?.defaults?.runtimeTargetPolicy).toBeUndefined();
     } finally {

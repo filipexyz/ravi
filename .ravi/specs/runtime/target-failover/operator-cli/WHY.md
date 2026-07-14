@@ -12,14 +12,16 @@ different models and credential requirements. Requiring an exact permutation
 turns reorder into a deterministic, lossless operation and rejects typos before
 configuration changes.
 
-`set --order` extends the existing mutation instead of adding a new `reorder`
-verb. This keeps the surface KISS and follows Ravi's concrete verb conventions.
-Complete creation/replacement remains available through `--policy-json`; common
-day-two operation no longer requires reconstructing the entire JSON document.
+`reorder` is separate from `set --policy-json` so every remote command has a
+simple required-input contract in the generated SDK/OpenAPI. This avoids an XOR
+flag bag that the registry cannot express and makes day-two intent explicit
+without reconstructing the complete JSON document.
 
 `show` and `explain` are intentionally distinct. `show` returns configured
-policy data; `explain` resolves eligibility and provenance at the current time.
-Neither executes a provider.
+policy data; `explain` performs a stateless eligibility/provenance preflight.
+Live `health-aware` selection additionally uses per-session failure history, so
+executed-turn truth belongs in `sessions trace`. Neither command executes a
+provider.
 
 The skill is intentionally thin. Durable behavioral rules and exact syntax live
 in `ravi runtime targets <command> --help`, preventing skill/help drift while

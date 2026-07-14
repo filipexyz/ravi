@@ -15,6 +15,7 @@ import {
   dbListAgents,
   dbListRoutes,
   dbGetAgent,
+  dbMutateAgentDefaults,
   dbUpdateAgent,
   dbDeleteAgent,
   dbCreateAgent,
@@ -42,6 +43,7 @@ export {
   dbListAgents as getAllAgents,
   dbCreateAgent as createAgent,
   dbDeleteAgent as deleteAgent,
+  dbMutateAgentDefaults as mutateAgentDefaults,
   // Spec mode
   dbSetAgentSpecMode as setAgentSpecMode,
 };

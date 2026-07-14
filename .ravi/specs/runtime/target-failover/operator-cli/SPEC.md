@@ -48,20 +48,26 @@ policy through typed Ravi commands.
   ids. It MUST NOT execute a provider or expose credentials.
 - `set --policy-json` MUST validate and atomically replace one agent-default
   policy while preserving every unrelated agent default.
-- `set --order <target-ids>` MUST reorder the existing policy by stable target
+- `reorder --order <target-ids>` MUST reorder the existing policy by stable target
   ids. The value MUST be an exact permutation: duplicates, unknown ids, omitted
   ids, and an absent policy MUST fail before mutation.
 - Reordering MUST preserve every target object, policy id, strategy, budgets,
   cooldown, circuit-breaker settings, credential constraints, and unrelated
   agent defaults. Provider names are not unique identifiers and MUST NOT be
   used as the reorder key.
-- `set` MUST require exactly one mutation input: `--policy-json` or `--order`.
-- `explain` MUST remain read-only and report effective source, provenance,
-  selected target, and redacted rejection reasons without launching a turn.
+- `set` MUST require `--policy-json`; `reorder` MUST require `--order`. Their
+  generated SDK/OpenAPI contracts MUST reject missing or blank required input
+  before handler execution.
+- `explain` MUST remain read-only and report source, provenance, stateless
+  selected target, and redacted rejection reasons without launching a turn. It
+  MUST identify itself as a stateless preflight and MUST NOT claim to evaluate
+  session cooldown/circuit history.
 - `clear` MUST remove only `defaults.runtimeTargetPolicy` and MUST preserve the
   agent's permanent provider/model and unrelated defaults.
 - Successful mutation MUST apply through config refresh/change notification and
   MUST NOT require daemon restart.
+- Defaults mutation MUST acquire the SQLite write reservation before reading the
+  current defaults, so concurrent writers cannot be overwritten by stale RMW.
 - The system skill MUST be a thin operational guide. The CLI `--help` remains
   the source of truth for flags, validation, and examples.
 - No command or skill may contain API keys, OAuth tokens, or a hard-coded global
@@ -76,7 +82,7 @@ policy through typed Ravi commands.
 - `bunx biome check src/cli/commands/runtime-targets.ts src/cli/commands/runtime-targets.test.ts`
 - `bun run typecheck`
 - Source spike: `bun src/cli/index.ts runtime --help` lists `targets` and
-  `bun src/cli/index.ts runtime targets set --help` renders the full contract.
+  `bun src/cli/index.ts runtime targets reorder --help` renders the full contract.
 - Isolated-state E2E configures three synthetic targets, reorders them twice,
   proves `show` order and `explain` selection, then clears the policy.
 
@@ -89,5 +95,6 @@ policy through typed Ravi commands.
 - Ordering by provider name becomes ambiguous when one provider has multiple
   models or credential scopes.
 - A partial order silently appends omitted targets and changes operator intent.
+- A stale read-modify-write replaces defaults committed by a concurrent process.
 - Mutation overwrites `runtimePermissions`, effort, locale, or other defaults.
 - A skill duplicates stale flag syntax instead of directing agents to CLI help.

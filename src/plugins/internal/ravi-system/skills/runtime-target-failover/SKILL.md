@@ -16,7 +16,8 @@ Use esta skill para operar a policy que decide a ordem de tentativa dos runtimes
 
 - a policy é opt-in por agent
 - cada alvo tem um `id` estável e um provider, como `claude`, `pi` ou `codex`
-- a ordem dos alvos é a ordem de tentativa
+- `ordered` segue a ordem configurada
+- `health-aware` usa histórico de falhas da sessão e a ordem configurada como desempate
 - credenciais são gerenciadas separadamente; a policy só declara requisitos e IDs de credenciais gerenciadas
 - falha classificada como elegível avança ao próximo alvo; falha terminal encerra o turno
 - a configuração persiste no cadastro do agent e sobrevive a restart do daemon
@@ -29,6 +30,7 @@ O help do CLI é a fonte operacional de verdade:
 ravi runtime targets --help
 ravi runtime targets show --help
 ravi runtime targets set --help
+ravi runtime targets reorder --help
 ravi runtime targets explain --help
 ```
 
@@ -43,11 +45,11 @@ ravi runtime targets show --agent <agent-id> --json
 2. Reordene usando uma permutação exata de todos os IDs:
 
 ```bash
-ravi runtime targets set --agent <agent-id> \
+ravi runtime targets reorder --agent <agent-id> \
   --order codex-main,claude-main,pi-main --json
 ```
 
-3. Confirme o estado persistido e a resolução efetiva:
+3. Confirme o estado persistido e rode o preflight stateless:
 
 ```bash
 ravi runtime targets show --agent <agent-id> --json
@@ -63,8 +65,9 @@ somente a policy de failover, use `clear --agent <agent-id>`.
 - `--order` deve conter cada ID exatamente uma vez; listas parciais, duplicadas ou desconhecidas falham sem mutação
 - não passe token, API key ou segredo no JSON da policy
 - não altere credenciais só para reordenar alvos
-- não é necessário reiniciar o daemon após `set` ou `clear`
-- confirme toda mutação com `show`; use `explain` para provenance e rejeições
+- não é necessário reiniciar o daemon após `set`, `reorder` ou `clear`
+- confirme toda mutação com `show`; `explain` mostra provenance e rejeições sem
+  avaliar cooldown/circuito da sessão
 
 ## Diagnóstico
 

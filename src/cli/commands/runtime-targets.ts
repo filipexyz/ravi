@@ -1,11 +1,10 @@
 import "reflect-metadata";
-import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { configStore } from "../../config-store.js";
 import { nats } from "../../nats.js";
 import { createRuntimeProvider, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
 import { canWithCapabilities, materializeSubjectCapabilities } from "../../permissions/provider-runtime.js";
-import { getAgent, updateAgent } from "../../router/config.js";
+import { getAgent, mutateAgentDefaults } from "../../router/config.js";
 import { resolveTaskProfile } from "../../tasks/profiles.js";
 import { resolveRuntimeTargetCredentialEligibility } from "../../runtime/target-credential-eligibility.js";
 import { parseRuntimeTargetPolicy, resolveRuntimeTargetPolicy } from "../../runtime/target-policy-config.js";
@@ -47,6 +46,7 @@ const RuntimeTargetPolicySchema = z.object({
 
 const RuntimeTargetsExplainSchema = z.object({
   agentId: z.string(),
+  evaluation: z.literal("stateless_preflight"),
   enabled: z.boolean(),
   source: z.enum(["session_override", "task_profile", "agent_default", "none"]),
   provenance: z.string().nullable(),
@@ -64,7 +64,7 @@ const RuntimeTargetsShowSchema = z.object({
 });
 
 const RuntimeTargetsMutationSchema = z.object({
-  action: z.enum(["set", "clear"]),
+  action: z.enum(["set", "reorder", "clear"]),
   changed: z.boolean(),
   agentId: z.string(),
   policy: RuntimeTargetPolicySchema.nullable(),
@@ -72,6 +72,10 @@ const RuntimeTargetsMutationSchema = z.object({
   preservedDefaultKeys: z.array(z.string()),
   inspectCommand: z.string(),
 });
+
+const RequiredAgentIdSchema = z.string().trim().min(1, "agent is required");
+const RequiredPolicyJsonSchema = z.string().trim().min(1, "policyJson is required");
+const RequiredOrderSchema = z.string().trim().min(1, "order is required");
 
 const SHOW_HELP = `
 USE
@@ -87,6 +91,7 @@ OUTPUT
   JSON includes agentId, enabled, policy, order, and inspectCommand. Exit 0 on success, 1 on error.
 SEE ALSO
   ravi runtime targets set --help
+  ravi runtime targets reorder --help
   ravi runtime targets explain --help
 SOURCES
   .ravi/specs/runtime/target-failover/operator-cli/SPEC.md
@@ -94,16 +99,17 @@ SOURCES
 
 const EXPLAIN_HELP = `
 USE
-  Preview the effective policy, provenance, selected target, and redacted rejection reasons without launching a turn.
+  Perform a stateless preflight of policy provenance, eligibility, and redacted rejection reasons without launching a turn.
 DO NOT USE
-  Use show to inspect the complete configured agent-default policy or sessions trace to inspect an executed turn.
+  This command does not evaluate a session's cooldown/circuit history. Use sessions trace to inspect an executed turn.
 EXAMPLES
   ravi runtime targets explain --agent main --json
   ravi runtime targets explain --agent main --task-profile default --json
 ON ERROR
   Correct the agent, task profile, or strict session-policy JSON reported by validation and retry.
 OUTPUT
-  JSON includes enabled, source, provenance, policyId, selectedTarget, and rejected. Exit 0 on success, 1 on error.
+  JSON includes evaluation=stateless_preflight, source, provenance, policyId, selectedTarget, and rejected.
+  For health-aware policies, configured order is only the stateless tie-breaker; live turns also use session failure history.
 SEE ALSO
   ravi runtime targets show --agent main --json
   ravi sessions trace <session>
@@ -113,22 +119,43 @@ SOURCES
 
 const SET_HELP = `
 USE
-  Replace a complete policy with --policy-json, or atomically reorder an existing policy with --order.
+  Replace a complete policy with strict --policy-json.
 DO NOT USE
   Do not put API keys or credential values in the policy; reference managed credential IDs.
 RULES HARD
-  Supply exactly one of --policy-json or --order. --order uses stable target ids and must include every id exactly once.
-  Reorder preserves target objects, policy metadata, provider/model defaults, and every unrelated agent default.
+  The complete document is validated before mutation. Use reorder for a lossless target-order-only change.
 EXAMPLES
   ravi runtime targets set --agent main --policy-json '{"id":"main-failover","strategy":"ordered","targets":[{"id":"primary","runtimeProvider":"codex","model":"gpt-5"}],"maxAttemptsPerTarget":1}' --json
-  ravi runtime targets set --agent main --order codex-live,claude-main,pi-main --json
 ON ERROR
   Use ravi runtime targets show --agent <id> --json, then retry with the exact target ids it returns.
 OUTPUT
   JSON returns the validated policy, whether it changed, preserved default keys, and an inspect command. Exit 0 on success, 1 on error.
 SEE ALSO
   ravi runtime targets show --agent main --json
+  ravi runtime targets reorder --help
   ravi runtime targets explain --agent main --json
+SOURCES
+  .ravi/specs/runtime/target-failover/operator-cli/SPEC.md
+`;
+
+const REORDER_HELP = `
+USE
+  Atomically reorder an existing policy by stable target ids without reconstructing its JSON.
+DO NOT USE
+  Use set --policy-json to create or replace the complete policy.
+RULES HARD
+  --order must contain every configured target id exactly once. Provider names are not target ids.
+  Reorder preserves raw policy fields, target objects, and every unrelated agent default.
+EXAMPLES
+  ravi runtime targets show --agent main --json
+  ravi runtime targets reorder --agent main --order codex-live,claude-main,pi-main --json
+ON ERROR
+  Copy the exact ids from show.order and retry. Invalid input changes nothing.
+OUTPUT
+  JSON returns the validated policy, whether it changed, preserved default keys, and an inspect command.
+SEE ALSO
+  ravi runtime targets set --help
+  ravi runtime targets show --agent main --json
 SOURCES
   .ravi/specs/runtime/target-failover/operator-cli/SPEC.md
 `;
@@ -148,6 +175,7 @@ OUTPUT
 SEE ALSO
   ravi runtime targets show --agent main --json
   ravi runtime targets set --help
+  ravi runtime targets reorder --help
 SOURCES
   .ravi/specs/runtime/target-failover/operator-cli/SPEC.md
 `;
@@ -166,7 +194,7 @@ export function parseRuntimeTargetPolicyJson(policyJson: string): RuntimeTargetP
 
 export function buildRuntimeTargetPolicyDefaults(
   defaults: Record<string, unknown> | null | undefined,
-  policy: RuntimeTargetPolicy | null,
+  policy: unknown | null,
 ): Record<string, unknown> | null {
   const next = { ...(defaults ?? {}) };
   if (policy) next.runtimeTargetPolicy = structuredClone(policy);
@@ -198,10 +226,38 @@ export function reorderRuntimeTargetPolicy(policy: RuntimeTargetPolicy, rawOrder
     );
   }
 
-  return parseRuntimeTargetPolicy({
+  return {
     ...structuredClone(policy),
     targets: order.map((id) => structuredClone(targetsById.get(id)!)),
-  });
+  };
+}
+
+export function reorderRuntimeTargetPolicyDocument(
+  value: unknown,
+  rawOrder: string,
+): { document: Record<string, unknown>; policy: RuntimeTargetPolicy } {
+  const policy = parseRuntimeTargetPolicy(value);
+  const reordered = reorderRuntimeTargetPolicy(policy, rawOrder);
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Configured runtime target policy must be an object");
+  }
+  const record = value as Record<string, unknown>;
+  if (!Array.isArray(record.targets)) {
+    throw new Error("Configured runtime target policy targets must be an array");
+  }
+  const rawTargets = new Map(
+    record.targets.map((target) => {
+      if (!target || typeof target !== "object" || Array.isArray(target)) {
+        throw new Error("Configured runtime target policy contains an invalid target");
+      }
+      return [(target as Record<string, unknown>).id, target] as const;
+    }),
+  );
+  const document = {
+    ...structuredClone(record),
+    targets: reordered.targets.map((target) => structuredClone(rawTargets.get(target.id)!)),
+  };
+  return { document, policy: parseRuntimeTargetPolicy(document) };
 }
 
 function readConfiguredRuntimeTargetPolicy(value: unknown): RuntimeTargetPolicy | null {
@@ -239,7 +295,12 @@ export class RuntimeTargetsCommands {
   @CommandAccess({ kind: "read", resource: "runtime.targets", action: "show", risk: "low" })
   @Returns(RuntimeTargetsShowSchema)
   show(
-    @Option({ flags: "--agent <id>", description: "Agent whose configured policy should be shown" }) agentId?: string,
+    @Option({
+      flags: "--agent <id>",
+      description: "Agent whose configured policy should be shown",
+      schema: RequiredAgentIdSchema,
+    })
+    agentId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!agentId?.trim()) fail("--agent is required. Example: ravi runtime targets show --agent main --json");
@@ -273,7 +334,12 @@ export class RuntimeTargetsCommands {
   @CommandAccess({ kind: "read", resource: "runtime.targets", action: "explain", risk: "low" })
   @Returns(RuntimeTargetsExplainSchema)
   explain(
-    @Option({ flags: "--agent <id>", description: "Agent whose defaults should be evaluated" }) agentId?: string,
+    @Option({
+      flags: "--agent <id>",
+      description: "Agent whose defaults should be evaluated",
+      schema: RequiredAgentIdSchema,
+    })
+    agentId?: string,
     @Option({
       flags: "--task-profile <id>",
       description: "Optional task profile whose policy and credential scope apply",
@@ -341,6 +407,7 @@ export class RuntimeTargetsCommands {
       : null;
     const payload = {
       agentId,
+      evaluation: "stateless_preflight" as const,
       enabled: Boolean(resolved.policy),
       source: resolved.source,
       provenance: resolved.provenance,
@@ -369,63 +436,120 @@ export class RuntimeTargetsCommands {
   @CommandAccess({ kind: "mutate", resource: "runtime.targets", action: "set", risk: "medium" })
   @Returns(RuntimeTargetsMutationSchema)
   set(
-    @Option({ flags: "--agent <id>", description: "Agent whose opt-in runtime target policy should change" })
-    agentId?: string,
-    @Option({ flags: "--policy-json <json>", description: "Complete runtime target policy as strict JSON" })
-    policyJson?: string,
     @Option({
-      flags: "--order <target-ids>",
-      description: "Comma-separated exact permutation of stable ids from runtime targets show",
+      flags: "--agent <id>",
+      description: "Agent whose opt-in runtime target policy should change",
+      schema: RequiredAgentIdSchema,
     })
-    orderRaw?: string,
+    agentId?: string,
+    @Option({
+      flags: "--policy-json <json>",
+      description: "Complete runtime target policy as strict JSON",
+      schema: RequiredPolicyJsonSchema,
+    })
+    policyJson?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!agentId?.trim())
       fail("--agent is required. Example: ravi runtime targets set --agent main --policy-json '<json>'");
-    const hasPolicyJson = Boolean(policyJson?.trim());
-    const hasOrder = Boolean(orderRaw?.trim());
-    if (hasPolicyJson === hasOrder) {
-      fail("Provide exactly one of --policy-json or --order. Use ravi runtime targets set --help for examples.");
-    }
-    const agent = getAgent(agentId);
-    if (!agent) fail(`Agent not found: ${agentId}`);
+    if (!policyJson?.trim()) fail("--policy-json is required. Use ravi runtime targets set --help for an example.");
+    if (!getAgent(agentId)) fail(`Agent not found: ${agentId}`);
 
     let policy: RuntimeTargetPolicy;
     try {
-      if (hasPolicyJson) {
-        policy = parseRuntimeTargetPolicyJson(policyJson!);
-      } else {
-        const configured = readConfiguredRuntimeTargetPolicy(agent.defaults?.runtimeTargetPolicy);
-        if (!configured) {
-          fail(
-            `No runtime target policy is configured for agent '${agentId}'. Create one with --policy-json before using --order.`,
-          );
-        }
-        policy = reorderRuntimeTargetPolicy(configured, orderRaw!);
-      }
+      policy = parseRuntimeTargetPolicyJson(policyJson);
     } catch (error) {
       fail(`${error instanceof Error ? error.message : String(error)}. No configuration was changed.`);
     }
 
-    const previousPolicyId = readPolicyId(agent.defaults?.runtimeTargetPolicy);
-    const nextDefaults = buildRuntimeTargetPolicyDefaults(agent.defaults, policy);
-    const changed = !isDeepStrictEqual(agent.defaults ?? null, nextDefaults);
-    if (changed) {
-      updateAgent(agentId, { defaults: nextDefaults });
+    let previousPolicyId: string | null = null;
+    const mutation = mutateAgentDefaults(agentId, (defaults) => {
+      previousPolicyId = readPolicyId(defaults?.runtimeTargetPolicy);
+      return buildRuntimeTargetPolicyDefaults(defaults, policy);
+    });
+    if (mutation.changed) {
       configStore.refresh();
       emitConfigChanged();
     }
     const payload = {
       action: "set" as const,
-      changed,
+      changed: mutation.changed,
       agentId,
       policy,
       previousPolicyId,
-      preservedDefaultKeys: listPreservedDefaultKeys(nextDefaults),
+      preservedDefaultKeys: listPreservedDefaultKeys(mutation.defaults),
       inspectCommand: `ravi runtime targets show --agent ${agentId} --json`,
     };
     if (asJson) console.log(JSON.stringify(payload, null, 2));
-    else console.log(`${changed ? "Set" : "Unchanged"} runtime target policy '${policy.id}' for agent '${agentId}'.`);
+    else
+      console.log(
+        `${mutation.changed ? "Set" : "Unchanged"} runtime target policy '${policy.id}' for agent '${agentId}'.`,
+      );
+    return payload;
+  }
+
+  @Command({
+    name: "reorder",
+    description: "Atomically reorder an existing runtime target policy by stable target ids",
+    helpAfter: REORDER_HELP,
+  })
+  @CommandAccess({ kind: "mutate", resource: "runtime.targets", action: "reorder", risk: "medium" })
+  @Returns(RuntimeTargetsMutationSchema)
+  reorder(
+    @Option({
+      flags: "--agent <id>",
+      description: "Agent whose existing runtime target policy should be reordered",
+      schema: RequiredAgentIdSchema,
+    })
+    agentId?: string,
+    @Option({
+      flags: "--order <target-ids>",
+      description: "Comma-separated exact permutation of stable ids from runtime targets show",
+      schema: RequiredOrderSchema,
+    })
+    orderRaw?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!agentId?.trim())
+      fail("--agent is required. Example: ravi runtime targets reorder --agent main --order a,b,c --json");
+    if (!orderRaw?.trim()) fail("--order is required and must contain every configured target id exactly once.");
+    if (!getAgent(agentId)) fail(`Agent not found: ${agentId}`);
+
+    let policy: RuntimeTargetPolicy | null = null;
+    let previousPolicyId: string | null = null;
+    let mutation: ReturnType<typeof mutateAgentDefaults>;
+    try {
+      mutation = mutateAgentDefaults(agentId, (defaults) => {
+        const configured = defaults?.runtimeTargetPolicy;
+        if (configured === undefined || configured === null) {
+          fail(
+            `No runtime target policy is configured for agent '${agentId}'. Create one with set --policy-json before using reorder.`,
+          );
+        }
+        previousPolicyId = readPolicyId(configured);
+        const reordered = reorderRuntimeTargetPolicyDocument(configured, orderRaw);
+        policy = reordered.policy;
+        return buildRuntimeTargetPolicyDefaults(defaults, reordered.document);
+      });
+    } catch (error) {
+      fail(`${error instanceof Error ? error.message : String(error)}. No configuration was changed.`);
+    }
+    if (!policy) fail("Reorder failed before producing a validated policy. No configuration was changed.");
+    if (mutation.changed) {
+      configStore.refresh();
+      emitConfigChanged();
+    }
+    const payload = {
+      action: "reorder" as const,
+      changed: mutation.changed,
+      agentId,
+      policy,
+      previousPolicyId,
+      preservedDefaultKeys: listPreservedDefaultKeys(mutation.defaults),
+      inspectCommand: `ravi runtime targets show --agent ${agentId} --json`,
+    };
+    if (asJson) console.log(JSON.stringify(payload, null, 2));
+    else console.log(`${mutation.changed ? "Reordered" : "Unchanged"} runtime target policy for agent '${agentId}'.`);
     return payload;
   }
 
@@ -437,33 +561,37 @@ export class RuntimeTargetsCommands {
   @CommandAccess({ kind: "mutate", resource: "runtime.targets", action: "clear", risk: "medium" })
   @Returns(RuntimeTargetsMutationSchema)
   clear(
-    @Option({ flags: "--agent <id>", description: "Agent whose runtime target policy should be removed" })
+    @Option({
+      flags: "--agent <id>",
+      description: "Agent whose runtime target policy should be removed",
+      schema: RequiredAgentIdSchema,
+    })
     agentId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!agentId?.trim()) fail("--agent is required. Example: ravi runtime targets clear --agent main --json");
-    const agent = getAgent(agentId);
-    if (!agent) fail(`Agent not found: ${agentId}`);
+    if (!getAgent(agentId)) fail(`Agent not found: ${agentId}`);
 
-    const previousPolicyId = readPolicyId(agent.defaults?.runtimeTargetPolicy);
-    const nextDefaults = buildRuntimeTargetPolicyDefaults(agent.defaults, null);
-    const changed = !isDeepStrictEqual(agent.defaults ?? null, nextDefaults);
-    if (changed) {
-      updateAgent(agentId, { defaults: nextDefaults });
+    let previousPolicyId: string | null = null;
+    const mutation = mutateAgentDefaults(agentId, (defaults) => {
+      previousPolicyId = readPolicyId(defaults?.runtimeTargetPolicy);
+      return buildRuntimeTargetPolicyDefaults(defaults, null);
+    });
+    if (mutation.changed) {
       configStore.refresh();
       emitConfigChanged();
     }
     const payload = {
       action: "clear" as const,
-      changed,
+      changed: mutation.changed,
       agentId,
       policy: null,
       previousPolicyId,
-      preservedDefaultKeys: listPreservedDefaultKeys(nextDefaults),
+      preservedDefaultKeys: listPreservedDefaultKeys(mutation.defaults),
       inspectCommand: `ravi runtime targets show --agent ${agentId} --json`,
     };
     if (asJson) console.log(JSON.stringify(payload, null, 2));
-    else console.log(`${changed ? "Cleared" : "No"} runtime target policy for agent '${agentId}'.`);
+    else console.log(`${mutation.changed ? "Cleared" : "No"} runtime target policy for agent '${agentId}'.`);
     return payload;
   }
 }
