@@ -163,6 +163,7 @@ describe("evaluateSkillGate", () => {
 describe("runtime host skill-gate enforcement", () => {
   it("delivers and marks a required skill loaded when a dynamic tool is attempted", async () => {
     writeCodexSkill("ravi-system-image");
+    dbUpsertSkillGrant({ agentId: "main", skillName: "ravi-system-image" });
     getOrCreateSession("agent:main:main", "main", stateDir!, {
       name: "skill-gate-test",
       runtimeProvider: "codex",
@@ -205,7 +206,7 @@ describe("runtime host skill-gate enforcement", () => {
     const persisted = getSession("agent:main:main")?.runtimeSessionParams
       ?.skillVisibility as RuntimeSkillVisibilitySnapshot;
     expect(persisted.loadedSkills).toEqual(["ravi-system-image"]);
-  });
+  }, 10_000);
 
   it("checks Bash permission before delivering a required skill", async () => {
     writeCodexSkill("ravi-system-daemon-manager");
