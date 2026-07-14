@@ -43,13 +43,18 @@ describe("runtime targets CLI", () => {
     registerCommands(program, [RuntimeTargetsCommands]);
     const runtime = program.commands.find((entry) => entry.name() === "runtime");
     const targets = runtime?.commands.find((entry) => entry.name() === "targets");
+    const setCommand = targets?.commands.find((entry) => entry.name() === "set");
     const reorderCommand = targets?.commands.find((entry) => entry.name() === "reorder");
+    let setHelp = "";
     let reorderHelp = "";
+    setCommand?.configureOutput({ writeOut: (value) => (setHelp += value) });
     reorderCommand?.configureOutput({ writeOut: (value) => (reorderHelp += value) });
+    setCommand?.outputHelp();
     reorderCommand?.outputHelp();
 
     expect(targets?.commands.map((entry) => entry.name())).toEqual(["show", "explain", "set", "reorder", "clear"]);
     expect(targets?.helpInformation()).toContain("show");
+    expect(setHelp.match(/ravi runtime targets set --agent/g)).toHaveLength(2);
     expect(reorderHelp).toContain("--order");
     expect(reorderHelp).toContain("RULES HARD");
     expect(extractTools([RuntimeTargetsCommands]).map((tool) => tool.name)).toEqual([

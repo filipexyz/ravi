@@ -126,6 +126,7 @@ RULES HARD
   The complete document is validated before mutation. Use reorder for a lossless target-order-only change.
 EXAMPLES
   ravi runtime targets set --agent main --policy-json '{"id":"main-failover","strategy":"ordered","targets":[{"id":"primary","runtimeProvider":"codex","model":"gpt-5"}],"maxAttemptsPerTarget":1}' --json
+  ravi runtime targets set --agent main --policy-json '{"id":"main-failover","strategy":"health-aware","targets":[{"id":"claude-main","runtimeProvider":"claude","model":"claude-sonnet-4-5"},{"id":"codex-live","runtimeProvider":"codex","model":"gpt-5"}],"maxAttemptsPerTarget":1}' --json
 ON ERROR
   Use ravi runtime targets show --agent <id> --json, then retry with the exact target ids it returns.
 OUTPUT
