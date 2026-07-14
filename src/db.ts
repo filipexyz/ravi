@@ -152,6 +152,27 @@ export function getHistory(sessionId: string): Message[] {
   return getDb().prepare("SELECT * FROM messages WHERE session_id = ? ORDER BY id ASC").all(sessionId) as Message[];
 }
 
+/**
+ * R27 — messages (user + assistant) for a session strictly after a given
+ * message id, in insertion order. `messages.id` (AUTOINCREMENT) is the
+ * canonical incremental-read cursor for the memory curator: it is exact
+ * (unlike a line offset into a hand-written transcript file) and requires no
+ * separate file to exist. Pass `lastId = 0` to read the whole session.
+ */
+export function getMessagesAfterId(sessionId: string, lastId: number): Message[] {
+  return getDb()
+    .prepare("SELECT * FROM messages WHERE session_id = ? AND id > ? ORDER BY id ASC")
+    .all(sessionId, lastId) as Message[];
+}
+
+/** Latest durable message cursor for a session without materializing its history. */
+export function getLatestMessageId(sessionId: string): number {
+  const row = getDb().prepare("SELECT MAX(id) AS id FROM messages WHERE session_id = ?").get(sessionId) as
+    | { id?: number | null }
+    | undefined;
+  return typeof row?.id === "number" && Number.isFinite(row.id) ? Math.max(0, Math.floor(row.id)) : 0;
+}
+
 export function getRecentHistory(sessionId: string, limit = 20): Message[] {
   const messages = getDb()
     .prepare("SELECT * FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT ?")

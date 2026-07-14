@@ -46,13 +46,14 @@ import {
   resolveSession,
   type SessionTurnUsageSummary,
 } from "../../router/sessions.js";
-import { DEFAULT_RUNTIME_PROVIDER_ID } from "../../runtime/provider-registry.js";
-import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
+import { provisionAgentMemory, purgeAgentMemory } from "../../memory/index.js";
+import { formatRuntimeEffortLevels, parseRuntimeEffort } from "../../runtime/effort.js";
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { resolveEffectiveAgentModel } from "../../runtime/model-preset-resolver.js";
-import { loadConfig } from "../../utils/config.js";
-import { formatRuntimeEffortLevels, parseRuntimeEffort } from "../../runtime/effort.js";
+import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
+import { DEFAULT_RUNTIME_PROVIDER_ID } from "../../runtime/provider-registry.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
+import { loadConfig } from "../../utils/config.js";
 import {
   ensureAgentInstructionFiles,
   inspectAgentInstructionFiles,
@@ -658,9 +659,15 @@ export class AgentsCommands {
       // Ensure directory exists
       const config = loadRouterConfig();
       ensureAgentDirs(config);
-      ensureAgentInstructionFiles(cwd.replace("~", homedir()), {
+      const resolvedCwd = cwd.replace("~", homedir());
+      ensureAgentInstructionFiles(resolvedCwd, {
         createAgentsStub: `# ${id}\n\nInstruções do agente aqui.\n`,
       });
+      // Auto-enroll in deterministic memory curation: seed MEMORY.md + memory/
+      // so the global `memory-curator` Stop hook (see `ravi memory enroll`) can
+      // curate this agent from turn 1 onward. Idempotent — pre-existing files
+      // are left untouched.
+      const memoryProvision = provisionAgentMemory(id, resolvedCwd);
 
       const createdAgent =
         getAgent(id) ??
@@ -677,6 +684,12 @@ export class AgentsCommands {
         action: "create" as const,
         changed: true as const,
         agent: buildAgentJson(createdAgent, config.defaultAgent),
+        memory: {
+          memoryPath: memoryProvision.memoryPath,
+          memoryDir: memoryProvision.memoryDir,
+          seeded: memoryProvision.memoryFileCreated,
+          dirCreated: memoryProvision.memoryDirCreated,
+        },
         runtimeTarget: inspectCliRuntimeTarget(),
         permissions: {
           default: "bootstrap" as const,
@@ -711,6 +724,9 @@ export class AgentsCommands {
           `  Configure least privilege: ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId>`,
         );
         console.log(`  Break-glass only: ravi agents permissions ${id} full-access`);
+        console.log(
+          `  Memory:      ${memoryProvision.memoryFileCreated ? "seeded" : "exists"} ${memoryProvision.memoryPath}`,
+        );
       }
       emitConfigChanged();
       return payload;
@@ -820,11 +836,21 @@ export class AgentsCommands {
   })
   delete(
     @Arg("id", { description: "Agent ID" }) id: string,
+    @Option({
+      flags: "--purge-memory",
+      description: "Also delete the agent's MEMORY.md and memory/ topic files (destructive, opt-in)",
+    })
+    purgeMemory?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
     try {
       const before = getAgent(id);
+      const agentCwd = before?.cwd ? before.cwd.replace("~", homedir()) : undefined;
+      const memoryPurge =
+        purgeMemory && agentCwd
+          ? purgeAgentMemory(agentCwd)
+          : { memoryFileDeleted: false, memoryDirDeleted: false, topicFilesRemoved: 0 };
       const deleted = deleteAgent(id);
       if (deleted) {
         const payload = {
@@ -832,11 +858,24 @@ export class AgentsCommands {
           changed: true as const,
           agentId: id,
           before,
+          memory: {
+            purged: Boolean(purgeMemory),
+            memoryFileDeleted: memoryPurge.memoryFileDeleted,
+            memoryDirDeleted: memoryPurge.memoryDirDeleted,
+            topicFilesRemoved: memoryPurge.topicFilesRemoved,
+          },
         };
         if (asJson) {
           printJson(payload);
         } else {
           console.log(`\u2713 Agent deleted: ${id}`);
+          if (purgeMemory) {
+            console.log(
+              `  Memory purged: file=${memoryPurge.memoryFileDeleted}, dir=${memoryPurge.memoryDirDeleted}, topics=${memoryPurge.topicFilesRemoved}`,
+            );
+          } else if (agentCwd) {
+            console.log(`  Memory preserved at ${agentCwd}/MEMORY.md (use --purge-memory to delete)`);
+          }
         }
         emitConfigChanged();
         return payload;

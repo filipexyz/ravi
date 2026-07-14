@@ -1,0 +1,22 @@
+{
+  "id": "r15-staleness",
+  "invariant": "R15",
+  "description": "In-progress entry with `review-by` in the past MUST be staged for HITL retirement, not silently kept.",
+  "transcript_excerpt": "assistant: this task tracker still says the K2I pipeline is in-progress, but that shipped in April.",
+  "candidate": {
+    "title": "Retire stale entry: K2I pipeline in-progress",
+    "content": "Existing entry `K2I pipeline in progress` has review-by 2026-04-30 which has passed and is no longer accurate.",
+    "type": "reference",
+    "identity_key": "k2i-pipeline-status"
+  },
+  "existing_entry": {
+    "title": "K2I pipeline in progress",
+    "identity_key": "k2i-pipeline-status",
+    "content": "K2I pipeline currently in progress; review-by 2026-04-30."
+  },
+  "expected": {
+    "action": "stage-hitl",
+    "reason": "R15:staleness-staged",
+    "note": "Curator MUST NOT autonomously delete the stale entry (R7). Proposal is written to `_hitl-pending/` for RM approval."
+  }
+}

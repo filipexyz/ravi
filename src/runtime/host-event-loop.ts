@@ -47,6 +47,10 @@ import {
 import { resolveSessionOutputTarget } from "./session-output-target.js";
 import { resolveRuntimeIdleSessionTtlMs } from "./session-pool.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
+import { preserveMemoryCurationState } from "../memory/curation-state.js";
+import { preserveSkillCurationState } from "../skills/skill-curation-state.js";
+import { noteTerminalTurnForLearningLoop, preserveLearningLoopCadenceState } from "./learning-loop-cadence.js";
+import { blockTaskForProviderQuota } from "./provider-quota-task.js";
 import {
   createObservationEvent,
   deliverObservationEvents,
@@ -441,9 +445,10 @@ export function classifyUserFacingRuntimeLimitFailure(
   now = Date.now(),
 ): UserFacingRuntimeLimitFailure | undefined {
   const normalized = normalizeSuppressionText(error);
-  const isExactSessionLimit = /you['’]?ve hit your session limit/i.test(error);
-  const isGenericSessionLimitWithReset = /\bsession limit\b/i.test(error) && /\breset(?:s|ting)?\b/i.test(error);
-  if (!isExactSessionLimit && !isGenericSessionLimitWithReset) return undefined;
+  const isExactAccountLimit = /you['’]?ve hit your (?:weekly|session|usage) limit/i.test(error);
+  const isGenericAccountLimitWithReset =
+    /\b(?:weekly|session|usage) (?:quota|limit)\b/i.test(error) && /\breset(?:s|ting)?\b/i.test(error);
+  if (!isExactAccountLimit && !isGenericAccountLimitWithReset) return undefined;
 
   const resetDescriptor = extractSessionLimitResetDescriptor(error);
   const resetAt = resetDescriptor ? parseResetDescriptorTime(resetDescriptor, now) : undefined;
@@ -571,6 +576,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     restartStashedSession,
   } = options;
   prewarmPricingCatalog();
+
+  const noteTerminalTurnForCadence = () => {
+    const skillsInPlay = runtimeSession.skillVisibility?.loadedSkills;
+    noteTerminalTurnForLearningLoop({
+      sessionKey: session.sessionKey,
+      sessionName,
+      agentId: agent.id,
+      agentCwd: agent.cwd,
+      skillsInPlay,
+    });
+  };
   const recordTraceEvent = (
     input: Omit<Parameters<typeof recordRuntimeTraceEvent>[0], "sessionKey" | "sessionName" | "agentId" | "runId">,
   ) => {
@@ -1058,8 +1074,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const mergeRuntimeSessionParams = (
     params: Record<string, unknown> | undefined,
   ): Record<string, unknown> | undefined => {
+    // R1c: the runtime's persist is a full-column replace of provider params,
+    // which would drop the hook-owned `memoryCuration` cadence counter written
+    // out-of-band into the same column (lost-update). Carry it forward from the
+    // freshest DB read (session.runtimeSessionParams) so the counter accumulates
+    // instead of resetting every turn.
+    const existing = session.runtimeSessionParams;
     if (!isRecord(session.runtimeSessionParams?.skillVisibility) && !isRecord(params?.skillVisibility)) {
-      return params;
+      return preserveLearningLoopCadenceState(
+        existing,
+        preserveSkillCurationState(existing, preserveMemoryCurationState(existing, params)),
+      );
     }
     const storedSkillVisibility = isRecord(session.runtimeSessionParams?.skillVisibility)
       ? readSkillVisibilityFromParams(session.runtimeSessionParams)
@@ -1068,10 +1093,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       ? readSkillVisibilityFromParams(params)
       : undefined;
     const skillVisibility = mergeSkillVisibilitySnapshots(storedSkillVisibility, incomingSkillVisibility);
-    return {
-      ...(params ?? {}),
-      skillVisibility,
-    };
+    return preserveLearningLoopCadenceState(
+      existing,
+      preserveSkillCurationState(
+        existing,
+        preserveMemoryCurationState(existing, {
+          ...(params ?? {}),
+          skillVisibility,
+        }),
+      ),
+    );
   };
 
   const persistRuntimeSkillVisibility = (skillVisibility: RuntimeSkillVisibilitySnapshot) => {
@@ -1832,6 +1863,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         }
         clearRuntimeCredentialAttempt(streaming, completedCredentialAttemptId);
         updateTokens(session.sessionKey, inputTokens, outputTokens, inputTokens + cacheRead + cacheCreation);
+        // Persist cadence only after provider/session params have been refreshed
+        // and merged, so a tick cannot replace fresher skill-gate state.
+        noteTerminalTurnForCadence();
 
         const executionModel = resolveCostTrackingModel(runtimeSession.provider, event.execution?.model, model);
         const cost = executionModel
@@ -1981,6 +2015,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
 
       if (event.type === "turn.interrupted") {
+        noteTerminalTurnForCadence();
         log.info("Turn interrupted", { runId, sessionName });
         recordTerminalTraceOnce({
           status: "interrupted",
@@ -2010,6 +2045,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
 
       if (event.type === "turn.failed") {
+        noteTerminalTurnForCadence();
         const interruptedRecoverable = streaming.interrupted && isRecoverableInterruptionFailure(event);
         const internalAbortReason = streaming.internalAbortReason;
         const internalRecoverable = Boolean(internalAbortReason) && isRecoverableInterruptionFailure(event);
@@ -2025,6 +2061,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               rawEvent: event.rawEvent,
             })
           : undefined;
+        const runtimeFailureSignal =
+          credentialFailureSignal ??
+          (!suppressedRecoverable
+            ? classifyRuntimeCredentialFailure({
+                runtimeProvider: runtimeSession.provider,
+                model,
+                message: event.error,
+                source: "sdk-error",
+              })
+            : undefined);
+        const taskBoundQuota =
+          runtimeFailureSignal?.kind === "quota_exhausted" && Boolean(streaming.currentTaskBarrierTaskId);
         const failedCredentialAttemptId = streaming.currentRuntimeCredential?.attemptId;
         log[suppressedRecoverable ? "info" : "warn"](
           suppressedRecoverable ? "Turn interrupted by recoverable runtime failure" : "Turn failed",
@@ -2100,7 +2148,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           break;
         }
 
-        if (credentialFailureSignal?.retryableByCredential) {
+        if (credentialFailureSignal?.retryableByCredential && !taskBoundQuota) {
           const restartReason = `runtime_credential_${credentialFailureSignal.kind}`;
           if (currentTurnHadToolStarted) {
             log.info("Skipping runtime credential retry after tool activity", {
@@ -2146,6 +2194,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               kind: credentialFailureSignal.kind,
             });
           }
+        }
+
+        if (taskBoundQuota && streaming.currentTaskBarrierTaskId) {
+          await blockTaskForProviderQuota({
+            taskId: streaming.currentTaskBarrierTaskId,
+            agentId: agent.id,
+            sessionName,
+            error: event.error,
+          });
         }
 
         const contextWindowFailure = classifyRuntimeContextWindowFailure({

@@ -59,6 +59,18 @@ describe("runtime credential classifier", () => {
     expect(signal.retryableByCredential).toBe(false);
   });
 
+  it("classifies Claude weekly subscription limits without an HTTP status", () => {
+    const signal = classifyRuntimeCredentialFailure({
+      runtimeProvider: "claude",
+      upstreamProvider: "anthropic",
+      message: "You've hit your weekly limit · resets Jul 15, 2am (UTC)",
+    });
+
+    expect(signal.kind).toBe("quota_exhausted");
+    expect(signal.scope).toBe("account");
+    expect(signal.confidence).toBe("high");
+  });
+
   it("classifies Codex context window exhaustion as a request context limit", () => {
     const signal = classifyRuntimeCredentialFailure({
       runtimeProvider: "codex",

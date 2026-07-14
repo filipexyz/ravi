@@ -139,6 +139,12 @@ function classifyKind(input: { status?: number; providerCode?: string; providerT
   if (input.status === 529 || input.status === 503 || text.includes("overloaded")) {
     return { kind: "provider_overloaded", confidence: "high", scope: "provider" };
   }
+  if (
+    /you['’]?ve hit your (?:weekly|session|usage) limit/i.test(text) ||
+    /(?:weekly|session|usage) (?:quota|limit) (?:has been )?(?:reached|exhausted)/i.test(text)
+  ) {
+    return { kind: "quota_exhausted", confidence: "high", scope: "account" };
+  }
   if (input.status && input.status >= 500) {
     return { kind: "network_transient", confidence: "medium", scope: "provider" };
   }

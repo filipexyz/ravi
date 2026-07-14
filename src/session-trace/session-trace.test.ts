@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { querySessionTrace } from "./query.js";
 import { recordAdapterRequestTrace } from "./runtime-trace.js";
-import { getSessionTraceBlob, listRecentSessionEventsByType, recordSessionEvent } from "./session-trace-db.js";
+import {
+  countSessionTerminalTurns,
+  getSessionTraceBlob,
+  listRecentSessionEventsByType,
+  recordSessionEvent,
+  upsertSessionTurn,
+} from "./session-trace-db.js";
 
 let stateDir: string | null = null;
 
@@ -116,5 +122,47 @@ describe("session trace query", () => {
       effort_source: "agent_default",
       thinking_source: "runtime_default",
     });
+  });
+
+  it("counts durable terminal turns for cold-start cadence reconstruction", () => {
+    const sessionKey = "agent:main:trace-limit";
+    const terminalStatuses = ["complete", "interrupted", "failed"] as const;
+
+    terminalStatuses.forEach((status, index) => {
+      upsertSessionTurn({
+        turnId: `terminal-${status}`,
+        sessionKey,
+        sessionName: "trace-limit",
+        agentId: "main",
+        status,
+        startedAt: 1000 + index,
+        completedAt: 1100 + index,
+        updatedAt: 1100 + index,
+      });
+    });
+
+    upsertSessionTurn({
+      turnId: "running-turn",
+      sessionKey,
+      sessionName: "trace-limit",
+      agentId: "main",
+      status: "running",
+      startedAt: 1200,
+      updatedAt: 1200,
+    });
+    upsertSessionTurn({
+      turnId: "other-session",
+      sessionKey: "agent:main:other",
+      sessionName: "other",
+      agentId: "main",
+      status: "complete",
+      startedAt: 1300,
+      completedAt: 1400,
+      updatedAt: 1400,
+    });
+
+    expect(countSessionTerminalTurns(sessionKey)).toBe(3);
+    expect(countSessionTerminalTurns("agent:main:other")).toBe(1);
+    expect(countSessionTerminalTurns("agent:main:missing")).toBe(0);
   });
 });
