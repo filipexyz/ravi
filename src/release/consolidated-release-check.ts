@@ -3,23 +3,18 @@ import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const EXPECTED_VERSION = "3.260714.2";
-const EXPECTED_SOURCE_COMMIT = "ef87ce3b22633fad564d36ebe6946cc70cf0db08";
-const EXPECTED_SOURCE_TREE = "ca4fe1922f2971f5802a292f54ee17d37cd7f333";
-const EXPECTED_TARBALL_SHA256 = "9ced7b8841046873287e3dc814b70ecea9b7acf15238459246df8a3a990ea44c";
-const EXPECTED_BUNDLE_DEBUG_ID = "B735BA38FB01707B64756E2164756E21";
+const EXPECTED_SOURCE_COMMIT = "9dfcc5825ca2606fd2d2d433e9f86bcf747afc5b";
+const EXPECTED_SOURCE_TREE = "1ad2a17973ab4bb7d9a2237b8d1e9abfcadb9488";
+const EXPECTED_TARBALL_SHA256 = "dadb5d61a72d07c2512b7f07ddfd3b8af17a259bf9afba015c724d2e99d37eef";
+const EXPECTED_BUNDLE_DEBUG_ID = "3765934CD03AD53764756E2164756E21";
 
-const EXPECTED_HEAD_DELTA_PATHS = [
-  "biome.json",
-  "scripts/check-consolidated-release.ts",
-  "src/release/consolidated-release-check.test.ts",
-  "src/release/consolidated-release-check.ts",
-] as const;
+const EXPECTED_HEAD_DELTA_PATHS = ["src/release/consolidated-release-check.ts"] as const;
 
 export const EXPECTED_PACKAGE_FILE_SHA256: Readonly<Record<string, string>> = {
   "README.md": "0fcda32e8f55e3baef318b0e9fca30dc28c1a46f374accaac4da613d490b9a9e",
   "bin/ravi": "6084ed621b1c175966faf45bb19e3f9f444e20fa8d25a8daf51d656ce45e454e",
-  "dist/bundle/index.js": "1a24eb2628ed4f21e80b0b2736ca7954ae5d2b0a60ef2b81b2fc5316d3a37785",
-  "dist/bundle/index.js.map": "8da82fee9533e77c96e5c0204272630b8eeebcdd9bf0e8d4192740fb45be701f",
+  "dist/bundle/index.js": "8abd1cfb2299d88c1104e56e62fd505d01d7c34ec37ef6099dd61f6d5a199cb9",
+  "dist/bundle/index.js.map": "576090e698b25105825f2d24620234e22b01d2c941c88f844047c8b6f90bcbd2",
   "dist/bundle/internal-plugins.json": "2f3c0bb778872f5ddf18503872851419b7480db07cca38168e6fa53cbdff1057",
   "dist/tui/index.js": "7aed0e4bb11d70f27931f700c846e9ac93189f6f0ae15d57b2da1aa53df2e166",
   "dist/tui/index.js.map": "84db5ffd39c452dc0960e223b934a9a6fa0441c01082c9f8bb406fb4fd01c3be",
