@@ -1955,6 +1955,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           | undefined;
         if (streaming.runtimeTargetState && streaming.runtimeTarget) {
           const logicalTurnId = streaming.runtimeTargetState.logicalTurnId;
+          streaming.runtimeTargetState.pendingTaskQuota = undefined;
           const attempt = [...streaming.runtimeTargetState.attempts]
             .reverse()
             .find((item) => item.targetId === streaming.runtimeTarget?.id && item.completedAt === undefined);
@@ -2194,7 +2195,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
 
       if (event.type === "turn.failed") {
-        noteTerminalTurnForCadence();
+        const cadenceDeferredForRuntimeTarget = Boolean(
+          streaming.runtimeTargetPolicy && streaming.runtimeTargetState && streaming.runtimeTarget,
+        );
+        if (!cadenceDeferredForRuntimeTarget) noteTerminalTurnForCadence();
         const interruptedRecoverable = streaming.interrupted && isRecoverableInterruptionFailure(event);
         const internalAbortReason = streaming.internalAbortReason;
         const internalRecoverable = Boolean(internalAbortReason) && isRecoverableInterruptionFailure(event);
@@ -2312,6 +2316,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           // can drain them instead of losing the interrupted turn.
           stashPendingRuntimeMessages(sessionName, streaming, stashedMessages);
           restartStashedReason = restartReason;
+          if (cadenceDeferredForRuntimeTarget) noteTerminalTurnForCadence();
           signalTurnComplete();
           clearTraceTurnState();
           streaming.done = true;
@@ -2396,12 +2401,19 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         }
 
         if (taskBoundQuota && streaming.currentTaskBarrierTaskId) {
-          await blockTaskForProviderQuota({
-            taskId: streaming.currentTaskBarrierTaskId,
-            agentId: agent.id,
-            sessionName,
-            error: event.error,
-          });
+          if (cadenceDeferredForRuntimeTarget && streaming.runtimeTargetState) {
+            streaming.runtimeTargetState.pendingTaskQuota = {
+              taskId: streaming.currentTaskBarrierTaskId,
+              error: event.error,
+            };
+          } else {
+            await blockTaskForProviderQuota({
+              taskId: streaming.currentTaskBarrierTaskId,
+              agentId: agent.id,
+              sessionName,
+              error: event.error,
+            });
+          }
         }
 
         const contextWindowFailure = classifyRuntimeContextWindowFailure({
@@ -2498,6 +2510,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           streaming.internalAbortReason = RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON;
           streaming.interrupted = true;
           clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
+          if (cadenceDeferredForRuntimeTarget) noteTerminalTurnForCadence();
           signalTurnComplete();
           clearTraceTurnState();
           streaming.done = true;
@@ -2618,6 +2631,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               attempts: state.attempts.length,
               credentialRecoveryAttempt: credentialRecoveryAttempt ?? null,
               credentialRefreshAction: credentialRefreshAction ?? null,
+              taskQuotaTaskId: state.pendingTaskQuota?.taskId ?? null,
             },
           });
           if (replayEligible) {
@@ -2674,8 +2688,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             }
           }
           state.terminal = true;
+          if (state.pendingTaskQuota) {
+            await blockTaskForProviderQuota({
+              taskId: state.pendingTaskQuota.taskId,
+              agentId: agent.id,
+              sessionName,
+              error: state.pendingTaskQuota.error,
+            });
+          }
         }
 
+        if (cadenceDeferredForRuntimeTarget) noteTerminalTurnForCadence();
         await emitRuntimeEvent({
           ...event,
           provider: runtimeSession.provider,

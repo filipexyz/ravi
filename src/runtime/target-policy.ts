@@ -55,6 +55,8 @@ export interface RuntimeTargetTurnState {
   attempts: RuntimeTargetAttempt[];
   /** Recovery count survives replay/restart without consuming target failover budget. */
   credentialRecoveries?: Record<string, number>;
+  /** Task quota convergence deferred until the logical turn succeeds or target recovery is exhausted. */
+  pendingTaskQuota?: { taskId: string; error: string };
   sideEffectBoundaryCrossed: boolean;
   terminal: boolean;
 }

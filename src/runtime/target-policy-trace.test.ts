@@ -105,6 +105,43 @@ describe("runtime target trace reconstruction", () => {
     });
   });
 
+  it("reconstructs a deferred task quota across target replay", () => {
+    recordRuntimeTraceEvent({
+      sessionKey,
+      sessionName: "target-restart",
+      agentId: "main",
+      eventType: "runtime.start",
+      eventGroup: "runtime",
+      status: "starting",
+      payloadJson: {
+        runtimeTargetPolicyId: "task-quota",
+        runtimeTargetId: "primary",
+        logicalTurnId: "logical-task-quota",
+      },
+    });
+    recordRuntimeTraceEvent({
+      sessionKey,
+      sessionName: "target-restart",
+      agentId: "main",
+      eventType: "runtime.target.switch_requested",
+      eventGroup: "runtime",
+      status: "recovering",
+      error: "provider quota exhausted",
+      payloadJson: {
+        policyId: "task-quota",
+        targetId: "primary",
+        logicalTurnId: "logical-task-quota",
+        taskQuotaTaskId: "task-quota-1",
+      },
+    });
+
+    expect(reconstructRuntimeTargetTurnState(sessionKey, "task-quota")).toMatchObject({
+      logicalTurnId: "logical-task-quota",
+      pendingTaskQuota: { taskId: "task-quota-1", error: "provider quota exhausted" },
+      terminal: false,
+    });
+  });
+
   it("reconstructs a durable side-effect boundary when the daemon stops after tool start", () => {
     recordRuntimeTraceEvent({
       sessionKey,

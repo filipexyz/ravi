@@ -14,7 +14,7 @@ import {
 } from "../router/index.js";
 import { dbUpsertChat, getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { dbCreateTask, dbDispatchTask } from "../tasks/task-db.js";
+import { dbCreateTask, dbDispatchTask, dbGetTask } from "../tasks/task-db.js";
 import { getSessionTraceBlob, getSessionTurn, listSessionEvents } from "../session-trace/session-trace-db.js";
 import { recordAdapterRequestTrace } from "../session-trace/runtime-trace.js";
 import {
@@ -35,9 +35,11 @@ import {
   runRuntimeEventLoop,
   shouldSuppressUserFacingRuntimeLimitFailure,
 } from "./host-event-loop.js";
+import { readLearningLoopCadenceState } from "./learning-loop-cadence.js";
 import { getRuntimeLiveStateForSession } from "./live-state.js";
 import { buildRuntimeStartRequest, resolveRuntimeCredentialUpstreamProvider } from "./runtime-request-builder.js";
 import { resolveRuntimeSession } from "./session-resolver.js";
+import { startRuntimeSession } from "./session-launcher.js";
 import type {
   RuntimeCapabilities,
   RuntimeEvent,
@@ -1357,7 +1359,7 @@ describe("runtime session trace instrumentation", () => {
     expect(getSessionTurn("turn-failed")?.status).toBe("failed");
   });
 
-  it("switches runtime targets and replays exactly the current turn before tools", async () => {
+  it("switches runtime targets, replays exactly the current turn before tools, and ticks cadence once", async () => {
     const policy: RuntimeTargetPolicy = {
       id: "provider-failover",
       strategy: "ordered",
@@ -1410,6 +1412,28 @@ describe("runtime session trace instrumentation", () => {
       true,
     );
     expect(getSessionTurn("turn-target-switch")?.status).toBe("aborted");
+
+    state.attempts.push({ targetId: "secondary", attempt: 1, startedAt: Date.now() });
+    const secondaryStreaming = makeStreamingSession({
+      runtimeTargetPolicy: policy,
+      runtimeTarget: policy.targets[1],
+      runtimeTargetState: state,
+    });
+    seedAdapterTrace(secondaryStreaming, "turn-target-switch-secondary");
+
+    await runTraceLoop(
+      secondaryStreaming,
+      makeRuntimeSession([
+        {
+          type: "turn.complete",
+          providerSessionId: "secondary-session",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
+      ]),
+    );
+
+    expect(state.terminal).toBe(true);
+    expect(readLearningLoopCadenceState(getSession(SESSION_KEY)?.runtimeSessionParams)?.terminalTurnCount).toBe(1);
   });
 
   it("blocks target replay after any tool starts", async () => {
@@ -1681,6 +1705,181 @@ describe("runtime session trace instrumentation", () => {
     );
     expect(recovery?.error).toBe("runtime credential refresh failed");
     expect(recovery?.error).not.toContain("sensitive upstream refresh detail");
+  });
+
+  it("defers a task-bound quota block until authorized target failover finishes", async () => {
+    const task = dbCreateTask({
+      title: "Quota-bound target task",
+      instructions: "Fail closed when provider quota is exhausted",
+      createdBy: "test",
+      createdByAgentId: AGENT_ID,
+      createdBySessionName: SESSION_NAME,
+    }).task;
+    const policy: RuntimeTargetPolicy = {
+      id: "task-quota-fail-closed",
+      strategy: "ordered",
+      maxAttemptsPerTarget: 1,
+      maxCredentialRecoveryAttemptsPerTarget: 0,
+      targets: [
+        { id: "primary", runtimeProvider: PROVIDER, model: MODEL },
+        { id: "secondary", runtimeProvider: "trace-secondary", model: "trace-secondary-model" },
+      ],
+    };
+    const state: RuntimeTargetTurnState = {
+      logicalTurnId: "logical-task-quota",
+      attempts: [{ targetId: "primary", attempt: 1, startedAt: Date.now() }],
+      credentialRecoveries: {},
+      sideEffectBoundaryCrossed: false,
+      terminal: false,
+    };
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "stop when the task quota is exhausted",
+      deliveryBarrier: "after_tool",
+      source,
+      taskBarrierTaskId: task.id,
+      _agentId: AGENT_ID,
+      _runtimeTargetPolicy: policy,
+      _runtimeTargetState: state,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      currentTaskBarrierTaskId: task.id,
+      currentRuntimeCredential: seedRuntimeCredentialAttempt("rcred_task_quota"),
+      runtimeTargetPolicy: policy,
+      runtimeTarget: policy.targets[0],
+      runtimeTargetState: state,
+    });
+    seedAdapterTrace(streaming, "turn-task-quota");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error: "provider quota exhausted for this account",
+          recoverable: true,
+          rawEvent: { type: "error", status: 429, headers: { "retry-after": "3600" } },
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(dbGetTask(task.id)?.status).toBe("open");
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "runtime_target_switch" }]);
+    expect(stashedMessages.get(SESSION_NAME)).toHaveLength(1);
+    expect(state).toMatchObject({
+      terminal: false,
+      attempts: [{ targetId: "primary", outcome: "recoverable_failure", failureKind: "credential" }],
+      pendingTaskQuota: { taskId: task.id, error: "provider quota exhausted for this account" },
+    });
+
+    state.attempts.push({ targetId: "secondary", attempt: 1, startedAt: Date.now() });
+    const secondaryStreaming = makeStreamingSession({
+      currentTaskBarrierTaskId: task.id,
+      runtimeTargetPolicy: policy,
+      runtimeTarget: policy.targets[1],
+      runtimeTargetState: state,
+    });
+    seedAdapterTrace(secondaryStreaming, "turn-task-quota-secondary");
+    await runTraceLoop(
+      secondaryStreaming,
+      makeRuntimeSession([
+        {
+          type: "turn.complete",
+          providerSessionId: "secondary-session",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
+      ]),
+    );
+
+    expect(dbGetTask(task.id)?.status).toBe("open");
+    expect(state).toMatchObject({
+      terminal: true,
+      attempts: [
+        { targetId: "primary", outcome: "recoverable_failure" },
+        { targetId: "secondary", outcome: "success" },
+      ],
+    });
+    expect(state.pendingTaskQuota).toBeUndefined();
+  });
+
+  it("blocks a deferred task-bound quota when runtime target selection is exhausted", async () => {
+    const task = dbCreateTask({
+      title: "Exhausted quota-bound target task",
+      instructions: "Converge after target policy exhaustion",
+      createdBy: "test",
+      createdByAgentId: AGENT_ID,
+      createdBySessionName: SESSION_NAME,
+    }).task;
+    const policy: RuntimeTargetPolicy = {
+      id: "task-quota-exhausted",
+      strategy: "ordered",
+      maxAttemptsPerTarget: 1,
+      targets: [{ id: "primary", runtimeProvider: PROVIDER, model: MODEL }],
+    };
+    const state: RuntimeTargetTurnState = {
+      logicalTurnId: "logical-task-quota-exhausted",
+      attempts: [
+        {
+          targetId: "primary",
+          attempt: 1,
+          startedAt: Date.now() - 1,
+          completedAt: Date.now(),
+          outcome: "recoverable_failure",
+          failureKind: "credential",
+        },
+      ],
+      credentialRecoveries: {},
+      pendingTaskQuota: { taskId: task.id, error: "provider quota exhausted after all targets" },
+      sideEffectBoundaryCrossed: false,
+      terminal: false,
+    };
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "resume exhausted quota turn",
+      source,
+      taskBarrierTaskId: task.id,
+      _agentId: AGENT_ID,
+      _runtimeTargetPolicy: policy,
+      _runtimeTargetState: state,
+    });
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>([[SESSION_NAME, [queued]]]);
+    const runtimeEvents: Array<Record<string, unknown>> = [];
+
+    await startRuntimeSession({
+      sessionName: SESSION_NAME,
+      prompt: {
+        prompt: "resume exhausted quota turn",
+        source,
+        taskBarrierTaskId: task.id,
+        _agentId: AGENT_ID,
+        _resumeStashedMessages: true,
+        _runtimeTargetPolicy: policy,
+        _runtimeTargetState: state,
+      },
+      configModel: MODEL,
+      instanceId: "test",
+      streamingSessions: new Map(),
+      stashedMessages,
+      safeEmit: async (_topic, data) => {
+        runtimeEvents.push(data);
+      },
+      drainPendingStarts: () => {},
+      runtimeResolution: { ok: false, error: new Error(`Runtime target policy '${policy.id}' is exhausted.`) },
+    });
+
+    expect(dbGetTask(task.id)?.status).toBe("blocked");
+    expect(state.terminal).toBe(true);
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(runtimeEvents).toEqual([expect.objectContaining({ type: "turn.failed", recoverable: false })]);
+    expect(readLearningLoopCadenceState(getSession(SESSION_KEY)?.runtimeSessionParams)?.terminalTurnCount).toBe(1);
   });
 
   it("does not let credential heuristics override an explicit non-replayable failure scope", async () => {

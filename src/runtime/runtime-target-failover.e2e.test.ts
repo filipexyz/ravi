@@ -2,13 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { configStore } from "../config-store.js";
 import { nats } from "../nats.js";
 import { dbUpdateAgent, dbUpsertChat, dbUpsertDaemonRestartEpoch } from "../router/router-db.js";
-import { attachChatToSession, getOrCreateSession, updateRuntimeProviderState } from "../router/sessions.js";
+import { attachChatToSession, getOrCreateSession, getSession, updateRuntimeProviderState } from "../router/sessions.js";
 import type { AgentConfig } from "../router/types.js";
 import { listSessionEvents } from "../session-trace/session-trace-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { RuntimeSessionDispatcher } from "./session-dispatcher.js";
 import { createCodexRuntimeProvider } from "./codex-provider.js";
 import { formatUserFacingTurnFailure } from "./host-event-loop.js";
+import { readLearningLoopCadenceState } from "./learning-loop-cadence.js";
 import { registerRuntimeProvider, unregisterRuntimeProvider } from "./provider-registry.js";
 import { reconstructRuntimeTargetTurnState } from "./target-policy-trace.js";
 import type { RuntimeCapabilities, RuntimeEvent, RuntimeStartRequest, SessionRuntimeProvider } from "./types.js";
@@ -228,6 +229,7 @@ describe("runtime target failover E2E", () => {
             readTracePayloadString(event.payloadJson, "reason") === "attempts_exhausted",
         ),
       ).toBe(true);
+      expect(readLearningLoopCadenceState(getSession("target-e2e")?.runtimeSessionParams)?.terminalTurnCount).toBe(1);
     } finally {
       dispatcher.shutdownAll();
       emitSpy.mockRestore();

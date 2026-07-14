@@ -42,6 +42,8 @@ import {
 import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
 import { updateRuntimeLiveState } from "./live-state.js";
 import { ensureObserverBindingsForSession } from "./observation-plane.js";
+import { noteTerminalTurnForLearningLoop } from "./learning-loop-cadence.js";
+import { blockTaskForProviderQuota } from "./provider-quota-task.js";
 import { resolveSessionOutputTarget } from "./session-output-target.js";
 import {
   classifyRuntimeTargetFailure,
@@ -132,6 +134,20 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     }
     log.warn("Runtime target resolution failed", { sessionName, error: errorMessage });
     const failedSession = getSessionByName(sessionName);
+    if (failedSession && exhaustedTurnState?.pendingTaskQuota) {
+      await blockTaskForProviderQuota({
+        taskId: exhaustedTurnState.pendingTaskQuota.taskId,
+        agentId: failedSession.agentId ?? prompt._agentId ?? "main",
+        sessionName,
+        error: exhaustedTurnState.pendingTaskQuota.error,
+      });
+      noteTerminalTurnForLearningLoop({
+        sessionKey: failedSession.sessionKey,
+        sessionName,
+        agentId: failedSession.agentId ?? prompt._agentId ?? "main",
+        agentCwd: failedSession.agentCwd,
+      });
+    }
     if (failedSession && exhaustedPolicy && exhaustedTurnState) {
       recordRuntimeTraceEvent({
         sessionKey: failedSession.sessionKey,
@@ -663,6 +679,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
           logicalTurnId: runtimeTargetState.logicalTurnId,
           credentialRecoveryAttempt: credentialRecoveryAttempt ?? null,
           credentialRefreshAction: credentialRefreshAction ?? null,
+          taskQuotaTaskId: runtimeTargetState.pendingTaskQuota?.taskId ?? null,
         },
       });
       recordRuntimeSafetyTraceEvent({
@@ -729,6 +746,20 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
         attempt.failureKind = classifiedStartFailure.scope;
       }
       runtimeTargetState.terminal = true;
+      if (runtimeTargetState.pendingTaskQuota) {
+        await blockTaskForProviderQuota({
+          taskId: runtimeTargetState.pendingTaskQuota.taskId,
+          agentId: agent.id,
+          sessionName,
+          error: runtimeTargetState.pendingTaskQuota.error,
+        });
+        noteTerminalTurnForLearningLoop({
+          sessionKey: dbSessionKey,
+          sessionName,
+          agentId: agent.id,
+          agentCwd: agent.cwd,
+        });
+      }
       recordRuntimeTraceEvent({
         sessionKey: dbSessionKey,
         sessionName,

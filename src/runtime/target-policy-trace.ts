@@ -79,7 +79,15 @@ export function reconstructRuntimeTargetTurnState(
 
   const attempts: RuntimeTargetAttempt[] = [];
   const credentialRecoveries: Record<string, number> = {};
+  let pendingTaskQuota: RuntimeTargetTurnState["pendingTaskQuota"];
   for (const event of turnEvents) {
+    const taskQuotaTaskId = readString(event.payloadJson, "taskQuotaTaskId", "task_quota_task_id");
+    if (taskQuotaTaskId) {
+      pendingTaskQuota = {
+        taskId: taskQuotaTaskId,
+        error: event.error || "Provider quota exhausted after runtime target recovery.",
+      };
+    }
     if (event.eventType !== "runtime.start") continue;
     const targetId = readString(event.payloadJson, "runtimeTargetId", "runtime_target_id");
     if (!targetId) continue;
@@ -124,6 +132,7 @@ export function reconstructRuntimeTargetTurnState(
     logicalTurnId,
     attempts,
     credentialRecoveries,
+    ...(pendingTaskQuota ? { pendingTaskQuota } : {}),
     sideEffectBoundaryCrossed: replayBlocked,
     terminal: replayBlocked,
   };
