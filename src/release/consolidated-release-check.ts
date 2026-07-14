@@ -3,18 +3,18 @@ import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const EXPECTED_VERSION = "3.260714.2";
-const EXPECTED_SOURCE_COMMIT = "c25f09a8b3429041a0e2204b29089372b124f4d0";
-const EXPECTED_SOURCE_TREE = "67014376fb0bbf806db963416f586960e9f4b6fa";
-const EXPECTED_TARBALL_SHA256 = "324493e9e9e8aa6aa23dd93bc16d89992e66b88165e33ed4e6adeaec0b3372a5";
-const EXPECTED_BUNDLE_DEBUG_ID = "D1248D05A671152C64756E2164756E21";
+const EXPECTED_SOURCE_COMMIT = "5ea4f0be15fd8b021f86f6c2b89b0af9abdcc267";
+const EXPECTED_SOURCE_TREE = "d3152a562c16e38291063ea8a10a226b0b12b832";
+const EXPECTED_TARBALL_SHA256 = "b428341c6bf0716933210f71b445aea86434de24e5e123cd4a6161f9fad74f67";
+const EXPECTED_BUNDLE_DEBUG_ID = "41D6D84D3D7F5BA364756E2164756E21";
 
 const EXPECTED_HEAD_DELTA_PATHS = ["src/release/consolidated-release-check.ts"] as const;
 
 export const EXPECTED_PACKAGE_FILE_SHA256: Readonly<Record<string, string>> = {
   "README.md": "0fcda32e8f55e3baef318b0e9fca30dc28c1a46f374accaac4da613d490b9a9e",
   "bin/ravi": "6084ed621b1c175966faf45bb19e3f9f444e20fa8d25a8daf51d656ce45e454e",
-  "dist/bundle/index.js": "7c05b0baa8c6ac9e04bf3dc6aa3e345c836d02b74a84c8891a91fc909ea4977a",
-  "dist/bundle/index.js.map": "8cc444372456dc64ee734c4810f3dbd641a933a0e6e10809b71d117ff4959084",
+  "dist/bundle/index.js": "d9c78c7a6e8f81f7934045b01aadbcfd445e1bfa28037c6e6fe017b94da5e962",
+  "dist/bundle/index.js.map": "7562b8f22e7848effe2ec6f595487f4aa791ca48c993052e49d4dc42bb511ed8",
   "dist/bundle/internal-plugins.json": "2f3c0bb778872f5ddf18503872851419b7480db07cca38168e6fa53cbdff1057",
   "dist/tui/index.js": "7aed0e4bb11d70f27931f700c846e9ac93189f6f0ae15d57b2da1aa53df2e166",
   "dist/tui/index.js.map": "84db5ffd39c452dc0960e223b934a9a6fa0441c01082c9f8bb406fb4fd01c3be",
