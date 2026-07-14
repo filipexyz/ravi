@@ -9946,6 +9946,7 @@ export type RuntimeTargetsExplainReturn = {
 /** Input shape for `runtime.targets.set`. */
 export type RuntimeTargetsSetInput = {
   agent?: string;
+  order?: string;
   policyJson?: string;
 };
 
@@ -9983,6 +9984,45 @@ export type RuntimeTargetsSetReturn = {
   }) | null;
   preservedDefaultKeys: string[];
   previousPolicyId: string | null;
+};
+
+/** Input shape for `runtime.targets.show`. */
+export type RuntimeTargetsShowInput = {
+  agent?: string;
+};
+
+/** Return shape for `runtime.targets.show`. */
+export type RuntimeTargetsShowReturn = {
+  agentId: string;
+  enabled: boolean;
+  inspectCommand: string;
+  order: string[];
+  policy: ({
+    circuitBreakerThreshold?: number;
+    cooldownMs?: number;
+    id: string;
+    maxAttemptsPerTarget: number;
+    maxCredentialRecoveryAttemptsPerTarget?: number;
+    strategy: "ordered" | "health-aware";
+    targets: Array<{
+      credentialRequirements?: {
+        authMethods?: string[];
+        credentialIds?: string[];
+        requireManaged?: boolean;
+        sessionCompatibilityKey?: string;
+      };
+      effort?: string;
+      id: string;
+      model: string;
+      modelPreset?: {
+        id: string;
+        version: number;
+      };
+      requiredCapabilities?: string[];
+      runtimeProvider: string;
+      thinking?: "off" | "normal" | "verbose";
+    }>;
+  }) | null;
 };
 
 /** Input shape for `sdk.client.check`. */
