@@ -12,6 +12,7 @@ import {
   getOptionsMetadata,
   getReturnsMetadata,
 } from "../decorators.js";
+import { runWithContext } from "../context.js";
 
 mock.module("../../nats.js", () => ({
   nats: { emit: mock(async () => {}) },
@@ -158,17 +159,19 @@ describe("runtime targets CLI", () => {
       configStore.refresh();
       const commands = new RuntimeTargetsCommands();
       expect(() =>
-        commands.set(
-          "main",
-          JSON.stringify({
-            id: "duplicate",
-            strategy: "ordered",
-            targets: [
-              { id: "same", runtimeProvider: "codex", model: "gpt-5" },
-              { id: "same", runtimeProvider: "claude", model: "sonnet" },
-            ],
-            maxAttemptsPerTarget: 1,
-          }),
+        runWithContext({}, () =>
+          commands.set(
+            "main",
+            JSON.stringify({
+              id: "duplicate",
+              strategy: "ordered",
+              targets: [
+                { id: "same", runtimeProvider: "codex", model: "gpt-5" },
+                { id: "same", runtimeProvider: "claude", model: "sonnet" },
+              ],
+              maxAttemptsPerTarget: 1,
+            }),
+          ),
         ),
       ).toThrow("Duplicate runtime target id: same");
       expect(getAgent("main")?.defaults).toEqual(original);
