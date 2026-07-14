@@ -12,6 +12,7 @@ import {
   getDb,
 } from "../../router/router-db.js";
 import { attachTagSlugsToAsset } from "../../tags/helpers.js";
+import { runWithContext } from "../context.js";
 import { getArgsMetadata, getCommandAccessMetadata } from "../decorators.js";
 import { ChatReadingListCommands, ChatsCommands } from "./chats.js";
 
@@ -365,9 +366,9 @@ describe("ChatsCommands --json", () => {
 
   it("rejects name-based refs before show, preview, or recompute resolution", () => {
     const lists = new ChatReadingListCommands();
-    expect(() => lists.show("same-name", "system:one", true)).toThrow(/canonical crl_/);
-    expect(() => lists.preview("same-name", "system:two", true)).toThrow(/canonical crl_/);
-    expect(() => lists.recompute("same-name", "system:two", true)).toThrow(/canonical crl_/);
+    expect(() => runWithContext({}, () => lists.show("same-name", "system:one", true))).toThrow(/canonical crl_/);
+    expect(() => runWithContext({}, () => lists.preview("same-name", "system:two", true))).toThrow(/canonical crl_/);
+    expect(() => runWithContext({}, () => lists.recompute("same-name", "system:two", true))).toThrow(/canonical crl_/);
   });
 
   it("never resolves a canonical list id through a same-named different list", () => {
@@ -383,9 +384,15 @@ describe("ChatsCommands --json", () => {
     expect(differentList.id).not.toBe(authorizedButMissingId);
 
     const lists = new ChatReadingListCommands();
-    expect(() => lists.show(authorizedButMissingId, "system:other", true)).toThrow(/Reading list not found/);
-    expect(() => lists.preview(authorizedButMissingId, "system:other", true)).toThrow(/Reading list not found/);
-    expect(() => lists.recompute(authorizedButMissingId, "system:other", true)).toThrow(/Reading list not found/);
+    expect(() => runWithContext({}, () => lists.show(authorizedButMissingId, "system:other", true))).toThrow(
+      /Reading list not found/,
+    );
+    expect(() => runWithContext({}, () => lists.preview(authorizedButMissingId, "system:other", true))).toThrow(
+      /Reading list not found/,
+    );
+    expect(() => runWithContext({}, () => lists.recompute(authorizedButMissingId, "system:other", true))).toThrow(
+      /Reading list not found/,
+    );
   });
 
   it("does not truncate contact-tag exclusions after 500 related chats", () => {
