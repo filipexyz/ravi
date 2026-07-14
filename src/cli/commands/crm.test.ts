@@ -18,6 +18,8 @@ let pipelineRecords: Array<Record<string, unknown>> = [];
 let pipelineStageRecords: Array<Record<string, unknown>> = [];
 let pipelineTopicRecords: Array<Record<string, unknown>> = [];
 let factRecords: Array<Record<string, unknown>> = [];
+let scopeEnforced = false;
+let readableContactIds = new Set<string>();
 let lastAccountCreateInput: Record<string, unknown> | null = null;
 let lastOpportunityCreateInput: Record<string, unknown> | null = null;
 let lastTaskCreateInput: Record<string, unknown> | null = null;
@@ -45,6 +47,24 @@ function pageRecords<T>(
   };
 }
 
+function filterReadableRecords<T extends Record<string, unknown>>(
+  records: T[],
+  options: { readableContactIds?: readonly string[] | null } = {},
+): T[] {
+  if (options.readableContactIds == null) return records;
+  const readable = new Set(options.readableContactIds);
+  return records.filter((record) => {
+    const direct = record.contactId ?? record.contact_id;
+    const contactId =
+      typeof direct === "string"
+        ? direct
+        : record.entityType === "contact" && typeof record.entityId === "string"
+          ? record.entityId
+          : null;
+    return contactId === null || readable.has(contactId);
+  });
+}
+
 mock.module("../context.js", () => ({
   ...actualCliContextModule,
   fail: (message: string) => {
@@ -53,9 +73,9 @@ mock.module("../context.js", () => ({
 }));
 
 mock.module("../../permissions/scope.js", () => ({
-  getScopeContext: () => undefined,
-  isScopeEnforced: () => false,
-  canAccessContact: () => true,
+  getScopeContext: () => ({ agentId: "scoped-agent" }),
+  isScopeEnforced: () => scopeEnforced,
+  canAccessContact: (_scopeCtx: unknown, contact: { id: string }) => readableContactIds.has(contact.id),
 }));
 
 mock.module("../../contacts.js", () => ({
@@ -74,8 +94,16 @@ mock.module("../../contacts.js", () => ({
           facts: [],
         }
       : null,
-  listCrmNextActions: (options: { limit?: string; offset?: string }) => pageRecords(nextActionRecords, options),
-  listCrmContactCards: (options: { limit?: string; offset?: string }) => pageRecords(contactCardRecords, options),
+  getAllContactAccessRecords: () =>
+    contactCardRecords.map((record) => ({
+      id: String(record.contactId),
+      tags: [],
+      identityValues: [],
+    })),
+  listCrmNextActions: (options: { limit?: string; offset?: string; readableContactIds?: readonly string[] }) =>
+    pageRecords(filterReadableRecords(nextActionRecords, options), options),
+  listCrmContactCards: (options: { limit?: string; offset?: string; readableContactIds?: readonly string[] }) =>
+    pageRecords(filterReadableRecords(contactCardRecords, options), options),
   listCrmOpportunityBoard: (options: { pipelineRef?: string } = {}) =>
     options.pipelineRef
       ? opportunityBoardRecords.filter((record) => record.pipelineId === options.pipelineRef)
@@ -252,7 +280,8 @@ mock.module("../../contacts.js", () => ({
       isPrimary: input.isPrimary === true,
     };
   },
-  listCrmFacts: (options: { limit?: string; offset?: string }) => pageRecords(factRecords, options),
+  listCrmFacts: (options: { limit?: string; offset?: string; readableContactIds?: readonly string[] }) =>
+    pageRecords(filterReadableRecords(factRecords, options), options),
   proposeCrmFact: (input: Record<string, unknown>) => {
     lastFactInput = input;
     return {
@@ -284,7 +313,8 @@ mock.module("../../contacts.js", () => ({
           ...crmTask,
         }
       : null,
-  listCrmTasks: (options: { limit?: string; offset?: string }) => pageRecords(taskRecords, options),
+  listCrmTasks: (options: { limit?: string; offset?: string; readableContactIds?: readonly string[] }) =>
+    pageRecords(filterReadableRecords(taskRecords, options), options),
   createCrmTask: (input: Record<string, unknown>) => {
     lastTaskCreateInput = input;
     return { id: "crm_task_1", title: input.title, contactId: input.contactRef ?? null };
@@ -343,6 +373,8 @@ function silenceLogs(run: () => unknown): void {
 
 describe("CRM commands", () => {
   beforeEach(() => {
+    scopeEnforced = false;
+    readableContactIds = new Set<string>();
     crmContactProfile = {
       contactId: "contact-1",
       lifecycle: "lead",
@@ -479,6 +511,91 @@ describe("CRM commands", () => {
     expect(payload.total).toBe(1);
     expect((payload.pagination as Record<string, unknown>).returned).toBe(1);
     expect((payload.items as Array<Record<string, unknown>>)[0]?.taskId).toBe("crm_task_1");
+  });
+
+  it("applies contact visibility before paginating CRM list surfaces", () => {
+    scopeEnforced = true;
+    const hiddenContactIds = Array.from({ length: 60 }, (_, index) => `contact-hidden-${index + 1}`);
+    const visibleContactId = "contact-visible";
+    readableContactIds.add(visibleContactId);
+    contactCardRecords = [
+      ...hiddenContactIds.map((contactId) => ({ contactId, displayName: contactId })),
+      { contactId: visibleContactId, displayName: "Visible" },
+    ];
+    taskRecords = [
+      ...hiddenContactIds.slice(0, 30).map((contactId, index) => ({ id: `task-hidden-${index}`, contactId })),
+      { id: "task-visible", contactId: visibleContactId },
+    ];
+    nextActionRecords = [
+      ...hiddenContactIds.slice(0, 30).map((contactId, index) => ({ taskId: `task-hidden-${index}`, contactId })),
+      { taskId: "task-visible", contactId: visibleContactId },
+    ];
+    factRecords = [
+      ...hiddenContactIds.slice(0, 30).map((contactId, index) => ({
+        id: `fact-hidden-${index}`,
+        entityType: "contact",
+        entityId: contactId,
+      })),
+      { id: "fact-visible", entityType: "contact", entityId: visibleContactId },
+    ];
+
+    const contactsPayload = captureJson(() => {
+      new ACrmCommands().contacts(undefined, undefined, "10", "0", true);
+    });
+    const tasksPayload = captureJson(() => {
+      new CrmTaskCommands().list(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "10",
+        "0",
+        true,
+      );
+    });
+    const factsPayload = captureJson(() => {
+      new CrmFactCommands().list(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "10",
+        "0",
+        true,
+      );
+    });
+    const nextPayload = captureJson(() => {
+      new ACrmCommands().next(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "10",
+        "0",
+        true,
+      );
+    });
+
+    expect(contactsPayload.total).toBe(1);
+    expect((contactsPayload.items as Array<Record<string, unknown>>)[0]?.contactId).toBe(visibleContactId);
+    expect(tasksPayload.total).toBe(1);
+    expect((tasksPayload.items as Array<Record<string, unknown>>)[0]?.id).toBe("task-visible");
+    expect(factsPayload.total).toBe(1);
+    expect((factsPayload.items as Array<Record<string, unknown>>)[0]?.id).toBe("fact-visible");
+    expect(nextPayload.total).toBe(1);
+    expect((nextPayload.items as Array<Record<string, unknown>>)[0]?.taskId).toBe("task-visible");
   });
 
   it("adds snake_case aliases to CRM task JSON surfaces", () => {
