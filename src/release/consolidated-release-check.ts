@@ -3,9 +3,9 @@ import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const EXPECTED_VERSION = "3.260714.2";
-const EXPECTED_SOURCE_COMMIT = "32502b04e603d6af0af755ebe64f2528e5e9db85";
-const EXPECTED_SOURCE_TREE = "c809dd1dbe0fffef871dd1af4c6c48ec7a33658d";
-const EXPECTED_TARBALL_SHA256 = "ed2986990b9b36d5fa1adb96c4c167b9dcff3ad6c80a823d35c705f642fa3523";
+const EXPECTED_SOURCE_COMMIT = "c25f09a8b3429041a0e2204b29089372b124f4d0";
+const EXPECTED_SOURCE_TREE = "67014376fb0bbf806db963416f586960e9f4b6fa";
+const EXPECTED_TARBALL_SHA256 = "324493e9e9e8aa6aa23dd93bc16d89992e66b88165e33ed4e6adeaec0b3372a5";
 const EXPECTED_BUNDLE_DEBUG_ID = "D1248D05A671152C64756E2164756E21";
 
 const EXPECTED_HEAD_DELTA_PATHS = ["src/release/consolidated-release-check.ts"] as const;
@@ -18,7 +18,7 @@ export const EXPECTED_PACKAGE_FILE_SHA256: Readonly<Record<string, string>> = {
   "dist/bundle/internal-plugins.json": "2f3c0bb778872f5ddf18503872851419b7480db07cca38168e6fa53cbdff1057",
   "dist/tui/index.js": "7aed0e4bb11d70f27931f700c846e9ac93189f6f0ae15d57b2da1aa53df2e166",
   "dist/tui/index.js.map": "84db5ffd39c452dc0960e223b934a9a6fa0441c01082c9f8bb406fb4fd01c3be",
-  "package.json": "7caaa1d6c176ee7ed6f6ec61e7c9c2159907d0a03caf48d4c40e988e396350c4",
+  "package.json": "56eb5fa810de8ddb413ca48b2287a11de55961bd4c59588243264aeda9f7bb0d",
 };
 
 export const EXPECTED_PACKAGE_FILES = [
