@@ -223,7 +223,9 @@ Dynamic membership MUST be materialized or evaluated consistently enough that cu
 
 Before materializing dynamic membership, Ravi MUST expose a read-only selector preview containing deterministic validation, current membership and the prospective add/remove/keep/preserve diff.
 
-The public `show` and `preview` responses MUST scope authorization to the requested reading-list resource. Their current-membership and prospective diffs expose counts, not chat/contact identifiers; callers that need item-level data MUST use an independently authorized chat/list-member read path.
+The public `show`, `preview`, and `recompute` commands MUST accept a canonical `crl_...` list id and MUST require authorization to that exact reading-list resource. Semantic command grants and legacy group grants MUST NOT substitute for the concrete resource grant. An optional owner argument is an assertion against the resolved record, not a name-resolution mechanism.
+
+Their public DTOs MUST omit raw selector and metadata objects and expose only safe list metadata, deterministic validation, and count-only membership summaries. Callers that need selector refs or item-level chat/contact data MUST use an independently authorized resource path.
 
 An invalid selector MUST NOT be evaluated into a membership diff and MUST NOT reach the write path. In particular, `match:any` MUST NOT accept `not-has-tag` conditions: each negative branch can match almost the entire scope, so their union can silently over-expand the list. The preview MUST report this pattern as high risk with `canApply=false` and no diff.
 

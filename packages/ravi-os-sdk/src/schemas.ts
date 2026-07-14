@@ -14378,56 +14378,24 @@ export const ChatsListsMembersReturnSchema = {
 export const ChatsListsPreviewInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "list": {
-      "description": "List id or name",
+    "listId": {
+      "description": "Canonical reading-list id (crl_<24 hex>)",
+      "pattern": "^crl_[0-9a-f]{24}$",
       "type": "string"
     },
     "owner": {
-      "description": "Owner scope when resolving list by name",
+      "description": "Optional owner assertion for the canonical list id",
       "type": "string"
     }
   },
   "required": [
-    "list"
+    "listId"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
 /** JSON Schema for the return shape of `chats.lists.preview`. */
 export const ChatsListsPreviewReturnSchema = {
-  "$defs": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "number"
-        },
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "null"
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
   "additionalProperties": false,
   "properties": {
     "list": {
@@ -14445,15 +14413,6 @@ export const ChatsListsPreviewReturnSchema = {
         "id": {
           "type": "string"
         },
-        "metadata": {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        },
         "mode": {
           "type": "string"
         },
@@ -14465,15 +14424,6 @@ export const ChatsListsPreviewReturnSchema = {
         },
         "ownerType": {
           "type": "string"
-        },
-        "selector": {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
         },
         "updatedAt": {
           "type": "number"
@@ -14571,15 +14521,6 @@ export const ChatsListsPreviewReturnSchema = {
             "id": {
               "type": "string"
             },
-            "metadata": {
-              "additionalProperties": {
-                "$ref": "#/$defs/__schema0"
-              },
-              "propertyNames": {
-                "type": "string"
-              },
-              "type": "object"
-            },
             "mode": {
               "type": "string"
             },
@@ -14591,15 +14532,6 @@ export const ChatsListsPreviewReturnSchema = {
             },
             "ownerType": {
               "type": "string"
-            },
-            "selector": {
-              "additionalProperties": {
-                "$ref": "#/$defs/__schema0"
-              },
-              "propertyNames": {
-                "type": "string"
-              },
-              "type": "object"
             },
             "updatedAt": {
               "type": "number"
@@ -14618,15 +14550,6 @@ export const ChatsListsPreviewReturnSchema = {
             "createdAt",
             "updatedAt"
           ],
-          "type": "object"
-        },
-        "selector": {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
           "type": "object"
         },
         "validation": {
@@ -14728,7 +14651,6 @@ export const ChatsListsPreviewReturnSchema = {
       },
       "required": [
         "list",
-        "selector",
         "dryRun",
         "validation",
         "current",
@@ -14748,56 +14670,24 @@ export const ChatsListsPreviewReturnSchema = {
 export const ChatsListsRecomputeInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "list": {
-      "description": "List id or name",
+    "listId": {
+      "description": "Canonical reading-list id (crl_<24 hex>)",
+      "pattern": "^crl_[0-9a-f]{24}$",
       "type": "string"
     },
     "owner": {
-      "description": "Owner scope when resolving list by name",
+      "description": "Optional owner assertion for the canonical list id",
       "type": "string"
     }
   },
   "required": [
-    "list"
+    "listId"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
 /** JSON Schema for the return shape of `chats.lists.recompute`. */
 export const ChatsListsRecomputeReturnSchema = {
-  "$defs": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "number"
-        },
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "null"
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
   "additionalProperties": false,
   "properties": {
     "list": {
@@ -14815,15 +14705,6 @@ export const ChatsListsRecomputeReturnSchema = {
         "id": {
           "type": "string"
         },
-        "metadata": {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        },
         "mode": {
           "type": "string"
         },
@@ -14835,15 +14716,6 @@ export const ChatsListsRecomputeReturnSchema = {
         },
         "ownerType": {
           "type": "string"
-        },
-        "selector": {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
         },
         "updatedAt": {
           "type": "number"
@@ -14891,15 +14763,6 @@ export const ChatsListsRecomputeReturnSchema = {
             "id": {
               "type": "string"
             },
-            "metadata": {
-              "additionalProperties": {
-                "$ref": "#/$defs/__schema0"
-              },
-              "propertyNames": {
-                "type": "string"
-              },
-              "type": "object"
-            },
             "mode": {
               "type": "string"
             },
@@ -14911,15 +14774,6 @@ export const ChatsListsRecomputeReturnSchema = {
             },
             "ownerType": {
               "type": "string"
-            },
-            "selector": {
-              "additionalProperties": {
-                "$ref": "#/$defs/__schema0"
-              },
-              "propertyNames": {
-                "type": "string"
-              },
-              "type": "object"
             },
             "updatedAt": {
               "type": "number"
@@ -14945,20 +14799,10 @@ export const ChatsListsRecomputeReturnSchema = {
         },
         "removed": {
           "type": "number"
-        },
-        "selector": {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
         }
       },
       "required": [
         "list",
-        "selector",
         "added",
         "removed",
         "kept",
@@ -15018,56 +14862,24 @@ export const ChatsListsRemoveReturnSchema = {
 export const ChatsListsShowInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "list": {
-      "description": "List id or name",
+    "listId": {
+      "description": "Canonical reading-list id (crl_<24 hex>)",
+      "pattern": "^crl_[0-9a-f]{24}$",
       "type": "string"
     },
     "owner": {
-      "description": "Owner scope when resolving list by name",
+      "description": "Optional owner assertion for the canonical list id",
       "type": "string"
     }
   },
   "required": [
-    "list"
+    "listId"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
 /** JSON Schema for the return shape of `chats.lists.show`. */
 export const ChatsListsShowReturnSchema = {
-  "$defs": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "number"
-        },
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "null"
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
   "additionalProperties": false,
   "properties": {
     "current": {
@@ -15105,15 +14917,6 @@ export const ChatsListsShowReturnSchema = {
         "id": {
           "type": "string"
         },
-        "metadata": {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        },
         "mode": {
           "type": "string"
         },
@@ -15125,15 +14928,6 @@ export const ChatsListsShowReturnSchema = {
         },
         "ownerType": {
           "type": "string"
-        },
-        "selector": {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
         },
         "updatedAt": {
           "type": "number"

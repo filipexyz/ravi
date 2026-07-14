@@ -101,4 +101,6 @@ Implementation is not complete until:
 - cursor anchors refer to durable ordered messages/events
 - dynamic selector preview is read-only and exposes the prospective diff
 - `show` and `preview` MUST authorize the requested list resource and MUST NOT expose chat/contact ids in their public count-only summaries
+- a semantic or legacy group grant without the canonical reading-list grant MUST be denied for `show`, `preview`, and `recompute`
+- public `show`, `preview`, and `recompute` DTOs MUST omit raw selector and metadata objects at every nesting
 - invalid or unsafe selectors cannot reach membership writes

@@ -67,11 +67,20 @@ const chatReadingListReturnSchema = z.object({
   archivedAt: z.number().optional(),
 });
 
+const chatReadingListPublicReturnSchema = chatReadingListReturnSchema.omit({
+  selector: true,
+  metadata: true,
+});
+
+const READING_LIST_ID_PATTERN_SOURCE = "^crl_[0-9a-f]{24}$";
+const readingListIdArgSchema = z
+  .string()
+  .regex(new RegExp(READING_LIST_ID_PATTERN_SOURCE), "Reading-list id must use the canonical crl_<24 hex> form");
+
 const chatReadingListRecomputeReturnSchema = z.object({
-  list: chatReadingListReturnSchema,
+  list: chatReadingListPublicReturnSchema,
   recompute: z.object({
-    list: chatReadingListReturnSchema,
-    selector: z.record(z.string(), jsonValueReturnSchema),
+    list: chatReadingListPublicReturnSchema,
     added: z.number(),
     removed: z.number(),
     kept: z.number(),
@@ -117,16 +126,15 @@ const chatReadingListMembershipDiffSchema = z.object({
 });
 
 const chatReadingListShowReturnSchema = z.object({
-  list: chatReadingListReturnSchema,
+  list: chatReadingListPublicReturnSchema,
   validation: chatReadingListSelectorValidationSchema,
   current: chatReadingListCurrentMembersSchema,
 });
 
 const chatReadingListPreviewReturnSchema = z.object({
-  list: chatReadingListReturnSchema,
+  list: chatReadingListPublicReturnSchema,
   preview: z.object({
-    list: chatReadingListReturnSchema,
-    selector: z.record(z.string(), jsonValueReturnSchema),
+    list: chatReadingListPublicReturnSchema,
     dryRun: z.literal(true),
     validation: chatReadingListSelectorValidationSchema,
     current: chatReadingListCurrentMembersSchema,
@@ -148,13 +156,24 @@ function summarizeMembershipDiff(diff: ChatReadingListMembershipDiff) {
   };
 }
 
+function publicReadingList(list: ChatReadingListRecord) {
+  const { selector: _selector, metadata: _metadata, ...safeList } = list;
+  return safeList;
+}
+
 function publicInspection(inspection: ChatReadingListInspectionResult) {
-  return { ...inspection, current: summarizeCurrent(inspection.current) };
+  return {
+    list: publicReadingList(inspection.list),
+    validation: inspection.validation,
+    current: summarizeCurrent(inspection.current),
+  };
 }
 
 function publicPreview(preview: ChatReadingListPreviewResult) {
   return {
-    ...preview,
+    list: publicReadingList(preview.list),
+    dryRun: preview.dryRun,
+    validation: preview.validation,
     current: summarizeCurrent(preview.current),
     diff: preview.diff ? summarizeMembershipDiff(preview.diff) : null,
   };
@@ -162,8 +181,7 @@ function publicPreview(preview: ChatReadingListPreviewResult) {
 
 function publicRecompute(recompute: ChatReadingListRecomputeResult) {
   return {
-    list: recompute.list,
-    selector: recompute.selector,
+    list: publicReadingList(recompute.list),
     ...summarizeMembershipDiff(recompute),
   };
 }
@@ -217,6 +235,16 @@ function resolveReadingList(listRef: string, owner?: string): ChatReadingListRec
   } catch (err) {
     fail(err instanceof Error ? err.message : String(err));
   }
+}
+
+function resolveReadingListById(listId: string, owner?: string): ChatReadingListRecord {
+  const parsed = readingListIdArgSchema.safeParse(listId.trim());
+  if (!parsed.success) {
+    fail(
+      "Reading-list show, preview, and recompute require the canonical crl_<24 hex> id from `ravi chats lists list`.",
+    );
+  }
+  return resolveReadingList(parsed.data, owner);
 }
 
 function resolveInstanceId(instance?: string): string | undefined {
@@ -626,17 +654,16 @@ USE
 
 DO NOT USE
   This command does not calculate the prospective diff. Use:
-  ravi chats lists preview <list> --json
+  ravi chats lists preview <list-id> --json
 
 EXAMPLES
-  ravi chats lists show sde-cobranca --owner system:ravi --json
   ravi chats lists show crl_86244e77d183316cb5034a6a --json
 
 OUTPUT
-  Returns the list, deterministic selector validation, and current member counts. Read-only; exit 0 even when canApply=false.
+  Returns safe list metadata, deterministic selector validation, and current member counts. Selector, metadata, and chat/contact ids are omitted. Read-only; exit 0 even when canApply=false.
 
 ON ERROR
-  Reading list not found -> pass its id, or add --owner <type:id> when names are ambiguous.
+  Non-canonical ref -> obtain the crl_... id with ravi chats lists list and retry.
 
 FONTES
   .ravi/specs/channels/chats/reading-lists/SPEC.md
@@ -648,25 +675,31 @@ FONTES
     resource: "chats.lists",
     action: "show",
     risk: "low",
-    resourceId: "list",
-    input: ["list", "owner"],
+    resourceId: "listId",
+    requireConcreteResource: true,
+    resourceIdPattern: READING_LIST_ID_PATTERN_SOURCE,
+    input: ["listId", "owner"],
   })
   show(
-    @Arg("list", { description: "List id or name" }) listRef: string,
-    @Option({ flags: "--owner <type:id>", description: "Owner scope when resolving list by name" }) owner?: string,
+    @Arg("listId", { description: "Canonical reading-list id (crl_<24 hex>)", schema: readingListIdArgSchema })
+    listId: string,
+    @Option({ flags: "--owner <type:id>", description: "Optional owner assertion for the canonical list id" })
+    owner?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const list = resolveReadingList(listRef, owner);
+    const list = resolveReadingListById(listId, owner);
     const inspection = inspectChatReadingList(list);
     const publicResult = publicInspection(inspection);
-    const payload = { list, validation: publicResult.validation, current: publicResult.current };
+    const payload = { list: publicResult.list, validation: publicResult.validation, current: publicResult.current };
     if (asJson) {
       printJson(payload);
       return payload;
     }
     console.log(`Reading list: ${list.name} (${list.id})`);
     console.log(`Mode: ${list.mode}; owner: ${list.ownerType}:${list.ownerId}`);
-    console.log(`Selector: ${JSON.stringify(inspection.selector)}`);
+    console.log(
+      `Selector summary: scope=${inspection.validation.scope} match=${inspection.validation.match} conditions=${inspection.validation.conditions.total}`,
+    );
     console.log(
       `Safety: ${inspection.validation.canApply ? "SAFE" : "BLOCKED"} (${inspection.validation.riskLevel}); current=${inspection.current.total}`,
     );
@@ -686,14 +719,13 @@ USE
 
 DO NOT USE
   This command never applies the diff. Apply only after reviewing canApply=true with:
-  ravi chats lists recompute <list> --owner <type:id> --json
+  ravi chats lists recompute <list-id> --owner <type:id> --json
 
 RULES HARD
   match:any + any not-has-tag condition is BLOCKED because it can match almost the entire scope.
   Invalid selectors return canApply=false and diff=null without changing membership.
 
 EXAMPLES
-  ravi chats lists preview sde-cobranca --owner system:ravi --json
   ravi chats lists preview crl_86244e77d183316cb5034a6a --json
 
 OUTPUT
@@ -712,17 +744,21 @@ FONTES
     resource: "chats.lists",
     action: "preview",
     risk: "low",
-    resourceId: "list",
-    input: ["list", "owner"],
+    resourceId: "listId",
+    requireConcreteResource: true,
+    resourceIdPattern: READING_LIST_ID_PATTERN_SOURCE,
+    input: ["listId", "owner"],
   })
   preview(
-    @Arg("list", { description: "List id or name" }) listRef: string,
-    @Option({ flags: "--owner <type:id>", description: "Owner scope when resolving list by name" }) owner?: string,
+    @Arg("listId", { description: "Canonical reading-list id (crl_<24 hex>)", schema: readingListIdArgSchema })
+    listId: string,
+    @Option({ flags: "--owner <type:id>", description: "Optional owner assertion for the canonical list id" })
+    owner?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const list = resolveReadingList(listRef, owner);
+    const list = resolveReadingListById(listId, owner);
     const preview = previewChatReadingListMembers(list);
-    const payload = { list, preview: publicPreview(preview) };
+    const payload = { list: publicReadingList(list), preview: publicPreview(preview) };
     if (asJson) {
       printJson(payload);
       return payload;
@@ -885,8 +921,8 @@ RULES HARD
   Unsafe or invalid selectors are blocked before writes. Always review the read-only diff first.
 
 EXAMPLES
-  ravi chats lists preview <list> --owner <type:id> --json
-  ravi chats lists recompute <list> --owner <type:id> --json
+  ravi chats lists preview <list-id> --owner <type:id> --json
+  ravi chats lists recompute <list-id> --owner <type:id> --json
 
 ON ERROR
   Unsafe reading-list selector -> run the preview command, inspect validation.issues, and correct the selector through an approved write path.
@@ -901,17 +937,21 @@ FONTES
     resource: "chats.lists",
     action: "recompute",
     risk: "medium",
-    resourceId: "list",
-    input: ["list", "owner"],
+    resourceId: "listId",
+    requireConcreteResource: true,
+    resourceIdPattern: READING_LIST_ID_PATTERN_SOURCE,
+    input: ["listId", "owner"],
   })
   recompute(
-    @Arg("list", { description: "List id or name" }) listRef: string,
-    @Option({ flags: "--owner <type:id>", description: "Owner scope when resolving list by name" }) owner?: string,
+    @Arg("listId", { description: "Canonical reading-list id (crl_<24 hex>)", schema: readingListIdArgSchema })
+    listId: string,
+    @Option({ flags: "--owner <type:id>", description: "Optional owner assertion for the canonical list id" })
+    owner?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const list = resolveReadingList(listRef, owner);
+    const list = resolveReadingListById(listId, owner);
     const recompute = recomputeChatReadingListMembers(list);
-    const payload = { list: recompute.list, recompute: publicRecompute(recompute) };
+    const payload = { list: publicReadingList(recompute.list), recompute: publicRecompute(recompute) };
     if (asJson) {
       printJson(payload);
       return payload;

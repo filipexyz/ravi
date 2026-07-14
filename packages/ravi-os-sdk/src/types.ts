@@ -2618,7 +2618,7 @@ export type ChatsListsMembersReturn = Record<string, unknown>;
 
 /** Input shape for `chats.lists.preview`. */
 export type ChatsListsPreviewInput = {
-  list: string;
+  listId: string;
   owner?: string;
 };
 
@@ -2629,12 +2629,10 @@ export type ChatsListsPreviewReturn = {
     createdAt: number;
     description?: string;
     id: string;
-    metadata?: Record<string, unknown>;
     mode: string;
     name: string;
     ownerId: string;
     ownerType: string;
-    selector?: Record<string, unknown>;
     updatedAt: number;
     visibility: string;
   };
@@ -2657,16 +2655,13 @@ export type ChatsListsPreviewReturn = {
       createdAt: number;
       description?: string;
       id: string;
-      metadata?: Record<string, unknown>;
       mode: string;
       name: string;
       ownerId: string;
       ownerType: string;
-      selector?: Record<string, unknown>;
       updatedAt: number;
       visibility: string;
     };
-    selector: Record<string, unknown>;
     validation: {
       canApply: boolean;
       conditions: {
@@ -2691,7 +2686,7 @@ export type ChatsListsPreviewReturn = {
 
 /** Input shape for `chats.lists.recompute`. */
 export type ChatsListsRecomputeInput = {
-  list: string;
+  listId: string;
   owner?: string;
 };
 
@@ -2702,12 +2697,10 @@ export type ChatsListsRecomputeReturn = {
     createdAt: number;
     description?: string;
     id: string;
-    metadata?: Record<string, unknown>;
     mode: string;
     name: string;
     ownerId: string;
     ownerType: string;
-    selector?: Record<string, unknown>;
     updatedAt: number;
     visibility: string;
   };
@@ -2720,18 +2713,15 @@ export type ChatsListsRecomputeReturn = {
       createdAt: number;
       description?: string;
       id: string;
-      metadata?: Record<string, unknown>;
       mode: string;
       name: string;
       ownerId: string;
       ownerType: string;
-      selector?: Record<string, unknown>;
       updatedAt: number;
       visibility: string;
     };
     preserved: number;
     removed: number;
-    selector: Record<string, unknown>;
   };
 };
 
@@ -2749,7 +2739,7 @@ export type ChatsListsRemoveReturn = Record<string, unknown>;
 
 /** Input shape for `chats.lists.show`. */
 export type ChatsListsShowInput = {
-  list: string;
+  listId: string;
   owner?: string;
 };
 
@@ -2765,12 +2755,10 @@ export type ChatsListsShowReturn = {
     createdAt: number;
     description?: string;
     id: string;
-    metadata?: Record<string, unknown>;
     mode: string;
     name: string;
     ownerId: string;
     ownerType: string;
-    selector?: Record<string, unknown>;
     updatedAt: number;
     visibility: string;
   };

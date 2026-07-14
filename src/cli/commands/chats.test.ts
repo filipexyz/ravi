@@ -12,7 +12,7 @@ import {
   getDb,
 } from "../../router/router-db.js";
 import { attachTagSlugsToAsset } from "../../tags/helpers.js";
-import { getCommandAccessMetadata } from "../decorators.js";
+import { getArgsMetadata, getCommandAccessMetadata } from "../decorators.js";
 import { ChatReadingListCommands, ChatsCommands } from "./chats.js";
 
 let stateDir: string | null = null;
@@ -156,7 +156,7 @@ describe("ChatsCommands --json", () => {
       tags: ["crm-cli-dynamic"],
       source: "test",
     });
-    dbCreateChatReadingList({
+    const dynamicList = dbCreateChatReadingList({
       name: "crm-cli-dynamic",
       ownerType: "agent",
       ownerId: "crm",
@@ -166,7 +166,7 @@ describe("ChatsCommands --json", () => {
 
     const lists = new ChatReadingListCommands();
     const previewPayload = captureJson(() => {
-      lists.preview("crm-cli-dynamic", "agent:crm", true);
+      lists.preview(dynamicList.id, "agent:crm", true);
     });
     const preview = previewPayload.preview as Record<string, unknown>;
     const previewDiff = preview.diff as Record<string, unknown>;
@@ -178,7 +178,7 @@ describe("ChatsCommands --json", () => {
     expect(dbListChatReadingListMembers({ listId: (previewPayload.list as Record<string, string>).id }).total).toBe(0);
 
     const payload = captureJson(() => {
-      lists.recompute("crm-cli-dynamic", "agent:crm", true);
+      lists.recompute(dynamicList.id, "agent:crm", true);
     });
 
     expect((payload.recompute as Record<string, unknown>).eligible).toBe(1);
@@ -290,10 +290,56 @@ describe("ChatsCommands --json", () => {
     for (const command of ["show", "preview", "recompute"]) {
       expect(access.get(command)).toMatchObject({
         resource: "chats.lists",
-        resourceId: "list",
-        input: ["list", "owner"],
+        resourceId: "listId",
+        requireConcreteResource: true,
+        resourceIdPattern: "^crl_[0-9a-f]{24}$",
+        input: ["listId", "owner"],
       });
+      const [listArg] = getArgsMetadata(ChatReadingListCommands.prototype, command);
+      expect(listArg?.name).toBe("listId");
+      expect(listArg?.schema?.safeParse("sde-cobranca").success).toBe(false);
+      expect(listArg?.schema?.safeParse("crl_0123456789abcdef01234567").success).toBe(true);
     }
+  });
+
+  it("omits raw selector and metadata from every public show and preview nesting", () => {
+    const list = dbCreateChatReadingList({
+      name: "private-selector-refs",
+      ownerType: "system",
+      ownerId: "other",
+      visibility: "private",
+      mode: "dynamic",
+      selector: {
+        chatIds: ["chat_secret"],
+        contactIds: ["contact_secret"],
+      },
+      metadata: { sourceChatId: "metadata_chat_secret", contactId: "metadata_contact_secret" },
+    });
+    const lists = new ChatReadingListCommands();
+
+    const showPayload = captureJson(() => lists.show(list.id, "system:other", true));
+    const previewPayload = captureJson(() => lists.preview(list.id, "system:other", true));
+    for (const payload of [showPayload, previewPayload]) {
+      const serialized = JSON.stringify(payload);
+      expect(serialized).not.toContain("chat_secret");
+      expect(serialized).not.toContain("contact_secret");
+      expect(serialized).not.toContain("metadata_chat_secret");
+      expect(serialized).not.toContain("metadata_contact_secret");
+    }
+    expect((showPayload.list as Record<string, unknown>).selector).toBeUndefined();
+    expect((showPayload.list as Record<string, unknown>).metadata).toBeUndefined();
+    expect((previewPayload.list as Record<string, unknown>).selector).toBeUndefined();
+    expect((previewPayload.preview as Record<string, unknown>).selector).toBeUndefined();
+    expect(
+      ((previewPayload.preview as Record<string, unknown>).list as Record<string, unknown>).metadata,
+    ).toBeUndefined();
+  });
+
+  it("rejects name-based refs before show, preview, or recompute resolution", () => {
+    const lists = new ChatReadingListCommands();
+    expect(() => lists.show("same-name", "system:one", true)).toThrow(/canonical crl_/);
+    expect(() => lists.preview("same-name", "system:two", true)).toThrow(/canonical crl_/);
+    expect(() => lists.recompute("same-name", "system:two", true)).toThrow(/canonical crl_/);
   });
 
   it("does not truncate contact-tag exclusions after 500 related chats", () => {

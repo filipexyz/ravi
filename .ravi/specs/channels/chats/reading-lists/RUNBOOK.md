@@ -42,14 +42,15 @@ If a chat appears read in the wrong workflow:
 1. Inspect selector and current membership without writes:
 
    ```bash
-   ravi chats lists show <list> --owner <type:id> --json
+   ravi chats lists show <crl-list-id> --owner <type:id> --json
    ```
 
 2. Calculate the read-only prospective diff:
 
    ```bash
-   ravi chats lists preview <list> --owner <type:id> --json
+   ravi chats lists preview <crl-list-id> --owner <type:id> --json
    ```
 
-3. Continue only when `preview.validation.canApply=true` and `preview.diff` is non-null.
-4. If `validation.issues` contains `unsafe_any_with_negative`, correct the selector through an approved write path and preview again. Do not recompute the unsafe list.
+3. Confirm the runtime principal has a concrete read grant for that exact list id; group-level command access alone is intentionally insufficient.
+4. Continue only when `preview.validation.canApply=true` and `preview.diff` is non-null.
+5. If `validation.issues` contains `unsafe_any_with_negative`, correct the selector through an approved write path and preview again. Do not recompute the unsafe list.

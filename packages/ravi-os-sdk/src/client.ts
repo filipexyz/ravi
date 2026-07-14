@@ -989,23 +989,23 @@ export class RaviClient {
         });
       },
       /** Validate a dynamic selector and preview membership diff without writes */
-      preview: async (list: string, options?: {
+      preview: async (listId: string, options?: {
         owner?: string;
       }): Promise<ChatsListsPreviewReturn> => {
         return this.transport.call({
           groupSegments: ["chats","lists"],
           command: "preview",
-          body: { list, ...(options ?? {}) },
+          body: { listId, ...(options ?? {}) },
         });
       },
       /** Materialize dynamic reading-list selector membership */
-      recompute: async (list: string, options?: {
+      recompute: async (listId: string, options?: {
         owner?: string;
       }): Promise<ChatsListsRecomputeReturn> => {
         return this.transport.call({
           groupSegments: ["chats","lists"],
           command: "recompute",
-          body: { list, ...(options ?? {}) },
+          body: { listId, ...(options ?? {}) },
         });
       },
       /** Remove a chat from a reading list without deleting cursor history */
@@ -1021,13 +1021,13 @@ export class RaviClient {
         });
       },
       /** Show one reading list and explain whether its selector is safe */
-      show: async (list: string, options?: {
+      show: async (listId: string, options?: {
         owner?: string;
       }): Promise<ChatsListsShowReturn> => {
         return this.transport.call({
           groupSegments: ["chats","lists"],
           command: "show",
-          body: { list, ...(options ?? {}) },
+          body: { listId, ...(options ?? {}) },
         });
       }
     },
