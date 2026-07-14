@@ -22,7 +22,7 @@ normative: true
 
 # Skill Curation Learning Loop
 
-**See:** `/home/ravi/vault-ravi/knowledge/hermes-learning-loop/DA-hermes-learning-loop-core.md` (extracted Hermes core). The MEMORY half of this loop is already implemented + deployed in `src/memory/curation-runtime.ts` (`noteTurnForMemoryNudge`); this spec adds the SKILL half + the slow maintenance curator, mirroring that proven pattern.
+**See:** `/home/ravi/vault-ravi/knowledge/hermes-learning-loop/DA-hermes-learning-loop-core.md` (extracted Hermes core). The MEMORY and SKILL dispatchers share the durable terminal cadence in `src/runtime/learning-loop-cadence.ts` while keeping independent watermarks and curator profiles.
 
 ## Intent
 
@@ -30,15 +30,15 @@ Give every Ravi agent a compounding learning loop, adapted from NousResearch Her
 
 Two nested loops:
 
-- **FAST (per-turn nudge).** Hermes forks the agent in-process every N turns and asks "should any skill/memory be saved or updated?". Ravi agents are separate processes, so the adaptation is: the runtime turn loop keeps an **in-process per-session counter** and, at the interval, **dispatches a curador task** (a fresh isolated session) that reads the conversation delta and writes via `ravi skills` / `ravi memory`. This is exactly `noteTurnForMemoryNudge` extended to skills.
+- **FAST (terminal-turn nudge).** Hermes forks the agent in-process every N turns and asks "should any skill/memory be saved or updated?". Ravi persists the cadence phase per session and, at the interval, dispatches a fresh isolated curator task that reads only the post-watermark delta and writes via `ravi skills` / `ravi memory`.
 - **SLOW (maintenance curator).** An inactivity-triggered job that runs deterministic lifecycle transitions on the skill library (active → stale → archive), never deletes, and optionally (opt-in, default OFF) consolidates overlapping skills into class-level umbrellas.
 
 ## Invariants
 
 **Counter & trigger (from the memory half — non-negotiable, learned the hard way):**
-- I1. The nudge counter MUST live IN-PROCESS (a per-session Map in the runtime), NEVER in a shared/contended DB column. Two writers to one JSON column with replace semantics is a lost-update: the runtime clobbers the counter every turn and cadence never fires. (This is why the memory counter was moved out of `runtime_session_json`.)
+- I1. The cadence transition MUST execute in the host process and persist under the dedicated `learningLoopCadence` namespace in `runtime_session_json`. Every full-column provider write MUST carry that namespace forward after a fresh DB read; a blind replace is the forbidden lost-update.
 - I2. The runtime MUST dispatch the curador DIRECTLY in-process at the interval. It MUST NOT depend on a cross-process NATS `Stop` hook for cadence — that hook did not fire reliably for omni conversation turns.
-- I3. Skill review fires on a turn/iteration cadence (default 10), not a contextual "looks important" heuristic. Cadence is what distinguishes "session was smooth, nothing to save" (a valid outcome) from "we never checked". Only a NORMALLY-completed turn ticks the counter — `turn.interrupted` / `turn.failed` MUST NOT tick (the nudge lives only in the `turn.complete` handler, never in the abort/silent terminal paths).
+- I3. Skill review fires on a terminal-turn cadence (default 10), not a contextual "looks important" heuristic. Exactly one of `turn.complete`, `turn.interrupted`, or `turn.failed` ticks each real turn. Curator and report sessions are excluded before the tick.
 
 **The review fork (fast loop):**
 - I4. The review runs in an ISOLATED execution (a curador task / ephemeral session), NOT the live user session. It MUST NOT write to — nor otherwise mutate, DIRECTLY OR INDIRECTLY — the parent session's message log or runtime state (params, watermark-except-via-completion, tokens). The review persists ONLY through its restricted tools (I5). Otherwise the parent re-reads the harness prompt next turn and turns into a curator (the "curator-takeover" bug).
@@ -57,7 +57,8 @@ Two nested loops:
 
 **Runtime dispatch & durability (blocker-grade — from spec review):**
 - I15. **Reentrancy guard (mandatory).** The nudge MUST NOT tick or dispatch for the review/curador's OWN sessions — any session whose name ends `-curator` or that runs a curador task. A review turn scheduling another review is an infinite loop. (The memory nudge guards `sessionName.endsWith("-curator")`.)
-- I16. **Ephemeral counter ≠ durable watermark.** The cadence counter (I1) and the curation WATERMARK are SEPARATE concerns and MUST NOT be conflated. The counter is in-process, resets on daemon restart, and only TRIGGERS cadence. The watermark — which messages/turns were already curated — is DURABLE (DB, e.g. `lastCuratedMessageId`), is READ to bound the delta the curador sees, and is ADVANCED only when the curador task completes (never as a side effect of the counter). The review never writes the counter to the DB (I1); it never advances the watermark except through completion (I4).
+- I16. **Cadence phase ≠ durable watermark.** The persisted phase only decides WHEN to inspect. Memory and skill watermarks independently decide WHAT delta each curator reads and advance only when that curator task completes. On first state creation, a missing watermark is seeded at the current message cursor so rollout never replays the full historical transcript.
+- I17. Explicit provider quota MUST NOT complete a curator turn successfully. A task-bound `quota_exhausted` failure blocks the task and clears its checkpoint deadline; an active/blocked curator prevents duplicate dispatch for the same origin session.
 - I17. **Deploy target (mandatory, not advisory).** Runtime changes deploy to the daemon's real path — the NPM global (`pm_exec_path`), NOT the bun global (`bun add -g` only updates the CLI). Every change MUST be `npm install -g <tgz>` and verified present in the running bundle before any live validation (E.38). Validating against the wrong bundle already cost a full day.
 
 ## Ravi Adaptation & Open Problems
@@ -72,7 +73,7 @@ Two nested loops:
 The target is the FULL learning loop, both loops and all durable components. Sequencing below is build ORDER, not a gate — everything ships.
 
 **Fast loop (per-turn review):**
-- S1. Skill nudge — in-process per-session counter → dispatch a skill-curador task at the interval, mirroring `noteTurnForMemoryNudge` (memory half done). Env `RAVI_SKILL_NUDGE_INTERVAL` (default 10).
+- S1. Skill nudge — merge-safe durable per-session phase → direct skill-curator dispatch at the interval. Env `RAVI_SKILL_NUDGE_INTERVAL` (default 10).
 - S2. Combined review — when memory + skill nudges land the same turn, one dispatch with the concatenated verbatim prompt (never two forks).
 - S3. `skills_in_play` manifest (sub-spec — the medium-hard piece):
   - **Compute:** during the session window covered by the review delta, the runtime collects every skill id (a) invoked via the `Skill` tool and (b) auto-loaded by a skill-gate firing on a tool call. Source of truth = the runtime's own tool-call stream (not the message text), recorded per session.
@@ -101,14 +102,17 @@ The target is the FULL learning loop, both loops and all durable components. Seq
 ## Validation
 
 - `ravi specs get learning-loop/skill-curation --mode full --json`; `ravi specs sync --json`.
-- Unit: the skill-nudge counter increments in-process across ≥3 real turns (1→2→3), never resets (mirror `curation-runtime` tests).
+- Unit: the cadence advances across terminal types, fires on 9→10, survives rehydration, reconstructs from `session_turns`, preserves co-resident runtime params and skips curator/report sessions.
+- Provider/task: a Claude zero-usage weekly-limit envelope becomes `turn.failed`; a task-bound quota failure persists `status=blocked` and removes checkpoint cadence.
 - Integration: a curador dispatched at the interval writes to `ravi skills`, NOT to the parent session log (I4).
 - E2E live (per E.38 — prove across ≥2-3 real iterations + full chain, never a 0→1 unit test): drive real turns → skill-nudge fires at interval → skill-curador runs → a real SKILL.md patch/create lands → report. Verify the fix is in the bundle at the daemon's `pm_exec_path` first.
 - Guardrail check: a session containing an environment failure or "X is broken" claim MUST produce no skill capturing the negative claim (I9).
 
 ## Known Failure Modes
 
-- **Lost-update / clobber (already hit):** counter in a shared DB column → runtime overwrites it every turn → cadence never fires. Fixed by I1 (in-process counter).
+- **Lost-update / clobber (already hit):** blind provider-param replace drops cadence/watermarks. Fixed by the dedicated namespace + merge-after-refresh contract in I1.
+- **Restart reset / replay:** ephemeral phase resets or zero watermark re-reads history. Fixed by `session_turns` phase reconstruction and cold-start cursor seeding (I16).
+- **Quota-success loop:** provider emits explicit limit text followed by nominal success, leaving tasks active forever. Fixed by I17.
 - **Cross-process hook unreliable (already hit):** NATS Stop-hook cadence never fired for omni turns. Fixed by I2 (runtime dispatches directly).
 - **Wrong deploy target (already hit — cost a full session):** deployed to bun global while the daemon runs from npm global. Fixed by the deploy-reality note.
 - **Curator-takeover:** the review fork writing into the parent session → agent becomes a curator. Prevented by I4.

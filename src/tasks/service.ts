@@ -3107,4 +3107,3 @@ export async function completeTask(
       : [...buildChildStateRelatedEvents(result.task, result.event), ...dependencyRelatedEvents],
   };
 }
-

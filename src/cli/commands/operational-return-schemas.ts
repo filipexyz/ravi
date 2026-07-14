@@ -2723,4 +2723,3 @@ export const runtimeModelPresetMutationReturnSchema = z
   .strict();
 
 export const runtimeModelPresetImpactReturnSchema = runtimeModelPresetImpactSchema;
-

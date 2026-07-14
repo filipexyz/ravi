@@ -1238,4 +1238,3 @@ function normalizeRequestedSkillName(name?: string, skillName?: string): string 
   }
   return positional || flag || undefined;
 }
-

@@ -55,7 +55,7 @@ DETERMINISTIC (runtime owns — no LLM in path)
   dedup            : exact-identity reject on write
   secret scan      : R9b — credential-only candidate rejected
   injection scan   : R9  — [BLOCKED:...] wrap, keep-visible
-  cap check        : R3  — projected size vs cap, error on overflow
+  cap check        : R3  — projected size vs FILE cap, error on overflow
   cap eviction     : oldest-Diário-row eviction to fit (bounded, FIFO)
   atomic write     : R10 — temp+fsync+rename, drift → .bak refuse
   watermark advance: R27 — runtime advances on task completion, not LLM report
@@ -85,6 +85,9 @@ LLM (irreducible judgment ONLY)
 - Advancing the cursor MUST be at-least-once safe: it MUST NOT advance past a
   message the curator never received (a crashed/failed dispatch leaves the
   cursor where it was, so the next cycle re-reads — bounded, never dropped).
+- On rollout/cold-start with no trustworthy watermark, the runtime MUST seed the
+  cursor at the current latest message id and MUST NOT materialize or dispatch
+  the historical backlog. Subsequent cycles read only new rows.
 
 ### Write operations (Hermes add/replace/remove)
 
@@ -101,7 +104,7 @@ LLM (irreducible judgment ONLY)
 
 ### Cap + consolidation (closes pre-mortem #6)
 
-- A projected write over cap MUST error deterministically (R3/R11), never
+- A projected write over the file cap (`DEFAULT_MEMORY_FILE_CAP_CHARS`) MUST error deterministically (R3/R11), never
   silently drop.
 - Consolidation MUST have a deterministic fallback: when the LLM fails to
   consolidate within `consolidationMaxAttempts` (default 3), the runtime MUST
@@ -112,9 +115,9 @@ LLM (irreducible judgment ONLY)
 
 ### Injection READ side (closes design gap #4)
 
-- The prompt-injection READ (`buildMemoryPromptSection`) MUST bound what it
-  injects to the same cap the WRITE side enforces; a `MEMORY.md` larger than
-  cap (manual edit / legacy) MUST be truncated-with-marker, not injected whole.
+- The prompt-injection READ (`buildMemoryPromptSection`) MUST use the smaller
+  `DEFAULT_MEMORY_CAP_CHARS` budget independently from the larger file cap; a
+  `MEMORY.md` larger than the read budget MUST be truncated-with-marker, not injected whole.
 - Injected memory SHOULD carry a freshness marker (newest entry date) so a
   stale store is visible to the model rather than weighted as current.
 

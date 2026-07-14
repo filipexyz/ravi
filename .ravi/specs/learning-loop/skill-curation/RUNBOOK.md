@@ -24,7 +24,7 @@ grep -c "<distinctive-string-of-your-fix>" /home/ravi/.nvm/.../lib/node_modules/
 
 Interval overridable per env (mirror `RAVI_MEMORY_NUDGE_INTERVAL`): expose `RAVI_SKILL_NUDGE_INTERVAL` (default 10 tool-iterations with skills available). For fast pilot validation set it low (2–3), then restore to 10.
 
-## Watch The Loop Live (in-process counter has no DB row — read the log)
+## Watch The Loop Live (durable phase + runtime log)
 
 ```bash
 grep "ravi:skills:nudge" ~/.pm2/logs/ravi-error.log | grep -oE "turnCount=[0-9]+" | tail

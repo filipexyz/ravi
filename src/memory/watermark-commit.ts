@@ -79,7 +79,7 @@ export function advanceWatermarkForCompletedCuratorTask(task: {
   if (!input) {
     return false;
   }
-  const sessionKey = input.originator_session;
+  const sessionKey = input.originator_session_key || input.originator_session;
   const throughMessageId = Number.parseInt(input.highest_message_id ?? "", 10);
   const cadence = Number.parseInt(input.cadence_turn ?? "", 10);
   if (!sessionKey || !Number.isFinite(throughMessageId)) {

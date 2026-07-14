@@ -165,6 +165,14 @@ export function getMessagesAfterId(sessionId: string, lastId: number): Message[]
     .all(sessionId, lastId) as Message[];
 }
 
+/** Latest durable message cursor for a session without materializing its history. */
+export function getLatestMessageId(sessionId: string): number {
+  const row = getDb().prepare("SELECT MAX(id) AS id FROM messages WHERE session_id = ?").get(sessionId) as
+    | { id?: number | null }
+    | undefined;
+  return typeof row?.id === "number" && Number.isFinite(row.id) ? Math.max(0, Math.floor(row.id)) : 0;
+}
+
 export function getRecentHistory(sessionId: string, limit = 20): Message[] {
   const messages = getDb()
     .prepare("SELECT * FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT ?")
@@ -344,4 +352,3 @@ function parseMessageCreatedAtMs(value: string | null | undefined): number | und
   const ms = Date.parse(normalized);
   return Number.isFinite(ms) && ms > 0 ? ms : undefined;
 }
-

@@ -17,8 +17,10 @@ ravi specs sync --json
 
 ## Invariant → Test Map
 
-- **I1 in-process counter** — the skill-nudge counter increments in a runtime Map across ≥3 real turns (1→2→3) and never persists to `runtime_session_json`. Mirror `src/memory/curation-runtime` behavior; validate via the tick log, not a DB read.
+- **I1 durable cadence** — `learning-loop-cadence.test.ts` proves 9→10, restart rehydration, ledger reconstruction, merge preservation and session exclusions.
 - **I2 runtime dispatches directly** — a curador task appears with `createdBy=runtime:skill-nudge` at the interval; no NATS Stop hook involved.
+- **I16 no replay** — cold-start seeds memory and skill watermarks at the current `messages.id` without materializing historical rows.
+- **I17 quota convergence** — `claude-provider.test.ts`, `credential-classifier.test.ts` and `provider-quota-task.test.ts` prove zero-usage weekly limit → failed turn → blocked task.
 - **I4 isolation (curator-takeover guard)** — integration test: the dispatched review writes to `ravi skills`, NEVER to the parent session message log.
 - **I6/I7 prompt fidelity** — the curador profile prompt contains the verbatim Hermes signals + write-order 1→4 + guardrails (grep the profile).
 - **I9 negative-capture guardrail** — a session containing an environment failure or "X is broken" claim produces NO skill capturing the negative claim (only a positive fix, if any).
