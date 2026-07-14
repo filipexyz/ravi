@@ -4,7 +4,18 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-const EXPECTED_VERSION = "3.260714.1";
+const EXPECTED_VERSION = "3.260714.2";
+
+export const EXPECTED_PACKAGE_FILES = [
+  "README.md",
+  "bin/ravi",
+  "dist/bundle/index.js",
+  "dist/bundle/index.js.map",
+  "dist/bundle/internal-plugins.json",
+  "dist/tui/index.js",
+  "dist/tui/index.js.map",
+  "package.json",
+] as const;
 
 const REQUIRED_COMMITS = [
   { id: "ea07c838c34aef25bf71948d46e901416cf8ede6", label: "durable learning loops" },
@@ -36,6 +47,10 @@ const REQUIRED_FEATURES: FeatureEvidence[] = [
       {
         path: "src/runtime/learning-loop-cadence.ts",
         tokens: ["noteTerminalTurnForLearningLoop", "advanceLearningLoopCadenceState", "learning loop terminal tick"],
+      },
+      {
+        path: "src/runtime/host-event-loop.ts",
+        tokens: ["cadenceDeferredForRuntimeTarget", "pendingTaskQuota", "noteTerminalTurnForCadence"],
       },
     ],
   },
@@ -94,6 +109,14 @@ const REQUIRED_FEATURES: FeatureEvidence[] = [
         tokens: ["selectRuntimeTarget", "decideRuntimeTargetFailure", "classifyRuntimeTargetFailure"],
       },
       {
+        path: "src/runtime/host-event-loop.ts",
+        tokens: ["taskQuotaTaskId", "pendingTaskQuota", "runtime_target_switch"],
+      },
+      {
+        path: "src/runtime/session-launcher.ts",
+        tokens: ["runtime.target.exhausted", "pendingTaskQuota", "blockTaskForProviderQuota"],
+      },
+      {
         path: "src/cli/commands/runtime-targets.ts",
         tokens: ['name: "runtime.targets"', "export class RuntimeTargetsCommands"],
       },
@@ -103,6 +126,7 @@ const REQUIRED_FEATURES: FeatureEvidence[] = [
 
 type ArtifactContent = {
   bundle: string;
+  files: Map<string, string>;
   kind: "directory" | "tarball";
   packageJson: string;
   sourceMap: string;
@@ -116,6 +140,7 @@ type GateResult = {
   includedCommits: string[];
   kind: ArtifactContent["kind"];
   ok: true;
+  packageSha256: string;
   sourceMapSha256: string;
   version: string;
 };
@@ -157,36 +182,67 @@ function readTarEntry(tarball: string, entry: string, projectRoot: string): stri
   return requireSuccessful(["tar", "-xOzf", tarball, entry], projectRoot);
 }
 
+export function assertExactTarballEntries(entries: string[]): void {
+  const normalizedEntries = entries.filter(Boolean).sort();
+  const expectedEntries = EXPECTED_PACKAGE_FILES.map((path) => `package/${path}`).sort();
+  if (
+    normalizedEntries.length !== expectedEntries.length ||
+    normalizedEntries.some((entry, index) => entry !== expectedEntries[index])
+  ) {
+    const missing = expectedEntries.filter((entry) => !normalizedEntries.includes(entry));
+    const unexpected = normalizedEntries.filter((entry) => !expectedEntries.includes(entry));
+    fail(
+      `tarball file set diverges from the release contract (missing=${missing.join(",") || "none"}; unexpected=${unexpected.join(",") || "none"})`,
+    );
+  }
+}
+
 function readArtifact(artifactPath: string, projectRoot: string): ArtifactContent {
   if (artifactPath.endsWith(".tgz")) {
     if (!existsSync(artifactPath)) fail(`tarball not found: ${artifactPath}`);
-    const entries = requireSuccessful(["tar", "-tzf", artifactPath], projectRoot).split("\n");
-    for (const entry of ["package/package.json", "package/dist/bundle/index.js", "package/dist/bundle/index.js.map"]) {
-      if (!entries.includes(entry)) fail(`tarball is missing required entry: ${entry}`);
-    }
+    const entries = requireSuccessful(["tar", "-tzf", artifactPath], projectRoot)
+      .split("\n")
+      .filter(Boolean);
+    assertExactTarballEntries(entries);
+    const files = new Map(
+      EXPECTED_PACKAGE_FILES.map((path) => [path, readTarEntry(artifactPath, `package/${path}`, projectRoot)]),
+    );
     return {
-      bundle: readTarEntry(artifactPath, "package/dist/bundle/index.js", projectRoot),
+      bundle: files.get("dist/bundle/index.js") ?? fail("tarball bundle is unreadable"),
+      files,
       kind: "tarball",
-      packageJson: readTarEntry(artifactPath, "package/package.json", projectRoot),
-      sourceMap: readTarEntry(artifactPath, "package/dist/bundle/index.js.map", projectRoot),
+      packageJson: files.get("package.json") ?? fail("tarball package.json is unreadable"),
+      sourceMap: files.get("dist/bundle/index.js.map") ?? fail("tarball source map is unreadable"),
     };
   }
 
   const packageRoot = artifactPath;
-  const paths = {
-    bundle: resolve(packageRoot, "dist/bundle/index.js"),
-    packageJson: resolve(packageRoot, "package.json"),
-    sourceMap: resolve(packageRoot, "dist/bundle/index.js.map"),
-  };
-  for (const [name, path] of Object.entries(paths)) {
-    if (!existsSync(path)) fail(`${name} not found: ${path}`);
+  const files = new Map<string, string>();
+  for (const relativePath of EXPECTED_PACKAGE_FILES) {
+    const path = resolve(packageRoot, relativePath);
+    if (!existsSync(path)) fail(`package file not found: ${path}`);
+    files.set(relativePath, readFileSync(path, "utf8"));
   }
   return {
-    bundle: readFileSync(paths.bundle, "utf8"),
+    bundle: files.get("dist/bundle/index.js") ?? fail("package bundle is unreadable"),
+    files,
     kind: "directory",
-    packageJson: readFileSync(paths.packageJson, "utf8"),
-    sourceMap: readFileSync(paths.sourceMap, "utf8"),
+    packageJson: files.get("package.json") ?? fail("package.json is unreadable"),
+    sourceMap: files.get("dist/bundle/index.js.map") ?? fail("package source map is unreadable"),
   };
+}
+
+export function assertPackageFilesMatchCheckout(files: ReadonlyMap<string, string>, projectRoot: string): string {
+  const fileHashes: string[] = [];
+  for (const relativePath of EXPECTED_PACKAGE_FILES) {
+    const checkoutPath = resolve(projectRoot, relativePath);
+    if (!existsSync(checkoutPath)) fail(`checkout release file is missing: ${relativePath}`);
+    const checkoutContent = readFileSync(checkoutPath, "utf8");
+    const artifactContent = files.get(relativePath) ?? fail(`artifact release file is missing: ${relativePath}`);
+    if (artifactContent !== checkoutContent) fail(`artifact release file diverges from checkout: ${relativePath}`);
+    fileHashes.push(`${relativePath}\0${sha256(artifactContent)}`);
+  }
+  return sha256(fileHashes.join("\n"));
 }
 
 function assertCleanTrackedTree(projectRoot: string): void {
@@ -255,6 +311,7 @@ export function checkConsolidatedRelease(projectRoot: string, artifactPath: stri
   assertCleanTrackedTree(projectRoot);
   const { head, includedCommits } = assertCommitSet(projectRoot);
   const artifact = readArtifact(artifactPath, projectRoot);
+  const packageSha256 = assertPackageFilesMatchCheckout(artifact.files, projectRoot);
   const packageJson = JSON.parse(artifact.packageJson) as { name?: string; version?: string };
   if (packageJson.name !== "ravi.bot") fail(`unexpected package name: ${packageJson.name ?? "missing"}`);
   if (packageJson.version !== EXPECTED_VERSION) {
@@ -271,6 +328,7 @@ export function checkConsolidatedRelease(projectRoot: string, artifactPath: stri
     includedCommits,
     kind: artifact.kind,
     ok: true,
+    packageSha256,
     sourceMapSha256: sha256(artifact.sourceMap),
     version: packageJson.version,
   };
@@ -310,6 +368,7 @@ async function main(): Promise<void> {
     console.log(`Artifact: ${result.kind} ${result.artifact}`);
     console.log(`Bundle SHA-256: ${result.bundleSha256}`);
     console.log(`Source map SHA-256: ${result.sourceMapSha256}`);
+    console.log(`Package SHA-256: ${result.packageSha256}`);
     console.log(`Features: ${result.features.join(", ")}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
