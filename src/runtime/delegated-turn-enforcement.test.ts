@@ -8,6 +8,7 @@ import { getOrCreateSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { buildRuntimeRequestContext } from "./runtime-request-context.js";
+import { getRuntimeToolAccessMode, resolveScopedTurnToolAccessMode } from "./host-services.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 
 let stateDir: string | null = null;
@@ -168,5 +169,39 @@ describe("delegated turn enforcement (end-to-end)", () => {
     const decision = runWithContext(ctx, () => enforceScopeCheck("admin", "sessions", "info"));
     expect(decision.allowed).toBe(true);
     expect(runWithContext(ctx, () => agentCan(agent.id, "access", "session", "restricted"))).toBe(false);
+  });
+
+  describe("tool access mode on a provider that cannot host permission hooks (pi/antigravity)", () => {
+    const piCapabilities = {
+      tools: { permissionMode: "provider-native", accessRequirement: "tool_and_executable" },
+      supportsToolHooks: false,
+    } as unknown as Parameters<typeof getRuntimeToolAccessMode>[0];
+    const raviHostCapabilities = {
+      tools: { permissionMode: "ravi-host", accessRequirement: "tool_and_executable" },
+      supportsToolHooks: true,
+    } as unknown as Parameters<typeof getRuntimeToolAccessMode>[0];
+
+    // resolveScopedTurnToolAccessMode is the shared decision used by BOTH the
+    // delegated-context branch of getRuntimeToolAccessMode AND the turn-scoped-authority
+    // branch of the session launcher (which is the path that actually runs a WhatsApp
+    // turn and previously hardcoded "restricted"). Testing it directly covers both.
+    it("POS: a full-authority agent runs UNRESTRICTED on a hookless provider (would otherwise fail the turn)", () => {
+      dbUpdateAgent(agent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+      expect(resolveScopedTurnToolAccessMode(piCapabilities, agent.id)).toBe("unrestricted");
+      // and through the delegated-context path
+      const ctx = turnContext(contactPrompt("luis"));
+      expect(ctx.context?.kind).toBe("turn-runtime");
+      expect(getRuntimeToolAccessMode(piCapabilities, agent.id, ctx.context)).toBe("unrestricted");
+    });
+
+    it("NEG: an agent WITHOUT full authority stays RESTRICTED even on a hookless provider", () => {
+      // default (bootstrap) profile — no admin:system:* and not full tool+executable
+      expect(resolveScopedTurnToolAccessMode(piCapabilities, agent.id)).toBe("restricted");
+    });
+
+    it("NEG: a full-authority agent stays RESTRICTED on a ravi-host provider (hooks enforce the scope)", () => {
+      dbUpdateAgent(agent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+      expect(resolveScopedTurnToolAccessMode(raviHostCapabilities, agent.id)).toBe("restricted");
+    });
   });
 });
