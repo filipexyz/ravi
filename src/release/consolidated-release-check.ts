@@ -297,7 +297,7 @@ function assertCommitSet(projectRoot: string): { head: string; includedCommits: 
     fail(`source tree mismatch: expected ${EXPECTED_SOURCE_TREE}, got ${sourceTree}`);
   }
   const changedPaths = requireSuccessful(
-    ["git", "diff", "--name-only", EXPECTED_SOURCE_COMMIT, head, "--"],
+    ["git", "diff", "--no-renames", "--name-only", EXPECTED_SOURCE_COMMIT, head, "--"],
     projectRoot,
   )
     .split("\n")
