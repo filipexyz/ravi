@@ -73,15 +73,35 @@ function getIneligibilityReason(
   now: number,
 ): string | null {
   if (!credential.enabled) return "disabled";
-  if (INELIGIBLE_STATUSES.has(credential.status)) return `status:${credential.status}`;
   const health = getRuntimeCredentialHealth(credential.id);
+  if (credential.status === "cooldown") {
+    const readyAt = earliestReadyAt(health?.cooldownUntil, credential.resetAt, health?.resetAt);
+    if (readyAt === undefined || readyAt > now) return "status:cooldown";
+  } else if (credential.status === "exhausted") {
+    const readyAt = earliestReadyAt(credential.resetAt, health?.resetAt);
+    if (readyAt === undefined || readyAt > now) return "status:exhausted";
+  } else if (INELIGIBLE_STATUSES.has(credential.status)) {
+    return `status:${credential.status}`;
+  }
   if (health?.cooldownUntil && health.cooldownUntil > now) return "cooldown";
   if (!matchesOptional(credential.upstreamProvider, request.upstreamProvider)) return "upstream_mismatch";
   if (!matchesAllowlist(credential.modelAllowlist, request.model)) return "model_not_allowed";
   if (matchesDenylist(credential.modelDenylist, request.model)) return "model_denied";
+  if (request.credentialIds?.length && !request.credentialIds.includes(credential.id)) return "credential_not_allowed";
+  if (request.authMethods?.length && (!credential.authMethod || !request.authMethods.includes(credential.authMethod))) {
+    return "auth_method_not_allowed";
+  }
+  if (request.sessionCompatibilityKey && credential.sessionCompatibilityKey !== request.sessionCompatibilityKey) {
+    return "session_compatibility_mismatch";
+  }
   if (!matchesAllowlist(credential.agentAllowlist, request.agentId)) return "agent_not_allowed";
   if (!matchesAllowlist(credential.taskProfileAllowlist, request.taskProfile)) return "task_profile_not_allowed";
   return null;
+}
+
+function earliestReadyAt(...values: Array<number | undefined>): number | undefined {
+  const present = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  return present.length > 0 ? Math.min(...present) : undefined;
 }
 
 function matchesOptional(configured: string | undefined, requested: string | undefined): boolean {

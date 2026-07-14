@@ -11,6 +11,12 @@ export function isRuntimeTerminalEvent(event: RuntimeEvent): event is RuntimeTer
 
 export interface RuntimeFailedTerminalInput {
   error: string;
+  /** Trusted JavaScript error identity captured from an actual Error instance. */
+  errorName?: string;
+  /** The adapter caught a thrown value instead of receiving a normalized provider failure event. */
+  caughtException?: boolean;
+  /** Adapter-owned structured evidence that the provider process or transport failed. */
+  targetFailure?: boolean;
   recoverable?: boolean;
   rawEvent?: Record<string, unknown>;
   metadata?: RuntimeEventMetadata;
@@ -53,6 +59,9 @@ export function createRuntimeTerminalEventTracker(): RuntimeTerminalEventTracker
       return {
         type: "turn.failed",
         error: input.error,
+        ...(input.errorName ? { errorName: input.errorName } : {}),
+        ...(input.caughtException ? { caughtException: true } : {}),
+        ...(input.targetFailure ? { targetFailure: true } : {}),
         recoverable: input.recoverable,
         ...(input.rawEvent ? { rawEvent: input.rawEvent } : {}),
         ...(input.metadata ? { metadata: input.metadata } : {}),

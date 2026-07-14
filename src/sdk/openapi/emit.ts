@@ -80,6 +80,7 @@ function buildFlatSchema(
       continue;
     }
     properties[opt.name] = zodToJson(opt.schema, opt.description);
+    if (!opt.schema.safeParse(undefined).success) required.push(opt.name);
   }
 
   const hasContent = Object.keys(properties).length > 0;

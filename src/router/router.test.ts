@@ -11,6 +11,7 @@ import {
   dbGetChatReadingList,
   dbListChannels,
   dbListContexts,
+  dbMutateAgentDefaults,
   dbPruneContexts,
   dbUpdateAgent,
   dbUpdateChannel,
@@ -254,6 +255,51 @@ describe("router context queries", () => {
     closeRouterDb();
     getDb();
     expect(dbListChannels()).toEqual(firstPass);
+  });
+});
+
+describe("agent defaults mutation", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-router-agent-defaults-test-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("mutates the latest defaults while preserving unrelated committed keys", () => {
+    dbCreateAgent({ id: "dev", cwd: "/tmp/ravi-dev" });
+    dbUpdateAgent("dev", {
+      defaults: { provider: "claude", arbitrary: { preserved: true } },
+    });
+
+    const first = dbMutateAgentDefaults("dev", (defaults) => ({
+      ...defaults,
+      runtimeTargetPolicy: { id: "first-policy" },
+    }));
+    expect(first.changed).toBe(true);
+
+    dbUpdateAgent("dev", {
+      defaults: { ...first.defaults, effort: "high" },
+    });
+
+    const second = dbMutateAgentDefaults("dev", (defaults) => ({
+      ...defaults,
+      runtimeTargetPolicy: { id: "second-policy" },
+    }));
+    expect(second.previousDefaults).toMatchObject({ effort: "high" });
+    expect(second.defaults).toEqual({
+      provider: "claude",
+      arbitrary: { preserved: true },
+      runtimeTargetPolicy: { id: "second-policy" },
+      effort: "high",
+    });
+    expect(dbGetAgent("dev")?.defaults).toEqual(second.defaults);
+
+    const noOp = dbMutateAgentDefaults("dev", (defaults) => defaults);
+    expect(noOp.changed).toBe(false);
+    expect(noOp.defaults).toEqual(second.defaults);
   });
 });
 

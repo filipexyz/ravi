@@ -47,6 +47,24 @@ describe("logger terminal stream", () => {
     expect(output).toContain("stack=");
   });
 
+  it("redacts secrets from messages, errors, nested data, and persistent context", () => {
+    const openAiSecret = "sk-proj-abcdefghijklmnopqrstuvwxyz";
+    const githubSecret = "ghp_abcdefghijklmnopqrstuvwxyz123456";
+    const awsSecret = "AKIA1234567890ABCDEF";
+    const contextualLogger = logger.withContext({ detail: openAiSecret });
+
+    contextualLogger.error(`startup failed with ${openAiSecret}`, {
+      error: new Error(`upstream rejected ${githubSecret}`),
+      nested: { provider: awsSecret },
+    });
+
+    const output = String(stderrSpy.mock.calls[0]?.[0] ?? "");
+    expect(output).toContain("[REDACTED]");
+    expect(output).not.toContain(openAiSecret);
+    expect(output).not.toContain(githubSecret);
+    expect(output).not.toContain(awsSecret);
+  });
+
   it("keeps NATS lifecycle logs off stdout", () => {
     const natsLog = logger.child("nats");
 

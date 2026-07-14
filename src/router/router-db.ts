@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { mkdirSync, existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { logger } from "../utils/logger.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { normalizePhone } from "../utils/phone.js";
@@ -7070,6 +7071,42 @@ export function dbUpdateAgent(id: string, updates: AgentUpdateInput): AgentConfi
 
   log.info("Updated agent", { id });
   return dbGetAgent(id)!;
+}
+
+export interface AgentDefaultsMutationResult {
+  agent: AgentConfig;
+  previousDefaults: Record<string, unknown> | null;
+  defaults: Record<string, unknown> | null;
+  changed: boolean;
+}
+
+/**
+ * Mutate one agent's generic defaults under an IMMEDIATE SQLite transaction.
+ *
+ * The callback always receives the latest committed defaults. Acquiring the
+ * write reservation before that read prevents a read-modify-write caller from
+ * overwriting an unrelated defaults update committed by another process.
+ */
+export function dbMutateAgentDefaults(
+  id: string,
+  mutate: (defaults: Record<string, unknown> | null) => Record<string, unknown> | null,
+): AgentDefaultsMutationResult {
+  const database = getDb();
+  return executeWrite(
+    database,
+    () => {
+      const current = dbGetAgent(id);
+      if (!current) throw new Error(`Agent not found: ${id}`);
+
+      const previousDefaults = current.defaults ? structuredClone(current.defaults) : null;
+      const proposed = mutate(previousDefaults ? structuredClone(previousDefaults) : null);
+      const defaults = proposed && Object.keys(proposed).length > 0 ? structuredClone(proposed) : null;
+      const changed = !isDeepStrictEqual(previousDefaults, defaults);
+      const agent = changed ? dbUpdateAgent(id, { defaults }) : current;
+      return { agent, previousDefaults, defaults, changed };
+    },
+    { label: `agent-defaults:${id}` },
+  );
 }
 
 /**

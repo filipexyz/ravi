@@ -29,6 +29,7 @@ import {
   markRuntimeCredentialAttemptStarted,
   reserveRuntimeCredentialAttempt,
 } from "./credential-store.js";
+
 import { buildRuntimeHostAttachments } from "./runtime-host-attachments.js";
 import { prepareRuntimeProviderBootstrap } from "./runtime-provider-bootstrap.js";
 import {
@@ -39,7 +40,18 @@ import {
 import { resolveRuntimeSessionContinuity } from "./runtime-session-continuity.js";
 import { buildRuntimeSystemPrompt } from "./runtime-system-prompt.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
+import type { RuntimeTarget } from "./target-policy.js";
 import type { RuntimeCapabilities, RuntimeProviderId, RuntimeStartRequest, SessionRuntimeProvider } from "./types.js";
+
+export class RuntimeStartFailure extends Error {
+  constructor(
+    message: string,
+    readonly failureScope: "credential" | "target",
+  ) {
+    super(message);
+    this.name = "RuntimeStartFailure";
+  }
+}
 
 export interface RuntimeStartRequestBuildOptions {
   runId: string;
@@ -53,6 +65,8 @@ export interface RuntimeStartRequestBuildOptions {
   sessionCwd: string;
   dbSessionKey: string;
   model: string;
+  runtimeTarget?: RuntimeTarget;
+  taskProfileId?: string;
   runtimeResolution: TaskRuntimeResolution;
   storedRuntimeSessionParams: Record<string, unknown> | undefined;
   storedProviderSessionId?: string;
@@ -160,6 +174,8 @@ export async function buildRuntimeStartRequest(
     sessionCwd,
     dbSessionKey,
     model,
+    runtimeTarget,
+    taskProfileId,
     runtimeResolution,
     storedRuntimeSessionParams,
     storedProviderSessionId,
@@ -200,13 +216,36 @@ export async function buildRuntimeStartRequest(
     runtimeProvider: runtimeProviderId,
     upstreamProvider: resolveRuntimeCredentialUpstreamProvider(runtimeProviderId, model),
     model,
+    ...(runtimeTarget?.credentialRequirements?.credentialIds
+      ? { credentialIds: runtimeTarget.credentialRequirements.credentialIds }
+      : {}),
+    ...(runtimeTarget?.credentialRequirements?.authMethods
+      ? { authMethods: runtimeTarget.credentialRequirements.authMethods }
+      : {}),
+    ...(runtimeTarget?.credentialRequirements?.sessionCompatibilityKey
+      ? { sessionCompatibilityKey: runtimeTarget.credentialRequirements.sessionCompatibilityKey }
+      : {}),
     agentId: agent.id,
+    ...(taskProfileId ? { taskProfile: taskProfileId } : {}),
     sessionKey: dbSessionKey,
     sessionName,
     runId,
   });
-  if (!credentialResolution.attemptBinding && credentialResolution.managedPoolConfigured) {
-    throw new Error(formatRuntimeCredentialResolutionFailure(runtimeProviderId, model, credentialResolution.rejected));
+  const targetRequiresManagedCredential = Boolean(
+    runtimeTarget?.credentialRequirements &&
+      (runtimeTarget.credentialRequirements.requireManaged ||
+        runtimeTarget.credentialRequirements.credentialIds?.length ||
+        runtimeTarget.credentialRequirements.authMethods?.length ||
+        runtimeTarget.credentialRequirements.sessionCompatibilityKey),
+  );
+  if (
+    !credentialResolution.attemptBinding &&
+    (credentialResolution.managedPoolConfigured || targetRequiresManagedCredential)
+  ) {
+    throw new RuntimeStartFailure(
+      formatRuntimeCredentialResolutionFailure(runtimeProviderId, model, credentialResolution.rejected),
+      "target",
+    );
   }
   if (credentialResolution.attemptBinding) {
     (toolContext as Record<string, unknown>).runtimeCredential = serializeRuntimeCredentialAttemptBinding(

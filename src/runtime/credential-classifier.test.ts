@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { classifyRuntimeCredentialFailure, evaluateCredentialLimitPressure } from "./credential-classifier.js";
+import { REDACTION_TEXT_CORPUS } from "../test/redaction-corpus.js";
 
 describe("runtime credential classifier", () => {
   it("classifies rate limit pressure without leaking sensitive headers", () => {
@@ -20,7 +21,7 @@ describe("runtime credential classifier", () => {
     expect(signal.confidence).toBe("high");
     expect(signal.retryAfterMs).toBe(2000);
     expect(signal.retryableByCredential).toBe(true);
-    expect(signal.rawHeaders?.authorization).toBe("[redacted]");
+    expect(signal.rawHeaders?.authorization).toBe("[REDACTED]");
 
     const pressure = evaluateCredentialLimitPressure(signal);
     expect(pressure.nearLimit).toBe(true);
@@ -42,8 +43,35 @@ describe("runtime credential classifier", () => {
 
     expect(signal.kind).toBe("auth_invalid");
     expect(signal.scope).toBe("credential");
-    expect(signal.message).toBe("Invalid API key [redacted-secret]");
+    expect(signal.message).toBe("Invalid API key [REDACTED]");
     expect(JSON.stringify(signal)).not.toContain("sk-proj-secret_token_value");
+  });
+
+  it("uses the central sanitizer for the shared adversarial corpus", () => {
+    for (const entry of REDACTION_TEXT_CORPUS) {
+      const signal = classifyRuntimeCredentialFailure({
+        runtimeProvider: "codex",
+        upstreamProvider: entry.input,
+        model: entry.input,
+        credentialId: entry.input,
+        providerCode: entry.input,
+        providerType: entry.input,
+        message: entry.input,
+        requestId: entry.input,
+      });
+      expect(JSON.stringify(signal)).not.toContain(entry.secret);
+      for (const value of [
+        signal.upstreamProvider,
+        signal.model,
+        signal.credentialId,
+        signal.providerCode,
+        signal.providerType,
+        signal.message,
+        signal.requestId,
+      ]) {
+        expect(value).toContain("[REDACTED]");
+      }
+    }
   });
 
   it("keeps provider overload separate from credential retry", () => {
@@ -69,6 +97,19 @@ describe("runtime credential classifier", () => {
     expect(signal.kind).toBe("quota_exhausted");
     expect(signal.scope).toBe("account");
     expect(signal.confidence).toBe("high");
+  });
+
+  it("does not authorize credential recovery from text alone", () => {
+    for (const message of ["Invalid API key", "token expired", "insufficient credits"]) {
+      const signal = classifyRuntimeCredentialFailure({
+        runtimeProvider: "codex",
+        upstreamProvider: "openai",
+        message,
+        source: "sdk-error",
+      });
+
+      expect(signal.retryableByCredential).toBe(false);
+    }
   });
 
   it("classifies Codex context window exhaustion as a request context limit", () => {

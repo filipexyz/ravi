@@ -259,6 +259,8 @@ export interface TaskProfileDefinition {
   description: string;
   sessionNameTemplate: string;
   runtimeDefaults?: TaskRuntimeOptions;
+  /** Optional runtime target policy selected after session overrides and before agent defaults. */
+  runtimeTargetPolicy?: unknown;
   workspaceBootstrap: TaskProfileWorkspaceBootstrap;
   sync: TaskProfileSyncPolicy;
   rendererHints: TaskProfileRendererHints;

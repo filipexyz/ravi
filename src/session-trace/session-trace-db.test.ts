@@ -89,7 +89,7 @@ describe("session trace db", () => {
     expect(first.id).not.toBe(second.id);
     expect(first.seq).toBe(1);
     expect(second.seq).toBe(2);
-    expect(first.preview).toBe(`Authorization: Bearer [REDACTED]`);
+    expect(first.preview).toBe(`Authorization: [REDACTED]`);
     expect(first.error).toBe(`OPENAI_API_KEY=[REDACTED]`);
     expect(first.payloadJson).toEqual({
       env: {
@@ -316,6 +316,10 @@ describe("session trace db", () => {
   it("redacts nested secret values without dropping allowed operational values", () => {
     expect(redactText("Bearer abcdefghijklmnop")).toEqual({
       value: "Bearer [REDACTED]",
+      redacted: true,
+    });
+    expect(redactText("Incorrect API key provided: sk-proj-runtime-target-secret")).toEqual({
+      value: "Incorrect API key provided: [REDACTED]",
       redacted: true,
     });
 
