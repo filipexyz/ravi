@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { executeWrite } from "../db/write-retry.js";
 import {
-  dbFindChatReadingList,
+  dbGetChatReadingList,
   dbGetChat,
   dbListChats,
   getDb,
@@ -742,7 +742,7 @@ export function recomputeChatReadingListMembers(list: ChatReadingListRecord): Ch
   return executeWrite(
     database,
     () => {
-      const currentList = dbFindChatReadingList({ ref: list.id });
+      const currentList = dbGetChatReadingList({ id: list.id });
       if (!currentList) throw new Error(`Reading list not found: ${list.id}`);
       const { inspection, parsed, activeRows } = inspectReadingListWithParsed(currentList);
       if (!inspection.validation.canApply) {

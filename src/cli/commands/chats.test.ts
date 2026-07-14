@@ -306,6 +306,8 @@ describe("ChatsCommands --json", () => {
     const scopeSentinel = "contact_secret_scope";
     const matchSentinel = "contact_secret_match";
     const chatTypeSentinel = "chat_secret_type";
+    const modeSentinel = "list_secret_mode";
+    const nameSentinel = "list_secret_name";
     const list = dbCreateChatReadingList({
       name: "private-selector-refs",
       ownerType: "system",
@@ -343,6 +345,10 @@ describe("ChatsCommands --json", () => {
       ((previewPayload.preview as Record<string, unknown>).list as Record<string, unknown>).metadata,
     ).toBeUndefined();
 
+    getDb()
+      .prepare("UPDATE chat_reading_lists SET name = ?, mode = ?, updated_at = ? WHERE id = ?")
+      .run(nameSentinel, modeSentinel, Date.now() + 1, list.id);
+
     let recomputeError = "";
     try {
       lists.recompute(list.id, "system:other", true);
@@ -353,6 +359,8 @@ describe("ChatsCommands --json", () => {
     expect(recomputeError).not.toContain(scopeSentinel);
     expect(recomputeError).not.toContain(matchSentinel);
     expect(recomputeError).not.toContain(chatTypeSentinel);
+    expect(recomputeError).not.toContain(modeSentinel);
+    expect(recomputeError).not.toContain(nameSentinel);
   });
 
   it("rejects name-based refs before show, preview, or recompute resolution", () => {
@@ -479,6 +487,29 @@ describe("ChatsCommands --json", () => {
 
     expect(() => recomputeChatReadingListMembers(staleSafeList)).toThrow(/unsafe_any_with_negative/);
     expect(dbListChatReadingListMembers({ listId: staleSafeList.id }).total).toBe(0);
+  });
+
+  it("fails closed when the exact reading list disappears before transactional recompute", () => {
+    const original = dbCreateChatReadingList({
+      name: "authorized-list",
+      ownerType: "system",
+      ownerId: "ravi",
+      mode: "dynamic",
+      selector: { chatIds: ["chat-original"] },
+    });
+    getDb()
+      .prepare("UPDATE chat_reading_lists SET archived_at = ?, updated_at = ? WHERE id = ?")
+      .run(Date.now(), Date.now(), original.id);
+    const substitute = dbCreateChatReadingList({
+      name: original.id,
+      ownerType: "system",
+      ownerId: "ravi",
+      mode: "dynamic",
+      selector: { chatIds: ["chat-substitute"] },
+    });
+
+    expect(() => recomputeChatReadingListMembers(original)).toThrow(`Reading list not found: ${original.id}`);
+    expect(dbListChatReadingListMembers({ listId: substitute.id }).total).toBe(0);
   });
 
   it("uses one canonical parser for structured and legacy chat-tag selectors", () => {
