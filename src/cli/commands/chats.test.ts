@@ -1,15 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
-import { validateChatReadingListSelector } from "../../chats/reading-lists.js";
+import { recomputeChatReadingListMembers, validateChatReadingListSelector } from "../../chats/reading-lists.js";
 import {
   dbCreateChatReadingList,
   dbGetChatMessage,
+  dbListChatIdsByContactIds,
   dbListChatReadingListMembers,
   dbUpsertChat,
   dbUpsertChatMessage,
   dbUpsertChatParticipant,
+  getDb,
 } from "../../router/router-db.js";
 import { attachTagSlugsToAsset } from "../../tags/helpers.js";
+import { getCommandAccessMetadata } from "../decorators.js";
 import { ChatReadingListCommands, ChatsCommands } from "./chats.js";
 
 let stateDir: string | null = null;
@@ -170,7 +173,8 @@ describe("ChatsCommands --json", () => {
     expect(preview.dryRun).toBe(true);
     expect((preview.validation as Record<string, unknown>).canApply).toBe(true);
     expect(previewDiff.added).toBe(1);
-    expect(previewDiff.addedChatIds).toEqual([chat.id]);
+    expect(previewDiff.addedChatIds).toBeUndefined();
+    expect((preview.current as Record<string, unknown>).chatIds).toBeUndefined();
     expect(dbListChatReadingListMembers({ listId: (previewPayload.list as Record<string, string>).id }).total).toBe(0);
 
     const payload = captureJson(() => {
@@ -179,7 +183,7 @@ describe("ChatsCommands --json", () => {
 
     expect((payload.recompute as Record<string, unknown>).eligible).toBe(1);
     expect((payload.recompute as Record<string, unknown>).added).toBe(1);
-    expect((payload.recompute as Record<string, unknown>).addedChatIds).toEqual([chat.id]);
+    expect((payload.recompute as Record<string, unknown>).addedChatIds).toBeUndefined();
   });
 
   it("explains and blocks match:any selectors that contain negative conditions without writing", () => {
@@ -275,9 +279,168 @@ describe("ChatsCommands --json", () => {
     const preview = payload.preview as Record<string, unknown>;
     const diff = preview.diff as Record<string, unknown>;
     expect((preview.validation as Record<string, unknown>).canApply).toBe(true);
-    expect(diff.eligibleChatIds).toEqual([safeChat.id]);
-    expect(diff.addedChatIds).toEqual([safeChat.id]);
+    expect(diff.eligible).toBe(1);
+    expect(diff.added).toBe(1);
+    expect(diff.eligibleChatIds).toBeUndefined();
     expect(dbListChatReadingListMembers({ listId: list.id }).total).toBe(0);
+  });
+
+  it("scopes show, preview and recompute authorization to the requested list", () => {
+    const access = getCommandAccessMetadata(ChatReadingListCommands);
+    for (const command of ["show", "preview", "recompute"]) {
+      expect(access.get(command)).toMatchObject({
+        resource: "chats.lists",
+        resourceId: "list",
+        input: ["list", "owner"],
+      });
+    }
+  });
+
+  it("does not truncate contact-tag exclusions after 500 related chats", () => {
+    const excludedContactId = "contact_optout_many_chats";
+    const positiveContactId = "contact_billing_candidate";
+    const chats = Array.from({ length: 501 }, (_, index) => {
+      const chat = dbUpsertChat({
+        channel: "whatsapp",
+        instanceId: "instance-1",
+        platformChatId: `5511888${String(index).padStart(6, "0")}@s.whatsapp.net`,
+        chatType: "dm",
+        title: `Opt-out chat ${index}`,
+      });
+      dbUpsertChatParticipant({ chatId: chat.id, contactId: excludedContactId, source: "test" });
+      return chat;
+    });
+    const firstPage = new Set(
+      dbListChatIdsByContactIds({ contactIds: [excludedContactId] }).get(excludedContactId) ?? [],
+    );
+    expect(firstPage.size).toBe(500);
+    const beyondDefaultLimit = chats.find((chat) => !firstPage.has(chat.id));
+    expect(beyondDefaultLimit).toBeDefined();
+    dbUpsertChatParticipant({
+      chatId: beyondDefaultLimit!.id,
+      contactId: positiveContactId,
+      source: "test",
+    });
+    attachTagSlugsToAsset({
+      assetType: "contact",
+      assetId: positiveContactId,
+      tags: ["cobranca:em-aberto"],
+      source: "test",
+    });
+    attachTagSlugsToAsset({
+      assetType: "contact",
+      assetId: excludedContactId,
+      tags: ["sinal:optout"],
+      source: "test",
+    });
+    const list = dbCreateChatReadingList({
+      name: "sde-cobranca-many-optouts",
+      ownerType: "system",
+      ownerId: "ravi",
+      mode: "dynamic",
+      selector: {
+        scope: "contact",
+        match: "all",
+        conditions: [
+          { kind: "has-tag", tag: "cobranca:em-aberto" },
+          { kind: "not-has-tag", tag: "sinal:optout" },
+        ],
+      },
+    });
+
+    const payload = captureJson(() => new ChatReadingListCommands().preview(list.id, undefined, true));
+    const preview = payload.preview as Record<string, unknown>;
+    const diff = preview.diff as Record<string, unknown>;
+    expect(diff.eligible).toBe(0);
+    expect(diff.added).toBe(0);
+    expect(dbListChatReadingListMembers({ listId: list.id }).total).toBe(0);
+  });
+
+  it("revalidates the persisted selector inside the recompute transaction", () => {
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "5511777000001@s.whatsapp.net",
+      chatType: "dm",
+      title: "Stale selector candidate",
+    });
+    dbUpsertChatParticipant({ chatId: chat.id, contactId: "contact_stale", source: "test" });
+    attachTagSlugsToAsset({
+      assetType: "contact",
+      assetId: "contact_stale",
+      tags: ["cobranca:em-aberto"],
+      source: "test",
+    });
+    const staleSafeList = dbCreateChatReadingList({
+      name: "stale-selector-list",
+      ownerType: "system",
+      ownerId: "ravi",
+      mode: "dynamic",
+      selector: { contactTags: ["cobranca:em-aberto"] },
+    });
+    getDb()
+      .prepare("UPDATE chat_reading_lists SET selector_json = ?, updated_at = ? WHERE id = ?")
+      .run(
+        JSON.stringify({
+          scope: "contact",
+          match: "any",
+          conditions: [
+            { kind: "has-tag", tag: "cobranca:em-aberto" },
+            { kind: "not-has-tag", tag: "sinal:optout" },
+          ],
+        }),
+        Date.now() + 1,
+        staleSafeList.id,
+      );
+
+    expect(() => recomputeChatReadingListMembers(staleSafeList)).toThrow(/unsafe_any_with_negative/);
+    expect(dbListChatReadingListMembers({ listId: staleSafeList.id }).total).toBe(0);
+  });
+
+  it("uses one canonical parser for structured and legacy chat-tag selectors", () => {
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "5511777000002@s.whatsapp.net",
+      chatType: "dm",
+      title: "Chat-tag candidate",
+    });
+    attachTagSlugsToAsset({ assetType: "chat", assetId: chat.id, tags: ["fila:chat"], source: "test" });
+    const structured = dbCreateChatReadingList({
+      name: "structured-chat-scope",
+      mode: "dynamic",
+      selector: { scope: "chat", match: "all", conditions: [{ kind: "has-tag", tag: "fila:chat" }] },
+    });
+    const legacy = dbCreateChatReadingList({
+      name: "legacy-chat-asset-type",
+      mode: "dynamic",
+      selector: { assetType: "chat", tags: ["fila:chat"] },
+    });
+    const lists = new ChatReadingListCommands();
+    for (const list of [structured, legacy]) {
+      const payload = captureJson(() => lists.preview(list.id, undefined, true));
+      const preview = payload.preview as Record<string, unknown>;
+      expect((preview.validation as Record<string, unknown>).scope).toBe("chat");
+      expect((preview.diff as Record<string, unknown>).eligible).toBe(1);
+    }
+
+    const invalid = validateChatReadingListSelector({
+      scope: 42,
+      match: false,
+      chatType: "bogus",
+      tags: ["fila:chat"],
+    });
+    expect(invalid.canApply).toBe(false);
+    expect(invalid.issues.map((issue) => issue.code)).toEqual(
+      expect.arrayContaining(["invalid_selector_field", "unsupported_chat_type"]),
+    );
+    const conflicting = validateChatReadingListSelector({
+      scope: "contact",
+      assetType: "chat",
+      tags: ["fila:chat"],
+    });
+    expect(conflicting.canApply).toBe(false);
+    expect(conflicting.issues.map((issue) => issue.code)).toContain("conflicting_selector_aliases");
   });
 
   it("reports malformed selector fields without evaluating membership", () => {

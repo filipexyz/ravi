@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { executeWrite } from "../db/write-retry.js";
 import {
+  dbFindChatReadingList,
   dbGetChat,
-  dbListChatIdsByContactIds,
   dbListChats,
   getDb,
   type ChatReadingListRecord,
@@ -35,6 +35,16 @@ interface NormalizedTagCondition {
   kind: "has-tag" | "not-has-tag";
   tag: string;
   target: TagTarget;
+}
+
+interface ParsedReadingListSelector {
+  selector: Record<string, unknown>;
+  scope: TagTarget;
+  match: SelectorMatchMode;
+  conditions: NormalizedTagCondition[];
+  criteria: ReadingListSelectorCriteria;
+  issues: ChatReadingListSelectorIssue[];
+  conditionCount: number;
 }
 
 export interface ChatReadingListSelectorIssue {
@@ -110,7 +120,7 @@ function normalizeStringList(...values: unknown[]): string[] {
   const result: string[] = [];
   const seen = new Set<string>();
   const pushOne = (value: unknown): void => {
-    const normalized = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim() : "";
+    const normalized = typeof value === "string" ? value.trim() : "";
     if (!normalized || seen.has(normalized)) return;
     seen.add(normalized);
     result.push(normalized);
@@ -131,21 +141,94 @@ function normalizeStringList(...values: unknown[]): string[] {
   return result;
 }
 
-function normalizeMatchMode(selector: Record<string, unknown>): SelectorMatchMode {
-  const raw = stringValue(selector.tagMode) ?? stringValue(selector.tagsMode) ?? stringValue(selector.match);
-  return raw === "any" || raw === "or" ? "any" : "all";
+function invalidFieldIssue(issues: ChatReadingListSelectorIssue[], key: string, expected: string): void {
+  issues.push({
+    code: "invalid_selector_field",
+    severity: "error",
+    path: key,
+    message: `Selector ${key} must be ${expected}.`,
+  });
 }
 
-function normalizeTagTargets(selector: Record<string, unknown>): TagTarget[] {
-  const raw = stringValue(selector.tagTarget) ?? stringValue(selector.tagsTarget) ?? stringValue(selector.assetType);
-  if (raw === "chat" || raw === "chats") return ["chat"];
-  if (raw === "contact" || raw === "contacts") return ["contact"];
-  return ["contact"];
+function canonicalAlias<T extends string>(input: {
+  selector: Record<string, unknown>;
+  keys: readonly string[];
+  aliases: Readonly<Record<string, T>>;
+  fallback: T;
+  label: string;
+  unsupportedCode: string;
+  issues: ChatReadingListSelectorIssue[];
+}): T {
+  const resolved: Array<{ key: string; value: T }> = [];
+  for (const key of input.keys) {
+    if (!(key in input.selector)) continue;
+    const raw = input.selector[key];
+    if (typeof raw !== "string" || !raw.trim()) {
+      invalidFieldIssue(input.issues, key, "a non-empty string");
+      continue;
+    }
+    const value = input.aliases[raw.trim()];
+    if (!value) {
+      input.issues.push({
+        code: input.unsupportedCode,
+        severity: "error",
+        path: key,
+        message: `Unsupported selector ${input.label}: ${raw.trim()}.`,
+      });
+      continue;
+    }
+    resolved.push({ key, value });
+  }
+  const distinct = new Set(resolved.map((entry) => entry.value));
+  if (distinct.size > 1) {
+    input.issues.push({
+      code: "conflicting_selector_aliases",
+      severity: "error",
+      path: resolved.map((entry) => entry.key).join(","),
+      message: `Selector aliases for ${input.label} conflict; provide one canonical value.`,
+    });
+  }
+  return resolved[0]?.value ?? input.fallback;
 }
 
-function selectorScope(selector: Record<string, unknown>): TagTarget {
-  const raw = stringValue(selector.scope) ?? stringValue(selector.tagTarget) ?? stringValue(selector.tagsTarget);
-  return raw === "chat" || raw === "chats" ? "chat" : "contact";
+function strictStringAlias(
+  selector: Record<string, unknown>,
+  keys: readonly string[],
+  issues: ChatReadingListSelectorIssue[],
+): string | undefined {
+  const resolved: Array<{ key: string; value: string }> = [];
+  for (const key of keys) {
+    if (!(key in selector)) continue;
+    const value = stringValue(selector[key]);
+    if (!value) {
+      invalidFieldIssue(issues, key, "a non-empty string");
+      continue;
+    }
+    resolved.push({ key, value });
+  }
+  if (new Set(resolved.map((entry) => entry.value)).size > 1) {
+    issues.push({
+      code: "conflicting_selector_aliases",
+      severity: "error",
+      path: resolved.map((entry) => entry.key).join(","),
+      message: `Selector aliases ${resolved.map((entry) => entry.key).join("/")} conflict.`,
+    });
+  }
+  return resolved[0]?.value;
+}
+
+function validateStringListFields(
+  selector: Record<string, unknown>,
+  keys: readonly string[],
+  issues: ChatReadingListSelectorIssue[],
+): void {
+  const validListValue = (value: unknown): boolean =>
+    typeof value === "string" || (Array.isArray(value) && value.every((item) => typeof item === "string"));
+  for (const key of keys) {
+    if (key in selector && !validListValue(selector[key])) {
+      invalidFieldIssue(issues, key, "a string or an array of strings");
+    }
+  }
 }
 
 const LEGACY_TAG_KEYS = [
@@ -165,6 +248,7 @@ const LEGACY_TAG_KEYS = [
 
 function normalizeStructuredConditions(
   selector: Record<string, unknown>,
+  target: TagTarget,
   issues: ChatReadingListSelectorIssue[],
 ): NormalizedTagCondition[] {
   if (!("conditions" in selector)) return [];
@@ -177,8 +261,6 @@ function normalizeStructuredConditions(
     });
     return [];
   }
-
-  const target = selectorScope(selector);
   const conditions: NormalizedTagCondition[] = [];
   selector.conditions.forEach((raw, index) => {
     const path = `conditions[${index}]`;
@@ -211,34 +293,125 @@ function normalizeStructuredConditions(
   return conditions;
 }
 
-export function validateChatReadingListSelector(selectorValue: unknown): ChatReadingListSelectorValidation {
+function addTagsByMode(
+  input: {
+    selector: Record<string, unknown>;
+    target: TagTarget;
+    mode: SelectorMatchMode;
+  },
+  criteria: ReadingListSelectorCriteria,
+): void {
+  const genericAll = normalizeStringList(input.selector.allTags);
+  const genericAny = normalizeStringList(input.selector.anyTags);
+  const genericTags = normalizeStringList(input.selector.tag, input.selector.tags);
+  const defaultGenericAll = input.mode === "all" ? genericTags : [];
+  const defaultGenericAny = input.mode === "any" ? genericTags : [];
+
+  if (input.target === "contact") {
+    criteria.contactAllTags.push(
+      ...genericAll,
+      ...defaultGenericAll,
+      ...normalizeStringList(input.selector.contactTag, input.selector.contactTags, input.selector.allContactTags),
+    );
+    criteria.contactAnyTags.push(
+      ...genericAny,
+      ...defaultGenericAny,
+      ...normalizeStringList(input.selector.anyContactTags),
+    );
+  }
+
+  if (input.target === "chat") {
+    criteria.chatAllTags.push(
+      ...genericAll,
+      ...defaultGenericAll,
+      ...normalizeStringList(input.selector.chatTag, input.selector.chatTags, input.selector.allChatTags),
+    );
+    criteria.chatAnyTags.push(...genericAny, ...defaultGenericAny, ...normalizeStringList(input.selector.anyChatTags));
+  }
+}
+
+const STRING_LIST_FIELDS = [
+  "chat",
+  "chatId",
+  "chats",
+  "chatIds",
+  "contact",
+  "contactId",
+  "contacts",
+  "contactIds",
+  ...LEGACY_TAG_KEYS,
+] as const;
+
+function selectorCriteria(
+  selector: Record<string, unknown>,
+  scope: TagTarget,
+  match: SelectorMatchMode,
+  issues: ChatReadingListSelectorIssue[],
+): ReadingListSelectorCriteria {
+  validateStringListFields(selector, STRING_LIST_FIELDS, issues);
+  const channel = strictStringAlias(selector, ["channel"], issues);
+  const instanceId = strictStringAlias(selector, ["instanceId", "instance"], issues);
+  const chatType = strictStringAlias(selector, ["chatType", "type"], issues);
+  if (chatType && !["dm", "group", "room", "thread", "channel", "unknown"].includes(chatType)) {
+    issues.push({
+      code: "unsupported_chat_type",
+      severity: "error",
+      path: "chatType",
+      message: `Unsupported selector chatType: ${chatType}.`,
+    });
+  }
+  const criteria: ReadingListSelectorCriteria = {
+    chatIds: normalizeStringList(selector.chat, selector.chatId, selector.chats, selector.chatIds),
+    contactIds: normalizeStringList(selector.contact, selector.contactId, selector.contacts, selector.contactIds),
+    contactAllTags: [],
+    contactAnyTags: [],
+    chatAllTags: [],
+    chatAnyTags: [],
+    channel,
+    instanceId,
+    chatType: chatType as ChatType | undefined,
+  };
+  addTagsByMode(
+    {
+      selector,
+      target: scope,
+      mode: match,
+    },
+    criteria,
+  );
+  return criteria;
+}
+
+function parseReadingListSelector(selectorValue: unknown): ParsedReadingListSelector {
   const selector = isRecord(selectorValue) ? selectorValue : {};
   const issues: ChatReadingListSelectorIssue[] = [];
-  const rawScope = stringValue(selector.scope) ?? stringValue(selector.tagTarget) ?? stringValue(selector.tagsTarget);
-  const scope = selectorScope(selector);
-  if (rawScope && !["contact", "contacts", "chat", "chats"].includes(rawScope)) {
+  if (!isRecord(selectorValue)) {
     issues.push({
-      code: "unsupported_scope",
+      code: "invalid_selector",
       severity: "error",
-      path: "scope",
-      message: `Unsupported selector scope: ${rawScope}. Use contact or chat.`,
+      message: "Selector must be an object.",
     });
   }
-
-  const rawMatch = stringValue(selector.match) ?? stringValue(selector.tagMode) ?? stringValue(selector.tagsMode);
-  const match = normalizeMatchMode(selector);
-  if (rawMatch && !["all", "and", "any", "or"].includes(rawMatch)) {
-    issues.push({
-      code: "unsupported_match",
-      severity: "error",
-      path: "match",
-      message: `Unsupported selector match mode: ${rawMatch}. Use all or any.`,
-    });
-  }
-
-  const conditions = normalizeStructuredConditions(selector, issues);
-  const positive = conditions.filter((condition) => condition.kind === "has-tag").length;
-  const negative = conditions.filter((condition) => condition.kind === "not-has-tag").length;
+  const scope = canonicalAlias<TagTarget>({
+    selector,
+    keys: ["scope", "tagTarget", "tagsTarget", "assetType"],
+    aliases: { contact: "contact", contacts: "contact", chat: "chat", chats: "chat" },
+    fallback: "contact",
+    label: "scope",
+    unsupportedCode: "unsupported_scope",
+    issues,
+  });
+  const match = canonicalAlias<SelectorMatchMode>({
+    selector,
+    keys: ["match", "tagMode", "tagsMode"],
+    aliases: { all: "all", and: "all", any: "any", or: "any" },
+    fallback: "all",
+    label: "match mode",
+    unsupportedCode: "unsupported_match",
+    issues,
+  });
+  const conditions = normalizeStructuredConditions(selector, scope, issues);
+  const conditionCount = Array.isArray(selector.conditions) ? selector.conditions.length : 0;
   if (Array.isArray(selector.conditions) && selector.conditions.length === 0) {
     issues.push({
       code: "empty_conditions",
@@ -247,13 +420,15 @@ export function validateChatReadingListSelector(selectorValue: unknown): ChatRea
       message: "Selector conditions cannot be empty.",
     });
   }
-  if (conditions.length > 0 && LEGACY_TAG_KEYS.some((key) => key in selector)) {
+  if ("conditions" in selector && LEGACY_TAG_KEYS.some((key) => key in selector)) {
     issues.push({
       code: "mixed_selector_syntax",
       severity: "error",
       message: "Do not mix conditions[] with legacy tag/tag-list fields in one selector.",
     });
   }
+  const positive = conditions.filter((condition) => condition.kind === "has-tag").length;
+  const negative = conditions.filter((condition) => condition.kind === "not-has-tag").length;
   if (match === "any" && negative > 0) {
     issues.push({
       code: "unsafe_any_with_negative",
@@ -271,10 +446,8 @@ export function validateChatReadingListSelector(selectorValue: unknown): ChatRea
       message: "A selector with exclusions must include at least one positive has-tag condition.",
     });
   }
-
-  const criteria = selectorCriteria(selector);
-  const hasSupportedPredicates = conditions.length > 0 || hasCriteria(criteria);
-  if (!hasSupportedPredicates) {
+  const criteria = selectorCriteria(selector, scope, match, issues);
+  if (conditions.length === 0 && !hasCriteria(criteria)) {
     issues.push({
       code: "no_supported_predicates",
       severity: "error",
@@ -282,82 +455,31 @@ export function validateChatReadingListSelector(selectorValue: unknown): ChatRea
         "Selector has no supported predicates. Use conditions, contactTags/tags, chatTags, contacts, chats, channel, instanceId, or chatType.",
     });
   }
+  return { selector, scope, match, conditions, criteria, issues, conditionCount };
+}
 
-  const valid = !issues.some((issue) => issue.severity === "error");
+function selectorValidation(parsed: ParsedReadingListSelector): ChatReadingListSelectorValidation {
+  const positive = parsed.conditions.filter((condition) => condition.kind === "has-tag").length;
+  const negative = parsed.conditions.filter((condition) => condition.kind === "not-has-tag").length;
+  const valid = !parsed.issues.some((issue) => issue.severity === "error");
   return {
     valid,
     canApply: valid,
     riskLevel: valid ? "low" : "high",
-    scope,
-    match,
+    scope: parsed.scope,
+    match: parsed.match,
     conditions: {
-      total: Array.isArray(selector.conditions) ? selector.conditions.length : 0,
-      supported: conditions.length,
+      total: parsed.conditionCount,
+      supported: parsed.conditions.length,
       positive,
       negative,
     },
-    issues,
+    issues: parsed.issues,
   };
 }
 
-function addTagsByMode(
-  input: {
-    selector: Record<string, unknown>;
-    targets: TagTarget[];
-    mode: SelectorMatchMode;
-  },
-  criteria: ReadingListSelectorCriteria,
-): void {
-  const genericAll = normalizeStringList(input.selector.allTags);
-  const genericAny = normalizeStringList(input.selector.anyTags);
-  const genericTags = normalizeStringList(input.selector.tag, input.selector.tags);
-  const defaultGenericAll = input.mode === "all" ? genericTags : [];
-  const defaultGenericAny = input.mode === "any" ? genericTags : [];
-
-  if (input.targets.includes("contact")) {
-    criteria.contactAllTags.push(
-      ...genericAll,
-      ...defaultGenericAll,
-      ...normalizeStringList(input.selector.contactTag, input.selector.contactTags, input.selector.allContactTags),
-    );
-    criteria.contactAnyTags.push(
-      ...genericAny,
-      ...defaultGenericAny,
-      ...normalizeStringList(input.selector.anyContactTags),
-    );
-  }
-
-  if (input.targets.includes("chat")) {
-    criteria.chatAllTags.push(
-      ...genericAll,
-      ...defaultGenericAll,
-      ...normalizeStringList(input.selector.chatTag, input.selector.chatTags, input.selector.allChatTags),
-    );
-    criteria.chatAnyTags.push(...genericAny, ...defaultGenericAny, ...normalizeStringList(input.selector.anyChatTags));
-  }
-}
-
-function selectorCriteria(selector: Record<string, unknown>): ReadingListSelectorCriteria {
-  const criteria: ReadingListSelectorCriteria = {
-    chatIds: normalizeStringList(selector.chat, selector.chatId, selector.chats, selector.chatIds),
-    contactIds: normalizeStringList(selector.contact, selector.contactId, selector.contacts, selector.contactIds),
-    contactAllTags: [],
-    contactAnyTags: [],
-    chatAllTags: [],
-    chatAnyTags: [],
-    channel: stringValue(selector.channel),
-    instanceId: stringValue(selector.instanceId) ?? stringValue(selector.instance),
-    chatType: (stringValue(selector.chatType) ?? stringValue(selector.type)) as ChatType | undefined,
-  };
-  addTagsByMode(
-    {
-      selector,
-      targets: normalizeTagTargets(selector),
-      mode: normalizeMatchMode(selector),
-    },
-    criteria,
-  );
-  return criteria;
+export function validateChatReadingListSelector(selectorValue: unknown): ChatReadingListSelectorValidation {
+  return selectorValidation(parseReadingListSelector(selectorValue));
 }
 
 function hasCriteria(criteria: ReadingListSelectorCriteria): boolean {
@@ -409,10 +531,33 @@ function taggedAssetIds(assetType: "contact" | "chat", tags: string[], mode: Sel
 
 function chatsForContactIds(contactIds: Iterable<string>): Set<string> {
   const contactIdsList = [...new Set([...contactIds].map((id) => id.trim()).filter(Boolean))];
-  const byContact = dbListChatIdsByContactIds({ contactIds: contactIdsList });
   const result = new Set<string>();
-  for (const chatIds of byContact.values()) {
-    for (const chatId of chatIds) result.add(chatId);
+  const database = getDb();
+  const chunkSize = 250;
+  for (let index = 0; index < contactIdsList.length; index += chunkSize) {
+    const chunk = contactIdsList.slice(index, index + chunkSize);
+    const placeholders = chunk.map(() => "?").join(", ");
+    const rows = database
+      .prepare(
+        `
+        SELECT DISTINCT related.chat_id AS chat_id
+        FROM (
+          SELECT cp.chat_id AS chat_id
+          FROM chat_participants cp
+          WHERE cp.contact_id IN (${placeholders})
+
+          UNION
+
+          SELECT cm.chat_id AS chat_id
+          FROM chat_messages cm
+          WHERE cm.contact_id IN (${placeholders})
+        ) related
+        WHERE related.chat_id IS NOT NULL
+        ORDER BY related.chat_id ASC
+      `,
+      )
+      .all(...chunk, ...chunk) as Array<{ chat_id: string }>;
+    for (const row of rows) result.add(row.chat_id);
   }
   return result;
 }
@@ -467,11 +612,8 @@ function chatsForTagConditions(conditions: NormalizedTagCondition[], match: Sele
   return subtractSet(included, unionSets(excludedSets));
 }
 
-function eligibleChatIdsForSelector(selector: Record<string, unknown>): string[] {
-  const criteria = selectorCriteria(selector);
-  const issues: ChatReadingListSelectorIssue[] = [];
-  const conditions = normalizeStructuredConditions(selector, issues);
-
+function eligibleChatIdsForSelector(parsed: ParsedReadingListSelector): string[] {
+  const { criteria, conditions, match } = parsed;
   const sets: Set<string>[] = [];
   if (criteria.chatIds.length > 0) sets.push(chatsForChatIds(criteria.chatIds));
   if (criteria.contactIds.length > 0) sets.push(chatsForContactIds(criteria.contactIds));
@@ -489,7 +631,7 @@ function eligibleChatIdsForSelector(selector: Record<string, unknown>): string[]
   const filteredChats = chatsForFilters(criteria);
   if (filteredChats) sets.push(filteredChats);
 
-  const conditionChats = chatsForTagConditions(conditions, normalizeMatchMode(selector));
+  const conditionChats = chatsForTagConditions(conditions, match);
   if (conditionChats) sets.push(conditionChats);
 
   const eligible = sets.slice(1).reduce((acc, set) => intersectSets(acc, set), sets[0] ?? new Set<string>());
@@ -542,9 +684,13 @@ function membershipDiff(
   };
 }
 
-export function inspectChatReadingList(list: ChatReadingListRecord): ChatReadingListInspectionResult {
-  const selector = isRecord(list.selector) ? list.selector : {};
-  const validation = validateChatReadingListSelector(selector);
+function inspectReadingListWithParsed(list: ChatReadingListRecord): {
+  inspection: ChatReadingListInspectionResult;
+  parsed: ParsedReadingListSelector;
+  activeRows: ActiveReadingListMemberRow[];
+} {
+  const parsed = parseReadingListSelector(list.selector);
+  const validation = selectorValidation(parsed);
   const mode = list.mode.trim().toLowerCase();
   if (mode !== "dynamic" && mode !== "hybrid") {
     validation.issues.push({
@@ -562,49 +708,53 @@ export function inspectChatReadingList(list: ChatReadingListRecord): ChatReading
   const selectorRows = activeRows.filter((row) => row.source === "selector");
   const preservedRows = activeRows.filter((row) => row.source !== "selector");
   return {
-    list,
-    selector,
-    validation,
-    current: {
-      total: activeRows.length,
-      selector: selectorRows.length,
-      preserved: preservedRows.length,
-      chatIds: activeRows.map((row) => row.chat_id).sort(),
+    parsed,
+    activeRows,
+    inspection: {
+      list,
+      selector: parsed.selector,
+      validation,
+      current: {
+        total: activeRows.length,
+        selector: selectorRows.length,
+        preserved: preservedRows.length,
+        chatIds: activeRows.map((row) => row.chat_id).sort(),
+      },
     },
   };
 }
 
+export function inspectChatReadingList(list: ChatReadingListRecord): ChatReadingListInspectionResult {
+  return inspectReadingListWithParsed(list).inspection;
+}
+
 export function previewChatReadingListMembers(list: ChatReadingListRecord): ChatReadingListPreviewResult {
-  const inspection = inspectChatReadingList(list);
-  const activeRows = activeReadingListMembers(list.id);
+  const { inspection, parsed, activeRows } = inspectReadingListWithParsed(list);
   return {
     ...inspection,
     dryRun: true,
-    diff: inspection.validation.canApply
-      ? membershipDiff(eligibleChatIdsForSelector(inspection.selector), activeRows)
-      : null,
+    diff: inspection.validation.canApply ? membershipDiff(eligibleChatIdsForSelector(parsed), activeRows) : null,
   };
 }
 
 export function recomputeChatReadingListMembers(list: ChatReadingListRecord): ChatReadingListRecomputeResult {
-  const preview = previewChatReadingListMembers(list);
-  if (!preview.validation.canApply || !preview.diff) {
-    const reasons = preview.validation.issues.map((issue) => `${issue.code}: ${issue.message}`).join("; ");
-    throw new Error(
-      `Unsafe reading-list selector; recompute blocked. ${reasons} Run ravi chats lists preview ${list.id} --json before applying.`,
-    );
-  }
-  const selector = preview.selector;
-  const eligibleChatIds = preview.diff.eligibleChatIds;
   const database = getDb();
-  const now = Date.now();
-
-  const appliedDiff = executeWrite(
+  return executeWrite(
     database,
     () => {
-      // Membership may change after a reviewed preview. Re-read it inside the
-      // write transaction while keeping the already validated eligible set.
-      const diff = membershipDiff(eligibleChatIds, activeReadingListMembers(list.id));
+      const currentList = dbFindChatReadingList({ ref: list.id });
+      if (!currentList) throw new Error(`Reading list not found: ${list.id}`);
+      const { inspection, parsed, activeRows } = inspectReadingListWithParsed(currentList);
+      if (!inspection.validation.canApply) {
+        const reasons = inspection.validation.issues.map((issue) => `${issue.code}: ${issue.message}`).join("; ");
+        throw new Error(
+          `Unsafe reading-list selector; recompute refused. ${reasons} Run ravi chats lists preview ${currentList.id} --json before applying.`,
+        );
+      }
+
+      const selector = parsed.selector;
+      const diff = membershipDiff(eligibleChatIdsForSelector(parsed), activeRows);
+      const now = Date.now();
       for (const chatId of diff.addedChatIds) {
         const id = `crlm_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
         database
@@ -616,7 +766,7 @@ export function recomputeChatReadingListMembers(list: ChatReadingListRecord): Ch
             VALUES (?, ?, ?, 'selector', 'selector_recompute', 0, ?, ?, NULL)
           `,
           )
-          .run(id, list.id, chatId, JSON.stringify({ selector, recomputedAt: now }), now);
+          .run(id, currentList.id, chatId, JSON.stringify({ selector, recomputedAt: now }), now);
       }
 
       for (const chatId of diff.removedChatIds) {
@@ -624,20 +774,14 @@ export function recomputeChatReadingListMembers(list: ChatReadingListRecord): Ch
           .prepare(
             "UPDATE chat_reading_list_members SET removed_at = ? WHERE list_id = ? AND chat_id = ? AND source = 'selector' AND removed_at IS NULL",
           )
-          .run(now, list.id, chatId);
+          .run(now, currentList.id, chatId);
       }
 
       if (diff.added > 0 || diff.removed > 0) {
-        database.prepare("UPDATE chat_reading_lists SET updated_at = ? WHERE id = ?").run(now, list.id);
+        database.prepare("UPDATE chat_reading_lists SET updated_at = ? WHERE id = ?").run(now, currentList.id);
       }
-      return diff;
+      return { list: currentList, selector, ...diff };
     },
     { label: "chats:recomputeReadingListMembers" },
   );
-
-  return {
-    list,
-    selector,
-    ...appliedDiff,
-  };
 }

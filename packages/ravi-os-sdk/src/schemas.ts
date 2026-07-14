@@ -14500,12 +14500,6 @@ export const ChatsListsPreviewReturnSchema = {
         "current": {
           "additionalProperties": false,
           "properties": {
-            "chatIds": {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
             "preserved": {
               "type": "number"
             },
@@ -14519,8 +14513,7 @@ export const ChatsListsPreviewReturnSchema = {
           "required": [
             "total",
             "selector",
-            "preserved",
-            "chatIds"
+            "preserved"
           ],
           "type": "object"
         },
@@ -14532,55 +14525,20 @@ export const ChatsListsPreviewReturnSchema = {
                 "added": {
                   "type": "number"
                 },
-                "addedChatIds": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
                 "eligible": {
                   "type": "number"
-                },
-                "eligibleChatIds": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
                 },
                 "kept": {
                   "type": "number"
                 },
-                "keptChatIds": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
                 "preserved": {
                   "type": "number"
                 },
-                "preservedChatIds": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
                 "removed": {
                   "type": "number"
-                },
-                "removedChatIds": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
                 }
               },
               "required": [
-                "eligibleChatIds",
-                "addedChatIds",
-                "removedChatIds",
-                "keptChatIds",
-                "preservedChatIds",
                 "added",
                 "removed",
                 "kept",
@@ -14912,29 +14870,11 @@ export const ChatsListsRecomputeReturnSchema = {
         "added": {
           "type": "number"
         },
-        "addedChatIds": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "eligible": {
           "type": "number"
         },
-        "eligibleChatIds": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "kept": {
           "type": "number"
-        },
-        "keptChatIds": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
         },
         "list": {
           "additionalProperties": false,
@@ -15003,20 +14943,8 @@ export const ChatsListsRecomputeReturnSchema = {
         "preserved": {
           "type": "number"
         },
-        "preservedChatIds": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "removed": {
           "type": "number"
-        },
-        "removedChatIds": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
         },
         "selector": {
           "additionalProperties": {
@@ -15031,11 +14959,6 @@ export const ChatsListsRecomputeReturnSchema = {
       "required": [
         "list",
         "selector",
-        "eligibleChatIds",
-        "addedChatIds",
-        "removedChatIds",
-        "keptChatIds",
-        "preservedChatIds",
         "added",
         "removed",
         "kept",
@@ -15150,12 +15073,6 @@ export const ChatsListsShowReturnSchema = {
     "current": {
       "additionalProperties": false,
       "properties": {
-        "chatIds": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "preserved": {
           "type": "number"
         },
@@ -15169,8 +15086,7 @@ export const ChatsListsShowReturnSchema = {
       "required": [
         "total",
         "selector",
-        "preserved",
-        "chatIds"
+        "preserved"
       ],
       "type": "object"
     },

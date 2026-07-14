@@ -8,6 +8,10 @@ import {
   inspectChatReadingList,
   previewChatReadingListMembers,
   recomputeChatReadingListMembers,
+  type ChatReadingListInspectionResult,
+  type ChatReadingListMembershipDiff,
+  type ChatReadingListPreviewResult,
+  type ChatReadingListRecomputeResult,
 } from "../../chats/reading-lists.js";
 import {
   dbAddChatToReadingList,
@@ -68,11 +72,6 @@ const chatReadingListRecomputeReturnSchema = z.object({
   recompute: z.object({
     list: chatReadingListReturnSchema,
     selector: z.record(z.string(), jsonValueReturnSchema),
-    eligibleChatIds: z.array(z.string()),
-    addedChatIds: z.array(z.string()),
-    removedChatIds: z.array(z.string()),
-    keptChatIds: z.array(z.string()),
-    preservedChatIds: z.array(z.string()),
     added: z.number(),
     removed: z.number(),
     kept: z.number(),
@@ -107,15 +106,9 @@ const chatReadingListCurrentMembersSchema = z.object({
   total: z.number(),
   selector: z.number(),
   preserved: z.number(),
-  chatIds: z.array(z.string()),
 });
 
 const chatReadingListMembershipDiffSchema = z.object({
-  eligibleChatIds: z.array(z.string()),
-  addedChatIds: z.array(z.string()),
-  removedChatIds: z.array(z.string()),
-  keptChatIds: z.array(z.string()),
-  preservedChatIds: z.array(z.string()),
   added: z.number(),
   removed: z.number(),
   kept: z.number(),
@@ -140,6 +133,40 @@ const chatReadingListPreviewReturnSchema = z.object({
     diff: chatReadingListMembershipDiffSchema.nullable(),
   }),
 });
+
+function summarizeCurrent(current: ChatReadingListInspectionResult["current"]) {
+  return { total: current.total, selector: current.selector, preserved: current.preserved };
+}
+
+function summarizeMembershipDiff(diff: ChatReadingListMembershipDiff) {
+  return {
+    added: diff.added,
+    removed: diff.removed,
+    kept: diff.kept,
+    preserved: diff.preserved,
+    eligible: diff.eligible,
+  };
+}
+
+function publicInspection(inspection: ChatReadingListInspectionResult) {
+  return { ...inspection, current: summarizeCurrent(inspection.current) };
+}
+
+function publicPreview(preview: ChatReadingListPreviewResult) {
+  return {
+    ...preview,
+    current: summarizeCurrent(preview.current),
+    diff: preview.diff ? summarizeMembershipDiff(preview.diff) : null,
+  };
+}
+
+function publicRecompute(recompute: ChatReadingListRecomputeResult) {
+  return {
+    list: recompute.list,
+    selector: recompute.selector,
+    ...summarizeMembershipDiff(recompute),
+  };
+}
 
 function parseScopedRef(
   value: string | undefined,
@@ -616,7 +643,14 @@ FONTES
   src/chats/reading-lists.ts
 `,
   })
-  @CommandAccess({ kind: "read", resource: "chats.lists", action: "show", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "chats.lists",
+    action: "show",
+    risk: "low",
+    resourceId: "list",
+    input: ["list", "owner"],
+  })
   show(
     @Arg("list", { description: "List id or name" }) listRef: string,
     @Option({ flags: "--owner <type:id>", description: "Owner scope when resolving list by name" }) owner?: string,
@@ -624,7 +658,8 @@ FONTES
   ) {
     const list = resolveReadingList(listRef, owner);
     const inspection = inspectChatReadingList(list);
-    const payload = { list, validation: inspection.validation, current: inspection.current };
+    const publicResult = publicInspection(inspection);
+    const payload = { list, validation: publicResult.validation, current: publicResult.current };
     if (asJson) {
       printJson(payload);
       return payload;
@@ -662,7 +697,7 @@ EXAMPLES
   ravi chats lists preview crl_86244e77d183316cb5034a6a --json
 
 OUTPUT
-  JSON includes dryRun=true, validation, current membership, and a nullable diff. This command is read-only.
+  JSON includes dryRun=true, validation, current membership counts, and a nullable count-only diff. Chat ids are omitted to avoid cross-resource disclosure. This command is read-only.
 
 ON ERROR
   canApply=false -> inspect validation.issues, correct the selector through an approved write path, then preview again.
@@ -672,7 +707,14 @@ FONTES
   src/chats/reading-lists.ts
 `,
   })
-  @CommandAccess({ kind: "read", resource: "chats.lists", action: "preview", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "chats.lists",
+    action: "preview",
+    risk: "low",
+    resourceId: "list",
+    input: ["list", "owner"],
+  })
   preview(
     @Arg("list", { description: "List id or name" }) listRef: string,
     @Option({ flags: "--owner <type:id>", description: "Owner scope when resolving list by name" }) owner?: string,
@@ -680,7 +722,7 @@ FONTES
   ) {
     const list = resolveReadingList(listRef, owner);
     const preview = previewChatReadingListMembers(list);
-    const payload = { list, preview };
+    const payload = { list, preview: publicPreview(preview) };
     if (asJson) {
       printJson(payload);
       return payload;
@@ -854,7 +896,14 @@ FONTES
   src/chats/reading-lists.ts
 `,
   })
-  @CommandAccess({ kind: "mutate", resource: "chats.lists", action: "recompute", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "chats.lists",
+    action: "recompute",
+    risk: "medium",
+    resourceId: "list",
+    input: ["list", "owner"],
+  })
   recompute(
     @Arg("list", { description: "List id or name" }) listRef: string,
     @Option({ flags: "--owner <type:id>", description: "Owner scope when resolving list by name" }) owner?: string,
@@ -862,7 +911,7 @@ FONTES
   ) {
     const list = resolveReadingList(listRef, owner);
     const recompute = recomputeChatReadingListMembers(list);
-    const payload = { list, recompute };
+    const payload = { list: recompute.list, recompute: publicRecompute(recompute) };
     if (asJson) {
       printJson(payload);
       return payload;

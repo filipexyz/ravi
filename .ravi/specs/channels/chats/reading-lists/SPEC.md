@@ -223,6 +223,8 @@ Dynamic membership MUST be materialized or evaluated consistently enough that cu
 
 Before materializing dynamic membership, Ravi MUST expose a read-only selector preview containing deterministic validation, current membership and the prospective add/remove/keep/preserve diff.
 
+The public `show` and `preview` responses MUST scope authorization to the requested reading-list resource. Their current-membership and prospective diffs expose counts, not chat/contact identifiers; callers that need item-level data MUST use an independently authorized chat/list-member read path.
+
 An invalid selector MUST NOT be evaluated into a membership diff and MUST NOT reach the write path. In particular, `match:any` MUST NOT accept `not-has-tag` conditions: each negative branch can match almost the entire scope, so their union can silently over-expand the list. The preview MUST report this pattern as high risk with `canApply=false` and no diff.
 
 The materialization path MUST reuse the same validation gate as preview. A CLI/API caller MUST be able to inspect one list and preview it without advancing cursors or changing membership.

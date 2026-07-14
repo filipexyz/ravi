@@ -2640,22 +2640,16 @@ export type ChatsListsPreviewReturn = {
   };
   preview: {
     current: {
-      chatIds: string[];
       preserved: number;
       selector: number;
       total: number;
     };
     diff: ({
       added: number;
-      addedChatIds: string[];
       eligible: number;
-      eligibleChatIds: string[];
       kept: number;
-      keptChatIds: string[];
       preserved: number;
-      preservedChatIds: string[];
       removed: number;
-      removedChatIds: string[];
     }) | null;
     dryRun: true;
     list: {
@@ -2719,11 +2713,8 @@ export type ChatsListsRecomputeReturn = {
   };
   recompute: {
     added: number;
-    addedChatIds: string[];
     eligible: number;
-    eligibleChatIds: string[];
     kept: number;
-    keptChatIds: string[];
     list: {
       archivedAt?: number;
       createdAt: number;
@@ -2739,9 +2730,7 @@ export type ChatsListsRecomputeReturn = {
       visibility: string;
     };
     preserved: number;
-    preservedChatIds: string[];
     removed: number;
-    removedChatIds: string[];
     selector: Record<string, unknown>;
   };
 };
@@ -2767,7 +2756,6 @@ export type ChatsListsShowInput = {
 /** Return shape for `chats.lists.show`. */
 export type ChatsListsShowReturn = {
   current: {
-    chatIds: string[];
     preserved: number;
     selector: number;
     total: number;
