@@ -562,6 +562,7 @@ function resolveExecutableFromPath(command: string, env: Record<string, string |
 }
 
 async function* normalizeClaudeEvents(queryResult: Query): AsyncGenerator<RuntimeEvent> {
+  let assistantText = "";
   for await (const message of queryResult as AsyncIterable<any>) {
     if (message.type === "stream_event") {
       const evt = message.event;
@@ -601,6 +602,7 @@ async function* normalizeClaudeEvents(queryResult: Query): AsyncGenerator<Runtim
       }
 
       if (text) {
+        assistantText += text;
         yield {
           type: "assistant.message",
           text,
@@ -641,21 +643,56 @@ async function* normalizeClaudeEvents(queryResult: Query): AsyncGenerator<Runtim
         continue;
       }
 
+      const usage = {
+        inputTokens: message.usage?.input_tokens ?? 0,
+        outputTokens: message.usage?.output_tokens ?? 0,
+        cacheReadTokens: message.usage?.cache_read_input_tokens ?? 0,
+        cacheCreationTokens: message.usage?.cache_creation_input_tokens ?? 0,
+      };
+      const successfulResultFailure = classifyClaudeSuccessfulResultFailure(assistantText, usage);
+      if (successfulResultFailure) {
+        yield {
+          type: "turn.failed",
+          error: successfulResultFailure,
+          recoverable: false,
+          rawEvent,
+        };
+        continue;
+      }
+
       yield {
         type: "turn.complete",
         providerSessionId: typeof message.session_id === "string" ? message.session_id : undefined,
         session: buildClaudeSessionState(typeof message.session_id === "string" ? message.session_id : undefined),
         execution: buildClaudeExecutionMetadata(message),
-        usage: {
-          inputTokens: message.usage?.input_tokens ?? 0,
-          outputTokens: message.usage?.output_tokens ?? 0,
-          cacheReadTokens: message.usage?.cache_read_input_tokens ?? 0,
-          cacheCreationTokens: message.usage?.cache_creation_input_tokens ?? 0,
-        },
+        usage,
         rawEvent,
       };
     }
   }
+}
+
+/**
+ * Claude Code sometimes wraps subscription exhaustion in a nominally
+ * successful result. Require both the explicit limit text and zero metered
+ * usage so a normal answer discussing quotas never becomes a false failure.
+ */
+export function classifyClaudeSuccessfulResultFailure(
+  assistantText: string,
+  usage: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheCreationTokens?: number },
+): string | undefined {
+  const totalUsage =
+    usage.inputTokens + usage.outputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheCreationTokens ?? 0);
+  if (totalUsage !== 0) return undefined;
+  const firstLine = assistantText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!firstLine) return undefined;
+  const explicitLimit =
+    /you['’]?ve hit your (?:weekly|session|usage) limit/i.test(firstLine) ||
+    /(?:weekly|session|usage) (?:quota|limit) (?:has been )?(?:reached|exhausted)/i.test(firstLine);
+  return explicitLimit ? firstLine : undefined;
 }
 
 function buildClaudeSessionState(sessionId: string | undefined): RuntimeSessionState | undefined {

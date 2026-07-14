@@ -15,7 +15,13 @@ export const HOOK_SCOPE_TYPES = ["global", "agent", "session", "workspace", "tas
 
 export type HookScopeType = (typeof HOOK_SCOPE_TYPES)[number];
 
-export const HOOK_ACTION_TYPES = ["inject_context", "send_session_event", "append_history", "comment_task"] as const;
+export const HOOK_ACTION_TYPES = [
+  "inject_context",
+  "send_session_event",
+  "append_history",
+  "comment_task",
+  "dispatch_task",
+] as const;
 
 export type HookActionType = (typeof HOOK_ACTION_TYPES)[number];
 
@@ -45,11 +51,28 @@ export interface CommentTaskActionPayload {
   author?: string;
 }
 
+export interface DispatchTaskActionPayload {
+  profileId: string;
+  title: string;
+  targetAgentId?: string;
+  instructions?: string;
+  profileInputJson?: string;
+  /**
+   * R1 — deterministic per-turn cadence. When set (>0), the handler advances
+   * a counter stored under `runtimeSessionParams.memoryCuration` on the
+   * event's session and only creates the task when
+   * `turnCount % cadenceTurns === 0`. Requires event.sessionKey; without it,
+   * cadence is ignored and the task fires every event (see runner behavior).
+   */
+  cadenceTurns?: number;
+}
+
 export type HookActionPayload =
   | InjectContextActionPayload
   | SendSessionEventActionPayload
   | AppendHistoryActionPayload
-  | CommentTaskActionPayload;
+  | CommentTaskActionPayload
+  | DispatchTaskActionPayload;
 
 export interface HookRecord {
   id: string;
@@ -97,6 +120,13 @@ export interface NormalizedHookEvent {
   sessionName?: string;
   sessionKey?: string;
   agentId?: string;
+  /**
+   * Working directory of the agent that owns this session — resolved from
+   * SessionEntry.agentCwd. Exposed as a template placeholder so hooks can
+   * derive per-agent paths (e.g. `{{agentCwd}}/MEMORY.md`) without knowing
+   * the agent id at hook-authoring time.
+   */
+  agentCwd?: string;
   taskId?: string;
   cwd?: string;
   workspace?: string;

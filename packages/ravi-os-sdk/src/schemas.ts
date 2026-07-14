@@ -822,6 +822,10 @@ export const AgentsDeleteInputSchema = {
     "id": {
       "description": "Agent ID",
       "type": "string"
+    },
+    "purgeMemory": {
+      "description": "Also delete the agent's MEMORY.md and memory/ topic files (destructive, opt-in)",
+      "type": "boolean"
     }
   },
   "required": [
@@ -30500,7 +30504,7 @@ export const HooksCreateInputSchema = {
   "additionalProperties": false,
   "properties": {
     "action": {
-      "description": "Action: inject_context, send_session_event, append_history, comment_task",
+      "description": "Action: inject_context, send_session_event, append_history, comment_task, dispatch_task",
       "type": "string"
     },
     "agent": {
@@ -30526,6 +30530,30 @@ export const HooksCreateInputSchema = {
     "disabled": {
       "description": "Create hook disabled",
       "type": "boolean"
+    },
+    "dispatchCadenceTurns": {
+      "description": "R1 deterministic cadence: only fire dispatch_task every N events on the session (requires event.sessionKey)",
+      "type": "string"
+    },
+    "dispatchInstructions": {
+      "description": "Instructions template for dispatch_task payload",
+      "type": "string"
+    },
+    "dispatchProfile": {
+      "description": "Task profile id for dispatch_task payload",
+      "type": "string"
+    },
+    "dispatchProfileInput": {
+      "description": "JSON string with profile inputs for dispatch_task payload",
+      "type": "string"
+    },
+    "dispatchTargetAgent": {
+      "description": "Assign the dispatched task to this agent (defaults to firing agent)",
+      "type": "string"
+    },
+    "dispatchTitle": {
+      "description": "Task title template for dispatch_task payload",
+      "type": "string"
     },
     "event": {
       "description": "Event: SessionStart, PreToolUse, PostToolUse, CwdChanged, FileChanged, Stop",
@@ -41429,6 +41457,505 @@ export const MeetingsVoiceRuntimesReturnSchema = {
     "defaultRuntimeId",
     "recommendation",
     "candidates"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `memory.curate`. */
+export const MemoryCurateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id to curate memory for",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Task instructs the curator to propose but not persist",
+      "type": "boolean"
+    },
+    "transcript": {
+      "description": "Path to the transcript to feed the curator (defaults to <agentCwd>/CURATOR_TRANSCRIPT.md)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `memory.curate`. */
+export const MemoryCurateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "taskId": {
+      "type": "string"
+    },
+    "transcriptPath": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "taskId",
+    "agentId",
+    "dryRun",
+    "transcriptPath"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `memory.enroll`. */
+export const MemoryEnrollInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Enroll a single agent id (mutually exclusive with --all)",
+      "type": "string"
+    },
+    "all": {
+      "description": "Enroll every registered agent",
+      "type": "boolean"
+    },
+    "cadenceTurns": {
+      "description": "Turn cadence for the curator hook (default 10)",
+      "type": "string"
+    },
+    "skipHook": {
+      "description": "Only provision MEMORY.md files; skip creating the memory-curator hook",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `memory.enroll`. */
+export const MemoryEnrollReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "enrolled": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "memoryDirCreated": {
+            "type": "boolean"
+          },
+          "memoryFileCreated": {
+            "type": "boolean"
+          },
+          "memoryPath": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId",
+          "cwd",
+          "memoryPath",
+          "memoryFileCreated",
+          "memoryDirCreated"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "hook": {
+      "additionalProperties": false,
+      "properties": {
+        "cadenceTurns": {
+          "type": "number"
+        },
+        "created": {
+          "type": "boolean"
+        },
+        "eventName": {
+          "const": "Stop",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "skipped": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "eventName",
+        "cadenceTurns",
+        "created",
+        "skipped"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "enrolled",
+    "hook"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `memory.guard`. */
+export const MemoryGuardInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id whose memory this write belongs to (for telemetry)",
+      "type": "string"
+    },
+    "cadenceTurn": {
+      "description": "Cadence turn that triggered this cycle (uint) — carried in telemetry",
+      "type": "string"
+    },
+    "candidate": {
+      "description": "Inline candidate content (alternative to --candidate-file); useful for short entries",
+      "type": "string"
+    },
+    "candidateFile": {
+      "description": "Absolute path of the file containing the candidate content to append",
+      "type": "string"
+    },
+    "capChars": {
+      "description": "Hard character cap for the target FILE (memory store defaults to 65536; the prompt-injection budget is the separate read cap 8192)",
+      "type": "string"
+    },
+    "consolidationAttempt": {
+      "description": "1-indexed attempt within the current turn; guard rejects at max (default 3)",
+      "type": "string"
+    },
+    "consolidationMaxAttempts": {
+      "description": "Override the anti-thrash max (default 3)",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Return the projected write outcome WITHOUT touching disk",
+      "type": "boolean"
+    },
+    "expectedPrior": {
+      "description": "Path with content the caller last observed (R10 drift check)",
+      "type": "string"
+    },
+    "hadUserCorrection": {
+      "description": "Flag on when the session had a clear user correction — R23 marks recallMiss if saved=0",
+      "type": "boolean"
+    },
+    "hookId": {
+      "description": "Originating hook id (when dispatched from a dispatch_task hook)",
+      "type": "string"
+    },
+    "processedThroughMessageId": {
+      "description": "R27: highest messages.id (src/db.ts) the curator read through this cycle. On a successful write, advances the session's incremental-read watermark so the NEXT cycle's CURATOR_TRANSCRIPT.md only contains rows added after it, instead of re-reading the whole session. Requires --session-key.",
+      "type": "string"
+    },
+    "sessionKey": {
+      "description": "Session key that originated the write; goes into telemetry for R23 audit",
+      "type": "string"
+    },
+    "sessionName": {
+      "description": "Human session name (for cross-referencing in the telemetry stream)",
+      "type": "string"
+    },
+    "store": {
+      "description": "'memory' | 'user' — governs telemetry buckets; default 'memory'",
+      "type": "string"
+    },
+    "target": {
+      "description": "Absolute path of the target store (e.g. /path/MEMORY.md)",
+      "type": "string"
+    },
+    "taskId": {
+      "description": "Curator task id for telemetry cross-reference",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `memory.guard`. */
+export const MemoryGuardReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "backupPath": {
+      "type": "string"
+    },
+    "cap": {
+      "additionalProperties": false,
+      "properties": {
+        "cap": {
+          "type": "number"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "overflowChars": {
+          "type": "number"
+        },
+        "proposedChars": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "ok",
+        "proposedChars",
+        "cap",
+        "overflowChars"
+      ],
+      "type": "object"
+    },
+    "detail": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "finalChars": {
+      "type": "number"
+    },
+    "outcome": {
+      "enum": [
+        "written",
+        "rejected",
+        "drift"
+      ],
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "scans": {
+      "additionalProperties": false,
+      "properties": {
+        "injection": {
+          "additionalProperties": false,
+          "properties": {
+            "hadInjection": {
+              "type": "boolean"
+            },
+            "matchCount": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "hadInjection",
+            "matchCount"
+          ],
+          "type": "object"
+        },
+        "secret": {
+          "additionalProperties": false,
+          "properties": {
+            "hadSecret": {
+              "type": "boolean"
+            },
+            "isCredentialOnly": {
+              "type": "boolean"
+            },
+            "matchCount": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "hadSecret",
+            "isCredentialOnly",
+            "matchCount"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "secret",
+        "injection"
+      ],
+      "type": "object"
+    },
+    "store": {
+      "enum": [
+        "memory",
+        "user"
+      ],
+      "type": "string"
+    },
+    "target": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "outcome",
+    "target",
+    "store",
+    "scans",
+    "cap",
+    "dryRun"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `memory.list`. */
+export const MemoryListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching agents to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `memory.list`. */
+export const MemoryListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "exists": {
+            "type": "boolean"
+          },
+          "memoryChars": {
+            "type": "number"
+          },
+          "memoryLastModified": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "memoryPath": {
+            "type": "string"
+          },
+          "topicCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "agentId",
+          "cwd",
+          "memoryPath",
+          "exists",
+          "memoryChars",
+          "topicCount",
+          "memoryLastModified"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "agents",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `memory.show`. */
+export const MemoryShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id to show memory for",
+      "type": "string"
+    },
+    "topic": {
+      "description": "Show a specific topic file under memory/ instead of the index",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `memory.show`. */
+export const MemoryShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "content": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "agentId",
+    "path",
+    "content"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -54838,6 +55365,67 @@ export const SkillGatesShowReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `skills.archive`. */
+export const SkillsArchiveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "force": {
+      "description": "Actually archive (without it, dry-run preview only)",
+      "type": "boolean"
+    },
+    "name": {
+      "description": "Skill name to archive (agent-created only)",
+      "type": "string"
+    },
+    "skill": {
+      "description": "Skill name (alternative to positional)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.archive`. */
+export const SkillsArchiveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "archivedTo": {
+      "type": "string"
+    },
+    "detail": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "outcome": {
+      "enum": [
+        "archived",
+        "rejected"
+      ],
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "skill": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "outcome",
+    "skill",
+    "dryRun"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `skills.grant`. */
 export const SkillsGrantInputSchema = {
   "additionalProperties": false,
@@ -55011,6 +55599,104 @@ export const SkillsGrantBatchReturnSchema = {
     "errors",
     "sampleAgents",
     "sampleSkills"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skills.guard`. */
+export const SkillsGuardInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id whose skill this is (provenance)",
+      "type": "string"
+    },
+    "cadenceTurn": {
+      "description": "Cadence turn (provenance)",
+      "type": "string"
+    },
+    "content": {
+      "description": "Inline content — patch: the learned pitfall/correction; create: the SKILL.md body",
+      "type": "string"
+    },
+    "contentFile": {
+      "description": "File with the content (alternative to --content)",
+      "type": "string"
+    },
+    "date": {
+      "description": "Absolute ISO date for 'today' (provenance)",
+      "type": "string"
+    },
+    "description": {
+      "description": "Skill description (required for create)",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Compute the write outcome without touching disk",
+      "type": "boolean"
+    },
+    "op": {
+      "description": "'patch' (append a learned section) | 'create' (new umbrella skill)",
+      "type": "string"
+    },
+    "sessionKey": {
+      "description": "Originating session (provenance)",
+      "type": "string"
+    },
+    "skill": {
+      "description": "Skill name to patch/create (agent-editable user skills only)",
+      "type": "string"
+    },
+    "taskId": {
+      "description": "Curador task id (provenance)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.guard`. */
+export const SkillsGuardReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "detail": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "finalChars": {
+      "type": "number"
+    },
+    "op": {
+      "enum": [
+        "patch",
+        "create"
+      ],
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "written",
+        "rejected"
+      ],
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "skill": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "outcome",
+    "op",
+    "skill",
+    "dryRun"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

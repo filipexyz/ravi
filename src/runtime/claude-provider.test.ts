@@ -275,6 +275,75 @@ describe("createClaudeRuntimeProvider", () => {
     expect(findEventsByType(events, "turn.complete")).toHaveLength(0);
   });
 
+  it("maps a nominally successful zero-usage weekly-limit envelope into turn.failed", async () => {
+    nextMessages = [
+      {
+        type: "assistant",
+        message: { content: [{ type: "text", text: "You've hit your weekly limit · resets Jul 15, 2am (UTC)" }] },
+      },
+      {
+        type: "result",
+        subtype: "success",
+        session_id: "claude-session-quota",
+        usage: {
+          input_tokens: 0,
+          output_tokens: 0,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        },
+      },
+    ];
+
+    const provider = createClaudeRuntimeProvider();
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "curate" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+      ),
+    );
+    const events = await collectEvents(session.events);
+    expect(findEventsByType(events, "turn.failed").at(0)?.error).toContain("weekly limit");
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(0);
+  });
+
+  it("does not misclassify ordinary quota discussion when the provider reports usage", async () => {
+    nextMessages = [
+      {
+        type: "assistant",
+        message: { content: [{ type: "text", text: "You've hit your weekly limit is an example error." }] },
+      },
+      {
+        type: "result",
+        subtype: "success",
+        session_id: "claude-session-quota-discussion",
+        usage: { input_tokens: 4, output_tokens: 8 },
+      },
+    ];
+
+    const provider = createClaudeRuntimeProvider();
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "explain quota errors" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+      ),
+    );
+    const events = await collectEvents(session.events);
+    expect(findEventsByType(events, "turn.failed")).toHaveLength(0);
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(1);
+  });
+
   it("synthesizes a failed turn when the provider stream ends without a terminal result", async () => {
     nextMessages = [
       {

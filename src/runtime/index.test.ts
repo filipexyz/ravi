@@ -1,4 +1,7 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   assertRuntimeCompatibility,
   createRuntimeProvider,
@@ -8,7 +11,11 @@ import {
   registerRuntimeProvider,
   unregisterRuntimeProvider,
 } from "./index.js";
+import { buildRuntimeSystemPrompt } from "./runtime-system-prompt.js";
+import { MEMORY_PROMPT_SECTION_ID, MEMORY_PROMPT_SECTION_PRIORITY } from "../memory/index.js";
+import type { AgentConfig } from "../router/types.js";
 import type { RuntimeProvider } from "./types.js";
+import { isNonConversationalSession } from "../skills/skill-curation-runtime.js";
 
 describe("runtime compatibility preflight", () => {
   it("uses Codex as the default runtime provider", () => {
@@ -135,5 +142,65 @@ describe("runtime compatibility preflight", () => {
   it("keeps built-in runtime providers registered", () => {
     expect(() => unregisterRuntimeProvider("codex")).toThrow("Cannot unregister built-in runtime provider 'codex'");
     expect(createRuntimeProvider("codex").id).toBe("codex");
+  });
+});
+
+describe("buildRuntimeSystemPrompt with memory section (R6/R12/R13)", () => {
+  let dir: string;
+
+  const baseAgent: AgentConfig = {
+    id: "runtime-mem-test",
+    cwd: "/tmp/replaced-per-test",
+    provider: "claude",
+  };
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "ravi-runtime-mem-"));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("omits the memory section when MEMORY.md is absent (R26 cold-start)", async () => {
+    const result = await buildRuntimeSystemPrompt({ agent: { ...baseAgent, cwd: dir }, cwd: dir });
+    expect(existsSync(join(dir, "MEMORY.md"))).toBe(false);
+    expect(result.sections.some((s) => s.id === MEMORY_PROMPT_SECTION_ID)).toBe(false);
+  });
+
+  it("injects the memory section at the volatile-tier priority between workspace and agent append", async () => {
+    writeFileSync(join(dir, "MEMORY.md"), "# runtime-mem-test — auto-memory\n\n- persisted preference\n", "utf-8");
+    const result = await buildRuntimeSystemPrompt({ agent: { ...baseAgent, cwd: dir }, cwd: dir });
+    const memorySection = result.sections.find((s) => s.id === MEMORY_PROMPT_SECTION_ID);
+    expect(memorySection).toBeDefined();
+    expect(memorySection!.priority).toBe(MEMORY_PROMPT_SECTION_PRIORITY);
+    expect(memorySection!.content).toContain("- persisted preference");
+    expect(result.text).toContain("- persisted preference");
+  });
+});
+
+describe("skill nudge cadence — session guard (runtime wiring)", () => {
+  it("never ticks curator or curation-report sessions", () => {
+    expect(isNonConversationalSession("task-abc123-curator")).toBe(true);
+    expect(isNonConversationalSession("memory-log")).toBe(true);
+    expect(isNonConversationalSession("skill-log")).toBe(true);
+  });
+
+  it("ticks a normal conversation session", () => {
+    expect(isNonConversationalSession("ravi-dev-group-57603085")).toBe(false);
+    expect(isNonConversationalSession("main-dm-615153")).toBe(false);
+  });
+
+  it("honors RAVI_NUDGE_SKIP_SESSIONS for extra report groups", () => {
+    const prev = process.env.RAVI_NUDGE_SKIP_SESSIONS;
+    process.env.RAVI_NUDGE_SKIP_SESSIONS = "insights-log, ops-log";
+    try {
+      expect(isNonConversationalSession("insights-log")).toBe(true);
+      expect(isNonConversationalSession("ops-log")).toBe(true);
+      expect(isNonConversationalSession("some-group")).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.RAVI_NUDGE_SKIP_SESSIONS;
+      else process.env.RAVI_NUDGE_SKIP_SESSIONS = prev;
+    }
   });
 });
