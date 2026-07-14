@@ -10,6 +10,7 @@ import {
   canonicalTagSlugsForAsset,
   replaceMirroredTagSlugsForAsset,
 } from "./tags/helpers.js";
+import { dbFindTagBindings } from "./tags/tag-db.js";
 import { detachTagFromSelector, searchTagBindingsForSelector } from "./tags/service.js";
 import { buildSqlWhereClause, countRows, normalizeLimitOffsetPage, type ListPage } from "./utils/pagination.js";
 import { nats } from "./nats.js";
@@ -2055,7 +2056,15 @@ export interface SnoozeCrmTaskInput extends CrmMutationOptions {
   snoozedUntil: string;
 }
 
-export interface ListCrmTasksOptions {
+interface CrmReadableContactFilterOptions {
+  /**
+   * Internal authorization boundary for paginated CRM reads. Undefined means
+   * unrestricted; an empty array means no linked contact is readable.
+   */
+  readableContactIds?: readonly string[] | null;
+}
+
+export interface ListCrmTasksOptions extends CrmReadableContactFilterOptions {
   limit?: number | string | null;
   offset?: number | string | null;
   contactRef?: string | null;
@@ -2087,7 +2096,7 @@ export interface CrmNextAction {
   ownerId: string | null;
 }
 
-export interface ListCrmNextActionsOptions {
+export interface ListCrmNextActionsOptions extends CrmReadableContactFilterOptions {
   limit?: number | string | null;
   offset?: number | string | null;
   contactRef?: string | null;
@@ -2122,7 +2131,7 @@ export interface CrmContactCard {
   updatedAt: string;
 }
 
-export interface ListCrmContactCardsOptions {
+export interface ListCrmContactCardsOptions extends CrmReadableContactFilterOptions {
   limit?: number | string | null;
   offset?: number | string | null;
   lifecycle?: CrmContactLifecycle | string | null;
@@ -2296,7 +2305,7 @@ export interface UpdateCrmFactStatusInput extends CrmMutationOptions {
   factId: string;
 }
 
-export interface ListCrmFactsOptions {
+export interface ListCrmFactsOptions extends CrmReadableContactFilterOptions {
   limit?: number | string | null;
   offset?: number | string | null;
   entityType?: CrmEntityType | string | null;
@@ -2357,6 +2366,12 @@ export interface Contact {
   interaction_count: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface ContactAccessRecord {
+  id: string;
+  tags: string[];
+  identityValues: string[];
 }
 
 interface CanonicalContactRow {
@@ -4796,6 +4811,23 @@ function formatCompactDate(value: string): string {
   return date.toISOString().slice(0, 10);
 }
 
+function addReadableContactIdsFilter(input: {
+  where: string[];
+  params: Array<string | number>;
+  readableContactIds?: readonly string[] | null;
+  targetExpression?: string;
+  unlinkedExpression?: string;
+}): void {
+  if (input.readableContactIds == null) return;
+  const contactIds = [...new Set(input.readableContactIds.map((contactId) => contactId.trim()).filter(Boolean))];
+  const targetExpression = input.targetExpression ?? "contact_id";
+  const readableExpression = `${targetExpression} IN (SELECT value FROM json_each(?))`;
+  input.where.push(
+    input.unlinkedExpression ? `((${input.unlinkedExpression}) OR ${readableExpression})` : readableExpression,
+  );
+  input.params.push(JSON.stringify(contactIds));
+}
+
 export function listCrmContactCards(options: ListCrmContactCardsOptions = {}): ListPage<CrmContactCard> {
   const database = ensureDb();
   const where: string[] = [];
@@ -4809,6 +4841,7 @@ export function listCrmContactCards(options: ListCrmContactCardsOptions = {}): L
     where.push("owner_type = ?", "owner_id = ?");
     params.push(owner.ownerType!, owner.ownerId!);
   }
+  addReadableContactIdsFilter({ where, params, readableContactIds: options.readableContactIds });
   const { limit, offset } = normalizeLimitOffsetPage(options, { defaultLimit: 50, maxLimit: 500 });
   const total = countRows({ db: database, table: "crm_contact_cards", where, params });
   const rows = database
@@ -6380,6 +6413,12 @@ export function listCrmTasks(options: ListCrmTasksOptions = {}): ListPage<CrmTas
     where.push("due_at >= ?");
     params.push(options.dueAfter.trim());
   }
+  addReadableContactIdsFilter({
+    where,
+    params,
+    readableContactIds: options.readableContactIds,
+    unlinkedExpression: "contact_id IS NULL",
+  });
   const { limit, offset } = normalizeLimitOffsetPage(options, { defaultLimit: 25, maxLimit: 500 });
   const total = countRows({ db: database, table: "crm_tasks", where, params });
   const rows = database
@@ -6490,6 +6529,12 @@ export function listCrmNextActions(options: ListCrmNextActionsOptions = {}): Lis
     where.push("due_at >= ?");
     params.push(options.dueAfter.trim());
   }
+  addReadableContactIdsFilter({
+    where,
+    params,
+    readableContactIds: options.readableContactIds,
+    unlinkedExpression: "contact_id IS NULL",
+  });
   const { limit, offset } = normalizeLimitOffsetPage(options, { defaultLimit: 25, maxLimit: 500 });
   const total = countRows({ db: database, table: "crm_next_actions", where, params });
   const rows = database
@@ -6769,6 +6814,13 @@ export function listCrmFacts(options: ListCrmFactsOptions = {}): ListPage<CrmFac
     where.push("key = ?");
     params.push(normalizeCrmFactKey(options.key));
   }
+  addReadableContactIdsFilter({
+    where,
+    params,
+    readableContactIds: options.readableContactIds,
+    targetExpression: "COALESCE(contact_id, CASE WHEN entity_type = 'contact' THEN entity_id END)",
+    unlinkedExpression: "contact_id IS NULL AND entity_type <> 'contact'",
+  });
   const { limit, offset } = normalizeLimitOffsetPage(options, { defaultLimit: 25, maxLimit: 500 });
   const total = countRows({ db: database, table: "crm_facts", where, params });
   const rows = database
@@ -8846,6 +8898,66 @@ export function getAllContacts(): Contact[] {
     )
     .all() as CanonicalContactRow[];
   return rows.map((row) => rowToCanonicalCompatContact(database, row));
+}
+
+/**
+ * Load only the contact fields needed by authorization checks. The preload is
+ * intentionally set-based so paginated CRM reads do not issue identity and
+ * policy queries once per contact.
+ */
+export function getAllContactAccessRecords(): ContactAccessRecord[] {
+  const database = ensureDb();
+  const rows = database
+    .prepare(
+      `
+      SELECT c.id, cp.tags_json
+      FROM contacts c
+      LEFT JOIN contact_policies cp ON cp.contact_id = c.id
+      ORDER BY c.id
+    `,
+    )
+    .all() as Array<{ id: string; tags_json: string | null }>;
+  const identityRows = database
+    .prepare(
+      `
+      SELECT owner_id, normalized_platform_user_id, platform_user_id
+      FROM platform_identities
+      WHERE owner_type = 'contact' AND owner_id IS NOT NULL
+      ORDER BY owner_id, is_primary DESC, channel, normalized_platform_user_id
+    `,
+    )
+    .all() as Array<{
+    owner_id: string;
+    normalized_platform_user_id: string;
+    platform_user_id: string;
+  }>;
+
+  const identitiesByContact = new Map<string, string[]>();
+  for (const identity of identityRows) {
+    const values = identitiesByContact.get(identity.owner_id) ?? [];
+    values.push(identity.normalized_platform_user_id || identity.platform_user_id);
+    identitiesByContact.set(identity.owner_id, values);
+  }
+
+  const contactIds = new Set(rows.map((row) => row.id));
+  const canonicalTagsByContact = new Map<string, string[]>();
+  for (const binding of dbFindTagBindings({ assetType: "contact" })) {
+    if (!contactIds.has(binding.assetId)) continue;
+    const tags = canonicalTagsByContact.get(binding.assetId) ?? [];
+    tags.push(binding.tagSlug);
+    canonicalTagsByContact.set(binding.assetId, tags);
+  }
+
+  return rows.map((row) => ({
+    id: row.id,
+    tags: mergeTagLists(
+      contactTagsFromJson(row.tags_json)
+        .map((tag) => normalizeCanonicalTagSlug(tag))
+        .filter((tag): tag is string => tag !== null),
+      canonicalTagsByContact.get(row.id) ?? [],
+    ),
+    identityValues: identitiesByContact.get(row.id) ?? [],
+  }));
 }
 
 /**
