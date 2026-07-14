@@ -141,14 +141,14 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
         sessionName,
         error: exhaustedTurnState.pendingTaskQuota.error,
       });
+    }
+    if (failedSession && exhaustedPolicy && exhaustedTurnState) {
       noteTerminalTurnForLearningLoop({
         sessionKey: failedSession.sessionKey,
         sessionName,
         agentId: failedSession.agentId ?? prompt._agentId ?? "main",
         agentCwd: failedSession.agentCwd,
       });
-    }
-    if (failedSession && exhaustedPolicy && exhaustedTurnState) {
       recordRuntimeTraceEvent({
         sessionKey: failedSession.sessionKey,
         sessionName,
@@ -753,13 +753,13 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
           sessionName,
           error: runtimeTargetState.pendingTaskQuota.error,
         });
-        noteTerminalTurnForLearningLoop({
-          sessionKey: dbSessionKey,
-          sessionName,
-          agentId: agent.id,
-          agentCwd: agent.cwd,
-        });
       }
+      noteTerminalTurnForLearningLoop({
+        sessionKey: dbSessionKey,
+        sessionName,
+        agentId: agent.id,
+        agentCwd: agent.cwd,
+      });
       recordRuntimeTraceEvent({
         sessionKey: dbSessionKey,
         sessionName,

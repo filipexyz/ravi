@@ -511,6 +511,7 @@ describe("runtime target failover E2E", () => {
       const responses = emitted.filter((event) => event.topic === `ravi.session.${sessionName}.response`);
       expect(responses).toHaveLength(1);
       expect(responses[0]?.data.response).toBe("secondary survived startup failure");
+      expect(readLearningLoopCadenceState(getSession(sessionName)?.runtimeSessionParams)?.terminalTurnCount).toBe(1);
     } finally {
       dispatcher.shutdownAll();
       emitSpy.mockRestore();
@@ -585,6 +586,9 @@ describe("runtime target failover E2E", () => {
           expect(primaryStarts).toBe(index + 1);
           expect(secondaryStarts).toBe(0);
           expect(emitted.filter((event) => event.topic === `ravi.session.${sessionName}.response`)).toHaveLength(0);
+          expect(readLearningLoopCadenceState(getSession(sessionName)?.runtimeSessionParams)?.terminalTurnCount).toBe(
+            1,
+          );
         } finally {
           dispatcher.shutdownAll();
         }
@@ -1225,6 +1229,9 @@ describe("runtime target failover E2E", () => {
       }
       expect(startedProviders).toEqual([primary, secondary, tertiary]);
       expect(emitted.filter((event) => event.topic === "ravi.session.target-exhaustion.response")).toHaveLength(1);
+      expect(
+        readLearningLoopCadenceState(getSession("target-exhaustion")?.runtimeSessionParams)?.terminalTurnCount,
+      ).toBe(1);
 
       await dispatcher.startStreamingSession("target-exhaustion", {
         prompt: "fresh independent turn",
@@ -1240,6 +1247,9 @@ describe("runtime target failover E2E", () => {
       expect(responses[1]?.data.response).toBe("fresh turn completed");
       expect(startedProviders).toEqual([primary, secondary, tertiary, primary]);
       expect(primaryPrompts).toEqual(["exhaust targets", "fresh independent turn"]);
+      expect(
+        readLearningLoopCadenceState(getSession("target-exhaustion")?.runtimeSessionParams)?.terminalTurnCount,
+      ).toBe(2);
     } finally {
       dispatcher.shutdownAll();
       emitSpy.mockRestore();
