@@ -64,7 +64,7 @@ export function enforceCliCommandAccess(input: CliCommandAccessInput): CliComman
       operation,
     });
     attempted.push(decision);
-    if (decision.allowed) {
+    if (decision.allowed && exactConcreteResourceAuthorizationSatisfied(inputWithAccess, authority, candidate)) {
       return { allowed: true, errorMessage: "", decision, attempted };
     }
   }
@@ -80,13 +80,29 @@ export function enforceCliCommandAccess(input: CliCommandAccessInput): CliComman
   };
 }
 
+function exactConcreteResourceAuthorizationSatisfied(
+  input: CliCommandAccessInput & { access: CommandAccessOptions },
+  authority: Extract<ReturnType<typeof resolveCommandAccessAuthority>, { allowed: true }>,
+  candidate: { permission: string; objectType: string; objectId: string },
+): boolean {
+  if (!input.access.requireConcreteResource) return true;
+  if (authority.request.localOperator) return true;
+  const capabilities = authority.request.context?.capabilities ?? [];
+  return capabilities.some(
+    (capability) =>
+      capability.permission === candidate.permission &&
+      capability.objectType === candidate.objectType &&
+      capability.objectId === candidate.objectId,
+  );
+}
+
 function buildCommandAccessDenialMessage(
   input: CliCommandAccessInput & { access: CommandAccessOptions },
   authorityLabel: string,
 ): string {
   const subject = subjectFromAuthorityLabel(authorityLabel);
   const guidance = buildAuthorizationGuidance({
-    capability: commandAccessCapability(input.access),
+    capability: commandAccessCapability(input),
     subject,
     scope: "recurring",
     reason: `Needs ${formatCommand(input)} command access.`,
@@ -183,6 +199,9 @@ function commandAccessCandidates(input: CliCommandAccessInput & { access: Comman
   ];
 
   const concreteResourceCandidates = commandAccessConcreteResourceCandidates(input);
+  if (input.access.requireConcreteResource) {
+    return concreteResourceCandidates;
+  }
   const legacyCandidates = commandObjectCandidates(input.group, input.command).map((objectId) => ({
     permission: "execute",
     objectType: "group",
@@ -205,6 +224,13 @@ function commandAccessConcreteResourceCandidates(
   if (typeof resourceIdValue !== "string") return [];
   const objectId = resourceIdValue.trim();
   if (!objectId) return [];
+  if (input.access.resourceIdPattern) {
+    try {
+      if (!new RegExp(input.access.resourceIdPattern).test(objectId)) return [];
+    } catch {
+      return [];
+    }
+  }
   return [
     {
       permission: input.access.kind,
@@ -253,7 +279,7 @@ function recordCliCommandAccessDenial(
   const requested = attempted[0];
   if (!requested) return;
   const command = `${input.group} ${input.command}`;
-  const capability = commandAccessCapability(input.access);
+  const capability = commandAccessCapability(input);
   const guidance = buildAuthorizationGuidance({
     capability,
     subject: context.agentId ? { type: "agent", id: context.agentId } : undefined,
@@ -312,11 +338,17 @@ function recordCliCommandAccessDenial(
   });
 }
 
-function commandAccessCapability(access: CommandAccessOptions): AuthorizationCapability {
+function commandAccessCapability(
+  input: CliCommandAccessInput & { access: CommandAccessOptions },
+): AuthorizationCapability {
+  if (input.access.requireConcreteResource) {
+    const [concrete] = commandAccessConcreteResourceCandidates(input);
+    if (concrete) return concrete;
+  }
   return {
-    permission: access.kind,
-    objectType: access.resource,
-    objectId: access.action,
+    permission: input.access.kind,
+    objectType: input.access.resource,
+    objectId: input.access.action,
   };
 }
 
@@ -335,6 +367,8 @@ function normalizeAccess(access: CommandAccessOptions): PermissionProviderComman
     risk: access.risk,
     ...(access.requiresContext ? { requiresContext: access.requiresContext } : {}),
     ...(access.resourceId ? { resourceId: access.resourceId } : {}),
+    ...(access.requireConcreteResource ? { requireConcreteResource: true } : {}),
+    ...(access.resourceIdPattern ? { resourceIdPattern: access.resourceIdPattern } : {}),
     ...(access.input ? { input: access.input } : {}),
     ...(access.redactions ? { redactions: access.redactions } : {}),
     ...(access.localOperator != null ? { localOperator: access.localOperator } : {}),

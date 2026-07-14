@@ -2,11 +2,13 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   dbCreateAgent,
+  dbCreateChatReadingList,
   dbCreateContext,
   dbDeleteChannel,
   dbDeleteInstance,
   dbGetAgent,
   dbGetChannel,
+  dbGetChatReadingList,
   dbListChannels,
   dbListContexts,
   dbPruneContexts,
@@ -153,6 +155,22 @@ describe("router context queries", () => {
     expect(triggerColumns).toContain("shell_timeout_ms");
     expect(triggerColumns).toContain("shell_env_file");
     expect(triggerColumns).toContain("on_error");
+  });
+
+  it("gets reading lists by exact primary-key id without falling back to name", () => {
+    const missingId = "crl_0123456789abcdef01234567";
+    const list = dbCreateChatReadingList({
+      name: missingId,
+      ownerType: "system",
+      ownerId: "billing",
+      visibility: "private",
+      mode: "dynamic",
+      selector: { chatIds: ["chat-safe"] },
+    });
+
+    expect(dbGetChatReadingList({ id: missingId })).toBeNull();
+    expect(dbGetChatReadingList({ id: list.id })?.id).toBe(list.id);
+    expect(dbGetChatReadingList({ id: list.id, ownerType: "system", ownerId: "other" })).toBeNull();
   });
 
   it("persists native channel credential connection references through router schema bootstrap", () => {

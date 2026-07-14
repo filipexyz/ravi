@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { dbCreateAgent, dbUpdateAgent } from "../router/router-db.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { getRuntimeToolAccessMode, resolveScopedTurnToolAccessMode } from "./host-services.js";
 import {
   assertRuntimeCompatibility,
   createRuntimeProvider,
@@ -202,5 +205,47 @@ describe("skill nudge cadence — session guard (runtime wiring)", () => {
       if (prev === undefined) delete process.env.RAVI_NUDGE_SKIP_SESSIONS;
       else process.env.RAVI_NUDGE_SKIP_SESSIONS = prev;
     }
+  });
+});
+
+describe("scoped tool access on providers without permission hooks", () => {
+  let stateDir: string | null = null;
+  const agentId = "runtime-access-agent";
+  const piCapabilities = {
+    tools: { permissionMode: "provider-native", accessRequirement: "tool_and_executable" },
+    supportsToolHooks: false,
+  } as unknown as Parameters<typeof getRuntimeToolAccessMode>[0];
+  const raviHostCapabilities = {
+    tools: { permissionMode: "ravi-host", accessRequirement: "tool_and_executable" },
+    supportsToolHooks: true,
+  } as unknown as Parameters<typeof getRuntimeToolAccessMode>[0];
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-runtime-access-test-");
+    dbCreateAgent({ id: agentId, cwd: "/tmp/runtime-access-agent" });
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("allows a full-authority agent to use a hookless provider for a scoped turn", () => {
+    dbUpdateAgent(agentId, { defaults: { runtimePermissions: { profile: "full-access" } } });
+
+    expect(resolveScopedTurnToolAccessMode(piCapabilities, agentId)).toBe("unrestricted");
+    expect(getRuntimeToolAccessMode(piCapabilities, agentId, { kind: "turn-runtime", metadata: {} })).toBe(
+      "unrestricted",
+    );
+  });
+
+  it("keeps an agent without full authority restricted on a hookless provider", () => {
+    expect(resolveScopedTurnToolAccessMode(piCapabilities, agentId)).toBe("restricted");
+  });
+
+  it("keeps a full-authority agent restricted when Ravi host hooks can enforce the turn scope", () => {
+    dbUpdateAgent(agentId, { defaults: { runtimePermissions: { profile: "full-access" } } });
+
+    expect(resolveScopedTurnToolAccessMode(raviHostCapabilities, agentId)).toBe("restricted");
   });
 });

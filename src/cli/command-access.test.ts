@@ -356,6 +356,79 @@ describe("CLI command access enforcement", () => {
     ]);
   });
 
+  it("requires the canonical concrete resource when configured and rejects semantic or legacy fallbacks", () => {
+    const strictAccess: CommandAccessOptions = {
+      kind: "read",
+      resource: "chats.lists",
+      action: "preview",
+      risk: "low",
+      resourceId: "listId",
+      requireConcreteResource: true,
+      resourceIdPattern: "^crl_[0-9a-f]{24}$",
+      input: ["listId"],
+    };
+    const listId = "crl_0123456789abcdef01234567";
+
+    for (const capability of [
+      { permission: "read", objectType: "chats.lists", objectId: "preview" },
+      { permission: "read", objectType: "chats.lists", objectId: "*" },
+      { permission: "execute", objectType: "group", objectId: "chats_lists_preview" },
+      { permission: "execute", objectType: "group", objectId: "chats_lists" },
+    ]) {
+      const record = context([capability]);
+      const result = runWithContext({ agentId: "dev", context: record }, () =>
+        enforceCliCommandAccess({
+          group: "chats_lists",
+          command: "preview",
+          access: strictAccess,
+          input: { listId },
+          source: "tool",
+        }),
+      );
+      expect(result.allowed).toBe(false);
+      expect(result.attempted.map((decision) => decision.objectId)).toEqual([listId]);
+      expect(result.errorMessage).toContain(`Missing capability: read:chats.lists:${listId}`);
+    }
+
+    const concrete = context([{ permission: "read", objectType: "chats.lists", objectId: listId }]);
+    const allowed = runWithContext({ agentId: "dev", context: concrete }, () =>
+      enforceCliCommandAccess({
+        group: "chats_lists",
+        command: "preview",
+        access: strictAccess,
+        input: { listId },
+        source: "gateway",
+      }),
+    );
+    expect(allowed.allowed).toBe(true);
+    expect(allowed.attempted).toHaveLength(1);
+    expect(allowed.decision).toMatchObject({ permission: "read", objectType: "chats.lists", objectId: listId });
+  });
+
+  it("fails closed before authorization when a strict resource ref is not canonical", () => {
+    const record = context([{ permission: "read", objectType: "chats.lists", objectId: "secret-list" }]);
+    const result = runWithContext({ agentId: "dev", context: record }, () =>
+      enforceCliCommandAccess({
+        group: "chats_lists",
+        command: "show",
+        access: {
+          kind: "read",
+          resource: "chats.lists",
+          action: "show",
+          risk: "low",
+          resourceId: "listId",
+          requireConcreteResource: true,
+          resourceIdPattern: "^crl_[0-9a-f]{24}$",
+        },
+        input: { listId: "secret-list" },
+        source: "tool",
+      }),
+    );
+
+    expect(result.allowed).toBe(false);
+    expect(result.attempted).toEqual([]);
+  });
+
   it("falls back to legacy command-specific execute capabilities", () => {
     const record = context([{ permission: "execute", objectType: "group", objectId: "demo_create" }]);
     const result = runWithContext({ agentId: "dev", context: record }, () =>
