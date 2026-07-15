@@ -1,0 +1,259 @@
+{
+  "schema": "ravi.app/v1",
+  "id": "google-business-profile",
+  "name": "Google Business Profile",
+  "version": "0.1.0",
+  "description": "Manage Google Business Profile accounts, locations, reviews, posts, media and performance.",
+  "interfaces": {
+    "cli": {
+      "command": "ravi gbp",
+      "json": true,
+      "health": "ravi apps check google-business-profile --json"
+    }
+  },
+  "operations": {
+    "google-business-profile.help": {
+      "interface": "builtin",
+      "handler": "apps.help",
+      "mutating": false
+    },
+    "google-business-profile.show": {
+      "interface": "builtin",
+      "handler": "apps.manifest.show",
+      "mutating": false
+    },
+    "google-business-profile.check": {
+      "interface": "builtin",
+      "handler": "apps.manifest.check",
+      "mutating": false
+    },
+    "google-business-profile.accounts": {
+      "interface": "cli",
+      "command": "ravi gbp accounts --json {args}",
+      "mutating": false,
+      "permission": "gbp:accounts:read"
+    },
+    "google-business-profile.account-get": {
+      "interface": "cli",
+      "command": "ravi gbp account-get --json {args}",
+      "mutating": false,
+      "permission": "gbp:accounts:read"
+    },
+    "google-business-profile.locations": {
+      "interface": "cli",
+      "command": "ravi gbp locations --json {args}",
+      "mutating": false,
+      "permission": "gbp:locations:read"
+    },
+    "google-business-profile.location-get": {
+      "interface": "cli",
+      "command": "ravi gbp location-get --json {args}",
+      "mutating": false,
+      "permission": "gbp:locations:read"
+    },
+    "google-business-profile.location-update": {
+      "interface": "cli",
+      "command": "ravi gbp location-update --json {args}",
+      "mutating": true,
+      "permission": "gbp:locations:write"
+    },
+    "google-business-profile.location-delete": {
+      "interface": "cli",
+      "command": "ravi gbp location-delete --json {args}",
+      "mutating": true,
+      "permission": "gbp:locations:delete"
+    },
+    "google-business-profile.reviews": {
+      "interface": "cli",
+      "command": "ravi gbp reviews --json {args}",
+      "mutating": false,
+      "permission": "gbp:reviews:read"
+    },
+    "google-business-profile.review-get": {
+      "interface": "cli",
+      "command": "ravi gbp review-get --json {args}",
+      "mutating": false,
+      "permission": "gbp:reviews:read"
+    },
+    "google-business-profile.review-reply": {
+      "interface": "cli",
+      "command": "ravi gbp review-reply --json {args}",
+      "mutating": true,
+      "permission": "gbp:reviews:write"
+    },
+    "google-business-profile.review-reply-delete": {
+      "interface": "cli",
+      "command": "ravi gbp review-reply-delete --json {args}",
+      "mutating": true,
+      "permission": "gbp:reviews:delete"
+    },
+    "google-business-profile.posts": {
+      "interface": "cli",
+      "command": "ravi gbp posts --json {args}",
+      "mutating": false,
+      "permission": "gbp:posts:read"
+    },
+    "google-business-profile.post-get": {
+      "interface": "cli",
+      "command": "ravi gbp post-get --json {args}",
+      "mutating": false,
+      "permission": "gbp:posts:read"
+    },
+    "google-business-profile.post-create": {
+      "interface": "cli",
+      "command": "ravi gbp post-create --json {args}",
+      "mutating": true,
+      "permission": "gbp:posts:write"
+    },
+    "google-business-profile.post-update": {
+      "interface": "cli",
+      "command": "ravi gbp post-update --json {args}",
+      "mutating": true,
+      "permission": "gbp:posts:write"
+    },
+    "google-business-profile.post-delete": {
+      "interface": "cli",
+      "command": "ravi gbp post-delete --json {args}",
+      "mutating": true,
+      "permission": "gbp:posts:delete"
+    },
+    "google-business-profile.media": {
+      "interface": "cli",
+      "command": "ravi gbp media --json {args}",
+      "mutating": false,
+      "permission": "gbp:media:read"
+    },
+    "google-business-profile.media-get": {
+      "interface": "cli",
+      "command": "ravi gbp media-get --json {args}",
+      "mutating": false,
+      "permission": "gbp:media:read"
+    },
+    "google-business-profile.media-create": {
+      "interface": "cli",
+      "command": "ravi gbp media-create --json {args}",
+      "mutating": true,
+      "permission": "gbp:media:write"
+    },
+    "google-business-profile.media-update": {
+      "interface": "cli",
+      "command": "ravi gbp media-update --json {args}",
+      "mutating": true,
+      "permission": "gbp:media:write"
+    },
+    "google-business-profile.media-delete": {
+      "interface": "cli",
+      "command": "ravi gbp media-delete --json {args}",
+      "mutating": true,
+      "permission": "gbp:media:delete"
+    },
+    "google-business-profile.performance": {
+      "interface": "cli",
+      "command": "ravi gbp performance --json {args}",
+      "mutating": false,
+      "permission": "gbp:performance:read"
+    },
+    "google-business-profile.search-keywords": {
+      "interface": "cli",
+      "command": "ravi gbp search-keywords --json {args}",
+      "mutating": false,
+      "permission": "gbp:performance:read"
+    },
+    "google-business-profile.categories": {
+      "interface": "cli",
+      "command": "ravi gbp categories --json {args}",
+      "mutating": false,
+      "permission": "gbp:categories:read"
+    },
+    "google-business-profile.attributes": {
+      "interface": "cli",
+      "command": "ravi gbp attributes --json {args}",
+      "mutating": false,
+      "permission": "gbp:attributes:read"
+    },
+    "google-business-profile.verifications": {
+      "interface": "cli",
+      "command": "ravi gbp verifications --json {args}",
+      "mutating": false,
+      "permission": "gbp:verifications:read"
+    },
+    "google-business-profile.verification-options": {
+      "interface": "cli",
+      "command": "ravi gbp verification-options --json {args}",
+      "mutating": false,
+      "permission": "gbp:verifications:read"
+    },
+    "google-business-profile.verify": {
+      "interface": "cli",
+      "command": "ravi gbp verify --json {args}",
+      "mutating": true,
+      "permission": "gbp:verifications:write"
+    },
+    "google-business-profile.verification-complete": {
+      "interface": "cli",
+      "command": "ravi gbp verification-complete --json {args}",
+      "mutating": true,
+      "permission": "gbp:verifications:write"
+    },
+    "google-business-profile.admins": {
+      "interface": "cli",
+      "command": "ravi gbp admins --json {args}",
+      "mutating": false,
+      "permission": "gbp:admins:read"
+    },
+    "google-business-profile.admin-add": {
+      "interface": "cli",
+      "command": "ravi gbp admin-add --json {args}",
+      "mutating": true,
+      "permission": "gbp:admins:write"
+    },
+    "google-business-profile.admin-update": {
+      "interface": "cli",
+      "command": "ravi gbp admin-update --json {args}",
+      "mutating": true,
+      "permission": "gbp:admins:write"
+    },
+    "google-business-profile.admin-delete": {
+      "interface": "cli",
+      "command": "ravi gbp admin-delete --json {args}",
+      "mutating": true,
+      "permission": "gbp:admins:delete"
+    }
+  },
+  "permissions": {
+    "required": [
+      "gbp:accounts:read",
+      "gbp:locations:read",
+      "gbp:reviews:read",
+      "gbp:posts:read",
+      "gbp:media:read",
+      "gbp:performance:read",
+      "gbp:categories:read",
+      "gbp:attributes:read",
+      "gbp:verifications:read",
+      "gbp:admins:read"
+    ],
+    "optional": [],
+    "mutating": [
+      "gbp:locations:write",
+      "gbp:locations:delete",
+      "gbp:reviews:write",
+      "gbp:reviews:delete",
+      "gbp:posts:write",
+      "gbp:posts:delete",
+      "gbp:media:write",
+      "gbp:media:delete",
+      "gbp:verifications:write",
+      "gbp:admins:write",
+      "gbp:admins:delete"
+    ]
+  },
+  "storage": { "sqlite": [], "files": [] },
+  "artifacts": [],
+  "events": { "emits": [], "consumes": [] },
+  "skills": [],
+  "health": {
+    "checks": [{ "type": "builtin", "handler": "apps.manifest.check" }]
+  },
+  "versioning": { "compatibility": "semver", "migrations": [] }
+}
