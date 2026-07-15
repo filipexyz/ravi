@@ -2616,9 +2616,77 @@ export type ChatsListsMembersInput = {
 /** Return shape for `chats.lists.members`. */
 export type ChatsListsMembersReturn = Record<string, unknown>;
 
+/** Input shape for `chats.lists.preview`. */
+export type ChatsListsPreviewInput = {
+  listId: string;
+  owner?: string;
+};
+
+/** Return shape for `chats.lists.preview`. */
+export type ChatsListsPreviewReturn = {
+  list: {
+    archivedAt?: number;
+    createdAt: number;
+    description?: string;
+    id: string;
+    mode: string;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    updatedAt: number;
+    visibility: string;
+  };
+  preview: {
+    current: {
+      preserved: number;
+      selector: number;
+      total: number;
+    };
+    diff: ({
+      added: number;
+      eligible: number;
+      kept: number;
+      preserved: number;
+      removed: number;
+    }) | null;
+    dryRun: true;
+    list: {
+      archivedAt?: number;
+      createdAt: number;
+      description?: string;
+      id: string;
+      mode: string;
+      name: string;
+      ownerId: string;
+      ownerType: string;
+      updatedAt: number;
+      visibility: string;
+    };
+    validation: {
+      canApply: boolean;
+      conditions: {
+        negative: number;
+        positive: number;
+        supported: number;
+        total: number;
+      };
+      issues: Array<{
+        code: string;
+        message: string;
+        path?: string;
+        severity: "error" | "warning";
+      }>;
+      match: "all" | "any";
+      riskLevel: "low" | "high";
+      scope: "contact" | "chat";
+      valid: boolean;
+    };
+  };
+};
+
 /** Input shape for `chats.lists.recompute`. */
 export type ChatsListsRecomputeInput = {
-  list: string;
+  listId: string;
   owner?: string;
 };
 
@@ -2629,41 +2697,31 @@ export type ChatsListsRecomputeReturn = {
     createdAt: number;
     description?: string;
     id: string;
-    metadata?: Record<string, unknown>;
     mode: string;
     name: string;
     ownerId: string;
     ownerType: string;
-    selector?: Record<string, unknown>;
     updatedAt: number;
     visibility: string;
   };
   recompute: {
     added: number;
-    addedChatIds: string[];
     eligible: number;
-    eligibleChatIds: string[];
     kept: number;
-    keptChatIds: string[];
     list: {
       archivedAt?: number;
       createdAt: number;
       description?: string;
       id: string;
-      metadata?: Record<string, unknown>;
       mode: string;
       name: string;
       ownerId: string;
       ownerType: string;
-      selector?: Record<string, unknown>;
       updatedAt: number;
       visibility: string;
     };
     preserved: number;
-    preservedChatIds: string[];
     removed: number;
-    removedChatIds: string[];
-    selector: Record<string, unknown>;
   };
 };
 
@@ -2678,6 +2736,52 @@ export type ChatsListsRemoveInput = {
 
 /** Return shape for `chats.lists.remove`. */
 export type ChatsListsRemoveReturn = Record<string, unknown>;
+
+/** Input shape for `chats.lists.show`. */
+export type ChatsListsShowInput = {
+  listId: string;
+  owner?: string;
+};
+
+/** Return shape for `chats.lists.show`. */
+export type ChatsListsShowReturn = {
+  current: {
+    preserved: number;
+    selector: number;
+    total: number;
+  };
+  list: {
+    archivedAt?: number;
+    createdAt: number;
+    description?: string;
+    id: string;
+    mode: string;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    updatedAt: number;
+    visibility: string;
+  };
+  validation: {
+    canApply: boolean;
+    conditions: {
+      negative: number;
+      positive: number;
+      supported: number;
+      total: number;
+    };
+    issues: Array<{
+      code: string;
+      message: string;
+      path?: string;
+      severity: "error" | "warning";
+    }>;
+    match: "all" | "any";
+    riskLevel: "low" | "high";
+    scope: "contact" | "chat";
+    valid: boolean;
+  };
+};
 
 /** Input shape for `chats.read`. */
 export type ChatsReadInput = {

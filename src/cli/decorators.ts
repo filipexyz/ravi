@@ -40,6 +40,10 @@ export interface CommandAccessOptions {
   risk: CommandAccessRisk;
   requiresContext?: CommandAccessContextRequirement[];
   resourceId?: string;
+  /** Require the concrete resource candidate; semantic and legacy command grants cannot substitute for it. */
+  requireConcreteResource?: boolean;
+  /** Optional anchored regular-expression source used to reject non-canonical resource refs before authorization. */
+  resourceIdPattern?: string;
   input?: string[];
   redactions?: string[];
   localOperator?: boolean;

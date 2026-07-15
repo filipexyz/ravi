@@ -24,6 +24,8 @@ export interface PermissionProviderCommandAccess {
   risk: PermissionProviderCommandAccessRisk;
   requiresContext?: string[];
   resourceId?: string;
+  requireConcreteResource?: boolean;
+  resourceIdPattern?: string;
   input?: string[];
   redactions?: string[];
   localOperator?: boolean;

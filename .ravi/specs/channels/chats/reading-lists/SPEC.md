@@ -221,6 +221,16 @@ Dynamic lists MAY use selectors such as:
 
 Dynamic membership MUST be materialized or evaluated consistently enough that cursors remain meaningful. A chat leaving a dynamic list SHOULD keep cursor history for audit and for future re-entry.
 
+Before materializing dynamic membership, Ravi MUST expose a read-only selector preview containing deterministic validation, current membership and the prospective add/remove/keep/preserve diff.
+
+The public `show`, `preview`, and `recompute` commands MUST accept a canonical `crl_...` list id and MUST require authorization to that exact reading-list resource. Semantic command grants and legacy group grants MUST NOT substitute for the concrete resource grant. Canonical list refs MUST resolve by primary-key id only, both before command execution and when recompute rereads the record inside its transaction; a canonical-looking name MUST NOT substitute for the authorized id. An optional owner argument is an assertion against the resolved record, not a name-resolution mechanism.
+
+Their public DTOs MUST omit raw selector and metadata objects and expose only safe list metadata, deterministic validation, and count-only membership summaries. Validation issues and recompute errors MUST expose stable codes/paths without echoing persisted selector values, list mode, or list name. Callers that need selector refs or item-level chat/contact data MUST use an independently authorized resource path.
+
+An invalid selector MUST NOT be evaluated into a membership diff and MUST NOT reach the write path. In particular, `match:any` MUST NOT accept `not-has-tag` conditions: each negative branch can match almost the entire scope, so their union can silently over-expand the list. The preview MUST report this pattern as high risk with `canApply=false` and no diff.
+
+The materialization path MUST reuse the same validation gate as preview. A CLI/API caller MUST be able to inspect one list and preview it without advancing cursors or changing membership.
+
 ## CRM And Observer Use
 
 Reading lists are a natural input queue for CRM/observer work.
@@ -245,6 +255,8 @@ Suggested CLI shape:
 ravi chats lists create <name> [--owner <type:id>] [--json]
 ravi chats lists add <list> <chat> [--owner <type:id>] [--reason <text>] [--json]
 ravi chats lists remove <list> <chat> [--owner <type:id>] [--json]
+ravi chats lists show <list> [--owner <type:id>] [--json]
+ravi chats lists preview <list> [--owner <type:id>] [--json]
 ravi chats lists members <list> [--owner <type:id>] [--json]
 ravi chats lists delta <list> <chat> [--owner <type:id>] [--reader <type:id>] [--json]
 ravi chats lists mark-read <list> <chat> --message <message-id> [--owner <type:id>] [--reader <type:id>] [--json]
