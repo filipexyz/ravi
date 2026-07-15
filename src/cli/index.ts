@@ -103,7 +103,8 @@ program
   .description("Update Ravi CLI to the configured npm channel")
   .option("--next", "Switch to dev builds (npm @next tag)")
   .option("--stable", "Switch to stable releases (npm @latest tag)")
-  .action(async (options: { next?: boolean; stable?: boolean }) => {
+  .option("--no-restart", "Do not restart managed Ravi processes after updating")
+  .action(async (options: { next?: boolean; stable?: boolean; restart?: boolean }) => {
     await runWithCliAudit(
       {
         group: "_root",

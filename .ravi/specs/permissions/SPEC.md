@@ -172,6 +172,11 @@ Agents MUST be guided toward explainable least-privilege requests.
   denial diagnosis.
 - Runtime providers MUST request authorization through the Permission Provider
   Runtime and MUST NOT read unrelated provider storage directly.
+- Ordinary database initialization MUST NOT destructively drop retired
+  permission-provider storage. Destructive cleanup requires an explicit
+  offline migration after every managed Ravi process is on a compatible
+  bundle. Updates MUST stop channel intake before transitioning the daemon and
+  restore only the managed processes that were running before the update.
 - Discovery is disclosure. List, show, search, check, autocomplete, alias
   resolution, SDK discovery, and UI picker surfaces MUST filter to resources
   visible to the effective context.
