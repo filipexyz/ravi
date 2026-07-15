@@ -1,0 +1,297 @@
+{
+  "schema": "ravi.app/v1",
+  "id": "youtube",
+  "name": "YouTube",
+  "version": "0.1.0",
+  "description": "Opera canal, vídeos, comentários, playlists, legendas e analytics pelas APIs oficiais do YouTube.",
+  "interfaces": {
+    "cli": {
+      "command": "ravi yt",
+      "json": true,
+      "health": "ravi yt health --json"
+    },
+    "ui": {
+      "routes": [
+        {
+          "id": "main",
+          "path": "/apps/youtube",
+          "label": "YouTube",
+          "icon": "youtube",
+          "view": "overview"
+        }
+      ],
+      "views": [
+        {
+          "id": "overview",
+          "type": "dashboard",
+          "title": "YouTube",
+          "density": "compact",
+          "query": {
+            "operation": "youtube.info"
+          },
+          "actions": [
+            {
+              "id": "videos",
+              "label": "Vídeos",
+              "icon": "video",
+              "operation": "youtube.videos",
+              "placement": "toolbar"
+            },
+            {
+              "id": "analytics",
+              "label": "Analytics",
+              "icon": "chart-line",
+              "operation": "youtube.analytics-overview",
+              "placement": "toolbar"
+            },
+            {
+              "id": "playlists",
+              "label": "Playlists",
+              "icon": "list-video",
+              "operation": "youtube.playlists",
+              "placement": "toolbar"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "operations": {
+    "youtube.check": {
+      "interface": "builtin",
+      "handler": "apps.manifest.check",
+      "mutating": false
+    },
+    "youtube.health": {
+      "interface": "cli",
+      "command": "ravi yt health --json {args}",
+      "mutating": false,
+      "permission": "youtube:read"
+    },
+    "youtube.info": {
+      "interface": "cli",
+      "command": "ravi yt info --json {args}",
+      "mutating": false,
+      "permission": "youtube:read"
+    },
+    "youtube.videos": {
+      "interface": "cli",
+      "command": "ravi yt videos --json {args}",
+      "mutating": false,
+      "permission": "youtube:read"
+    },
+    "youtube.video": {
+      "interface": "cli",
+      "command": "ravi yt video --json {args}",
+      "mutating": false,
+      "permission": "youtube:read"
+    },
+    "youtube.search": {
+      "interface": "cli",
+      "command": "ravi yt search --json {args}",
+      "mutating": false,
+      "permission": "youtube:read"
+    },
+    "youtube.stats": {
+      "interface": "cli",
+      "command": "ravi yt stats --json {args}",
+      "mutating": false,
+      "permission": "youtube:read"
+    },
+    "youtube.comments": {
+      "interface": "cli",
+      "command": "ravi yt comments --json {args}",
+      "mutating": false,
+      "permission": "youtube:read"
+    },
+    "youtube.unanswered": {
+      "interface": "cli",
+      "command": "ravi yt unanswered --json {args}",
+      "mutating": false,
+      "permission": "youtube:read"
+    },
+    "youtube.reply": {
+      "interface": "cli",
+      "command": "ravi yt reply --json {args}",
+      "mutating": true,
+      "permission": "youtube:comments:write"
+    },
+    "youtube.playlists": {
+      "interface": "cli",
+      "command": "ravi yt playlists --json {args}",
+      "mutating": false,
+      "permission": "youtube:read"
+    },
+    "youtube.playlist": {
+      "interface": "cli",
+      "command": "ravi yt playlist --json {args}",
+      "mutating": false,
+      "permission": "youtube:read"
+    },
+    "youtube.subscriptions": {
+      "interface": "cli",
+      "command": "ravi yt subscriptions --json {args}",
+      "mutating": false,
+      "permission": "youtube:read"
+    },
+    "youtube.captions": {
+      "interface": "cli",
+      "command": "ravi yt captions --json {args}",
+      "mutating": false,
+      "permission": "youtube:captions:read"
+    },
+    "youtube.caption-download": {
+      "interface": "cli",
+      "command": "ravi yt caption-download --json {args}",
+      "mutating": false,
+      "permission": "youtube:captions:read"
+    },
+    "youtube.video-categories": {
+      "interface": "cli",
+      "command": "ravi yt video-categories --json {args}",
+      "mutating": false,
+      "permission": "youtube:read"
+    },
+    "youtube.analytics-overview": {
+      "interface": "cli",
+      "command": "ravi yt analytics-overview --json {args}",
+      "mutating": false,
+      "permission": "youtube:analytics:read"
+    },
+    "youtube.analytics-series": {
+      "interface": "cli",
+      "command": "ravi yt analytics-series --json {args}",
+      "mutating": false,
+      "permission": "youtube:analytics:read"
+    },
+    "youtube.analytics-top": {
+      "interface": "cli",
+      "command": "ravi yt analytics-top --json {args}",
+      "mutating": false,
+      "permission": "youtube:analytics:read"
+    },
+    "youtube.analytics-traffic": {
+      "interface": "cli",
+      "command": "ravi yt analytics-traffic --json {args}",
+      "mutating": false,
+      "permission": "youtube:analytics:read"
+    },
+    "youtube.analytics-demographics": {
+      "interface": "cli",
+      "command": "ravi yt analytics-demographics --json {args}",
+      "mutating": false,
+      "permission": "youtube:analytics:read"
+    },
+    "youtube.analytics-countries": {
+      "interface": "cli",
+      "command": "ravi yt analytics-countries --json {args}",
+      "mutating": false,
+      "permission": "youtube:analytics:read"
+    },
+    "youtube.analytics-devices": {
+      "interface": "cli",
+      "command": "ravi yt analytics-devices --json {args}",
+      "mutating": false,
+      "permission": "youtube:analytics:read"
+    },
+    "youtube.video-update": {
+      "interface": "cli",
+      "command": "ravi yt video-update --json {args}",
+      "mutating": true,
+      "permission": "youtube:videos:write"
+    },
+    "youtube.video-delete": {
+      "interface": "cli",
+      "command": "ravi yt video-delete --json {args}",
+      "mutating": true,
+      "permission": "youtube:videos:delete"
+    },
+    "youtube.playlist-create": {
+      "interface": "cli",
+      "command": "ravi yt playlist-create --json {args}",
+      "mutating": true,
+      "permission": "youtube:playlists:write"
+    },
+    "youtube.playlist-delete": {
+      "interface": "cli",
+      "command": "ravi yt playlist-delete --json {args}",
+      "mutating": true,
+      "permission": "youtube:playlists:delete"
+    },
+    "youtube.playlist-add": {
+      "interface": "cli",
+      "command": "ravi yt playlist-add --json {args}",
+      "mutating": true,
+      "permission": "youtube:playlists:write"
+    },
+    "youtube.playlist-remove": {
+      "interface": "cli",
+      "command": "ravi yt playlist-remove --json {args}",
+      "mutating": true,
+      "permission": "youtube:playlists:delete"
+    }
+  },
+  "permissions": {
+    "required": [],
+    "optional": ["youtube:read", "youtube:analytics:read", "youtube:captions:read"],
+    "mutating": [
+      "youtube:comments:write",
+      "youtube:videos:write",
+      "youtube:videos:delete",
+      "youtube:playlists:write",
+      "youtube:playlists:delete"
+    ]
+  },
+  "operationClasses": {
+    "read": [
+      "youtube.health",
+      "youtube.info",
+      "youtube.videos",
+      "youtube.video",
+      "youtube.search",
+      "youtube.stats",
+      "youtube.comments",
+      "youtube.unanswered",
+      "youtube.playlists",
+      "youtube.playlist",
+      "youtube.subscriptions",
+      "youtube.captions",
+      "youtube.caption-download",
+      "youtube.video-categories"
+    ],
+    "analyticsRead": [
+      "youtube.analytics-overview",
+      "youtube.analytics-series",
+      "youtube.analytics-top",
+      "youtube.analytics-traffic",
+      "youtube.analytics-demographics",
+      "youtube.analytics-countries",
+      "youtube.analytics-devices"
+    ],
+    "write": ["youtube.reply", "youtube.video-update", "youtube.playlist-create", "youtube.playlist-add"],
+    "destructive": ["youtube.video-delete", "youtube.playlist-delete", "youtube.playlist-remove"],
+    "financial": []
+  },
+  "storage": {
+    "sqlite": [],
+    "files": []
+  },
+  "artifacts": [],
+  "events": {
+    "emits": [],
+    "consumes": []
+  },
+  "skills": [],
+  "health": {
+    "checks": [
+      {
+        "type": "builtin",
+        "handler": "apps.manifest.check"
+      }
+    ]
+  },
+  "versioning": {
+    "compatibility": "semver",
+    "migrations": []
+  }
+}

@@ -15,13 +15,7 @@ import { nats } from "../nats.js";
 import { authorizeRuntimeContext, requestPollAnswer, type ApprovalTarget } from "../approval/service.js";
 import { buildAuditContextProvenance } from "../permissions/audit-provenance.js";
 import { emitPermissionDeniedAudit, recordAndEmitPermissionDenial } from "../permissions/denials.js";
-import {
-  agentCan,
-  canWithCapabilityContext,
-  isDelegatedAuthorityContext,
-  materializeSubjectCapabilities,
-} from "../permissions/provider-runtime.js";
-import { canWithCapabilities } from "../permissions/capability-snapshot.js";
+import { agentCan, canWithCapabilityContext, isDelegatedAuthorityContext } from "../permissions/provider-runtime.js";
 import type { ContextRecord } from "../router/index.js";
 import type {
   RuntimeApprovalResult,
@@ -68,65 +62,13 @@ function hasUnrestrictedToolSurface(agentId: string): boolean {
   return agentCan(agentId, "admin", "system", "*") || agentCan(agentId, "use", "tool", "*");
 }
 
-/**
- * Whether the agent was GRANTED full tool + executable authority. Unlike
- * `hasUnrestrictedToolExecution` (which evaluates through the scoped runtime
- * provider chain and is intentionally narrowed inside a delegated turn), this reads
- * the agent's materialized capabilities directly — the right question for deciding
- * whether an agent may fall back to full authority on a provider that cannot scope.
- */
-function agentHasGrantedFullToolAuthority(agentId: string): boolean {
-  const caps = materializeSubjectCapabilities("agent", agentId);
-  return (
-    canWithCapabilities(caps, "admin", "system", "*") ||
-    (canWithCapabilities(caps, "use", "tool", "*") && canWithCapabilities(caps, "execute", "executable", "*"))
-  );
-}
-
-/**
- * Resolve the tool-access mode for a turn that is otherwise scoped/restricted.
- *
- * A scoped turn is "restricted" and Ravi enforces the scoped toolset through host
- * permission hooks (ravi-host). A provider that cannot host those hooks —
- * permissionMode "provider-native", e.g. the pi/antigravity adapter — has no way to
- * honor a restricted toolset, so the turn would simply fail the compatibility check.
- * Fall back to the agent's own authority ONLY when the agent was granted full tool +
- * executable access: this is not a privilege escalation (the same agent runs
- * unrestricted on any provider), it just avoids failing every turn on a provider
- * that cannot scope. An under-privileged agent stays restricted (and is rejected).
- *
- * Shared by every scoped-turn decision point (the delegated-context branch below and
- * the turn-scoped-authority branch in the session launcher) so the fallback is
- * applied consistently.
- */
-export function resolveScopedTurnToolAccessMode(
-  capabilities: RuntimeCapabilities,
-  agentId: string,
-): RuntimeToolAccessMode {
-  if (providerCannotEnforceRestriction(capabilities) && agentHasGrantedFullToolAuthority(agentId)) {
-    return "unrestricted";
-  }
-  return "restricted";
-}
-
-function providerCannotEnforceRestriction(capabilities: RuntimeCapabilities): boolean {
-  // Only an EXPLICIT declaration means Ravi's host hooks cannot scope the toolset.
-  // Unknown/partial capabilities default to "assume enforceable" so a turn stays
-  // restricted (safe default) — the fallback below only fires for a provider that
-  // clearly cannot host permission hooks (e.g. pi/antigravity, provider-native).
-  if (capabilities.tools?.permissionMode) {
-    return capabilities.tools.permissionMode === "provider-native";
-  }
-  return capabilities.supportsToolHooks === false;
-}
-
 export function getRuntimeToolAccessMode(
   capabilities: RuntimeCapabilities,
   agentId: string,
   context?: Pick<ContextRecord, "kind" | "metadata">,
 ): RuntimeToolAccessMode {
   if (context && isDelegatedAuthorityContext(context)) {
-    return resolveScopedTurnToolAccessMode(capabilities, agentId);
+    return "restricted";
   }
 
   const accessRequirement = capabilities.tools?.accessRequirement ?? capabilities.toolAccessRequirement;

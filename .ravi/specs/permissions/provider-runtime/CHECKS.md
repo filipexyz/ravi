@@ -25,6 +25,11 @@
 - Agent-identity denials resolve to `agent:<executorAgentId>` as the recurring
   target.
 - Default agent visibility migration yields `view agent:*`.
+- Router database bootstrap MUST preserve retired permission-provider tables
+  and their rows during mixed-version process transitions.
+- Managed updates MUST stop channel intake before restarting the daemon,
+  restore only processes that were previously online, and verify their final
+  status.
 
 ## Commands
 

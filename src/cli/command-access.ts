@@ -64,7 +64,7 @@ export function enforceCliCommandAccess(input: CliCommandAccessInput): CliComman
       operation,
     });
     attempted.push(decision);
-    if (decision.allowed && exactConcreteResourceAuthorizationSatisfied(inputWithAccess, authority, candidate)) {
+    if (decision.allowed) {
       return { allowed: true, errorMessage: "", decision, attempted };
     }
   }
@@ -78,22 +78,6 @@ export function enforceCliCommandAccess(input: CliCommandAccessInput): CliComman
     decision: attempted[attempted.length - 1],
     attempted,
   };
-}
-
-function exactConcreteResourceAuthorizationSatisfied(
-  input: CliCommandAccessInput & { access: CommandAccessOptions },
-  authority: Extract<ReturnType<typeof resolveCommandAccessAuthority>, { allowed: true }>,
-  candidate: { permission: string; objectType: string; objectId: string },
-): boolean {
-  if (!input.access.requireConcreteResource) return true;
-  if (authority.request.localOperator) return true;
-  const capabilities = authority.request.context?.capabilities ?? [];
-  return capabilities.some(
-    (capability) =>
-      capability.permission === candidate.permission &&
-      capability.objectType === candidate.objectType &&
-      capability.objectId === candidate.objectId,
-  );
 }
 
 function buildCommandAccessDenialMessage(

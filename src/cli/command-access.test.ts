@@ -372,6 +372,7 @@ describe("CLI command access enforcement", () => {
     for (const capability of [
       { permission: "read", objectType: "chats.lists", objectId: "preview" },
       { permission: "read", objectType: "chats.lists", objectId: "*" },
+      { permission: "admin", objectType: "system", objectId: "*" },
       { permission: "execute", objectType: "group", objectId: "chats_lists_preview" },
       { permission: "execute", objectType: "group", objectId: "chats_lists" },
     ]) {

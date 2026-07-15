@@ -20,6 +20,7 @@ import {
   confirmCrmFact,
   deleteContact,
   findContactsByTag,
+  getAllContactAccessRecords,
   getAllContacts,
   getCrmContactProfile,
   getCrmOpportunity,
@@ -34,6 +35,7 @@ import {
   linkCrmAccountContact,
   linkCrmOpportunityContact,
   listCrmActivityParticipants,
+  listCrmContactCards,
   listCrmFacts,
   listCrmNextActions,
   listCrmOpportunityContacts,
@@ -60,6 +62,7 @@ import {
   upsertAgentPlatformIdentity,
   upsertContact,
 } from "./contacts.js";
+import { attachTagSlugsToAsset } from "./tags/helpers.js";
 import {
   dbFindChatReadingList,
   dbListChatMessages,
@@ -183,6 +186,90 @@ describe("contacts identity graph schema", () => {
       "table:crm_tasks",
     ]);
     expect(row).toEqual({ lifecycle: "lead", policy_status: "allowed" });
+  });
+
+  it("filters readable CRM contacts before counting and paginating list surfaces", () => {
+    upsertContact("5511999910151", "Hidden One", "allowed", "manual");
+    upsertContact("5511999910152", "Hidden Two", "allowed", "manual");
+    upsertContact("5511999910153", "Visible", "allowed", "manual");
+    const hiddenOne = getContact("5511999910151")!;
+    const hiddenTwo = getContact("5511999910152")!;
+    const visible = getContact("5511999910153")!;
+
+    for (const contact of [hiddenOne, hiddenTwo, visible]) {
+      createCrmTask({ title: `Follow up ${contact.id}`, contactRef: contact.id, source: "test" });
+      proposeCrmFact({
+        entityType: "contact",
+        entityId: contact.id,
+        key: "visibility.test",
+        value: contact.id,
+        source: "test",
+      });
+    }
+    const unlinkedTask = createCrmTask({
+      title: "Unlinked session follow-up",
+      sessionKey: "session-unlinked",
+      source: "test",
+    });
+    const unlinkedFact = proposeCrmFact({
+      entityType: "segment",
+      entityId: "segment-unlinked",
+      key: "visibility.unlinked",
+      value: true,
+      source: "test",
+    });
+    addContactTag(visible.phone, "visible-tag");
+    attachTagSlugsToAsset({
+      assetType: "contact",
+      assetId: visible.id,
+      tags: ["vip-canonical"],
+      source: "test",
+      createdBy: "test",
+    });
+
+    const readableContactIds = [visible.id];
+    const contacts = listCrmContactCards({ readableContactIds, limit: 1 });
+    const tasks = listCrmTasks({ readableContactIds, limit: 10 });
+    const nextActions = listCrmNextActions({ readableContactIds, limit: 10 });
+    const facts = listCrmFacts({ readableContactIds, limit: 10 });
+
+    expect(contacts.total).toBe(1);
+    expect(contacts.items.map((contact) => contact.contactId)).toEqual([visible.id]);
+    expect(tasks.total).toBe(2);
+    expect(tasks.items.some((task) => task.contactId === visible.id)).toBe(true);
+    expect(tasks.items.map((task) => task.id)).toContain(unlinkedTask.id);
+    expect(nextActions.total).toBe(2);
+    expect(nextActions.items.some((action) => action.contactId === visible.id)).toBe(true);
+    expect(nextActions.items.map((action) => action.taskId)).toContain(unlinkedTask.id);
+    expect(facts.total).toBe(2);
+    expect(facts.items.some((fact) => fact.contactId === visible.id)).toBe(true);
+    expect(facts.items.map((fact) => fact.id)).toContain(unlinkedFact.id);
+    expect(listCrmContactCards({ readableContactIds: [] }).total).toBe(0);
+
+    const tasksWithoutReadableContacts = listCrmTasks({ readableContactIds: [] });
+    const nextActionsWithoutReadableContacts = listCrmNextActions({ readableContactIds: [] });
+    const factsWithoutReadableContacts = listCrmFacts({ readableContactIds: [] });
+    expect(tasksWithoutReadableContacts.items.map((task) => task.id)).toEqual([unlinkedTask.id]);
+    expect(nextActionsWithoutReadableContacts.items.map((action) => action.taskId)).toEqual([unlinkedTask.id]);
+    expect(factsWithoutReadableContacts.items.map((fact) => fact.id)).toEqual([unlinkedFact.id]);
+
+    linkContactIdentity(visible.id, {
+      channel: "telegram",
+      platformUserId: "visible-z",
+      instanceId: "instance-z",
+    });
+    linkContactIdentity(visible.id, {
+      channel: "telegram",
+      platformUserId: "visible-a",
+      instanceId: "instance-a",
+    });
+    const compatibilityDetails = getContactDetails(visible.id)!;
+    const accessRecords = getAllContactAccessRecords();
+    expect(accessRecords.map((contact) => contact.id).sort()).toEqual([hiddenOne.id, hiddenTwo.id, visible.id].sort());
+    expect(accessRecords.find((contact) => contact.id === visible.id)).toMatchObject({
+      tags: ["visible-tag", "vip-canonical"],
+      identityValues: compatibilityDetails.platformIdentities.map((identity) => identity.normalizedPlatformUserId),
+    });
   });
 
   it("writes CRM events append-only and mirrors contact-related events into contact timeline", () => {

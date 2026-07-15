@@ -56,9 +56,16 @@ export function loadInternalPlugins(): InternalPlugin[] {
 }
 
 export function buildInternalPluginsArtifact(outputFile: string): InternalPluginsArtifact {
+  const plugins = scanInternalPlugins();
+  const systemPlugin = plugins.find((plugin) => plugin.name === "ravi-system");
+  const appsDir = join(moduleDir(), "..", "apps");
+  if (systemPlugin && existsSync(appsDir)) {
+    systemPlugin.files.push(...collectPluginFiles(appsDir, "apps"));
+    systemPlugin.files.sort((left, right) => left.path.localeCompare(right.path));
+  }
   const artifact: InternalPluginsArtifact = {
     schemaVersion: 1,
-    plugins: scanInternalPlugins(),
+    plugins,
   };
   mkdirSync(dirname(outputFile), { recursive: true });
   writeFileSync(outputFile, `${JSON.stringify(artifact, null, 2)}\n`);

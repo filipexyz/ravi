@@ -90,6 +90,10 @@ Canonical manifest protocol: `ravi.app/v1`.
 - An app manifest MUST NOT bypass the Permission Provider Runtime, context-key
   authorization, skill gates, runtime provider boundaries, or plugin
   association rules.
+- A CLI operation whose command begins with `ravi` MUST execute the entrypoint
+  of the current Ravi process. It MUST NOT resolve an older or different Ravi
+  installation from `PATH`, because that creates version skew between app
+  discovery and operation execution.
 
 ## Manifest Shape
 
