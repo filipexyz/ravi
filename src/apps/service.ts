@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { loadInternalPlugins } from "../plugins/internal-loader.js";
+import { discoverPlugins } from "../plugins/index.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import {
   RaviAppError,
@@ -148,10 +150,13 @@ export function discoverAppRoots(options: RaviAppDiscoveryOptions = {}): RaviApp
   const env = options.env ?? process.env;
   const roots: RaviAppDiscoveryRoot[] = [];
   const repoRoot = findRepoRoot(cwd);
+  const packagedRuntime = isPackagedAppRuntime();
 
-  roots.push({ source: "repo", rootPath: join(repoRoot, "src", "apps") });
+  if (!packagedRuntime) {
+    roots.push({ source: "repo", rootPath: join(repoRoot, "src", "apps") });
+  }
 
-  for (const pluginRoot of discoverPluginRoots(repoRoot)) {
+  for (const pluginRoot of discoverPluginRoots(repoRoot, packagedRuntime, env.HOME?.trim() || homedir())) {
     roots.push({ source: "plugin", rootPath: join(pluginRoot, "apps") });
   }
 
@@ -172,11 +177,32 @@ function findRepoRoot(cwd: string): string {
   }
 }
 
-function discoverPluginRoots(repoRoot: string): string[] {
+export function isPackagedAppRuntime(entrypoint = process.argv[1] ?? ""): boolean {
+  return entrypoint.split("\\").join("/").includes("/dist/bundle/");
+}
+
+function discoverPluginRoots(
+  repoRoot: string,
+  packagedRuntime = isPackagedAppRuntime(),
+  homeDir = homedir(),
+): string[] {
+  if (packagedRuntime) {
+    return discoverPlugins().map((plugin) => plugin.path);
+  }
+
   const roots: string[] = [];
-  roots.push(...childDirectories(join(repoRoot, "src", "plugins", "internal")));
-  roots.push(...childDirectories(join(homedir(), "ravi", "plugins")));
-  roots.push(...childDirectories(join(homedir(), ".cache", "ravi", "plugins")));
+  const internalRoots = childDirectories(join(repoRoot, "src", "plugins", "internal"));
+  const internalNames = new Set([
+    ...internalRoots.map((root) => basename(root)),
+    ...loadInternalPlugins().map((plugin) => plugin.name),
+  ]);
+  roots.push(...internalRoots);
+  roots.push(...childDirectories(join(homeDir, "ravi", "plugins")));
+  roots.push(
+    ...childDirectories(join(homeDir, ".cache", "ravi", "plugins")).filter(
+      (root) => !internalNames.has(basename(root)),
+    ),
+  );
   return roots;
 }
 
