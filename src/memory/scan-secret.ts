@@ -14,10 +14,24 @@ interface SecretPattern {
 }
 
 const SECRET_PATTERNS: readonly SecretPattern[] = [
-  { kind: "github-token", regex: /ghp_[A-Za-z0-9]{36}/g },
+  // GitHub classic PATs / app tokens: ghp_ (PAT), gho_ (OAuth), ghu_ (user),
+  // ghs_ (server), ghr_ (refresh) — all 36 base62 chars. The old pattern only
+  // caught ghp_, silently passing the other four live-credential prefixes.
+  { kind: "github-token", regex: /gh[opusr]_[A-Za-z0-9]{36}/g },
+  // GitHub fine-grained PAT: `github_pat_` + 22 base62 + `_` + 59 base62.
+  { kind: "github-fine-grained-pat", regex: /github_pat_[A-Za-z0-9_]{60,}/g },
   { kind: "openai-key", regex: /sk-[A-Za-z0-9_-]{20,}/g },
   { kind: "slack-token", regex: /xox[baprs]-[A-Za-z0-9-]+/g },
+  // AWS long-term access key id.
   { kind: "aws-access-key", regex: /AKIA[0-9A-Z]{16}/g },
+  // AWS temporary/session access key id (STS). ASIA + 16 uppercase/digits was
+  // a false negative before — a leaked session key is just as live.
+  { kind: "aws-session-key", regex: /ASIA[0-9A-Z]{16}/g },
+  // Stripe live/test secret + restricted keys: sk_live_, sk_test_, rk_live_,
+  // rk_test_ followed by ≥24 base62.
+  { kind: "stripe-key", regex: /[sr]k_(?:live|test)_[A-Za-z0-9]{24,}/g },
+  // Google API key: AIza + 35 chars from the url-safe alphabet.
+  { kind: "google-api-key", regex: /AIza[A-Za-z0-9_-]{35}/g },
   { kind: "bearer-token", regex: /Bearer\s+[A-Za-z0-9._-]{20,}/g },
   {
     kind: "private-key",
@@ -35,6 +49,15 @@ const SECRET_PATTERNS: readonly SecretPattern[] = [
   {
     kind: "hardcoded-secret",
     regex: /(?:api[_-]?key|token|secret|password)\s*[=:]\s*["'][A-Za-z0-9+/=_-]{20,}["']?/gi,
+  },
+  // Env-style assignment WITHOUT quotes — `API_KEY=abc123...`, `export
+  // DB_PASSWORD=…`. The quoted `hardcoded-secret` above missed these entirely.
+  // Requires ≥16 value chars so ordinary `count=100000` config lines with a
+  // benign key name don't trip it (the key-name vocabulary is the gate).
+  {
+    kind: "env-assignment",
+    regex:
+      /(?:api[_-]?key|secret[_-]?key|access[_-]?key|token|secret|password|passwd|pwd)\s*=\s*[A-Za-z0-9+/=_.-]{16,}/gi,
   },
 ];
 

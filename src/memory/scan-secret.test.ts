@@ -86,4 +86,56 @@ describe("scanSecret (R9b redact-at-source)", () => {
     expect(pwd.matches[0]!.kind).toBe("hardcoded-secret");
     expect(dashKey.matches[0]!.kind).toBe("hardcoded-secret");
   });
+
+  // M4 — false negatives closed by the follow-up review of #294.
+  it("detects all GitHub classic token prefixes (gho_/ghu_/ghs_/ghr_), not just ghp_", () => {
+    for (const prefix of ["gho", "ghu", "ghs", "ghr"]) {
+      const token = `${prefix}_abcdefghijklmnopqrstuvwxyz0123456789`;
+      const result = scanSecret(`Reminder: keep ${token} out of the repo.`);
+      expect(result.hasSecret).toBe(true);
+      expect(result.matches[0]!.kind).toBe("github-token");
+      expect(result.redacted).not.toContain(token);
+    }
+  });
+
+  it("detects GitHub fine-grained PAT (github_pat_)", () => {
+    const token = `github_pat_${"A".repeat(22)}_${"b".repeat(59)}`;
+    const result = scanSecret(`Use ${token} for the bot.`);
+    expect(result.hasSecret).toBe(true);
+    expect(result.matches[0]!.kind).toBe("github-fine-grained-pat");
+    expect(result.redacted).not.toContain(token);
+  });
+
+  it("detects AWS session (STS/ASIA) access key id", () => {
+    const result = scanSecret("temp creds: ASIAIOSFODNN7EXAMPLE rotated hourly");
+    expect(result.hasSecret).toBe(true);
+    expect(result.matches[0]!.kind).toBe("aws-session-key");
+  });
+
+  it("detects Stripe live and restricted keys", () => {
+    const live = scanSecret(`stripe: sk_live_${"a".repeat(24)}`);
+    const restricted = scanSecret(`stripe: rk_live_${"b".repeat(30)}`);
+    expect(live.matches[0]!.kind).toBe("stripe-key");
+    expect(restricted.matches[0]!.kind).toBe("stripe-key");
+  });
+
+  it("detects Google API key (AIza)", () => {
+    const key = `AIza${"C".repeat(35)}`;
+    const result = scanSecret(`maps key ${key} embedded`);
+    expect(result.hasSecret).toBe(true);
+    expect(result.matches[0]!.kind).toBe("google-api-key");
+    expect(result.redacted).not.toContain(key);
+  });
+
+  it("detects env-style assignment without quotes", () => {
+    const result = scanSecret("export DB_PASSWORD=Sup3rSecretValue_x9y8z7");
+    expect(result.hasSecret).toBe(true);
+    expect(result.matches.some((m) => m.kind === "env-assignment")).toBe(true);
+    expect(result.redacted).not.toContain("Sup3rSecretValue_x9y8z7");
+  });
+
+  it("does NOT trip env-assignment on a benign numeric config with a non-credential key", () => {
+    const result = scanSecret("retry_count=100000 and timeout=30000");
+    expect(result.hasSecret).toBe(false);
+  });
 });

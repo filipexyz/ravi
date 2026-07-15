@@ -24,12 +24,17 @@ export interface InjectionScanResult {
 
 export type SecretKind =
   | "github-token"
+  | "github-fine-grained-pat"
   | "openai-key"
   | "slack-token"
   | "aws-access-key"
+  | "aws-session-key"
+  | "stripe-key"
+  | "google-api-key"
   | "bearer-token"
   | "private-key"
   | "oauth-token"
+  | "env-assignment"
   | "cpf"
   | "cnpj"
   | "hardcoded-secret";
@@ -66,6 +71,14 @@ export interface AtomicWriteInput {
 export interface AtomicWriteResult {
   written: boolean;
   driftDetected: boolean;
+  /**
+   * R10/m3 — set when the write was refused because another writer held the
+   * per-target lock (concurrent curation cycle). Distinct from `driftDetected`:
+   * contention means "someone else is mid-write right now", drift means "the
+   * file changed under us". Both refuse the write; the caller can safely retry
+   * a contention loss on the next cadence.
+   */
+  lockContention?: boolean;
   backupPath?: string;
   finalChars: number;
   reason?: string;

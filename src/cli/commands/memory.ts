@@ -149,17 +149,32 @@ export class MemoryCommands {
     // through it. A compromised curator must not be able to read or write
     // outside a registered agent cwd via --target, so restrict the resolved
     // path to known agent roots before any disk read.
+    //
+    // m66 (PR #294 follow-up): tighten cross-agent containment. When `--agent`
+    // names a known agent, the target MUST resolve inside THAT agent's cwd —
+    // otherwise agent A's curator could write into agent B's MEMORY.md while
+    // still landing inside "some registered cwd". The real curator flow always
+    // passes --agent, so this closes the cross-agent write without breaking it.
+    // When --agent is absent/unknown we keep the any-registered-cwd fallback.
     const resolvedTarget = resolve(targetPath);
-    const agentRoots = getAllAgents()
-      .map((a) => a.cwd?.replace("~", homedir()))
-      .filter((c): c is string => Boolean(c))
-      .map((c) => resolve(c));
-    const insideAgentCwd = agentRoots.some((root) => {
+    const isInsideRoot = (root: string): boolean => {
       const rel = relative(root, resolvedTarget);
       return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-    });
-    if (!insideAgentCwd) {
-      fail("--target must resolve inside a registered agent cwd");
+    };
+    const namedAgent = agentId?.trim() ? getAgent(agentId.trim()) : undefined;
+    const namedAgentRoot = namedAgent?.cwd ? resolve(namedAgent.cwd.replace("~", homedir())) : undefined;
+    if (namedAgentRoot) {
+      if (!isInsideRoot(namedAgentRoot)) {
+        fail(`--target must resolve inside the cwd of agent '${agentId!.trim()}' (${namedAgentRoot})`);
+      }
+    } else {
+      const agentRoots = getAllAgents()
+        .map((a) => a.cwd?.replace("~", homedir()))
+        .filter((c): c is string => Boolean(c))
+        .map((c) => resolve(c));
+      if (!agentRoots.some(isInsideRoot)) {
+        fail("--target must resolve inside a registered agent cwd");
+      }
     }
     const currentContent = existsSync(targetPath) ? readFileSync(targetPath, "utf-8") : "";
     const expectedPriorContent = resolveExpectedPrior(expectedPriorPath, targetPath, currentContent);
@@ -457,9 +472,22 @@ export class MemoryCommands {
       fail(`Agent not found or missing cwd: ${agentId}`);
     }
     const cwd = agentConfig.cwd.replace("~", homedir());
-    const target = topic?.trim()
-      ? join(cwd, "memory", topic.trim().endsWith(".md") ? topic.trim() : `${topic.trim()}.md`)
-      : join(cwd, "MEMORY.md");
+    let target: string;
+    if (topic?.trim()) {
+      const slug = topic.trim().endsWith(".md") ? topic.trim() : `${topic.trim()}.md`;
+      // Containment (M1): --topic is attacker-influenced input. A slug like
+      // `../MEMORY.md` or `../../other-agent/MEMORY.md` would escape memory/ and
+      // read a file outside the agent's topic store. Resolve and confine the
+      // result to <cwd>/memory/ before any disk read.
+      const memoryDir = resolve(join(cwd, "memory"));
+      target = resolve(join(memoryDir, slug));
+      const rel = relative(memoryDir, target);
+      if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) {
+        fail(`--topic must resolve inside ${memoryDir} (got ${slug})`);
+      }
+    } else {
+      target = join(cwd, "MEMORY.md");
+    }
     if (!existsSync(target)) {
       fail(`Not found: ${target}`);
     }

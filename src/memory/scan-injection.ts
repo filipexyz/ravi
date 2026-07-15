@@ -202,10 +202,20 @@ const INVISIBLE_CHAR_REGEX = /[​-‍⁠⁢-⁤﻿‪-‮⁦-⁩]/g;
  * to disk (R9 keep-visible: the [BLOCKED:...] markers render inline for both
  * operator inspection and prompt safety).
  */
-export function scanInjection(content: string): InjectionScanResult {
-  if (!content) {
-    return { matches: [], hasInjection: false, wrapped: content };
+export function scanInjection(rawContent: string): InjectionScanResult {
+  if (!rawContent) {
+    return { matches: [], hasInjection: false, wrapped: rawContent };
   }
+
+  // Marker-spoof defense (PR #294 follow-up minor): the wrapper delimits blocked
+  // text with `[BLOCKED:...]...[/BLOCKED]`. If the raw content itself contains a
+  // literal `[/BLOCKED]` (or a forged `[BLOCKED:...]` opener), an attacker can
+  // close a real block early and smuggle the tail past the wrapper, or fabricate
+  // a fake "already handled" annotation. De-fang the reserved delimiters by
+  // swapping the leading `[` for `(` BEFORE scanning. It is length-preserving
+  // (offsets stay valid), visible (no invisible-char injection), and readable.
+  const content = defangBlockedMarkers(rawContent);
+  const markerSpoofed = content !== rawContent;
 
   const matches: InjectionMatch[] = [];
 
@@ -255,6 +265,24 @@ export function scanInjection(content: string): InjectionScanResult {
   }
 
   if (nonOverlapping.length === 0) {
+    // No injection pattern fired, but if we defanged spoofed wrapper markers the
+    // persisted copy MUST be the defanged one — surface it as an injection so the
+    // caller writes `wrapped` (its no-injection branch would keep the raw text).
+    if (markerSpoofed) {
+      return {
+        matches: [
+          {
+            category: "prompt-override",
+            pattern: "blocked-marker-spoof",
+            startIndex: 0,
+            endIndex: 0,
+            excerpt: "",
+          },
+        ],
+        hasInjection: true,
+        wrapped: content,
+      };
+    }
     return { matches: [], hasInjection: false, wrapped: content };
   }
 
@@ -268,4 +296,14 @@ export function scanInjection(content: string): InjectionScanResult {
   wrapped += content.slice(lastIndex);
 
   return { matches: nonOverlapping, hasInjection: true, wrapped };
+}
+
+/**
+ * Neutralize the wrapper's own reserved delimiters when they appear in raw
+ * content, so a persisted entry cannot forge or break out of a
+ * `[BLOCKED:...]...[/BLOCKED]` block. Swaps the leading `[` for `(` — 1:1 in
+ * length so byte offsets computed on the result stay valid.
+ */
+function defangBlockedMarkers(content: string): string {
+  return content.replace(/\[(\/?BLOCKED)/gi, "($1");
 }
