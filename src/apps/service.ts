@@ -79,7 +79,10 @@ const SECRET_VALUE_PATTERNS = [
 ];
 
 const DIRECTORY_SKIPLIST = new Set([".git", "node_modules", "dist", "coverage", ".next"]);
-const STATIC_APP_ROOT_EXCEPTIONS = new Set(["apps"]);
+// First-party apps may register an existing static CLI group as their native
+// implementation. These roots are dispatched by Commander, so invoking them
+// from `apps run` is delegation to the static command, not router recursion.
+const STATIC_APP_ROOT_EXCEPTIONS = new Set(["apps", "gmail"]);
 
 export function normalizeAppId(value: string): string {
   const id = value.trim().toLowerCase();

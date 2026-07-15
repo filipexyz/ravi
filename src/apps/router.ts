@@ -23,7 +23,10 @@ interface ResolvedOperationInvocation {
   args: string[];
 }
 
-const DEFAULT_STATIC_ROOT_COMMANDS = new Set(["apps"]);
+// First-party Ravi Apps may deliberately expose an existing static CLI root.
+// Keep this aligned with STATIC_APP_ROOT_EXCEPTIONS in service.ts so explicit
+// `apps run` calls and manifest validation agree about recursion.
+const DEFAULT_STATIC_ROOT_COMMANDS = new Set(["apps", "gmail"]);
 
 export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviAppRunResult> {
   const startedAt = Date.now();

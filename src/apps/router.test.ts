@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runWithContext } from "../cli/context.js";
@@ -370,6 +379,7 @@ describe("Ravi app router", () => {
     expect(realpathSync((result.result as { cwd: string }).cwd)).toBe(realpathSync(appDir));
   });
 
+<<<<<<< HEAD
   it("runs Ravi CLI app operations through the current installation", () => {
     expect(
       resolveRaviCliCommand("ravi yt health --json", {
@@ -389,6 +399,43 @@ describe("Ravi app router", () => {
         entrypoint: "dist/bundle/index.js",
       }),
     ).toBe(`/opt/bun/bin/bun ${join(process.cwd(), "dist/bundle/index.js")} yt info --json`);
+  });
+
+  it("routes the first-party Gmail app through its existing static CLI root", async () => {
+    const root = makeRepo();
+    const body = manifest("gmail");
+    (body.operations as Record<string, unknown>)["gmail.list"] = {
+      interface: "cli",
+      command: "ravi gmail list --native --json {args}",
+      mutating: false,
+    };
+    writeManifest(root, "gmail", body);
+
+    const fakeBin = join(root, "bin");
+    mkdirSync(fakeBin, { recursive: true });
+    const fakeRavi = join(fakeBin, "ravi");
+    writeFileSync(fakeRavi, '#!/bin/sh\nprintf \'{"transport":"fake","argv":"%s"}\\n\' "$*"\n');
+    chmodSync(fakeRavi, 0o755);
+
+    const result = await runAppOperation({
+      appId: "gmail",
+      operation: "list",
+      args: ["--connection", "missing-test-connection"],
+      json: true,
+      cwd: root,
+      env: { PATH: `${fakeBin}:${process.env.PATH ?? ""}` },
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      appId: "gmail",
+      operationId: "gmail.list",
+      interface: "cli",
+      result: {
+        transport: "fake",
+        argv: "gmail list --native --json --connection missing-test-connection",
+      },
+    });
   });
 
   it("resolves dotted operation ids from whitespace-separated CLI tokens", async () => {

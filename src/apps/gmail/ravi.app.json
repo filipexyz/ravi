@@ -1,0 +1,101 @@
+{
+  "schema": "ravi.app/v1",
+  "id": "gmail",
+  "name": "Gmail",
+  "version": "0.1.0",
+  "description": "Lista, lê e envia mensagens pela API oficial do Gmail, com credenciais gerenciadas pelo Ravi.",
+  "interfaces": {
+    "cli": {
+      "command": "ravi gmail",
+      "json": true,
+      "health": "ravi apps check gmail --json"
+    },
+    "sdk": {
+      "namespace": "gmail"
+    },
+    "ui": {
+      "routes": [
+        {
+          "id": "main",
+          "path": "/apps/gmail",
+          "label": "Gmail",
+          "icon": "mail",
+          "view": "messages"
+        }
+      ],
+      "views": [
+        {
+          "id": "messages",
+          "type": "list",
+          "title": "Gmail",
+          "density": "compact",
+          "query": {
+            "operation": "gmail.list"
+          },
+          "actions": [
+            {
+              "id": "send",
+              "label": "Enviar",
+              "icon": "send",
+              "operation": "gmail.send",
+              "placement": "primary",
+              "permission": "gmail:send"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "operations": {
+    "gmail.check": {
+      "interface": "builtin",
+      "handler": "apps.manifest.check",
+      "mutating": false
+    },
+    "gmail.list": {
+      "interface": "cli",
+      "command": "ravi gmail list --native --connection default --json {args}",
+      "mutating": false,
+      "permission": "gmail:read"
+    },
+    "gmail.read": {
+      "interface": "cli",
+      "command": "ravi gmail read --native --connection default --json {args}",
+      "mutating": false,
+      "permission": "gmail:read"
+    },
+    "gmail.send": {
+      "interface": "cli",
+      "command": "ravi gmail send --native --connection default --json {args}",
+      "mutating": true,
+      "permission": "gmail:send"
+    }
+  },
+  "permissions": {
+    "required": ["gmail:read"],
+    "optional": ["gmail:write", "gmail:destructive"],
+    "mutating": ["gmail:write", "gmail:send", "gmail:destructive"]
+  },
+  "storage": {
+    "sqlite": [],
+    "files": []
+  },
+  "artifacts": [],
+  "events": {
+    "emits": [],
+    "consumes": []
+  },
+  "skills": [],
+  "health": {
+    "checks": [
+      {
+        "type": "cli",
+        "command": "ravi apps check gmail --json"
+      }
+    ]
+  },
+  "versioning": {
+    "compatibility": "semver",
+    "migrations": []
+  }
+}

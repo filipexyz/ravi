@@ -2702,10 +2702,12 @@ export class RaviClient {
   readonly gmail = {
     /** List messages in the connected Gmail mailbox */
     list: async (options?: {
+      connection?: string;
       connector?: string;
       cursor?: string;
       label?: string;
       max?: string;
+      native?: boolean;
       q?: string;
     }): Promise<GmailListReturn> => {
       return this.transport.call({
@@ -2716,8 +2718,10 @@ export class RaviClient {
     },
     /** Read a single Gmail message */
     read: async (id: string, options?: {
+      connection?: string;
       connector?: string;
       format?: string;
+      native?: boolean;
     }): Promise<GmailReadReturn> => {
       return this.transport.call({
         groupSegments: ["gmail"],
