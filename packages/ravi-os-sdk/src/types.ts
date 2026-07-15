@@ -5870,6 +5870,254 @@ export type GmailReadReturn = {
   result?: unknown;
 };
 
+/** Input shape for `gsc.countries`. */
+export type GscCountriesInput = {
+  connection?: string;
+  days?: string;
+  limit?: string;
+  site: string;
+};
+
+/** Return shape for `gsc.countries`. */
+export type GscCountriesReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gsc.date-series`. */
+export type GscDateSeriesInput = {
+  connection?: string;
+  days?: string;
+  query?: string;
+  site: string;
+};
+
+/** Return shape for `gsc.date-series`. */
+export type GscDateSeriesReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gsc.devices`. */
+export type GscDevicesInput = {
+  connection?: string;
+  days?: string;
+  site: string;
+};
+
+/** Return shape for `gsc.devices`. */
+export type GscDevicesReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gsc.falling`. */
+export type GscFallingInput = {
+  connection?: string;
+  days?: string;
+  limit?: string;
+  site: string;
+};
+
+/** Return shape for `gsc.falling`. */
+export type GscFallingReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gsc.inspect`. */
+export type GscInspectInput = {
+  connection?: string;
+  language?: string;
+  site: string;
+  url: string;
+};
+
+/** Return shape for `gsc.inspect`. */
+export type GscInspectReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gsc.query`. */
+export type GscQueryInput = {
+  connection?: string;
+  dataState?: string;
+  dimensions?: string;
+  end?: string;
+  limit?: string;
+  site: string;
+  start?: string;
+  startRow?: string;
+  type?: string;
+};
+
+/** Return shape for `gsc.query`. */
+export type GscQueryReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gsc.rising`. */
+export type GscRisingInput = {
+  connection?: string;
+  days?: string;
+  limit?: string;
+  site: string;
+};
+
+/** Return shape for `gsc.rising`. */
+export type GscRisingReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gsc.site-add`. */
+export type GscSiteAddInput = {
+  connection?: string;
+  site: string;
+};
+
+/** Return shape for `gsc.site-add`. */
+export type GscSiteAddReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gsc.site-delete`. */
+export type GscSiteDeleteInput = {
+  connection?: string;
+  site: string;
+};
+
+/** Return shape for `gsc.site-delete`. */
+export type GscSiteDeleteReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gsc.site-get`. */
+export type GscSiteGetInput = {
+  connection?: string;
+  site: string;
+};
+
+/** Return shape for `gsc.site-get`. */
+export type GscSiteGetReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gsc.sitemap-delete`. */
+export type GscSitemapDeleteInput = {
+  connection?: string;
+  site: string;
+  url: string;
+};
+
+/** Return shape for `gsc.sitemap-delete`. */
+export type GscSitemapDeleteReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gsc.sitemap-get`. */
+export type GscSitemapGetInput = {
+  connection?: string;
+  site: string;
+  url: string;
+};
+
+/** Return shape for `gsc.sitemap-get`. */
+export type GscSitemapGetReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gsc.sitemap-submit`. */
+export type GscSitemapSubmitInput = {
+  connection?: string;
+  site: string;
+  url: string;
+};
+
+/** Return shape for `gsc.sitemap-submit`. */
+export type GscSitemapSubmitReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gsc.sitemaps`. */
+export type GscSitemapsInput = {
+  connection?: string;
+  site: string;
+};
+
+/** Return shape for `gsc.sitemaps`. */
+export type GscSitemapsReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gsc.sites`. */
+export type GscSitesInput = {
+  connection?: string;
+};
+
+/** Return shape for `gsc.sites`. */
+export type GscSitesReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gsc.top-pages`. */
+export type GscTopPagesInput = {
+  connection?: string;
+  days?: string;
+  limit?: string;
+  site: string;
+};
+
+/** Return shape for `gsc.top-pages`. */
+export type GscTopPagesReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gsc.top-queries`. */
+export type GscTopQueriesInput = {
+  connection?: string;
+  days?: string;
+  limit?: string;
+  site: string;
+};
+
+/** Return shape for `gsc.top-queries`. */
+export type GscTopQueriesReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gsc.trends`. */
+export type GscTrendsInput = {
+  connection?: string;
+  days?: string;
+  limit?: string;
+  site: string;
+};
+
+/** Return shape for `gsc.trends`. */
+export type GscTrendsReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gsc.verification-token`. */
+export type GscVerificationTokenInput = {
+  connection?: string;
+  identifier: string;
+  method?: string;
+};
+
+/** Return shape for `gsc.verification-token`. */
+export type GscVerificationTokenReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gsc.verify-site`. */
+export type GscVerifySiteInput = {
+  connection?: string;
+  identifier: string;
+  method?: string;
+};
+
+/** Return shape for `gsc.verify-site`. */
+export type GscVerifySiteReturn = {
+  result: unknown;
+};
+
 /** Input shape for `heartbeat.disable`. */
 export type HeartbeatDisableInput = {
   id: string;

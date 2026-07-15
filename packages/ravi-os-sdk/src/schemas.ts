@@ -29527,6 +29527,1484 @@ export const GmailReadReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `gsc.countries`. */
+export const GscCountriesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "days": {
+      "default": "28",
+      "type": "string"
+    },
+    "limit": {
+      "default": "10",
+      "type": "string"
+    },
+    "site": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "site"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gsc.countries`. */
+export const GscCountriesReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gsc.date-series`. */
+export const GscDateSeriesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "days": {
+      "default": "28",
+      "type": "string"
+    },
+    "query": {
+      "type": "string"
+    },
+    "site": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "site"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gsc.date-series`. */
+export const GscDateSeriesReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gsc.devices`. */
+export const GscDevicesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "days": {
+      "default": "28",
+      "type": "string"
+    },
+    "site": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "site"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gsc.devices`. */
+export const GscDevicesReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gsc.falling`. */
+export const GscFallingInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "days": {
+      "default": "7",
+      "type": "string"
+    },
+    "limit": {
+      "default": "10",
+      "type": "string"
+    },
+    "site": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "site"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gsc.falling`. */
+export const GscFallingReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gsc.inspect`. */
+export const GscInspectInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "language": {
+      "type": "string"
+    },
+    "site": {
+      "description": "Search Console property URL",
+      "type": "string"
+    },
+    "url": {
+      "description": "Fully qualified URL to inspect",
+      "type": "string"
+    }
+  },
+  "required": [
+    "site",
+    "url"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gsc.inspect`. */
+export const GscInspectReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gsc.query`. */
+export const GscQueryInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dataState": {
+      "description": "final,all,hourly_all",
+      "type": "string"
+    },
+    "dimensions": {
+      "description": "query,page,country,device,date",
+      "type": "string"
+    },
+    "end": {
+      "description": "Last data date",
+      "type": "string"
+    },
+    "limit": {
+      "default": "1000",
+      "description": "Rows, 1-25000",
+      "type": "string"
+    },
+    "site": {
+      "description": "Search Console property URL",
+      "type": "string"
+    },
+    "start": {
+      "description": "First data date",
+      "type": "string"
+    },
+    "startRow": {
+      "default": "0",
+      "description": "Pagination offset",
+      "type": "string"
+    },
+    "type": {
+      "description": "web,image,video,news,discover,googleNews",
+      "type": "string"
+    }
+  },
+  "required": [
+    "site"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gsc.query`. */
+export const GscQueryReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gsc.rising`. */
+export const GscRisingInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "days": {
+      "default": "7",
+      "type": "string"
+    },
+    "limit": {
+      "default": "10",
+      "type": "string"
+    },
+    "site": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "site"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gsc.rising`. */
+export const GscRisingReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gsc.site-add`. */
+export const GscSiteAddInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "site": {
+      "description": "Property URL",
+      "type": "string"
+    }
+  },
+  "required": [
+    "site"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gsc.site-add`. */
+export const GscSiteAddReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gsc.site-delete`. */
+export const GscSiteDeleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "site": {
+      "description": "Property URL",
+      "type": "string"
+    }
+  },
+  "required": [
+    "site"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gsc.site-delete`. */
+export const GscSiteDeleteReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gsc.site-get`. */
+export const GscSiteGetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "site": {
+      "description": "Property URL, for example sc-domain:example.com",
+      "type": "string"
+    }
+  },
+  "required": [
+    "site"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gsc.site-get`. */
+export const GscSiteGetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gsc.sitemap-delete`. */
+export const GscSitemapDeleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "site": {
+      "type": "string"
+    },
+    "url": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "site",
+    "url"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gsc.sitemap-delete`. */
+export const GscSitemapDeleteReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gsc.sitemap-get`. */
+export const GscSitemapGetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "site": {
+      "type": "string"
+    },
+    "url": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "site",
+    "url"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gsc.sitemap-get`. */
+export const GscSitemapGetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gsc.sitemap-submit`. */
+export const GscSitemapSubmitInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "site": {
+      "type": "string"
+    },
+    "url": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "site",
+    "url"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gsc.sitemap-submit`. */
+export const GscSitemapSubmitReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gsc.sitemaps`. */
+export const GscSitemapsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "site": {
+      "description": "Search Console property URL",
+      "type": "string"
+    }
+  },
+  "required": [
+    "site"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gsc.sitemaps`. */
+export const GscSitemapsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gsc.sites`. */
+export const GscSitesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gsc.sites`. */
+export const GscSitesReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gsc.top-pages`. */
+export const GscTopPagesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "days": {
+      "default": "7",
+      "type": "string"
+    },
+    "limit": {
+      "default": "25",
+      "type": "string"
+    },
+    "site": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "site"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gsc.top-pages`. */
+export const GscTopPagesReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gsc.top-queries`. */
+export const GscTopQueriesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "days": {
+      "default": "7",
+      "type": "string"
+    },
+    "limit": {
+      "default": "25",
+      "type": "string"
+    },
+    "site": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "site"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gsc.top-queries`. */
+export const GscTopQueriesReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gsc.trends`. */
+export const GscTrendsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "days": {
+      "default": "7",
+      "type": "string"
+    },
+    "limit": {
+      "default": "20",
+      "type": "string"
+    },
+    "site": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "site"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gsc.trends`. */
+export const GscTrendsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gsc.verification-token`. */
+export const GscVerificationTokenInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "identifier": {
+      "type": "string"
+    },
+    "method": {
+      "default": "DNS_TXT",
+      "type": "string"
+    }
+  },
+  "required": [
+    "identifier"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gsc.verification-token`. */
+export const GscVerificationTokenReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `gsc.verify-site`. */
+export const GscVerifySiteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "identifier": {
+      "type": "string"
+    },
+    "method": {
+      "default": "DNS_TXT",
+      "type": "string"
+    }
+  },
+  "required": [
+    "identifier"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `gsc.verify-site`. */
+export const GscVerifySiteReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `heartbeat.disable`. */
 export const HeartbeatDisableInputSchema = {
   "additionalProperties": false,
