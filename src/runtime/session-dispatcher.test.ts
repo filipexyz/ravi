@@ -248,6 +248,48 @@ describe("RuntimeSessionDispatcher runtime recovery", () => {
       },
     });
   });
+
+  it("stops replaying a stashed turn after repeated runtime target exhaustion restarts", async () => {
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async (topic, data) => {
+        emitted.push({ topic, data });
+      },
+      getConfigModel: () => "test-model",
+    });
+    dispatcher.stashedMessages.set("exhaustion-loop", [
+      createQueuedRuntimeUserMessage({
+        prompt: "retry me",
+        _agentId: "main",
+      }),
+    ]);
+
+    let starts = 0;
+    dispatcher.startStreamingSession = mock(async () => {
+      starts++;
+    });
+    const recovery = dispatcher as unknown as {
+      restartStashedSession(sessionName: string, reason: string): Promise<void>;
+    };
+
+    await recovery.restartStashedSession("exhaustion-loop", "runtime_target_exhausted");
+    await recovery.restartStashedSession("exhaustion-loop", "runtime_target_exhausted");
+    await recovery.restartStashedSession("exhaustion-loop", "runtime_target_exhausted");
+
+    expect(starts).toBe(2);
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]).toMatchObject({
+      topic: "ravi.session.exhaustion-loop.runtime",
+      data: {
+        type: "dispatch.restart_suppressed",
+        reason: "runtime_target_exhausted",
+        restartAttempts: 2,
+      },
+    });
+  });
 });
 
 describe("RuntimeSessionDispatcher native runtime steer", () => {

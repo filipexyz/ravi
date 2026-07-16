@@ -34,6 +34,7 @@ import type { RuntimeProviderId } from "./types.js";
 import { formatUserFacingTurnFailure, type RuntimeSafeEmit } from "./host-event-loop.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
 import {
+  RUNTIME_TARGET_EXHAUSTED_RESTART_REASON,
   startRuntimeSession,
   updateRuntimeSessionMetadata,
   type PendingRuntimeSessionStart,
@@ -57,6 +58,17 @@ import {
 const log = logger.child("runtime:session-dispatcher");
 const RUNTIME_EVENT_LOOP_CLOSED_REASON = "runtime_event_loop_closed";
 const MAX_RUNTIME_EVENT_LOOP_RESTARTS = 2;
+/**
+ * Restart reasons bounded by MAX_RUNTIME_EVENT_LOOP_RESTARTS. A permanently
+ * unrecoverable condition — the runtime event loop closing on every replay, or
+ * every runtime target being exhausted — must converge to
+ * dispatch.restart_suppressed instead of spinning restart -> re-resolve -> fail
+ * forever (which pins CPU and re-reads full session history each cycle).
+ */
+const BOUNDED_RESTART_REASONS = new Set<string>([
+  RUNTIME_EVENT_LOOP_CLOSED_REASON,
+  RUNTIME_TARGET_EXHAUSTED_RESTART_REASON,
+]);
 const RUNTIME_RESTART_EXHAUSTED_ERROR =
   "Runtime provider stream closed repeatedly. Automatic recovery was stopped; send a new message to retry.";
 const NATIVE_STEER_ACTIVE_TURN_MAX_IDLE_MS = 30_000;
@@ -1459,10 +1471,9 @@ export class RuntimeSessionDispatcher {
     }
 
     const traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
-    const restartAttempt =
-      reason === RUNTIME_EVENT_LOOP_CLOSED_REASON
-        ? (this.runtimeEventLoopRestartAttempts.get(sessionName) ?? 0) + 1
-        : undefined;
+    const restartAttempt = BOUNDED_RESTART_REASONS.has(reason)
+      ? (this.runtimeEventLoopRestartAttempts.get(sessionName) ?? 0) + 1
+      : undefined;
     if (restartAttempt !== undefined && restartAttempt > MAX_RUNTIME_EVENT_LOOP_RESTARTS) {
       recordRuntimeTraceEvent({
         sessionKey: traceIdentity.sessionKey,

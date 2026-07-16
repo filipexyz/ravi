@@ -52,6 +52,13 @@ import {
 
 const log = logger.child("runtime:session-launcher");
 
+/**
+ * Restart reason emitted when every runtime target in the active policy is
+ * exhausted. Bounded by the dispatcher restart circuit breaker so exhaustion
+ * cannot spin restart -> re-resolve -> exhausted forever (see session-dispatcher).
+ */
+export const RUNTIME_TARGET_EXHAUSTED_RESTART_REASON = "runtime_target_exhausted";
+
 export interface PendingRuntimeSessionStart {
   sessionName: string;
   prompt: RuntimeLaunchPrompt;
@@ -173,7 +180,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     }
     drainPendingStarts();
     if ((stashedMessages.get(sessionName)?.length ?? 0) > 0 && restartStashedSession) {
-      await restartStashedSession({ sessionName, reason: "runtime_target_exhausted" });
+      await restartStashedSession({ sessionName, reason: RUNTIME_TARGET_EXHAUSTED_RESTART_REASON });
     }
     return;
   }
