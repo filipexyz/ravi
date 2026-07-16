@@ -2616,77 +2616,9 @@ export type ChatsListsMembersInput = {
 /** Return shape for `chats.lists.members`. */
 export type ChatsListsMembersReturn = Record<string, unknown>;
 
-/** Input shape for `chats.lists.preview`. */
-export type ChatsListsPreviewInput = {
-  listId: string;
-  owner?: string;
-};
-
-/** Return shape for `chats.lists.preview`. */
-export type ChatsListsPreviewReturn = {
-  list: {
-    archivedAt?: number;
-    createdAt: number;
-    description?: string;
-    id: string;
-    mode: string;
-    name: string;
-    ownerId: string;
-    ownerType: string;
-    updatedAt: number;
-    visibility: string;
-  };
-  preview: {
-    current: {
-      preserved: number;
-      selector: number;
-      total: number;
-    };
-    diff: ({
-      added: number;
-      eligible: number;
-      kept: number;
-      preserved: number;
-      removed: number;
-    }) | null;
-    dryRun: true;
-    list: {
-      archivedAt?: number;
-      createdAt: number;
-      description?: string;
-      id: string;
-      mode: string;
-      name: string;
-      ownerId: string;
-      ownerType: string;
-      updatedAt: number;
-      visibility: string;
-    };
-    validation: {
-      canApply: boolean;
-      conditions: {
-        negative: number;
-        positive: number;
-        supported: number;
-        total: number;
-      };
-      issues: Array<{
-        code: string;
-        message: string;
-        path?: string;
-        severity: "error" | "warning";
-      }>;
-      match: "all" | "any";
-      riskLevel: "low" | "high";
-      scope: "contact" | "chat";
-      valid: boolean;
-    };
-  };
-};
-
 /** Input shape for `chats.lists.recompute`. */
 export type ChatsListsRecomputeInput = {
-  listId: string;
+  list: string;
   owner?: string;
 };
 
@@ -2697,31 +2629,41 @@ export type ChatsListsRecomputeReturn = {
     createdAt: number;
     description?: string;
     id: string;
+    metadata?: Record<string, unknown>;
     mode: string;
     name: string;
     ownerId: string;
     ownerType: string;
+    selector?: Record<string, unknown>;
     updatedAt: number;
     visibility: string;
   };
   recompute: {
     added: number;
+    addedChatIds: string[];
     eligible: number;
+    eligibleChatIds: string[];
     kept: number;
+    keptChatIds: string[];
     list: {
       archivedAt?: number;
       createdAt: number;
       description?: string;
       id: string;
+      metadata?: Record<string, unknown>;
       mode: string;
       name: string;
       ownerId: string;
       ownerType: string;
+      selector?: Record<string, unknown>;
       updatedAt: number;
       visibility: string;
     };
     preserved: number;
+    preservedChatIds: string[];
     removed: number;
+    removedChatIds: string[];
+    selector: Record<string, unknown>;
   };
 };
 
@@ -2736,52 +2678,6 @@ export type ChatsListsRemoveInput = {
 
 /** Return shape for `chats.lists.remove`. */
 export type ChatsListsRemoveReturn = Record<string, unknown>;
-
-/** Input shape for `chats.lists.show`. */
-export type ChatsListsShowInput = {
-  listId: string;
-  owner?: string;
-};
-
-/** Return shape for `chats.lists.show`. */
-export type ChatsListsShowReturn = {
-  current: {
-    preserved: number;
-    selector: number;
-    total: number;
-  };
-  list: {
-    archivedAt?: number;
-    createdAt: number;
-    description?: string;
-    id: string;
-    mode: string;
-    name: string;
-    ownerId: string;
-    ownerType: string;
-    updatedAt: number;
-    visibility: string;
-  };
-  validation: {
-    canApply: boolean;
-    conditions: {
-      negative: number;
-      positive: number;
-      supported: number;
-      total: number;
-    };
-    issues: Array<{
-      code: string;
-      message: string;
-      path?: string;
-      severity: "error" | "warning";
-    }>;
-    match: "all" | "any";
-    riskLevel: "low" | "high";
-    scope: "contact" | "chat";
-    valid: boolean;
-  };
-};
 
 /** Input shape for `chats.read`. */
 export type ChatsReadInput = {
@@ -5944,51 +5840,418 @@ export type FeedbackSendReturn = {
   url: string;
 };
 
-/** Input shape for `frete.quote`. */
-export type FreteQuoteInput = {
-  allDeliveryOptions?: boolean;
+/** Input shape for `gbp.account-get`. */
+export type GbpAccountGetInput = {
+  account: string;
   connection?: string;
-  destinationCep: string;
-  grouped?: boolean;
-  height?: string;
-  ignorePreparationDays?: boolean;
-  integrationId: string;
-  length?: string;
-  originCep?: string;
-  quantity?: string;
-  sku: string;
-  weight?: string;
-  width?: string;
 };
 
-/** Return shape for `frete.quote`. */
-export type FreteQuoteReturn = {
-  contract: {
-    documentation: "https://tiny.com.br/api-docs/api2-cotacao-fretes";
-    endpointTemplate: "https://api.tiny.com.br/webhook/api/v1/parceiro/{idEcommerce}/cotar";
-    verifiedAt: "2026-07-13";
-  };
-  destinationCep: string;
-  integrationId: number;
-  originCep: string | null;
-  provider: "olist-tiny";
-  quotes: Array<{
-    options: Array<{
-      deadlineDays: number;
-      deliveryType: "normal" | "expressa" | "economica" | "super_expressa" | "agendada" | "retirada" | "nao_definida";
-      freightMethodId: string;
-      freightMethodName: string;
-      price: number;
-      shippingMethodId: string;
-      shippingMethodName: string;
-    }>;
-    sku: string | null;
-  }>;
-  settings: {
-    groupDeliveryTypes: boolean;
-    grouped: boolean;
-    includePreparationDays: boolean;
-  };
+/** Return shape for `gbp.account-get`. */
+export type GbpAccountGetReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.accounts`. */
+export type GbpAccountsInput = {
+  connection?: string;
+  cursor?: string;
+  limit?: string;
+};
+
+/** Return shape for `gbp.accounts`. */
+export type GbpAccountsReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.admin-add`. */
+export type GbpAdminAddInput = {
+  connection?: string;
+  email: string;
+  parent: string;
+  role?: string;
+};
+
+/** Return shape for `gbp.admin-add`. */
+export type GbpAdminAddReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.admin-delete`. */
+export type GbpAdminDeleteInput = {
+  admin: string;
+  connection?: string;
+};
+
+/** Return shape for `gbp.admin-delete`. */
+export type GbpAdminDeleteReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.admin-update`. */
+export type GbpAdminUpdateInput = {
+  admin: string;
+  connection?: string;
+  role?: string;
+};
+
+/** Return shape for `gbp.admin-update`. */
+export type GbpAdminUpdateReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.admins`. */
+export type GbpAdminsInput = {
+  connection?: string;
+  parent: string;
+};
+
+/** Return shape for `gbp.admins`. */
+export type GbpAdminsReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.attributes`. */
+export type GbpAttributesInput = {
+  connection?: string;
+  location: string;
+};
+
+/** Return shape for `gbp.attributes`. */
+export type GbpAttributesReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.categories`. */
+export type GbpCategoriesInput = {
+  connection?: string;
+  cursor?: string;
+  filter?: string;
+  language?: string;
+  limit?: string;
+  region?: string;
+};
+
+/** Return shape for `gbp.categories`. */
+export type GbpCategoriesReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.location-delete`. */
+export type GbpLocationDeleteInput = {
+  connection?: string;
+  location: string;
+};
+
+/** Return shape for `gbp.location-delete`. */
+export type GbpLocationDeleteReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.location-get`. */
+export type GbpLocationGetInput = {
+  connection?: string;
+  location: string;
+  mask?: string;
+};
+
+/** Return shape for `gbp.location-get`. */
+export type GbpLocationGetReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.location-update`. */
+export type GbpLocationUpdateInput = {
+  connection?: string;
+  location: string;
+  mask?: string;
+  payload?: string;
+};
+
+/** Return shape for `gbp.location-update`. */
+export type GbpLocationUpdateReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.locations`. */
+export type GbpLocationsInput = {
+  account: string;
+  connection?: string;
+  cursor?: string;
+  limit?: string;
+  mask?: string;
+};
+
+/** Return shape for `gbp.locations`. */
+export type GbpLocationsReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.media`. */
+export type GbpMediaInput = {
+  account: string;
+  connection?: string;
+  cursor?: string;
+  limit?: string;
+  location: string;
+};
+
+/** Return shape for `gbp.media`. */
+export type GbpMediaReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.media-create`. */
+export type GbpMediaCreateInput = {
+  account: string;
+  connection?: string;
+  location: string;
+  payload?: string;
+};
+
+/** Return shape for `gbp.media-create`. */
+export type GbpMediaCreateReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.media-delete`. */
+export type GbpMediaDeleteInput = {
+  account: string;
+  connection?: string;
+  location: string;
+  media: string;
+};
+
+/** Return shape for `gbp.media-delete`. */
+export type GbpMediaDeleteReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.media-get`. */
+export type GbpMediaGetInput = {
+  account: string;
+  connection?: string;
+  location: string;
+  media: string;
+};
+
+/** Return shape for `gbp.media-get`. */
+export type GbpMediaGetReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.media-update`. */
+export type GbpMediaUpdateInput = {
+  account: string;
+  connection?: string;
+  location: string;
+  mask?: string;
+  media: string;
+  payload?: string;
+};
+
+/** Return shape for `gbp.media-update`. */
+export type GbpMediaUpdateReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.performance`. */
+export type GbpPerformanceInput = {
+  connection?: string;
+  end?: string;
+  location: string;
+  metrics?: string;
+  start?: string;
+};
+
+/** Return shape for `gbp.performance`. */
+export type GbpPerformanceReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.post-create`. */
+export type GbpPostCreateInput = {
+  account: string;
+  connection?: string;
+  location: string;
+  payload?: string;
+};
+
+/** Return shape for `gbp.post-create`. */
+export type GbpPostCreateReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.post-delete`. */
+export type GbpPostDeleteInput = {
+  account: string;
+  connection?: string;
+  location: string;
+  post: string;
+};
+
+/** Return shape for `gbp.post-delete`. */
+export type GbpPostDeleteReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.post-get`. */
+export type GbpPostGetInput = {
+  account: string;
+  connection?: string;
+  location: string;
+  post: string;
+};
+
+/** Return shape for `gbp.post-get`. */
+export type GbpPostGetReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.post-update`. */
+export type GbpPostUpdateInput = {
+  account: string;
+  connection?: string;
+  location: string;
+  mask?: string;
+  payload?: string;
+  post: string;
+};
+
+/** Return shape for `gbp.post-update`. */
+export type GbpPostUpdateReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.posts`. */
+export type GbpPostsInput = {
+  account: string;
+  connection?: string;
+  cursor?: string;
+  limit?: string;
+  location: string;
+};
+
+/** Return shape for `gbp.posts`. */
+export type GbpPostsReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.review-get`. */
+export type GbpReviewGetInput = {
+  account: string;
+  connection?: string;
+  location: string;
+  review: string;
+};
+
+/** Return shape for `gbp.review-get`. */
+export type GbpReviewGetReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.review-reply`. */
+export type GbpReviewReplyInput = {
+  account: string;
+  comment?: string;
+  connection?: string;
+  location: string;
+  review: string;
+};
+
+/** Return shape for `gbp.review-reply`. */
+export type GbpReviewReplyReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.review-reply-delete`. */
+export type GbpReviewReplyDeleteInput = {
+  account: string;
+  connection?: string;
+  location: string;
+  review: string;
+};
+
+/** Return shape for `gbp.review-reply-delete`. */
+export type GbpReviewReplyDeleteReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.reviews`. */
+export type GbpReviewsInput = {
+  account: string;
+  connection?: string;
+  cursor?: string;
+  limit?: string;
+  location: string;
+};
+
+/** Return shape for `gbp.reviews`. */
+export type GbpReviewsReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.search-keywords`. */
+export type GbpSearchKeywordsInput = {
+  connection?: string;
+  cursor?: string;
+  endMonth?: string;
+  limit?: string;
+  location: string;
+  startMonth?: string;
+};
+
+/** Return shape for `gbp.search-keywords`. */
+export type GbpSearchKeywordsReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.verification-complete`. */
+export type GbpVerificationCompleteInput = {
+  connection?: string;
+  pin?: string;
+  verification: string;
+};
+
+/** Return shape for `gbp.verification-complete`. */
+export type GbpVerificationCompleteReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.verification-options`. */
+export type GbpVerificationOptionsInput = {
+  connection?: string;
+  language?: string;
+  location: string;
+};
+
+/** Return shape for `gbp.verification-options`. */
+export type GbpVerificationOptionsReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.verifications`. */
+export type GbpVerificationsInput = {
+  connection?: string;
+  location: string;
+};
+
+/** Return shape for `gbp.verifications`. */
+export type GbpVerificationsReturn = {
+  result: unknown;
+};
+
+/** Input shape for `gbp.verify`. */
+export type GbpVerifyInput = {
+  connection?: string;
+  language?: string;
+  location: string;
+  method: string;
+  payload?: string;
+};
+
+/** Return shape for `gbp.verify`. */
+export type GbpVerifyReturn = {
+  result: unknown;
 };
 
 /** Input shape for `gmail.list`. */
