@@ -8,6 +8,7 @@ import {
   getOptionsMetadata,
   getReturnsMetadata,
 } from "../decorators.js";
+import { runWithContext } from "../context.js";
 import { YouTubeCommands } from "./youtube.js";
 
 afterEach(() => mock.restore());
@@ -137,12 +138,13 @@ describe("YouTubeCommands contract", () => {
     const commands = new YouTubeCommands(() => client);
     spyOn(console, "log").mockImplementation(() => {});
 
-    await expect(commands.commentModerate("c1", "published", true, "brand", true)).rejects.toThrow(
-      "--ban-author is only valid with --status rejected",
-    );
+    const ctx = { sessionKey: "yt-test", sessionName: "yt-test", agentId: "ravi-dev" };
+    await expect(
+      runWithContext(ctx, () => commands.commentModerate("c1", "published", true, "brand", true)),
+    ).rejects.toThrow("--ban-author is only valid with --status rejected");
     expect(setCommentModeration).not.toHaveBeenCalled();
 
-    await commands.commentModerate("c1", "rejected", true, "brand", true);
+    await runWithContext(ctx, () => commands.commentModerate("c1", "rejected", true, "brand", true));
     expect(setCommentModeration).toHaveBeenCalledWith("c1", "rejected", true);
   });
 
