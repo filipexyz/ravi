@@ -15,8 +15,11 @@ import type {
   SpecRecord,
   SpecRequirement,
   SpecStatus,
+  SpecVerifyIssue,
+  SpecVerifyResult,
   SyncSpecsOptions,
   SyncSpecsResult,
+  VerifySpecOptions,
 } from "./types.js";
 
 const SPEC_FILE = "SPEC.md";
@@ -406,7 +409,7 @@ function yamlArray(values: string[]): string[] {
   return values.map((value) => `  - ${yamlScalar(value)}`);
 }
 
-function buildSpecFrontmatter(input: { id: string; title: string; kind: SpecKind }): string {
+function buildSpecFrontmatter(input: { id: string; title: string; kind: SpecKind; canonical?: boolean }): string {
   const parts = input.id.split("/");
   const capabilities = parts[1] ? [parts[1]] : [];
   const lines = [
@@ -422,9 +425,23 @@ function buildSpecFrontmatter(input: { id: string; title: string; kind: SpecKind
     "owners:",
     "status: active",
     "normative: true",
-    "---",
-    "",
   ];
+  if (input.canonical) {
+    // Canonical lifecycle + traceability frontmatter — resolves F-5/F-7 from
+    // audit-ravispec-format. See .ravi/specs/README.md for field semantics.
+    lines.push(
+      "lifecycle: proposed",
+      "implementation_status: none",
+      "implemented_by:",
+      "implemented_at:",
+      "implementation_notes:",
+      "open_items:",
+      "decision_makers:",
+      "consulted:",
+      "informed:",
+    );
+  }
+  lines.push("---", "");
   return `${lines.join("\n")}\n`;
 }
 
@@ -451,15 +468,101 @@ function buildSpecBody(title: string): string {
   ].join("\n");
 }
 
-function companionTemplate(fileName: (typeof COMPANION_FILES)[number], title: string): string {
+// Canonical SPEC.md body from audit-ravispec-format (F-1/F-2/F-3/F-6/F-7).
+// Section order and the mandatory Acceptance Criteria table mirror
+// .ravi/specs/README.md so a freshly created `--full` spec passes
+// `ravi specs verify` out of the box (R1 -> CHECKS.md#C1).
+function buildCanonicalSpecBody(title: string): string {
+  return [
+    `# ${title}`,
+    "",
+    "## Intent",
+    "",
+    "Why this spec exists and what problem it solves.",
+    "",
+    "## Context / Decision Drivers",
+    "",
+    "Forces that pushed toward this decision (optional if covered by WHY.md).",
+    "",
+    "## Invariants",
+    "",
+    "- **R1** — This spec MUST define at least one concrete, testable invariant.",
+    "",
+    "## Boundaries",
+    "",
+    "Explicitly in-scope vs out-of-scope.",
+    "",
+    "## Acceptance Criteria",
+    "",
+    "Every invariant MUST have a row. Without this table the spec MUST NOT be `normative: true`.",
+    "",
+    "| Invariant | Verification Method | Check Ref | Pass Condition |",
+    "|-----------|---------------------|-----------|----------------|",
+    "| R1 | Inspection | CHECKS.md#C1 | Replace with an objective, observable pass condition. |",
+    "",
+    "Verification Method is one of: `Test` | `Demonstration` | `Inspection` | `Analysis`.",
+    "",
+    "## Adaptation",
+    "",
+    "No open adaptation decisions. Any decision this spec cannot resolve up-front MUST take",
+    "one of these paths (never a bare TBD):",
+    "",
+    "- (a) become a spike sub-task with its own acceptance criteria before implementation dispatch; or",
+    "- (b) declare `resolution_deadline: <date>` + `blocking_for: [Rk, ...]`; or",
+    "- (c) be reported back as an explicit update to this spec before `done`.",
+    "",
+    "## Known Failure Modes",
+    "",
+    "- Add incidents, regressions, or edge cases this spec should prevent.",
+    "",
+    "## Governance",
+    "",
+    "- `decision_makers`: who approves changes to this spec.",
+    "- `consulted`: who must be heard before changing it.",
+    "- `informed`: who only needs to know after.",
+    "",
+    "## Changelog",
+    "",
+    "- Add dated entries for scope/semantic changes (this is not the git log).",
+    "",
+  ].join("\n");
+}
+
+// Canonical WHY.md / CHECKS.md / RUNBOOK.md companions. CHECKS.md defines C1 so the
+// canonical SPEC.md Acceptance Criteria row (R1 -> CHECKS.md#C1) has a live target.
+function canonicalCompanionTemplate(fileName: (typeof COMPANION_FILES)[number], title: string): string {
   const heading = fileName.replace(".md", "");
   switch (fileName) {
     case "WHY.md":
-      return `# ${title} / ${heading}\n\n## Rationale\n\nDocument decisions, tradeoffs, and rejected alternatives.\n`;
+      return [
+        `# ${title} / ${heading}`,
+        "",
+        "## Rationale",
+        "",
+        "Why this approach.",
+        "",
+        "## Alternatives Considered",
+        "",
+        "Rejected options and why.",
+        "",
+        "## Consequences",
+        "",
+        "Trade-offs accepted.",
+        "",
+      ].join("\n");
     case "RUNBOOK.md":
       return `# ${title} / ${heading}\n\n## Debug Flow\n\nDocument operational steps for diagnosing this area.\n`;
     case "CHECKS.md":
-      return `# ${title} / ${heading}\n\n## Checks\n\n- Add validation commands, queries, or regression scenarios.\n`;
+      return [
+        `# ${title} / ${heading}`,
+        "",
+        "## Checks",
+        "",
+        "### C1 — R1",
+        "",
+        "- Replace with the validation command, query, or regression scenario for R1.",
+        "",
+      ].join("\n");
   }
 }
 
@@ -481,13 +584,16 @@ export function createSpec(input: NewSpecInput): NewSpecResult {
 
   mkdirSync(dir, { recursive: true });
   const createdFiles: string[] = [];
-  writeFileSync(path, `${buildSpecFrontmatter({ id, title, kind })}${buildSpecBody(title)}`, "utf8");
+  const canonical = input.full === true;
+  const frontmatter = buildSpecFrontmatter({ id, title, kind, canonical });
+  const body = canonical ? buildCanonicalSpecBody(title) : buildSpecBody(title);
+  writeFileSync(path, `${frontmatter}${body}`, "utf8");
   createdFiles.push(path);
 
   if (input.full) {
     for (const fileName of COMPANION_FILES) {
       const companionPath = join(dir, fileName);
-      writeFileSync(companionPath, companionTemplate(fileName, title), "utf8");
+      writeFileSync(companionPath, canonicalCompanionTemplate(fileName, title), "utf8");
       createdFiles.push(companionPath);
     }
   }
@@ -499,6 +605,250 @@ export function createSpec(input: NewSpecInput): NewSpecResult {
     .filter((entry) => !entry.exists);
 
   return { spec, createdFiles, missingAncestors };
+}
+
+const VERIFY_METHOD_KEYWORDS = ["test", "demonstration", "inspection", "analysis"] as const;
+
+interface AcRow {
+  invariant: string;
+  method: string;
+  checkRef: string;
+}
+
+// Slice a `## Heading` section body out of a Markdown document (until the next
+// same-or-higher-level heading). Returns "" when the heading is absent.
+function extractSection(body: string, headingPattern: RegExp): string {
+  const lines = body.split(/\r?\n/);
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (headingPattern.test(lines[i]!)) {
+      start = i + 1;
+      break;
+    }
+  }
+  if (start === -1) return "";
+  const collected: string[] = [];
+  for (let i = start; i < lines.length; i++) {
+    if (/^#{1,2}\s+/.test(lines[i]!)) break;
+    collected.push(lines[i]!);
+  }
+  return collected.join("\n");
+}
+
+function extractInvariantIds(section: string): string[] {
+  const ids = new Set<string>();
+  for (const match of section.matchAll(/\bR\d+[a-z]?\b/g)) {
+    ids.add(match[0]);
+  }
+  return [...ids].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
+
+function extractCheckIds(checksContent: string): Set<string> {
+  const ids = new Set<string>();
+  for (const match of checksContent.matchAll(/\bC\d+[a-z]?\b/g)) {
+    ids.add(match[0].toUpperCase());
+  }
+  return ids;
+}
+
+function parseAcTable(section: string): AcRow[] {
+  const rows: AcRow[] = [];
+  for (const rawLine of section.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line.startsWith("|")) continue;
+    // Skip the header row and the |---|---| separator.
+    if (/^\|[\s|:-]+\|$/.test(line)) continue;
+    // Split on unescaped pipes only, so a menu cell like
+    // "Test \| Demonstration \| Inspection \| Analysis" stays a single cell.
+    const cells = line
+      .replace(/^\|/, "")
+      .replace(/\|$/, "")
+      .split(/(?<!\\)\|/)
+      .map((cell) => cell.replace(/\\\|/g, "|").trim());
+    const invariantMatch = /\bR\d+[a-z]?\b/.exec(cells[0] ?? "");
+    if (!invariantMatch) continue; // header row ("Invariant") or noise
+    rows.push({
+      invariant: invariantMatch[0],
+      method: cells[1] ?? "",
+      checkRef: cells[2] ?? "",
+    });
+  }
+  return rows;
+}
+
+function methodIsValid(method: string): boolean {
+  const lower = method.toLowerCase();
+  const hits = VERIFY_METHOD_KEYWORDS.filter((keyword) => lower.includes(keyword));
+  return hits.length === 1;
+}
+
+function checkRefToken(checkRef: string): string | null {
+  const match = /\bC\d+[a-z]?\b/.exec(checkRef);
+  return match ? match[0].toUpperCase() : null;
+}
+
+// Split the Adaptation section into blocks (each bullet, and each blank-line
+// separated prose paragraph) and flag open "TBD" decisions that lack a resolution
+// path (deadline+blocking_for or spike). A bullet flags on any bare `TBD`; prose
+// only flags on a decision marker (`TBD:` / `TBD —` / `TBD -`) so the canonical
+// template's own guidance prose ("never a bare TBD") is not a false positive.
+function findUnresolvedAdaptations(section: string): string[] {
+  if (!section.trim()) return [];
+  const lines = section.split(/\r?\n/);
+  const blocks: { text: string; isBullet: boolean }[] = [];
+  let current: string[] = [];
+  let currentIsBullet = false;
+  const flush = () => {
+    if (current.length) blocks.push({ text: current.join("\n"), isBullet: currentIsBullet });
+    current = [];
+  };
+  for (const line of lines) {
+    if (/^\s*(?:[-*]|\d+\.)\s+/.test(line)) {
+      flush();
+      current = [line];
+      currentIsBullet = true;
+    } else if (line.trim() === "") {
+      flush();
+      currentIsBullet = false;
+    } else {
+      current.push(line);
+    }
+  }
+  flush();
+
+  const unresolved: string[] = [];
+  for (const block of blocks) {
+    const hasBareTbd = block.isBullet ? /\bTBD\b/i.test(block.text) : /\bTBD\b\s*[:—-]/i.test(block.text);
+    if (!hasBareTbd) continue;
+    const lower = block.text.toLowerCase();
+    const hasDeadlineContract = lower.includes("resolution_deadline") && lower.includes("blocking_for");
+    const hasSpike = lower.includes("spike");
+    if (!hasDeadlineContract && !hasSpike) {
+      unresolved.push(block.text.trim().split(/\r?\n/)[0]!.trim());
+    }
+  }
+  return unresolved;
+}
+
+export function verifySpec(id: string, options: VerifySpecOptions = {}): SpecVerifyResult {
+  const rootPath = getSpecsRoot(options.cwd);
+  const spec = getSpec(id, { ...(options.cwd ? { cwd: options.cwd } : {}) });
+  const dir = specDir(rootPath, spec.id);
+
+  const specBody = parseSpecFile(readFileSync(spec.path, "utf8"), spec.path).body;
+  const checksPath = join(dir, "CHECKS.md");
+  const hasChecksFile = existsSync(checksPath);
+  const checksContent = hasChecksFile ? readFileSync(checksPath, "utf8") : "";
+
+  const invariants = extractInvariantIds(extractSection(specBody, /^##\s+Invariants\b/i));
+  const acRows = parseAcTable(extractSection(specBody, /^##\s+Acceptance Criteria\b/i));
+  const checkIds = extractCheckIds(checksContent);
+  const unresolvedAdaptations = findUnresolvedAdaptations(extractSection(specBody, /^##\s+Adaptation\b/i));
+
+  const issues: SpecVerifyIssue[] = [];
+
+  // Non-normative specs are exempt from the Acceptance Criteria contract (F-1/F-4).
+  if (spec.normative) {
+    // A normative spec MUST declare at least one numbered invariant (Rk). Surface
+    // an empty/stub spec as a warning instead of letting it pass silently (M2).
+    if (invariants.length === 0) {
+      issues.push({
+        code: "normative-without-invariants",
+        severity: "warning",
+        message: `Normative spec ${spec.id} declares no numbered invariants (Rk); it cannot be verified for traceability.`,
+      });
+    }
+
+    if (invariants.length > 0 && !hasChecksFile) {
+      issues.push({
+        code: "missing-checks-file",
+        severity: "error",
+        message: `Normative spec ${spec.id} declares invariants but has no CHECKS.md.`,
+      });
+    }
+
+    const acByInvariant = new Map<string, AcRow>();
+    for (const row of acRows) acByInvariant.set(row.invariant, row);
+
+    // Reverse traceability (F-4): an AC row for an invariant that isn't declared in
+    // the Invariants section is a dangling contract — surface it instead of ignoring.
+    const invariantSet = new Set(invariants);
+    for (const row of acRows) {
+      if (!invariantSet.has(row.invariant)) {
+        issues.push({
+          code: "ac-orphan-row",
+          severity: "warning",
+          invariant: row.invariant,
+          message: `Acceptance Criteria row references ${row.invariant}, which is not declared in the Invariants section.`,
+        });
+      }
+    }
+
+    // F-1/F-4: forall Rk in SPEC.Invariants: exists AC row -> exists Ck in CHECKS.
+    for (const invariant of invariants) {
+      const row = acByInvariant.get(invariant);
+      if (!row) {
+        issues.push({
+          code: "invariant-without-ac",
+          severity: "error",
+          invariant,
+          message: `Invariant ${invariant} has no Acceptance Criteria row (verification method + check ref).`,
+        });
+      }
+    }
+
+    for (const row of acRows) {
+      if (!methodIsValid(row.method)) {
+        issues.push({
+          code: "ac-missing-method",
+          severity: "error",
+          invariant: row.invariant,
+          message: `Invariant ${row.invariant} has no single valid Verification Method (Test|Demonstration|Inspection|Analysis).`,
+        });
+      }
+      const token = checkRefToken(row.checkRef);
+      if (!token) {
+        issues.push({
+          code: "dangling-check-ref",
+          severity: "error",
+          invariant: row.invariant,
+          message: `Invariant ${row.invariant} has no CHECKS.md#Ck reference in its Acceptance Criteria row.`,
+        });
+      } else if (hasChecksFile && !checkIds.has(token)) {
+        // When CHECKS.md is absent the single missing-checks-file error already
+        // covers every row; don't emit N redundant dangling-ref errors (N1).
+        issues.push({
+          code: "dangling-check-ref",
+          severity: "error",
+          invariant: row.invariant,
+          message: `Invariant ${row.invariant} references ${token}, which does not exist in CHECKS.md.`,
+        });
+      }
+    }
+  }
+
+  // F-2: Adaptation/TBD items must carry a resolution contract (any spec kind).
+  for (const item of unresolvedAdaptations) {
+    issues.push({
+      code: "adaptation-unresolved",
+      severity: "error",
+      message: `Adaptation item is a bare TBD without resolution_deadline+blocking_for or a spike sub-task: "${item}".`,
+    });
+  }
+
+  const ok = issues.every((issue) => issue.severity !== "error");
+  return {
+    id: spec.id,
+    normative: spec.normative,
+    ok,
+    issues,
+    summary: {
+      invariants: invariants.length,
+      acRows: acRows.length,
+      checks: checkIds.size,
+      adaptationItems: unresolvedAdaptations.length,
+    },
+  };
 }
 
 export function syncSpecs(options: SyncSpecsOptions = {}): SyncSpecsResult {

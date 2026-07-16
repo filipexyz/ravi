@@ -89,6 +89,39 @@ export interface NewSpecResult {
   missingAncestors: SpecChainEntry[];
 }
 
+export type SpecVerifyIssueCode =
+  | "missing-checks-file"
+  | "normative-without-invariants"
+  | "invariant-without-ac"
+  | "ac-orphan-row"
+  | "ac-missing-method"
+  | "dangling-check-ref"
+  | "adaptation-unresolved";
+
+export interface SpecVerifyIssue {
+  code: SpecVerifyIssueCode;
+  severity: "error" | "warning";
+  invariant?: string;
+  message: string;
+}
+
+export interface SpecVerifyResult {
+  id: string;
+  normative: boolean;
+  ok: boolean;
+  issues: SpecVerifyIssue[];
+  summary: {
+    invariants: number;
+    acRows: number;
+    checks: number;
+    adaptationItems: number;
+  };
+}
+
+export interface VerifySpecOptions {
+  cwd?: string;
+}
+
 export interface SyncSpecsOptions {
   cwd?: string;
 }

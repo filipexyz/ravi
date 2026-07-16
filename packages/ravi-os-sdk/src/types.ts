@@ -628,6 +628,143 @@ export type AppsListReturn = {
   total: number;
 };
 
+/** Input shape for `apps.migrate-from-cli`. */
+export type AppsMigrateFromCliInput = {
+  command: string;
+  description?: string;
+  dryRun?: boolean;
+  force?: boolean;
+  id?: string;
+  name?: string;
+  skipSkill?: boolean;
+  skipSpec?: boolean;
+  skipUi?: boolean;
+  source?: string;
+};
+
+/** Return shape for `apps.migrate-from-cli`. */
+export type AppsMigrateFromCliReturn = {
+  check: ({
+    checked: number;
+    ok: boolean;
+    results: Array<{
+      errors: string[];
+      id: string;
+      ok: boolean;
+      path: string;
+      source: "repo" | "plugin" | "state";
+      warnings: string[];
+    }>;
+  }) | null;
+  command: string;
+  confidence: "high" | "medium" | "low";
+  debugCandidates: Array<{
+    command: string;
+    confidence: "high" | "medium" | "low";
+    description: string | null;
+    destructive: boolean;
+    id: string;
+    interactive: boolean;
+    json: boolean;
+    mutating: boolean;
+    name: string;
+    reviewRequired: string[];
+    streaming: boolean;
+  }>;
+  description: string;
+  dryRun: boolean;
+  files: Array<{
+    action: "planned" | "created" | "overwritten";
+    kind: "manifest" | "spec" | "skill";
+    path: string;
+  }>;
+  force: boolean;
+  id: string;
+  manifest: Record<string, unknown>;
+  manifestPath: string;
+  migration: {
+    checkCommand: string;
+    contract: "production-cli";
+    debugOperations: number;
+    implementedOperations: number;
+    mode: "legacy-cli";
+  };
+  name: string;
+  nextCommands: string[];
+  operationCandidates: Array<{
+    command: string;
+    confidence: "high" | "medium" | "low";
+    description: string | null;
+    destructive: boolean;
+    id: string;
+    interactive: boolean;
+    json: boolean;
+    mutating: boolean;
+    name: string;
+    reviewRequired: string[];
+    streaming: boolean;
+  }>;
+  reviewRequired: string[];
+  skill: string | null;
+  skillPath: string | null;
+  source: "manifest" | "registry" | "help";
+  sourceCommand: string;
+  specPath: string | null;
+  warnings: string[];
+};
+
+/** Input shape for `apps.migration-check`. */
+export type AppsMigrationCheckInput = {
+  id: string;
+  source?: string;
+  sourceCommand?: string;
+};
+
+/** Return shape for `apps.migration-check`. */
+export type AppsMigrationCheckReturn = {
+  appCheck: {
+    checked: number;
+    ok: boolean;
+    results: Array<{
+      errors: string[];
+      id: string;
+      ok: boolean;
+      path: string;
+      source: "repo" | "plugin" | "state";
+      warnings: string[];
+    }>;
+  };
+  commandMismatches: Array<{
+    actualCommand: string | null;
+    expectedCommand: string;
+    operationId: string;
+  }>;
+  confidence: "high" | "medium" | "low";
+  debugCandidates: Array<{
+    command: string;
+    confidence: "high" | "medium" | "low";
+    description: string | null;
+    destructive: boolean;
+    id: string;
+    interactive: boolean;
+    json: boolean;
+    mutating: boolean;
+    name: string;
+    reviewRequired: string[];
+    streaming: boolean;
+  }>;
+  expectedOperations: string[];
+  extraCliOperations: string[];
+  id: string;
+  implementedOperations: string[];
+  missingOperations: string[];
+  ok: boolean;
+  reviewRequired: string[];
+  source: "manifest" | "registry" | "help";
+  sourceCommand: string;
+  warnings: string[];
+};
+
 /** Input shape for `apps.prompts`. */
 export type AppsPromptsInput = {
   id?: string;
@@ -13409,6 +13546,30 @@ export type SpecsSyncReturn = {
   status: "synced";
   total: number;
   [k: string]: unknown;
+};
+
+/** Input shape for `specs.verify`. */
+export type SpecsVerifyInput = {
+  id: string;
+};
+
+/** Return shape for `specs.verify`. */
+export type SpecsVerifyReturn = {
+  id: string;
+  issues: Array<{
+    code: string;
+    invariant?: string;
+    message: string;
+    severity: "error" | "warning";
+  }>;
+  normative: boolean;
+  ok: boolean;
+  summary: {
+    acRows: number;
+    adaptationItems: number;
+    checks: number;
+    invariants: number;
+  };
 };
 
 /** Input shape for `stickers.add`. */

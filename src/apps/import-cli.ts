@@ -38,34 +38,51 @@ interface ImportedCliMetadata {
 
 const MUTATING_VERBS = new Set([
   "add",
+  "adicionar",
+  "alterar",
   "approve",
+  "aprovar",
   "archive",
+  "arquivar",
   "assign",
   "attach",
+  "baixar",
   "block",
   "cancel",
+  "cancelar",
   "clear",
   "comment",
+  "confirmar",
   "create",
+  "criar",
   "delete",
+  "deletar",
   "deny",
   "detach",
   "disable",
   "dispatch",
   "done",
   "enable",
+  "enviar",
+  "emitir",
+  "excluir",
   "fail",
   "grant",
   "import",
+  "importar",
+  "incluir",
   "init",
+  "lancar",
   "link",
   "merge",
   "push",
   "recompute",
   "remove",
+  "remover",
   "rename",
   "restart",
   "revoke",
+  "rm",
   "run",
   "scaffold",
   "send",
@@ -74,15 +91,30 @@ const MUTATING_VERBS = new Set([
   "stop",
   "sync",
   "tag",
+  "transformar",
   "unlink",
   "unarchive",
   "untag",
   "update",
+  "atualizar",
   "upsert",
   "write",
 ]);
 
-const DESTRUCTIVE_VERBS = new Set(["cancel", "clear", "delete", "deny", "remove", "revoke", "stop"]);
+const DESTRUCTIVE_VERBS = new Set([
+  "cancel",
+  "cancelar",
+  "clear",
+  "delete",
+  "deletar",
+  "deny",
+  "excluir",
+  "remove",
+  "remover",
+  "revoke",
+  "rm",
+  "stop",
+]);
 const RESERVED_ROUTER_OPERATION_NAMES = new Set(["help", "show", "check"]);
 
 export function importCliApp(options: RaviAppImportCliOptions): RaviAppImportCliResult {
@@ -207,6 +239,8 @@ function metadataFromSelfDescription(
     maxBuffer: 1024 * 1024,
   });
   if (run.status !== 0) {
+    const sdeManifest = tryResolve(() => metadataFromSdeCliManifest(command, input));
+    if (sdeManifest) return sdeManifest;
     const stderr = typeof run.stderr === "string" ? run.stderr.trim() : "";
     throw new Error(`CLI self-description failed for ${probe}${stderr ? `: ${stderr}` : ""}`);
   }
@@ -243,6 +277,73 @@ function metadataFromSelfDescription(
     ...(stringField(manifest.name) ? { name: stringField(manifest.name) } : {}),
     ...(stringField(manifest.description) ? { description: stringField(manifest.description) } : {}),
     command: baseCommand,
+    candidates: appCandidates,
+    debugCandidates,
+    warnings,
+    reviewRequired: uniqueFlat(candidates.map((candidate) => candidate.reviewRequired)),
+  };
+}
+
+function metadataFromSdeCliManifest(
+  command: string,
+  input: { cwd?: string; env?: NodeJS.ProcessEnv },
+): ImportedCliMetadata {
+  const tokens = splitShellWords(command);
+  if (tokens.length !== 2 || tokens[0] !== "sde" || !tokens[1]) {
+    throw new Error(`SDE manifest import expects "sde <namespace>", got: ${command}`);
+  }
+  const namespace = tokens[1];
+  const probe = `sde cli-manifest --ns ${namespace}`;
+  const run = spawnSync(probe, {
+    cwd: input.cwd ?? process.cwd(),
+    env: { ...process.env, ...(input.env ?? {}) },
+    shell: true,
+    encoding: "utf8",
+    timeout: 5_000,
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  if (run.status !== 0) {
+    const stderr = typeof run.stderr === "string" ? run.stderr.trim() : "";
+    throw new Error(`SDE cli-manifest failed for ${probe}${stderr ? `: ${stderr}` : ""}`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(String(run.stdout || "").trim());
+  } catch (error) {
+    throw new Error(`SDE cli-manifest did not print valid JSON: ${error instanceof Error ? error.message : error}`);
+  }
+  if (!isObject(parsed) || !isObject(parsed.comandos)) {
+    throw new Error("SDE cli-manifest must include a comandos object.");
+  }
+  const namespaceNode = parsed.comandos[namespace];
+  if (!isObject(namespaceNode) || !isObject(namespaceNode.comandos)) {
+    throw new Error(`SDE cli-manifest did not include namespace: ${namespace}`);
+  }
+
+  const rawCommands = Object.entries(namespaceNode.comandos)
+    .filter(([, value]) => isObject(value))
+    .map(([name, value]) => ({ name, ...(value as Record<string, unknown>) }));
+  const candidates = rawCommands.map((item, index) => candidateFromSdeCliManifest(namespace, item, index));
+  const debugCandidates = candidates.filter(
+    (candidate) => !candidate.json || candidate.streaming || candidate.interactive,
+  );
+  const appCandidates = candidates.filter(
+    (candidate) => candidate.json && !candidate.streaming && !candidate.interactive,
+  );
+  const warnings: string[] = [
+    "SDE cli-manifest import treats the production CLI as the migration contract; verify write/destructive operations before enabling.",
+  ];
+  if (rawCommands.length === 0) warnings.push(`SDE namespace ${namespace} returned no commands.`);
+  if (debugCandidates.length > 0)
+    warnings.push(`${debugCandidates.length} SDE command(s) are not app-ready and were kept as debug candidates.`);
+
+  return {
+    source: "manifest",
+    confidence: "high",
+    name: titleFromAppId(namespace),
+    description: stringField(namespaceNode.descricao) || `Imported SDE CLI namespace ${namespace}.`,
+    command,
     candidates: appCandidates,
     debugCandidates,
     warnings,
@@ -318,6 +419,40 @@ function candidateFromSelfDescription(
     name,
     command: json && !command.includes("--json") ? `${command} --json` : command,
     description: stringField(item.description) || null,
+    json,
+    mutating,
+    destructive,
+    streaming,
+    interactive,
+    confidence: "high",
+    reviewRequired,
+  };
+}
+
+function candidateFromSdeCliManifest(
+  namespace: string,
+  item: CliManifestCommand,
+  index: number,
+): RaviAppImportCliOperationCandidate {
+  const declaredName = stringField(item.name) || stringField(item.id) || `operation-${index + 1}`;
+  const name = avoidReservedOperationName(slugOperationName(declaredName));
+  const options = arrayField(item.opcoes);
+  const json = options.some((option) => stringField(option.flag) === "--json");
+  const mutating = boolField(item.mutating) ?? boolField(item.write) ?? isLikelyMutating(name);
+  const destructive = boolField(item.destructive) ?? isLikelyDestructive(name);
+  const streaming = boolField(item.streaming) ?? false;
+  const interactive = boolField(item.interactive) ?? false;
+  const reviewRequired: string[] = [];
+  if (!json) reviewRequired.push("SDE command does not declare --json output in cli-manifest.");
+  if (mutating) reviewRequired.push("Confirm mutation risk and permission before enabling as an app operation.");
+  if (destructive) reviewRequired.push("Confirm destructive behavior and require strong permission.");
+  if (streaming || interactive)
+    reviewRequired.push("Streaming or interactive operations need a stream/tool surface, not CLI single-shot.");
+  return {
+    id: name,
+    name,
+    command: `sde ${namespace} ${declaredName} {args}${json ? " --json" : ""}`,
+    description: stringField(item.descricao) || null,
     json,
     mutating,
     destructive,

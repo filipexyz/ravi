@@ -3203,6 +3203,763 @@ export const AppsListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `apps.migrate-from-cli`. */
+export const AppsMigrateFromCliInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "command": {
+      "description": "Working production CLI command to migrate, e.g. 'sde tiny'",
+      "type": "string"
+    },
+    "description": {
+      "description": "Short app description",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Plan migration without writing files",
+      "type": "boolean"
+    },
+    "force": {
+      "description": "Overwrite existing scaffold files",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Stable app id to generate",
+      "type": "string"
+    },
+    "name": {
+      "description": "Human display name",
+      "type": "string"
+    },
+    "skipSkill": {
+      "description": "Do not create a skill skeleton",
+      "type": "boolean"
+    },
+    "skipSpec": {
+      "description": "Do not create an app spec skeleton",
+      "type": "boolean"
+    },
+    "skipUi": {
+      "description": "Do not include interfaces.ui in the manifest",
+      "type": "boolean"
+    },
+    "source": {
+      "description": "Import source: auto|manifest|registry|help",
+      "type": "string"
+    }
+  },
+  "required": [
+    "command"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.migrate-from-cli`. */
+export const AppsMigrateFromCliReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "check": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "checked": {
+              "type": "number"
+            },
+            "ok": {
+              "type": "boolean"
+            },
+            "results": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "errors": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "ok": {
+                    "type": "boolean"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "enum": [
+                      "repo",
+                      "plugin",
+                      "state"
+                    ],
+                    "type": "string"
+                  },
+                  "warnings": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "id",
+                  "path",
+                  "source",
+                  "ok",
+                  "errors",
+                  "warnings"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "ok",
+            "checked",
+            "results"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "command": {
+      "type": "string"
+    },
+    "confidence": {
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "type": "string"
+    },
+    "debugCandidates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "confidence": {
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "destructive": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interactive": {
+            "type": "boolean"
+          },
+          "json": {
+            "type": "boolean"
+          },
+          "mutating": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "reviewRequired": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "streaming": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "command",
+          "description",
+          "json",
+          "mutating",
+          "destructive",
+          "streaming",
+          "interactive",
+          "confidence",
+          "reviewRequired"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "description": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "planned",
+              "created",
+              "overwritten"
+            ],
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "manifest",
+              "spec",
+              "skill"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "path",
+          "action"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "force": {
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string"
+    },
+    "manifest": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "manifestPath": {
+      "type": "string"
+    },
+    "migration": {
+      "additionalProperties": false,
+      "properties": {
+        "checkCommand": {
+          "type": "string"
+        },
+        "contract": {
+          "const": "production-cli",
+          "type": "string"
+        },
+        "debugOperations": {
+          "type": "number"
+        },
+        "implementedOperations": {
+          "type": "number"
+        },
+        "mode": {
+          "const": "legacy-cli",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "contract",
+        "implementedOperations",
+        "debugOperations",
+        "checkCommand"
+      ],
+      "type": "object"
+    },
+    "name": {
+      "type": "string"
+    },
+    "nextCommands": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "operationCandidates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "confidence": {
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "destructive": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interactive": {
+            "type": "boolean"
+          },
+          "json": {
+            "type": "boolean"
+          },
+          "mutating": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "reviewRequired": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "streaming": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "command",
+          "description",
+          "json",
+          "mutating",
+          "destructive",
+          "streaming",
+          "interactive",
+          "confidence",
+          "reviewRequired"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "reviewRequired": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "skill": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "skillPath": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "enum": [
+        "manifest",
+        "registry",
+        "help"
+      ],
+      "type": "string"
+    },
+    "sourceCommand": {
+      "type": "string"
+    },
+    "specPath": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "description",
+    "command",
+    "dryRun",
+    "force",
+    "manifestPath",
+    "specPath",
+    "skillPath",
+    "skill",
+    "files",
+    "manifest",
+    "nextCommands",
+    "sourceCommand",
+    "source",
+    "confidence",
+    "operationCandidates",
+    "debugCandidates",
+    "warnings",
+    "reviewRequired",
+    "migration",
+    "check"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `apps.migration-check`. */
+export const AppsMigrationCheckInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Migrated app id",
+      "type": "string"
+    },
+    "source": {
+      "description": "Import source: auto|manifest|registry|help",
+      "type": "string"
+    },
+    "sourceCommand": {
+      "description": "Original working production CLI command",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.migration-check`. */
+export const AppsMigrationCheckReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "appCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "checked": {
+          "type": "number"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "results": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "errors": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "id": {
+                "type": "string"
+              },
+              "ok": {
+                "type": "boolean"
+              },
+              "path": {
+                "type": "string"
+              },
+              "source": {
+                "enum": [
+                  "repo",
+                  "plugin",
+                  "state"
+                ],
+                "type": "string"
+              },
+              "warnings": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "id",
+              "path",
+              "source",
+              "ok",
+              "errors",
+              "warnings"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "ok",
+        "checked",
+        "results"
+      ],
+      "type": "object"
+    },
+    "commandMismatches": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "actualCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expectedCommand": {
+            "type": "string"
+          },
+          "operationId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "operationId",
+          "expectedCommand",
+          "actualCommand"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "confidence": {
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "type": "string"
+    },
+    "debugCandidates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "confidence": {
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "destructive": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interactive": {
+            "type": "boolean"
+          },
+          "json": {
+            "type": "boolean"
+          },
+          "mutating": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "reviewRequired": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "streaming": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "command",
+          "description",
+          "json",
+          "mutating",
+          "destructive",
+          "streaming",
+          "interactive",
+          "confidence",
+          "reviewRequired"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "expectedOperations": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "extraCliOperations": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "id": {
+      "type": "string"
+    },
+    "implementedOperations": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "missingOperations": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "reviewRequired": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "source": {
+      "enum": [
+        "manifest",
+        "registry",
+        "help"
+      ],
+      "type": "string"
+    },
+    "sourceCommand": {
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "ok",
+    "id",
+    "sourceCommand",
+    "source",
+    "confidence",
+    "expectedOperations",
+    "implementedOperations",
+    "missingOperations",
+    "extraCliOperations",
+    "commandMismatches",
+    "debugCandidates",
+    "warnings",
+    "reviewRequired",
+    "appCheck"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `apps.prompts`. */
 export const AppsPromptsInputSchema = {
   "additionalProperties": false,
@@ -65911,6 +66668,99 @@ export const SpecsSyncReturnSchema = {
     "status",
     "total",
     "rootPath"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `specs.verify`. */
+export const SpecsVerifyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Spec id: domain[/capability[/feature]]",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `specs.verify`. */
+export const SpecsVerifyReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "issues": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "invariant": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "message"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "normative": {
+      "type": "boolean"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "summary": {
+      "additionalProperties": false,
+      "properties": {
+        "acRows": {
+          "type": "number"
+        },
+        "adaptationItems": {
+          "type": "number"
+        },
+        "checks": {
+          "type": "number"
+        },
+        "invariants": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "invariants",
+        "acRows",
+        "checks",
+        "adaptationItems"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "normative",
+    "ok",
+    "issues",
+    "summary"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
