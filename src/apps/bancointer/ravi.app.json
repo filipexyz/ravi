@@ -1,0 +1,2967 @@
+{
+  "schema": "ravi.app/v1",
+  "id": "bancointer",
+  "name": "Bancointer",
+  "version": "0.1.0",
+  "description": "Banco Inter - API bancaria (via servidor NestJS porta 3009)",
+  "interfaces": {
+    "cli": {
+      "command": "ravi bancointer",
+      "json": true,
+      "health": "ravi bancointer check --json"
+    },
+    "ui": {
+      "routes": [
+        {
+          "id": "main",
+          "path": "/apps/bancointer",
+          "label": "Bancointer",
+          "icon": "app-window",
+          "view": "main"
+        }
+      ],
+      "views": [
+        {
+          "id": "main",
+          "type": "dashboard",
+          "title": "Bancointer",
+          "density": "compact",
+          "query": {
+            "operation": "bancointer.check"
+          },
+          "refreshOn": ["ravi.apps.bancointer.changed"],
+          "actions": [
+            {
+              "id": "saldo",
+              "label": "Saldo",
+              "icon": "list",
+              "operation": "bancointer.saldo",
+              "placement": "toolbar"
+            },
+            {
+              "id": "extrato",
+              "label": "Extrato",
+              "icon": "list",
+              "operation": "bancointer.extrato",
+              "placement": "toolbar"
+            },
+            {
+              "id": "boletos",
+              "label": "Boletos",
+              "icon": "list",
+              "operation": "bancointer.boletos",
+              "placement": "toolbar"
+            },
+            {
+              "id": "boleto",
+              "label": "Boleto",
+              "icon": "list",
+              "operation": "bancointer.boleto",
+              "placement": "toolbar"
+            },
+            {
+              "id": "extrato-completo",
+              "label": "Extrato Completo",
+              "icon": "list",
+              "operation": "bancointer.extrato-completo",
+              "placement": "toolbar"
+            },
+            {
+              "id": "extrato-pdf",
+              "label": "Extrato Pdf",
+              "icon": "list",
+              "operation": "bancointer.extrato-pdf",
+              "placement": "toolbar"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "operations": {
+    "bancointer.help": {
+      "interface": "builtin",
+      "handler": "apps.help",
+      "mutating": false
+    },
+    "bancointer.show": {
+      "interface": "builtin",
+      "handler": "apps.manifest.show",
+      "mutating": false
+    },
+    "bancointer.check": {
+      "interface": "builtin",
+      "handler": "apps.manifest.check",
+      "mutating": false,
+      "outputSchema": "schemas/bancointer-check.v1.json"
+    },
+    "bancointer.saldo": {
+      "interface": "cli",
+      "command": "sde bancointer saldo {args} --json",
+      "mutating": false,
+      "json": true,
+      "description": "Consultar saldo da conta Banco Inter. Retorna { disponivel, bloqueado, ... } - campo `disponivel` eh usado por `contabilidade fluxo-caixa` como saldo inicial.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "saldo",
+        "properties": {},
+        "required": []
+      },
+      "help": {
+        "summary": "Consultar saldo da conta Banco Inter. Retorna { disponivel, bloqueado, ... } - campo `disponivel` eh usado por `contabilidade fluxo-caixa` como saldo inicial.",
+        "usage": "ravi apps run bancointer saldo --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          }
+        ],
+        "examples": ["ravi apps run bancointer saldo --json --"],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- READ-ONLY: apenas consulta. NAO movimenta dinheiro. SEGURO.\n  - Idempotente: rodar N vezes nao tem efeito colateral.\n  - Reversivel? N/A (nao escreve).\n  - Rate limit: API Inter. Custo: 1 chamada autenticada (OAuth2 + mTLS).\n  - Pode ser rodado em producao sem HITL."
+          },
+          {
+            "title": "ARGUMENTOS",
+            "content": "(nenhum)"
+          },
+          {
+            "title": "USE",
+            "content": "Saber o saldo atual disponivel da conta PJ Banco Inter.\n  O campo disponivel alimenta contabilidade fluxo-caixa como saldo inicial."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Historico de movimentacao -> extrato / extrato-completo\n  Comprovante visual        -> extrato-pdf"
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- Nao confundir disponivel (gastavel) com limite (cheque especial).\n  - bloqueado* nao entra no disponivel."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "Nao. Read-only."
+          },
+          {
+            "title": "VALIDACOES AUTOMATICAS",
+            "content": "Nenhuma entrada a validar."
+          },
+          {
+            "title": "RETORNO",
+            "content": "Objeto: { disponivel, bloqueadoCheque, bloqueadoJudicialmente,\n  bloqueadoAdministrativo, limite, dataReferencia }."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "sde bancointer saldo"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Falha mTLS/OAuth -> verificar certificado em certs-mount e credenciais .env."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "saldo -> contabilidade fluxo-caixa (saldo inicial)"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Extrato periodo     -> sde bancointer extrato --inicio <data> --fim <data>\n  Extrato paginado    -> sde bancointer extrato-completo\n  Fluxo de caixa      -> sde contabilidade fluxo-caixa"
+          },
+          {
+            "title": "ENDPOINT",
+            "content": "Banco Inter API (cdpj.partners.bancointer.com.br) banking/saldo. OAuth2 + mTLS."
+          }
+        ],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": true,
+          "hitlRequired": true,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": ["hitl:required"]
+        },
+        "validationCommands": [
+          "ravi bancointer saldo --help --json",
+          "ravi apps show bancointer --json",
+          "ravi apps run bancointer help --json",
+          "ravi apps check bancointer --json"
+        ],
+        "sourceText": "Usage: sde bancointer saldo [options]\n\nConsultar saldo da conta Banco Inter. Retorna { disponivel, bloqueado, ... } - campo `disponivel` eh\nusado por `contabilidade fluxo-caixa` como saldo inicial.\n\nOptions:\n  --json      Output puro JSON em stdout, logs em stderr (default: false)\n  --yes       Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema    Imprime JSONSchema do input esperado e sai (default: false)\n  -h, --help  display help for command\nsde bancointer saldo --help (padrao-ouro)\n\nConsultar saldo da conta Banco Inter. READ-ONLY.\n\nCUSTO / SEGURANCA\n  - READ-ONLY: apenas consulta. NAO movimenta dinheiro. SEGURO.\n  - Idempotente: rodar N vezes nao tem efeito colateral.\n  - Reversivel? N/A (nao escreve).\n  - Rate limit: API Inter. Custo: 1 chamada autenticada (OAuth2 + mTLS).\n  - Pode ser rodado em producao sem HITL.\n\nARGUMENTOS\n  (nenhum)\n\nUSE\n  Saber o saldo atual disponivel da conta PJ Banco Inter.\n  O campo disponivel alimenta contabilidade fluxo-caixa como saldo inicial.\n\nNAO USE\n  Historico de movimentacao -> extrato / extrato-completo\n  Comprovante visual        -> extrato-pdf\n\nREGRAS HARD\n  - Nao confundir disponivel (gastavel) com limite (cheque especial).\n  - bloqueado* nao entra no disponivel.\n\nHITL OBRIGATORIO\n  Nao. Read-only.\n\nVALIDACOES AUTOMATICAS\n  Nenhuma entrada a validar.\n\nRETORNO\n  Objeto: { disponivel, bloqueadoCheque, bloqueadoJudicialmente,\n  bloqueadoAdministrativo, limite, dataReferencia }.\n\nEXAMPLES\n  sde bancointer saldo\n\nON ERROR\n  Falha mTLS/OAuth -> verificar certificado em certs-mount e credenciais .env.\n\nPIPELINE\n  saldo -> contabilidade fluxo-caixa (saldo inicial)\n\nSEE ALSO\n  Extrato periodo     -> sde bancointer extrato --inicio <data> --fim <data>\n  Extrato paginado    -> sde bancointer extrato-completo\n  Fluxo de caixa      -> sde contabilidade fluxo-caixa\n\nENDPOINT\n  Banco Inter API (cdpj.partners.bancointer.com.br) banking/saldo. OAuth2 + mTLS.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde bancointer saldo {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "bancointer.extrato": {
+      "interface": "cli",
+      "command": "sde bancointer extrato {args} --json",
+      "mutating": false,
+      "json": true,
+      "description": "Extrato bancario por periodo. API Inter retorna max 50 transacoes - use extrato-completo se precisar mais. Aliases: --data-inicial=--inicio, --data-final=--fim (formato YYYY-MM-DD).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "extrato",
+        "properties": {
+          "inicio": {
+            "type": "string",
+            "description": "Data inicial"
+          },
+          "fim": {
+            "type": "string",
+            "description": "Data final"
+          },
+          "dataInicial": {
+            "type": "string",
+            "description": "Alias de --inicio (mantem formato YYYY-MM-DD)"
+          },
+          "dataFinal": {
+            "type": "string",
+            "description": "Alias de --fim (mantem formato YYYY-MM-DD)"
+          }
+        },
+        "required": []
+      },
+      "help": {
+        "summary": "Extrato bancario por periodo. API Inter retorna max 50 transacoes - use extrato-completo se precisar mais. Aliases: --data-inicial=--inicio, --data-final=--fim (formato YYYY-MM-DD).",
+        "usage": "ravi apps run bancointer extrato --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--inicio <YYYY-MM-DD>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Data inicial"
+          },
+          {
+            "flags": "--fim <YYYY-MM-DD>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Data final"
+          },
+          {
+            "flags": "--data-inicial <YYYY-MM-DD>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Alias de --inicio (mantem formato YYYY-MM-DD)"
+          },
+          {
+            "flags": "--data-final <YYYY-MM-DD>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Alias de --fim (mantem formato YYYY-MM-DD)"
+          },
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          }
+        ],
+        "examples": [
+          "ravi apps run bancointer extrato --json -- --inicio 2026-06-01 --fim 2026-06-03",
+          "ravi apps run bancointer extrato --json -- --data-inicial 2026-06-01 --data-final 2026-06-03"
+        ],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- READ-ONLY: apenas consulta. NAO movimenta dinheiro. SEGURO.\n  - Idempotente: sem efeito colateral.\n  - Reversivel? N/A.\n  - Rate limit: API Inter. Pode rodar em producao sem HITL."
+          },
+          {
+            "title": "ARGUMENTOS",
+            "content": "--inicio <YYYY-MM-DD>        Data inicial (obrigatorio).\n  --fim <YYYY-MM-DD>           Data final (obrigatorio).\n  --data-inicial <YYYY-MM-DD>  Alias de --inicio.\n  --data-final <YYYY-MM-DD>    Alias de --fim."
+          },
+          {
+            "title": "USE",
+            "content": "Listar movimentacoes de uma janela curta (ate ~50 transacoes)."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Janela com muitas transacoes -> extrato-completo --tamanho 5000\n  Comprovante PDF              -> extrato-pdf\n  Saldo atual                  -> saldo"
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- Datas no formato YYYY-MM-DD.\n  - Se retornar exatamente 50 itens: provavel truncamento, usar extrato-completo."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "Nao. Read-only."
+          },
+          {
+            "title": "VALIDACOES AUTOMATICAS",
+            "content": "- --inicio e --fim obrigatorios (pos-merge de aliases).\n  - AVISO emitido quando length === 50 (limite API Inter atingido)."
+          },
+          {
+            "title": "RETORNO",
+            "content": "Objeto com data.transacoes (array). Ate 50 itens."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "sde bancointer extrato --inicio 2026-06-01 --fim 2026-06-03\n  sde bancointer extrato --data-inicial 2026-06-01 --data-final 2026-06-03"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Falta --inicio/--fim -> erro de validacao, nada consultado.\n  Falha mTLS/OAuth     -> verificar certificado e credenciais."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "extrato -> (se 50 itens) extrato-completo\n  extrato -> contabilidade conciliacao"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Extrato paginado -> sde bancointer extrato-completo\n  Extrato PDF      -> sde bancointer extrato-pdf\n  Conciliacao      -> sde contabilidade conciliacao"
+          },
+          {
+            "title": "ENDPOINT",
+            "content": "Banco Inter API banking/extrato. OAuth2 + mTLS. Max 50 transacoes/chamada."
+          }
+        ],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": true,
+          "hitlRequired": true,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": ["hitl:required"]
+        },
+        "validationCommands": [
+          "ravi bancointer extrato --help --json",
+          "ravi apps show bancointer --json",
+          "ravi apps run bancointer help --json",
+          "ravi apps check bancointer --json"
+        ],
+        "sourceText": "Usage: sde bancointer extrato [options]\n\nExtrato bancario por periodo. API Inter retorna max 50 transacoes - use extrato-completo se precisar\nmais. Aliases: --data-inicial=--inicio, --data-final=--fim (formato YYYY-MM-DD).\n\nOptions:\n  --inicio <YYYY-MM-DD>        Data inicial\n  --fim <YYYY-MM-DD>           Data final\n  --data-inicial <YYYY-MM-DD>  Alias de --inicio (mantem formato YYYY-MM-DD)\n  --data-final <YYYY-MM-DD>    Alias de --fim (mantem formato YYYY-MM-DD)\n  --json                       Output puro JSON em stdout, logs em stderr (default: false)\n  --yes                        Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema                     Imprime JSONSchema do input esperado e sai (default: false)\n  -h, --help                   display help for command\nsde bancointer extrato --help (padrao-ouro)\n\nExtrato bancario por periodo. READ-ONLY.\nAPI Inter retorna no max 50 transacoes por chamada.\n\nCUSTO / SEGURANCA\n  - READ-ONLY: apenas consulta. NAO movimenta dinheiro. SEGURO.\n  - Idempotente: sem efeito colateral.\n  - Reversivel? N/A.\n  - Rate limit: API Inter. Pode rodar em producao sem HITL.\n\nARGUMENTOS\n  --inicio <YYYY-MM-DD>        Data inicial (obrigatorio).\n  --fim <YYYY-MM-DD>           Data final (obrigatorio).\n  --data-inicial <YYYY-MM-DD>  Alias de --inicio.\n  --data-final <YYYY-MM-DD>    Alias de --fim.\n\nUSE\n  Listar movimentacoes de uma janela curta (ate ~50 transacoes).\n\nNAO USE\n  Janela com muitas transacoes -> extrato-completo --tamanho 5000\n  Comprovante PDF              -> extrato-pdf\n  Saldo atual                  -> saldo\n\nREGRAS HARD\n  - Datas no formato YYYY-MM-DD.\n  - Se retornar exatamente 50 itens: provavel truncamento, usar extrato-completo.\n\nHITL OBRIGATORIO\n  Nao. Read-only.\n\nVALIDACOES AUTOMATICAS\n  - --inicio e --fim obrigatorios (pos-merge de aliases).\n  - AVISO emitido quando length === 50 (limite API Inter atingido).\n\nRETORNO\n  Objeto com data.transacoes (array). Ate 50 itens.\n\nEXAMPLES\n  sde bancointer extrato --inicio 2026-06-01 --fim 2026-06-03\n  sde bancointer extrato --data-inicial 2026-06-01 --data-final 2026-06-03\n\nON ERROR\n  Falta --inicio/--fim -> erro de validacao, nada consultado.\n  Falha mTLS/OAuth     -> verificar certificado e credenciais.\n\nPIPELINE\n  extrato -> (se 50 itens) extrato-completo\n  extrato -> contabilidade conciliacao\n\nSEE ALSO\n  Extrato paginado -> sde bancointer extrato-completo\n  Extrato PDF      -> sde bancointer extrato-pdf\n  Conciliacao      -> sde contabilidade conciliacao\n\nENDPOINT\n  Banco Inter API banking/extrato. OAuth2 + mTLS. Max 50 transacoes/chamada.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde bancointer extrato {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "bancointer.boletos": {
+      "interface": "cli",
+      "command": "sde bancointer boletos {args} --json",
+      "mutating": false,
+      "json": true,
+      "description": "Listar boletos de cobranca emitidos. --auto-split contorna limite 100/chamada da API Inter (default 15 quando janela > 15d). Aliases: --data-inicial=--inicio, --data-final=--fim.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "boletos",
+        "properties": {
+          "inicio": {
+            "type": "string",
+            "description": "Data inicial"
+          },
+          "fim": {
+            "type": "string",
+            "description": "Data final"
+          },
+          "dataInicial": {
+            "type": "string",
+            "description": "Alias de --inicio (formato YYYY-MM-DD)"
+          },
+          "dataFinal": {
+            "type": "string",
+            "description": "Alias de --fim (formato YYYY-MM-DD)"
+          },
+          "situacao": {
+            "type": "string",
+            "description": "Filtrar: EM_PROCESSAMENTO|A_RECEBER|ATRASADO|MARCADO_RECEBIDO|RECEBIDO|CANCELADO|EXPIRADO"
+          },
+          "autoSplit": {
+            "type": "string",
+            "description": "Split por janelas de N dias para contornar limite 100 da API (default: 15 quando janela > 15d, use 0 para desabilitar)"
+          }
+        },
+        "required": []
+      },
+      "help": {
+        "summary": "Listar boletos de cobranca emitidos. --auto-split contorna limite 100/chamada da API Inter (default 15 quando janela > 15d). Aliases: --data-inicial=--inicio, --data-final=--fim.",
+        "usage": "ravi apps run bancointer boletos --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--inicio <YYYY-MM-DD>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Data inicial"
+          },
+          {
+            "flags": "--fim <YYYY-MM-DD>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Data final"
+          },
+          {
+            "flags": "--data-inicial <YYYY-MM-DD>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Alias de --inicio (formato YYYY-MM-DD)"
+          },
+          {
+            "flags": "--data-final <YYYY-MM-DD>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Alias de --fim (formato YYYY-MM-DD)"
+          },
+          {
+            "flags": "--situacao <situacao>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Filtrar: EM_PROCESSAMENTO|A_RECEBER|ATRASADO|MARCADO_RECEBIDO|RECEBIDO|CANCELADO|EXPIRADO"
+          },
+          {
+            "flags": "--auto-split <dias>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Split por janelas de N dias para contornar limite 100 da API (default: 15 quando janela > 15d, use 0 para desabilitar)"
+          },
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          }
+        ],
+        "examples": [
+          "ravi apps run bancointer boletos --json -- --inicio 2026-05-01 --fim 2026-05-15",
+          "ravi apps run bancointer boletos --json -- --inicio 2026-01-01 --fim 2026-06-01 --situacao A_RECEBER",
+          "ravi apps run bancointer boletos --json -- --inicio 2026-01-01 --fim 2026-06-01 --auto-split 15"
+        ],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- READ-ONLY: lista cobrancas existentes. NAO cria nem movimenta. SEGURO.\n  - Idempotente: sem efeito colateral.\n  - Reversivel? N/A.\n  - Rate limit: API Inter (auto-split faz N chamadas; hard-timeout 10min). Sem HITL."
+          },
+          {
+            "title": "ARGUMENTOS",
+            "content": "--inicio <YYYY-MM-DD>        Data inicial.\n  --fim <YYYY-MM-DD>           Data final.\n  --data-inicial <YYYY-MM-DD>  Alias de --inicio.\n  --data-final <YYYY-MM-DD>    Alias de --fim.\n  --situacao <situacao>       EM_PROCESSAMENTO|A_RECEBER|ATRASADO|MARCADO_RECEBIDO|RECEBIDO|CANCELADO|EXPIRADO\n  --auto-split <dias>         Split por janelas de N dias (default 15 quando janela > 15d; 0 desabilita)."
+          },
+          {
+            "title": "USE",
+            "content": "Listar cobrancas de um periodo, opcionalmente filtrando por situacao."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Detalhe de UM boleto    -> boleto <codigoSolicitacao>\n  Totais por situacao     -> boletos-sumario\n  Criar cobranca          -> boleto-criar"
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- Janela > 15d ativa auto-split=15 automaticamente (use --auto-split 0 para desligar).\n  - API Inter ignora situacao=CANCELADO/RECEBIDO server-side; filtro aplicado client-side (flag _clientSideFilter no retorno).\n  - --auto-split deve ser inteiro >= 1 e requer --inicio e --fim."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "Nao. Read-only."
+          },
+          {
+            "title": "VALIDACOES AUTOMATICAS",
+            "content": "- --auto-split inteiro >= 1; requer --inicio e --fim.\n  - inicio <= fim; datas YYYY-MM-DD validas.\n  - Dedupe por nossoNumero entre chunks.\n  - AVISO quando auto-split aplicado por default."
+          },
+          {
+            "title": "RETORNO",
+            "content": "Objeto data.cobrancas (array). Com auto-split: _autoSplit, _janelaDias, _chunks,\n  e _erros (parciais por chunk). _clientSideFilter quando filtro local aplicado."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "sde bancointer boletos --inicio 2026-05-01 --fim 2026-05-15\n  sde bancointer boletos --inicio 2026-01-01 --fim 2026-06-01 --situacao A_RECEBER\n  sde bancointer boletos --inicio 2026-01-01 --fim 2026-06-01 --auto-split 15"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "--auto-split invalido -> erro de validacao.\n  Chunk falha em auto-split -> registrado em _erros, demais continuam (retorno parcial)."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "boletos -> boleto <codigoSolicitacao> (detalhe)\n  boletos -> boleto-pdf <codigoSolicitacao>"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Detalhe boleto -> sde bancointer boleto <codigoSolicitacao>\n  Sumario        -> sde bancointer boletos-sumario\n  PDF boleto     -> sde bancointer boleto-pdf <codigoSolicitacao>"
+          },
+          {
+            "title": "ENDPOINT",
+            "content": "Banco Inter API cobranca/cobrancas (GET). OAuth2 + mTLS. Max 100/chamada."
+          }
+        ],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": true,
+          "hitlRequired": true,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": ["hitl:required"]
+        },
+        "validationCommands": [
+          "ravi bancointer boletos --help --json",
+          "ravi apps show bancointer --json",
+          "ravi apps run bancointer help --json",
+          "ravi apps check bancointer --json"
+        ],
+        "sourceText": "Usage: sde bancointer boletos [options]\n\nListar boletos de cobranca emitidos. --auto-split contorna limite 100/chamada da API Inter (default\n15 quando janela > 15d). Aliases: --data-inicial=--inicio, --data-final=--fim.\n\nOptions:\n  --inicio <YYYY-MM-DD>        Data inicial\n  --fim <YYYY-MM-DD>           Data final\n  --data-inicial <YYYY-MM-DD>  Alias de --inicio (formato YYYY-MM-DD)\n  --data-final <YYYY-MM-DD>    Alias de --fim (formato YYYY-MM-DD)\n  --situacao <situacao>        Filtrar:\n                               EM_PROCESSAMENTO|A_RECEBER|ATRASADO|MARCADO_RECEBIDO|RECEBIDO|CANCELADO|EXPIRADO\n  --auto-split <dias>          Split por janelas de N dias para contornar limite 100 da API\n                               (default: 15 quando janela > 15d, use 0 para desabilitar)\n  --json                       Output puro JSON em stdout, logs em stderr (default: false)\n  --yes                        Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema                     Imprime JSONSchema do input esperado e sai (default: false)\n  -h, --help                   display help for command\nsde bancointer boletos --help (padrao-ouro)\n\nListar boletos de cobranca emitidos. READ-ONLY.\nAPI Inter limita 100 cobrancas/chamada. --auto-split contorna.\n\nCUSTO / SEGURANCA\n  - READ-ONLY: lista cobrancas existentes. NAO cria nem movimenta. SEGURO.\n  - Idempotente: sem efeito colateral.\n  - Reversivel? N/A.\n  - Rate limit: API Inter (auto-split faz N chamadas; hard-timeout 10min). Sem HITL.\n\nARGUMENTOS\n  --inicio <YYYY-MM-DD>        Data inicial.\n  --fim <YYYY-MM-DD>           Data final.\n  --data-inicial <YYYY-MM-DD>  Alias de --inicio.\n  --data-final <YYYY-MM-DD>    Alias de --fim.\n  --situacao <situacao>       EM_PROCESSAMENTO|A_RECEBER|ATRASADO|MARCADO_RECEBIDO|RECEBIDO|CANCELADO|EXPIRADO\n  --auto-split <dias>         Split por janelas de N dias (default 15 quando janela > 15d; 0 desabilita).\n\nUSE\n  Listar cobrancas de um periodo, opcionalmente filtrando por situacao.\n\nNAO USE\n  Detalhe de UM boleto    -> boleto <codigoSolicitacao>\n  Totais por situacao     -> boletos-sumario\n  Criar cobranca          -> boleto-criar\n\nREGRAS HARD\n  - Janela > 15d ativa auto-split=15 automaticamente (use --auto-split 0 para desligar).\n  - API Inter ignora situacao=CANCELADO/RECEBIDO server-side; filtro aplicado client-side (flag _clientSideFilter no retorno).\n  - --auto-split deve ser inteiro >= 1 e requer --inicio e --fim.\n\nHITL OBRIGATORIO\n  Nao. Read-only.\n\nVALIDACOES AUTOMATICAS\n  - --auto-split inteiro >= 1; requer --inicio e --fim.\n  - inicio <= fim; datas YYYY-MM-DD validas.\n  - Dedupe por nossoNumero entre chunks.\n  - AVISO quando auto-split aplicado por default.\n\nRETORNO\n  Objeto data.cobrancas (array). Com auto-split: _autoSplit, _janelaDias, _chunks,\n  e _erros (parciais por chunk). _clientSideFilter quando filtro local aplicado.\n\nEXAMPLES\n  sde bancointer boletos --inicio 2026-05-01 --fim 2026-05-15\n  sde bancointer boletos --inicio 2026-01-01 --fim 2026-06-01 --situacao A_RECEBER\n  sde bancointer boletos --inicio 2026-01-01 --fim 2026-06-01 --auto-split 15\n\nON ERROR\n  --auto-split invalido -> erro de validacao.\n  Chunk falha em auto-split -> registrado em _erros, demais continuam (retorno parcial).\n\nPIPELINE\n  boletos -> boleto <codigoSolicitacao> (detalhe)\n  boletos -> boleto-pdf <codigoSolicitacao>\n\nSEE ALSO\n  Detalhe boleto -> sde bancointer boleto <codigoSolicitacao>\n  Sumario        -> sde bancointer boletos-sumario\n  PDF boleto     -> sde bancointer boleto-pdf <codigoSolicitacao>\n\nENDPOINT\n  Banco Inter API cobranca/cobrancas (GET). OAuth2 + mTLS. Max 100/chamada.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde bancointer boletos {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "bancointer.boleto": {
+      "interface": "cli",
+      "command": "sde bancointer boleto {args} --json",
+      "mutating": false,
+      "json": true,
+      "description": "Consultar boleto por codigo de solicitacao. codigoSolicitacao = UUID retornado por `bancointer boletos` (cobranca.codigoSolicitacao) ou por `tiny boleto-localizar --pedido <num>`.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "boleto",
+        "properties": {
+          "codigoSolicitacao": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["codigoSolicitacao"]
+      },
+      "help": {
+        "summary": "Consultar boleto por codigo de solicitacao. codigoSolicitacao = UUID retornado por `bancointer boletos` (cobranca.codigoSolicitacao) ou por `tiny boleto-localizar --pedido <num>`.",
+        "usage": "ravi apps run bancointer boleto --json -- <codigoSolicitacao> [options]",
+        "arguments": [
+          {
+            "name": "codigoSolicitacao",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "UUID do boleto (obrigatorio, posicional)."
+          }
+        ],
+        "options": [
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          }
+        ],
+        "examples": ["ravi apps run bancointer boleto --json -- 550e8400-e29b-41d4-a716-446655440000"],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- READ-ONLY: consulta um boleto especifico. NAO movimenta. SEGURO.\n  - Idempotente: sem efeito colateral.\n  - Reversivel? N/A.\n  - Rate limit: API Inter. Sem HITL."
+          },
+          {
+            "title": "ARGUMENTOS",
+            "content": "<codigoSolicitacao>  UUID do boleto (obrigatorio, posicional).\n                       Origem: bancointer boletos (cobranca.codigoSolicitacao)\n                       ou tiny boleto-localizar --pedido <num>."
+          },
+          {
+            "title": "USE",
+            "content": "Ver situacao e dados de UMA cobranca pelo UUID."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Listar varios   -> boletos\n  Baixar PDF      -> boleto-pdf <codigoSolicitacao>"
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- codigoSolicitacao e UUID, NAO e nossoNumero nem numero do pedido."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "Nao. Read-only."
+          },
+          {
+            "title": "VALIDACOES AUTOMATICAS",
+            "content": "Nenhuma alem da presenca do argumento posicional."
+          },
+          {
+            "title": "RETORNO",
+            "content": "Objeto da cobranca: situacao, valorNominal, pagador, datas, nossoNumero."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "sde bancointer boleto 550e8400-e29b-41d4-a716-446655440000"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "UUID inexistente -> API Inter retorna erro/404."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "boletos -> boleto <codigoSolicitacao> -> boleto-pdf <codigoSolicitacao>"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Listar boletos -> sde bancointer boletos\n  PDF do boleto  -> sde bancointer boleto-pdf <codigoSolicitacao>\n  Localizar UUID -> sde tiny boleto-localizar --pedido <num>"
+          },
+          {
+            "title": "ENDPOINT",
+            "content": "Banco Inter API cobranca/cobrancas/<codigoSolicitacao> (GET). OAuth2 + mTLS."
+          }
+        ],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": true,
+          "hitlRequired": true,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": ["hitl:required"]
+        },
+        "validationCommands": [
+          "ravi bancointer boleto --help --json",
+          "ravi apps show bancointer --json",
+          "ravi apps run bancointer help --json",
+          "ravi apps check bancointer --json"
+        ],
+        "sourceText": "Usage: sde bancointer boleto [options] <codigoSolicitacao>\n\nConsultar boleto por codigo de solicitacao. codigoSolicitacao = UUID retornado por `bancointer\nboletos` (cobranca.codigoSolicitacao) ou por `tiny boleto-localizar --pedido <num>`.\n\nOptions:\n  --json      Output puro JSON em stdout, logs em stderr (default: false)\n  --yes       Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema    Imprime JSONSchema do input esperado e sai (default: false)\n  -h, --help  display help for command\nsde bancointer boleto --help (padrao-ouro)\n\nConsultar boleto por codigo de solicitacao. READ-ONLY.\n\nCUSTO / SEGURANCA\n  - READ-ONLY: consulta um boleto especifico. NAO movimenta. SEGURO.\n  - Idempotente: sem efeito colateral.\n  - Reversivel? N/A.\n  - Rate limit: API Inter. Sem HITL.\n\nARGUMENTOS\n  <codigoSolicitacao>  UUID do boleto (obrigatorio, posicional).\n                       Origem: bancointer boletos (cobranca.codigoSolicitacao)\n                       ou tiny boleto-localizar --pedido <num>.\n\nUSE\n  Ver situacao e dados de UMA cobranca pelo UUID.\n\nNAO USE\n  Listar varios   -> boletos\n  Baixar PDF      -> boleto-pdf <codigoSolicitacao>\n\nREGRAS HARD\n  - codigoSolicitacao e UUID, NAO e nossoNumero nem numero do pedido.\n\nHITL OBRIGATORIO\n  Nao. Read-only.\n\nVALIDACOES AUTOMATICAS\n  Nenhuma alem da presenca do argumento posicional.\n\nRETORNO\n  Objeto da cobranca: situacao, valorNominal, pagador, datas, nossoNumero.\n\nEXAMPLES\n  sde bancointer boleto 550e8400-e29b-41d4-a716-446655440000\n\nON ERROR\n  UUID inexistente -> API Inter retorna erro/404.\n\nPIPELINE\n  boletos -> boleto <codigoSolicitacao> -> boleto-pdf <codigoSolicitacao>\n\nSEE ALSO\n  Listar boletos -> sde bancointer boletos\n  PDF do boleto  -> sde bancointer boleto-pdf <codigoSolicitacao>\n  Localizar UUID -> sde tiny boleto-localizar --pedido <num>\n\nENDPOINT\n  Banco Inter API cobranca/cobrancas/<codigoSolicitacao> (GET). OAuth2 + mTLS.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde bancointer boleto {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "bancointer.extrato-completo": {
+      "interface": "cli",
+      "command": "sde bancointer extrato-completo {args} --json",
+      "mutating": false,
+      "json": true,
+      "description": "Extrato completo paginado (mais detalhes que extrato simples). Aliases: --data-inicial=--inicio, --data-final=--fim, --limit=--limite=--tamanho.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "extrato-completo",
+        "properties": {
+          "inicio": {
+            "type": "string",
+            "description": "Data inicial"
+          },
+          "fim": {
+            "type": "string",
+            "description": "Data final"
+          },
+          "dataInicial": {
+            "type": "string",
+            "description": "Alias de --inicio"
+          },
+          "dataFinal": {
+            "type": "string",
+            "description": "Alias de --fim"
+          },
+          "tamanho": {
+            "type": "string",
+            "description": "Registros por pagina (default: 5000 — evita truncamento em janelas amplas)"
+          },
+          "limite": {
+            "type": "string",
+            "description": "Alias de --tamanho"
+          },
+          "limit": {
+            "type": "string",
+            "description": "Alias de --tamanho"
+          }
+        },
+        "required": []
+      },
+      "help": {
+        "summary": "Extrato completo paginado (mais detalhes que extrato simples). Aliases: --data-inicial=--inicio, --data-final=--fim, --limit=--limite=--tamanho.",
+        "usage": "ravi apps run bancointer extrato-completo --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--inicio <YYYY-MM-DD>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Data inicial"
+          },
+          {
+            "flags": "--fim <YYYY-MM-DD>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Data final"
+          },
+          {
+            "flags": "--data-inicial <YYYY-MM-DD>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Alias de --inicio"
+          },
+          {
+            "flags": "--data-final <YYYY-MM-DD>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Alias de --fim"
+          },
+          {
+            "flags": "--tamanho <n>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Registros por pagina (default: 5000 — evita truncamento em janelas amplas)"
+          },
+          {
+            "flags": "--limite <n>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Alias de --tamanho"
+          },
+          {
+            "flags": "--limit <n>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Alias de --tamanho"
+          },
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          }
+        ],
+        "examples": [
+          "ravi apps run bancointer extrato-completo --json -- --inicio 2026-01-01 --fim 2026-06-01",
+          "ravi apps run bancointer extrato-completo --json -- --inicio 2026-01-01 --fim 2026-06-01 --tamanho 5000"
+        ],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- READ-ONLY: apenas consulta. NAO movimenta dinheiro. SEGURO.\n  - Idempotente: sem efeito colateral.\n  - Reversivel? N/A.\n  - Rate limit: API Inter (paginacao interna). Pode rodar em producao sem HITL."
+          },
+          {
+            "title": "ARGUMENTOS",
+            "content": "--inicio <YYYY-MM-DD>        Data inicial (obrigatorio).\n  --fim <YYYY-MM-DD>           Data final (obrigatorio).\n  --data-inicial <YYYY-MM-DD>  Alias de --inicio.\n  --data-final <YYYY-MM-DD>    Alias de --fim.\n  --tamanho <n>               Registros por pagina (default 5000, evita truncar).\n  --limite <n>                Alias de --tamanho.\n  --limit <n>                 Alias de --tamanho."
+          },
+          {
+            "title": "USE",
+            "content": "Janelas amplas ou quando extrato simples truncou em 50 itens.\n  Traz mais campos por transacao que o extrato simples."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Janela curta rapida -> extrato\n  Comprovante PDF     -> extrato-pdf"
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- Datas no formato YYYY-MM-DD.\n  - Manter --tamanho alto (default 5000) para evitar truncamento."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "Nao. Read-only."
+          },
+          {
+            "title": "VALIDACOES AUTOMATICAS",
+            "content": "- --inicio e --fim obrigatorios (pos-merge de aliases).\n  - --tamanho default 5000 se nao informado."
+          },
+          {
+            "title": "RETORNO",
+            "content": "Objeto paginado com transacoes detalhadas do periodo."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "sde bancointer extrato-completo --inicio 2026-01-01 --fim 2026-06-01\n  sde bancointer extrato-completo --inicio 2026-01-01 --fim 2026-06-01 --tamanho 5000"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Falta --inicio/--fim -> erro de validacao, nada consultado.\n  Falha mTLS/OAuth     -> verificar certificado e credenciais."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "extrato-completo -> contabilidade conciliacao"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Extrato simples -> sde bancointer extrato\n  Extrato PDF     -> sde bancointer extrato-pdf\n  Conciliacao     -> sde contabilidade conciliacao"
+          },
+          {
+            "title": "ENDPOINT",
+            "content": "Banco Inter API banking/extrato/completo (paginado). OAuth2 + mTLS."
+          }
+        ],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": true,
+          "hitlRequired": true,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": ["hitl:required"]
+        },
+        "validationCommands": [
+          "ravi bancointer extrato-completo --help --json",
+          "ravi apps show bancointer --json",
+          "ravi apps run bancointer help --json",
+          "ravi apps check bancointer --json"
+        ],
+        "sourceText": "Usage: sde bancointer extrato-completo [options]\n\nExtrato completo paginado (mais detalhes que extrato simples). Aliases: --data-inicial=--inicio,\n--data-final=--fim, --limit=--limite=--tamanho.\n\nOptions:\n  --inicio <YYYY-MM-DD>        Data inicial\n  --fim <YYYY-MM-DD>           Data final\n  --data-inicial <YYYY-MM-DD>  Alias de --inicio\n  --data-final <YYYY-MM-DD>    Alias de --fim\n  --tamanho <n>                Registros por pagina (default: 5000 — evita truncamento em janelas\n                               amplas)\n  --limite <n>                 Alias de --tamanho\n  --limit <n>                  Alias de --tamanho\n  --json                       Output puro JSON em stdout, logs em stderr (default: false)\n  --yes                        Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema                     Imprime JSONSchema do input esperado e sai (default: false)\n  -h, --help                   display help for command\nsde bancointer extrato-completo --help (padrao-ouro)\n\nExtrato completo paginado (mais detalhes que extrato simples). READ-ONLY.\n\nCUSTO / SEGURANCA\n  - READ-ONLY: apenas consulta. NAO movimenta dinheiro. SEGURO.\n  - Idempotente: sem efeito colateral.\n  - Reversivel? N/A.\n  - Rate limit: API Inter (paginacao interna). Pode rodar em producao sem HITL.\n\nARGUMENTOS\n  --inicio <YYYY-MM-DD>        Data inicial (obrigatorio).\n  --fim <YYYY-MM-DD>           Data final (obrigatorio).\n  --data-inicial <YYYY-MM-DD>  Alias de --inicio.\n  --data-final <YYYY-MM-DD>    Alias de --fim.\n  --tamanho <n>               Registros por pagina (default 5000, evita truncar).\n  --limite <n>                Alias de --tamanho.\n  --limit <n>                 Alias de --tamanho.\n\nUSE\n  Janelas amplas ou quando extrato simples truncou em 50 itens.\n  Traz mais campos por transacao que o extrato simples.\n\nNAO USE\n  Janela curta rapida -> extrato\n  Comprovante PDF     -> extrato-pdf\n\nREGRAS HARD\n  - Datas no formato YYYY-MM-DD.\n  - Manter --tamanho alto (default 5000) para evitar truncamento.\n\nHITL OBRIGATORIO\n  Nao. Read-only.\n\nVALIDACOES AUTOMATICAS\n  - --inicio e --fim obrigatorios (pos-merge de aliases).\n  - --tamanho default 5000 se nao informado.\n\nRETORNO\n  Objeto paginado com transacoes detalhadas do periodo.\n\nEXAMPLES\n  sde bancointer extrato-completo --inicio 2026-01-01 --fim 2026-06-01\n  sde bancointer extrato-completo --inicio 2026-01-01 --fim 2026-06-01 --tamanho 5000\n\nON ERROR\n  Falta --inicio/--fim -> erro de validacao, nada consultado.\n  Falha mTLS/OAuth     -> verificar certificado e credenciais.\n\nPIPELINE\n  extrato-completo -> contabilidade conciliacao\n\nSEE ALSO\n  Extrato simples -> sde bancointer extrato\n  Extrato PDF     -> sde bancointer extrato-pdf\n  Conciliacao     -> sde contabilidade conciliacao\n\nENDPOINT\n  Banco Inter API banking/extrato/completo (paginado). OAuth2 + mTLS.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde bancointer extrato-completo {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "bancointer.extrato-pdf": {
+      "interface": "cli",
+      "command": "sde bancointer extrato-pdf {args} --json",
+      "mutating": false,
+      "json": true,
+      "description": "Exportar extrato bancario em PDF (base64). Janela > 90 dias pode gerar PDF truncado. Aliases: --data-inicial=--inicio, --data-final=--fim.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "extrato-pdf",
+        "properties": {
+          "inicio": {
+            "type": "string",
+            "description": "Data inicial"
+          },
+          "fim": {
+            "type": "string",
+            "description": "Data final"
+          },
+          "dataInicial": {
+            "type": "string",
+            "description": "Alias de --inicio"
+          },
+          "dataFinal": {
+            "type": "string",
+            "description": "Alias de --fim"
+          }
+        },
+        "required": []
+      },
+      "help": {
+        "summary": "Exportar extrato bancario em PDF (base64). Janela > 90 dias pode gerar PDF truncado. Aliases: --data-inicial=--inicio, --data-final=--fim.",
+        "usage": "ravi apps run bancointer extrato-pdf --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--inicio <YYYY-MM-DD>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Data inicial"
+          },
+          {
+            "flags": "--fim <YYYY-MM-DD>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Data final"
+          },
+          {
+            "flags": "--data-inicial <YYYY-MM-DD>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Alias de --inicio"
+          },
+          {
+            "flags": "--data-final <YYYY-MM-DD>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Alias de --fim"
+          },
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          }
+        ],
+        "examples": ["ravi apps run bancointer extrato-pdf --json -- --inicio 2026-05-01 --fim 2026-05-31"],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- READ-ONLY: gera PDF de extrato. NAO movimenta dinheiro. SEGURO.\n  - Idempotente: sem efeito colateral.\n  - Reversivel? N/A.\n  - Rate limit: API Inter. Pode rodar em producao sem HITL."
+          },
+          {
+            "title": "ARGUMENTOS",
+            "content": "--inicio <YYYY-MM-DD>        Data inicial (obrigatorio).\n  --fim <YYYY-MM-DD>           Data final (obrigatorio).\n  --data-inicial <YYYY-MM-DD>  Alias de --inicio.\n  --data-final <YYYY-MM-DD>    Alias de --fim."
+          },
+          {
+            "title": "USE",
+            "content": "Comprovante visual do extrato para contabilidade/auditoria."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Dados estruturados para processar -> extrato / extrato-completo"
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- Datas no formato YYYY-MM-DD.\n  - Janela > 90 dias pode gerar PDF truncado (limite API Inter). Fatie."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "Nao. Read-only."
+          },
+          {
+            "title": "VALIDACOES AUTOMATICAS",
+            "content": "- --inicio e --fim obrigatorios (pos-merge de aliases).\n  - AVISO emitido quando janela > 90 dias (risco de truncar)."
+          },
+          {
+            "title": "RETORNO",
+            "content": "Objeto com PDF em base64 inline. Caller grava onde quiser."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "sde bancointer extrato-pdf --inicio 2026-05-01 --fim 2026-05-31"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Falta --inicio/--fim -> erro de validacao, nada gerado.\n  Falha mTLS/OAuth     -> verificar certificado e credenciais."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "extrato-pdf -> (caller decodifica base64 e grava .pdf)"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Extrato dados -> sde bancointer extrato-completo\n  Saldo         -> sde bancointer saldo"
+          },
+          {
+            "title": "ENDPOINT",
+            "content": "Banco Inter API banking/extrato/exportar (PDF base64). OAuth2 + mTLS."
+          }
+        ],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": true,
+          "hitlRequired": true,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": ["hitl:required"]
+        },
+        "validationCommands": [
+          "ravi bancointer extrato-pdf --help --json",
+          "ravi apps show bancointer --json",
+          "ravi apps run bancointer help --json",
+          "ravi apps check bancointer --json"
+        ],
+        "sourceText": "Usage: sde bancointer extrato-pdf [options]\n\nExportar extrato bancario em PDF (base64). Janela > 90 dias pode gerar PDF truncado. Aliases:\n--data-inicial=--inicio, --data-final=--fim.\n\nOptions:\n  --inicio <YYYY-MM-DD>        Data inicial\n  --fim <YYYY-MM-DD>           Data final\n  --data-inicial <YYYY-MM-DD>  Alias de --inicio\n  --data-final <YYYY-MM-DD>    Alias de --fim\n  --json                       Output puro JSON em stdout, logs em stderr (default: false)\n  --yes                        Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema                     Imprime JSONSchema do input esperado e sai (default: false)\n  -h, --help                   display help for command\nsde bancointer extrato-pdf --help (padrao-ouro)\n\nExportar extrato bancario em PDF (retorna base64). READ-ONLY.\n\nCUSTO / SEGURANCA\n  - READ-ONLY: gera PDF de extrato. NAO movimenta dinheiro. SEGURO.\n  - Idempotente: sem efeito colateral.\n  - Reversivel? N/A.\n  - Rate limit: API Inter. Pode rodar em producao sem HITL.\n\nARGUMENTOS\n  --inicio <YYYY-MM-DD>        Data inicial (obrigatorio).\n  --fim <YYYY-MM-DD>           Data final (obrigatorio).\n  --data-inicial <YYYY-MM-DD>  Alias de --inicio.\n  --data-final <YYYY-MM-DD>    Alias de --fim.\n\nUSE\n  Comprovante visual do extrato para contabilidade/auditoria.\n\nNAO USE\n  Dados estruturados para processar -> extrato / extrato-completo\n\nREGRAS HARD\n  - Datas no formato YYYY-MM-DD.\n  - Janela > 90 dias pode gerar PDF truncado (limite API Inter). Fatie.\n\nHITL OBRIGATORIO\n  Nao. Read-only.\n\nVALIDACOES AUTOMATICAS\n  - --inicio e --fim obrigatorios (pos-merge de aliases).\n  - AVISO emitido quando janela > 90 dias (risco de truncar).\n\nRETORNO\n  Objeto com PDF em base64 inline. Caller grava onde quiser.\n\nEXAMPLES\n  sde bancointer extrato-pdf --inicio 2026-05-01 --fim 2026-05-31\n\nON ERROR\n  Falta --inicio/--fim -> erro de validacao, nada gerado.\n  Falha mTLS/OAuth     -> verificar certificado e credenciais.\n\nPIPELINE\n  extrato-pdf -> (caller decodifica base64 e grava .pdf)\n\nSEE ALSO\n  Extrato dados -> sde bancointer extrato-completo\n  Saldo         -> sde bancointer saldo\n\nENDPOINT\n  Banco Inter API banking/extrato/exportar (PDF base64). OAuth2 + mTLS.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde bancointer extrato-pdf {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "bancointer.boleto-criar": {
+      "interface": "cli",
+      "command": "sde bancointer boleto-criar {args}",
+      "mutating": true,
+      "json": false,
+      "description": "Criar boleto de cobranca. JSON minimo: { seuNumero, valorNominal, dataVencimento (YYYY-MM-DD), numDiasAgenda, pagador: { cpfCnpj, tipoPessoa (FISICA|JURIDICA), nome, endereco, cidade, uf, cep } }. Retorna codigoSolicitacao (UUID) para uso em boleto-editar/cancelar/pdf.",
+      "destructive": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "boleto-criar",
+        "properties": {
+          "json": {
+            "type": "string",
+            "description": "Dados do boleto em JSON (pagador, valorNominal, dataVencimento, seuNumero, numDiasAgenda)"
+          }
+        },
+        "required": ["json"]
+      },
+      "help": {
+        "summary": "Criar boleto de cobranca. JSON minimo: { seuNumero, valorNominal, dataVencimento (YYYY-MM-DD), numDiasAgenda, pagador: { cpfCnpj, tipoPessoa (FISICA|JURIDICA), nome, endereco, cidade, uf, cep } }. Retorna codigoSolicitacao (UUID) para uso em boleto-editar/cancelar/pdf.",
+        "usage": "ravi apps run bancointer boleto-criar --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json <json>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Dados do boleto em JSON (pagador, valorNominal, dataVencimento, seuNumero, numDiasAgenda)"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          },
+          {
+            "flags": "--dry-run",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Mostra payload que seria enviado sem executar"
+          }
+        ],
+        "examples": [
+          "cat boleto.json | ravi apps run bancointer boleto-criar --json -- --dry-run",
+          "cat boleto.json | ravi apps run bancointer boleto-criar --json --"
+        ],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- FINANCEIRO — EFEITO REAL: emite uma cobranca REAL no Banco Inter (residuo permanente,\n    boleto pagavel pelo cliente). NUNCA testar em producao. HITL OBRIGATORIO.\n  - NAO idempotente: rodar 2x = DUAS cobrancas. Garanta seuNumero unico.\n  - Reversivel? Apenas via boleto-cancelar (com motivo). Depois de pago, irreversivel.\n  - Preview seguro: --dry-run mostra would_create_boleto sem emitir."
+          },
+          {
+            "title": "ARGUMENTOS",
+            "content": "--json <json>  Dados do boleto em JSON (obrigatorio, requiredOption). A CLI faz\n                 JSON.parse e envia DIRETO ao Inter (sem validar campos -- passthrough).\n                 Campos tipicos da API Inter cobranca v3 (orientacao, NAO validado pela CLI):\n                 seuNumero, valorNominal, dataVencimento, numDiasAgenda, pagador\n                 { cpfCnpj, tipoPessoa, nome, endereco, cidade, uf, cep }.\n                 [Formato exato de dataVencimento/tipoPessoa: conferir spec Inter cobranca v3]\n  --dry-run      Mostra payload sem emitir."
+          },
+          {
+            "title": "USE",
+            "content": "Emitir uma cobranca bancaria para um cliente (apos aprovacao humana)."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Editar boleto existente   -> boleto-editar <codigoSolicitacao>\n  Cancelar                  -> boleto-cancelar <codigoSolicitacao> --motivo <m>\n  Apenas conferir formato   -> rode com --dry-run"
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- JSON no formato exigido pela API Inter cobranca v3 (CLI nao valida; voce e o validador).\n  - seuNumero unico por cobranca (evita duplicidade).\n  - [dataVencimento/tipoPessoa: usar formato da spec Inter v3 -- NAO confirmado neste audit].\n  - SEMPRE rodar --dry-run antes do envio real."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "SIM. EMITE COBRANCA REAL. Aprovacao humana explicita antes de executar sem --dry-run."
+          },
+          {
+            "title": "VALIDACOES AUTOMATICAS",
+            "content": "- --json obrigatorio; JSON.parse (falha = erro antes de chamar API).\n  - --dry-run retorna { dry_run: true, would_create_boleto } sem gravar."
+          },
+          {
+            "title": "RETORNO",
+            "content": "Objeto com codigoSolicitacao (UUID) para boleto-editar/cancelar/pdf.\n  Com --dry-run: { dry_run: true, would_create_boleto }."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "cat boleto.json | sde bancointer boleto-criar --dry-run\n  cat boleto.json | sde bancointer boleto-criar"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "JSON invalido / campo faltando -> erro de validacao, nada emitido.\n  Falha API Inter                -> cobranca nao criada (verificar mensagem)."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "boleto-criar -> boleto-pdf <codigoSolicitacao> (envia ao cliente)\n  boleto-criar -> boleto <codigoSolicitacao> (confere situacao)"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Editar   -> sde bancointer boleto-editar <codigoSolicitacao>\n  Cancelar -> sde bancointer boleto-cancelar <codigoSolicitacao> --motivo <m>\n  PDF      -> sde bancointer boleto-pdf <codigoSolicitacao>"
+          },
+          {
+            "title": "ENDPOINT",
+            "content": "POST /cobranca/v3/cobrancas (Banco Inter, via interMutate). OAuth2 + mTLS. WRITE FINANCEIRO."
+          }
+        ],
+        "permissions": ["bancointer:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": true,
+          "idempotent": false,
+          "hitlRequired": true,
+          "confirmationRequired": true,
+          "dryRunSupported": true,
+          "gates": ["confirmation:required", "hitl:required", "permission:bancointer:write", "preview:dry-run"]
+        },
+        "validationCommands": [
+          "ravi bancointer boleto-criar --help --json",
+          "ravi apps show bancointer --json",
+          "ravi apps run bancointer help --json",
+          "ravi apps check bancointer --json"
+        ],
+        "sourceText": "Usage: sde bancointer boleto-criar [options]\n\nCriar boleto de cobranca. JSON minimo: { seuNumero, valorNominal, dataVencimento (YYYY-MM-DD),\nnumDiasAgenda, pagador: { cpfCnpj, tipoPessoa (FISICA|JURIDICA), nome, endereco, cidade, uf, cep }\n}. Retorna codigoSolicitacao (UUID) para uso em boleto-editar/cancelar/pdf.\n\nOptions:\n  --json <json>  Dados do boleto em JSON (pagador, valorNominal, dataVencimento, seuNumero,\n                 numDiasAgenda)\n  --yes          Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema       Imprime JSONSchema do input esperado e sai (default: false)\n  --dry-run      Mostra payload que seria enviado sem executar (default: false)\n  -h, --help     display help for command\nsde bancointer boleto-criar --help (padrao-ouro)\n\nCriar boleto de cobranca. WRITE FINANCEIRO.\n\nCUSTO / SEGURANCA\n  - FINANCEIRO — EFEITO REAL: emite uma cobranca REAL no Banco Inter (residuo permanente,\n    boleto pagavel pelo cliente). NUNCA testar em producao. HITL OBRIGATORIO.\n  - NAO idempotente: rodar 2x = DUAS cobrancas. Garanta seuNumero unico.\n  - Reversivel? Apenas via boleto-cancelar (com motivo). Depois de pago, irreversivel.\n  - Preview seguro: --dry-run mostra would_create_boleto sem emitir.\n\nARGUMENTOS\n  --json <json>  Dados do boleto em JSON (obrigatorio, requiredOption). A CLI faz\n                 JSON.parse e envia DIRETO ao Inter (sem validar campos -- passthrough).\n                 Campos tipicos da API Inter cobranca v3 (orientacao, NAO validado pela CLI):\n                 seuNumero, valorNominal, dataVencimento, numDiasAgenda, pagador\n                 { cpfCnpj, tipoPessoa, nome, endereco, cidade, uf, cep }.\n                 [Formato exato de dataVencimento/tipoPessoa: conferir spec Inter cobranca v3]\n  --dry-run      Mostra payload sem emitir.\n\nUSE\n  Emitir uma cobranca bancaria para um cliente (apos aprovacao humana).\n\nNAO USE\n  Editar boleto existente   -> boleto-editar <codigoSolicitacao>\n  Cancelar                  -> boleto-cancelar <codigoSolicitacao> --motivo <m>\n  Apenas conferir formato   -> rode com --dry-run\n\nREGRAS HARD\n  - JSON no formato exigido pela API Inter cobranca v3 (CLI nao valida; voce e o validador).\n  - seuNumero unico por cobranca (evita duplicidade).\n  - [dataVencimento/tipoPessoa: usar formato da spec Inter v3 -- NAO confirmado neste audit].\n  - SEMPRE rodar --dry-run antes do envio real.\n\nHITL OBRIGATORIO\n  SIM. EMITE COBRANCA REAL. Aprovacao humana explicita antes de executar sem --dry-run.\n\nVALIDACOES AUTOMATICAS\n  - --json obrigatorio; JSON.parse (falha = erro antes de chamar API).\n  - --dry-run retorna { dry_run: true, would_create_boleto } sem gravar.\n\nRETORNO\n  Objeto com codigoSolicitacao (UUID) para boleto-editar/cancelar/pdf.\n  Com --dry-run: { dry_run: true, would_create_boleto }.\n\nEXAMPLES\n  cat boleto.json | sde bancointer boleto-criar --dry-run\n  cat boleto.json | sde bancointer boleto-criar\n\nON ERROR\n  JSON invalido / campo faltando -> erro de validacao, nada emitido.\n  Falha API Inter                -> cobranca nao criada (verificar mensagem).\n\nPIPELINE\n  boleto-criar -> boleto-pdf <codigoSolicitacao> (envia ao cliente)\n  boleto-criar -> boleto <codigoSolicitacao> (confere situacao)\n\nSEE ALSO\n  Editar   -> sde bancointer boleto-editar <codigoSolicitacao>\n  Cancelar -> sde bancointer boleto-cancelar <codigoSolicitacao> --motivo <m>\n  PDF      -> sde bancointer boleto-pdf <codigoSolicitacao>\n\nENDPOINT\n  POST /cobranca/v3/cobrancas (Banco Inter, via interMutate). OAuth2 + mTLS. WRITE FINANCEIRO.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde bancointer boleto-criar {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "bancointer:write"
+    },
+    "bancointer.boleto-cancelar": {
+      "interface": "cli",
+      "command": "sde bancointer boleto-cancelar {args} --json",
+      "mutating": true,
+      "json": true,
+      "description": "Cancelar boleto de cobranca. Motivo obrigatorio - escolha explicita evita falseamento estatistico.",
+      "destructive": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "boleto-cancelar",
+        "properties": {
+          "codigoSolicitacao": {
+            "type": "string",
+            "description": ""
+          },
+          "motivo": {
+            "type": "string",
+            "description": "Motivo cancelamento (obrigatorio): ACERTOS|APEDIDODOCLIENTE|PAGODIRETOAOCLIENTE|SUBSTITUICAO|FALTADESOLUCAO"
+          }
+        },
+        "required": ["codigoSolicitacao", "motivo"]
+      },
+      "help": {
+        "summary": "Cancelar boleto de cobranca. Motivo obrigatorio - escolha explicita evita falseamento estatistico.",
+        "usage": "ravi apps run bancointer boleto-cancelar --json -- <codigoSolicitacao> [options]",
+        "arguments": [
+          {
+            "name": "codigoSolicitacao",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "UUID do boleto a cancelar (obrigatorio, posicional)."
+          }
+        ],
+        "options": [
+          {
+            "flags": "--motivo <motivo>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Motivo cancelamento (obrigatorio): ACERTOS|APEDIDODOCLIENTE|PAGODIRETOAOCLIENTE|SUBSTITUICAO|FALTADESOLUCAO"
+          },
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          },
+          {
+            "flags": "--dry-run",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Mostra payload que seria enviado sem executar"
+          }
+        ],
+        "examples": [
+          "ravi apps run bancointer boleto-cancelar --json -- 550e8400-... --motivo APEDIDODOCLIENTE --dry-run",
+          "ravi apps run bancointer boleto-cancelar --json -- 550e8400-... --motivo SUBSTITUICAO"
+        ],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- FINANCEIRO — EFEITO REAL e DESTRUTIVO: cancela uma cobranca REAL no Banco Inter.\n    NUNCA testar em producao. HITL OBRIGATORIO.\n  - NAO idempotente em auditoria; cancelamento registra motivo permanente.\n  - Reversivel? NAO. Cobranca cancelada nao volta — emitir nova via boleto-criar.\n  - Preview seguro: --dry-run mostra would_cancel + motivo sem cancelar."
+          },
+          {
+            "title": "ARGUMENTOS",
+            "content": "<codigoSolicitacao>  UUID do boleto a cancelar (obrigatorio, posicional).\n  --motivo <motivo>    OBRIGATORIO (enum, escolha explicita evita falseamento estatistico):\n                       ACERTOS | APEDIDODOCLIENTE | PAGODIRETOAOCLIENTE |\n                       SUBSTITUICAO | FALTADESOLUCAO\n  --dry-run            Mostra cancelamento sem executar."
+          },
+          {
+            "title": "USE",
+            "content": "Cancelar uma cobranca emitida por engano ou que nao deve mais ser paga."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Apenas editar    -> boleto-editar <codigoSolicitacao>\n  Criar substituta -> boleto-criar (apos cancelar com motivo SUBSTITUICAO)"
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- --motivo OBRIGATORIO (sem default silencioso — breaking change C8).\n  - motivo deve ser um dos 5 enums (case-sensitive).\n  - SEMPRE rodar --dry-run antes do cancelamento real."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "SIM. CANCELA COBRANCA REAL E IRREVERSIVEL. Aprovacao humana antes de executar sem --dry-run."
+          },
+          {
+            "title": "VALIDACOES AUTOMATICAS",
+            "content": "- argumento posicional + --motivo obrigatorios.\n  - --dry-run retorna { dry_run: true, would_cancel, motivo } sem gravar."
+          },
+          {
+            "title": "RETORNO",
+            "content": "Confirmacao do cancelamento. Com --dry-run: preview."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "sde bancointer boleto-cancelar 550e8400-... --motivo APEDIDODOCLIENTE --dry-run\n  sde bancointer boleto-cancelar 550e8400-... --motivo SUBSTITUICAO"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Falta --motivo / enum invalido -> erro de validacao, nada cancelado.\n  UUID inexistente               -> API Inter retorna erro."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "boletos -> boleto-cancelar <codigoSolicitacao> --motivo <m>"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Criar    -> sde bancointer boleto-criar\n  Editar   -> sde bancointer boleto-editar <codigoSolicitacao>\n  Detalhe  -> sde bancointer boleto <codigoSolicitacao>"
+          },
+          {
+            "title": "ENDPOINT",
+            "content": "Banco Inter API cobranca/cobrancas/<codigoSolicitacao>/cancelamento (POST). OAuth2 + mTLS. DESTRUTIVO."
+          }
+        ],
+        "permissions": ["bancointer:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": true,
+          "idempotent": false,
+          "hitlRequired": true,
+          "confirmationRequired": true,
+          "dryRunSupported": true,
+          "gates": ["confirmation:required", "hitl:required", "permission:bancointer:write", "preview:dry-run"]
+        },
+        "validationCommands": [
+          "ravi bancointer boleto-cancelar --help --json",
+          "ravi apps show bancointer --json",
+          "ravi apps run bancointer help --json",
+          "ravi apps check bancointer --json"
+        ],
+        "sourceText": "Usage: sde bancointer boleto-cancelar [options] <codigoSolicitacao>\n\nCancelar boleto de cobranca. Motivo obrigatorio - escolha explicita evita falseamento estatistico.\n\nOptions:\n  --motivo <motivo>  Motivo cancelamento (obrigatorio):\n                     ACERTOS|APEDIDODOCLIENTE|PAGODIRETOAOCLIENTE|SUBSTITUICAO|FALTADESOLUCAO\n  --json             Output puro JSON em stdout, logs em stderr (default: false)\n  --yes              Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema           Imprime JSONSchema do input esperado e sai (default: false)\n  --dry-run          Mostra payload que seria enviado sem executar (default: false)\n  -h, --help         display help for command\nsde bancointer boleto-cancelar --help (padrao-ouro)\n\nCancelar boleto de cobranca. WRITE FINANCEIRO / DESTRUTIVO.\n\nCUSTO / SEGURANCA\n  - FINANCEIRO — EFEITO REAL e DESTRUTIVO: cancela uma cobranca REAL no Banco Inter.\n    NUNCA testar em producao. HITL OBRIGATORIO.\n  - NAO idempotente em auditoria; cancelamento registra motivo permanente.\n  - Reversivel? NAO. Cobranca cancelada nao volta — emitir nova via boleto-criar.\n  - Preview seguro: --dry-run mostra would_cancel + motivo sem cancelar.\n\nARGUMENTOS\n  <codigoSolicitacao>  UUID do boleto a cancelar (obrigatorio, posicional).\n  --motivo <motivo>    OBRIGATORIO (enum, escolha explicita evita falseamento estatistico):\n                       ACERTOS | APEDIDODOCLIENTE | PAGODIRETOAOCLIENTE |\n                       SUBSTITUICAO | FALTADESOLUCAO\n  --dry-run            Mostra cancelamento sem executar.\n\nUSE\n  Cancelar uma cobranca emitida por engano ou que nao deve mais ser paga.\n\nNAO USE\n  Apenas editar    -> boleto-editar <codigoSolicitacao>\n  Criar substituta -> boleto-criar (apos cancelar com motivo SUBSTITUICAO)\n\nREGRAS HARD\n  - --motivo OBRIGATORIO (sem default silencioso — breaking change C8).\n  - motivo deve ser um dos 5 enums (case-sensitive).\n  - SEMPRE rodar --dry-run antes do cancelamento real.\n\nHITL OBRIGATORIO\n  SIM. CANCELA COBRANCA REAL E IRREVERSIVEL. Aprovacao humana antes de executar sem --dry-run.\n\nVALIDACOES AUTOMATICAS\n  - argumento posicional + --motivo obrigatorios.\n  - --dry-run retorna { dry_run: true, would_cancel, motivo } sem gravar.\n\nRETORNO\n  Confirmacao do cancelamento. Com --dry-run: preview.\n\nEXAMPLES\n  sde bancointer boleto-cancelar 550e8400-... --motivo APEDIDODOCLIENTE --dry-run\n  sde bancointer boleto-cancelar 550e8400-... --motivo SUBSTITUICAO\n\nON ERROR\n  Falta --motivo / enum invalido -> erro de validacao, nada cancelado.\n  UUID inexistente               -> API Inter retorna erro.\n\nPIPELINE\n  boletos -> boleto-cancelar <codigoSolicitacao> --motivo <m>\n\nSEE ALSO\n  Criar    -> sde bancointer boleto-criar\n  Editar   -> sde bancointer boleto-editar <codigoSolicitacao>\n  Detalhe  -> sde bancointer boleto <codigoSolicitacao>\n\nENDPOINT\n  Banco Inter API cobranca/cobrancas/<codigoSolicitacao>/cancelamento (POST). OAuth2 + mTLS. DESTRUTIVO.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde bancointer boleto-cancelar {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "bancointer:write"
+    },
+    "bancointer.boleto-pdf": {
+      "interface": "cli",
+      "command": "sde bancointer boleto-pdf {args} --json",
+      "mutating": false,
+      "json": true,
+      "description": "Download PDF de um boleto (retorna base64 inline, caller grava onde quiser). codigoSolicitacao = UUID retornado por `bancointer boletos` ou `bancointer boleto-criar`.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "boleto-pdf",
+        "properties": {
+          "codigoSolicitacao": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["codigoSolicitacao"]
+      },
+      "help": {
+        "summary": "Download PDF de um boleto (retorna base64 inline, caller grava onde quiser). codigoSolicitacao = UUID retornado por `bancointer boletos` ou `bancointer boleto-criar`.",
+        "usage": "ravi apps run bancointer boleto-pdf --json -- <codigoSolicitacao> [options]",
+        "arguments": [
+          {
+            "name": "codigoSolicitacao",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "UUID do boleto (obrigatorio, posicional)."
+          }
+        ],
+        "options": [
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          }
+        ],
+        "examples": ["ravi apps run bancointer boleto-pdf --json -- 550e8400-e29b-41d4-a716-446655440000"],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- READ-ONLY: gera PDF do boleto. NAO movimenta. SEGURO.\n  - Idempotente: sem efeito colateral.\n  - Reversivel? N/A.\n  - Rate limit: API Inter. Sem HITL."
+          },
+          {
+            "title": "ARGUMENTOS",
+            "content": "<codigoSolicitacao>  UUID do boleto (obrigatorio, posicional).\n                       Origem: bancointer boletos ou bancointer boleto-criar."
+          },
+          {
+            "title": "USE",
+            "content": "Obter o PDF do boleto para enviar ao cliente (base64 inline; caller grava onde quiser)."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Dados estruturados do boleto -> boleto <codigoSolicitacao>\n  Extrato em PDF               -> extrato-pdf"
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- codigoSolicitacao e UUID, nao nossoNumero nem numero do pedido."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "Nao. Read-only (gera comprovante, nao emite cobranca)."
+          },
+          {
+            "title": "VALIDACOES AUTOMATICAS",
+            "content": "Nenhuma alem da presenca do argumento posicional."
+          },
+          {
+            "title": "RETORNO",
+            "content": "Objeto com PDF em base64 inline. Caller decodifica e grava .pdf."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "sde bancointer boleto-pdf 550e8400-e29b-41d4-a716-446655440000"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "UUID inexistente -> API Inter retorna erro/404."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "boleto-criar -> boleto-pdf <codigoSolicitacao> (envia ao cliente)\n  boletos -> boleto-pdf <codigoSolicitacao>"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Detalhe boleto -> sde bancointer boleto <codigoSolicitacao>\n  Criar boleto   -> sde bancointer boleto-criar\n  Listar boletos -> sde bancointer boletos"
+          },
+          {
+            "title": "ENDPOINT",
+            "content": "Banco Inter API cobranca/cobrancas/<codigoSolicitacao>/pdf. OAuth2 + mTLS."
+          }
+        ],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": true,
+          "hitlRequired": true,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": ["hitl:required"]
+        },
+        "validationCommands": [
+          "ravi bancointer boleto-pdf --help --json",
+          "ravi apps show bancointer --json",
+          "ravi apps run bancointer help --json",
+          "ravi apps check bancointer --json"
+        ],
+        "sourceText": "Usage: sde bancointer boleto-pdf [options] <codigoSolicitacao>\n\nDownload PDF de um boleto (retorna base64 inline, caller grava onde quiser). codigoSolicitacao =\nUUID retornado por `bancointer boletos` ou `bancointer boleto-criar`.\n\nOptions:\n  --json      Output puro JSON em stdout, logs em stderr (default: false)\n  --yes       Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema    Imprime JSONSchema do input esperado e sai (default: false)\n  -h, --help  display help for command\nsde bancointer boleto-pdf --help (padrao-ouro)\n\nDownload PDF de um boleto (retorna base64 inline). READ-ONLY.\n\nCUSTO / SEGURANCA\n  - READ-ONLY: gera PDF do boleto. NAO movimenta. SEGURO.\n  - Idempotente: sem efeito colateral.\n  - Reversivel? N/A.\n  - Rate limit: API Inter. Sem HITL.\n\nARGUMENTOS\n  <codigoSolicitacao>  UUID do boleto (obrigatorio, posicional).\n                       Origem: bancointer boletos ou bancointer boleto-criar.\n\nUSE\n  Obter o PDF do boleto para enviar ao cliente (base64 inline; caller grava onde quiser).\n\nNAO USE\n  Dados estruturados do boleto -> boleto <codigoSolicitacao>\n  Extrato em PDF               -> extrato-pdf\n\nREGRAS HARD\n  - codigoSolicitacao e UUID, nao nossoNumero nem numero do pedido.\n\nHITL OBRIGATORIO\n  Nao. Read-only (gera comprovante, nao emite cobranca).\n\nVALIDACOES AUTOMATICAS\n  Nenhuma alem da presenca do argumento posicional.\n\nRETORNO\n  Objeto com PDF em base64 inline. Caller decodifica e grava .pdf.\n\nEXAMPLES\n  sde bancointer boleto-pdf 550e8400-e29b-41d4-a716-446655440000\n\nON ERROR\n  UUID inexistente -> API Inter retorna erro/404.\n\nPIPELINE\n  boleto-criar -> boleto-pdf <codigoSolicitacao> (envia ao cliente)\n  boletos -> boleto-pdf <codigoSolicitacao>\n\nSEE ALSO\n  Detalhe boleto -> sde bancointer boleto <codigoSolicitacao>\n  Criar boleto   -> sde bancointer boleto-criar\n  Listar boletos -> sde bancointer boletos\n\nENDPOINT\n  Banco Inter API cobranca/cobrancas/<codigoSolicitacao>/pdf. OAuth2 + mTLS.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde bancointer boleto-pdf {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "bancointer.boleto-editar": {
+      "interface": "cli",
+      "command": "sde bancointer boleto-editar {args}",
+      "mutating": true,
+      "json": false,
+      "description": "Editar dados de boleto existente. codigoSolicitacao = UUID retornado por bancointer boletos.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "boleto-editar",
+        "properties": {
+          "codigoSolicitacao": {
+            "type": "string",
+            "description": ""
+          },
+          "json": {
+            "type": "string",
+            "description": "Campos a alterar em JSON"
+          }
+        },
+        "required": ["codigoSolicitacao", "json"]
+      },
+      "help": {
+        "summary": "Editar dados de boleto existente. codigoSolicitacao = UUID retornado por bancointer boletos.",
+        "usage": "ravi apps run bancointer boleto-editar --json -- <codigoSolicitacao> [options]",
+        "arguments": [
+          {
+            "name": "codigoSolicitacao",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "UUID do boleto a editar (obrigatorio, posicional)."
+          }
+        ],
+        "options": [
+          {
+            "flags": "--json <json>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Campos a alterar em JSON"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          },
+          {
+            "flags": "--dry-run",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Mostra payload que seria enviado sem executar"
+          }
+        ],
+        "examples": [
+          "cat changes.json | ravi apps run bancointer boleto-editar --json -- 550e8400-... --dry-run",
+          "cat changes.json | ravi apps run bancointer boleto-editar --json -- 550e8400-..."
+        ],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- FINANCEIRO — EFEITO REAL: altera uma cobranca REAL ja emitida no Banco Inter.\n    NUNCA testar em producao. HITL OBRIGATORIO.\n  - NAO idempotente no sentido de auditoria (altera estado da cobranca).\n  - Reversivel? Apenas re-editando ou cancelando; mudancas tem efeito imediato.\n  - Preview seguro: --dry-run mostra would_edit_boleto + changes sem aplicar."
+          },
+          {
+            "title": "ARGUMENTOS",
+            "content": "<codigoSolicitacao>  UUID do boleto a editar (obrigatorio, posicional).\n                       Origem: bancointer boletos.\n  --json <json>        Campos a alterar em JSON (obrigatorio).\n  --dry-run            Mostra mudancas sem aplicar."
+          },
+          {
+            "title": "USE",
+            "content": "Ajustar dados de uma cobranca ja emitida (ex.: vencimento, valor) apos aprovacao."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Criar nova cobranca -> boleto-criar\n  Cancelar            -> boleto-cancelar <codigoSolicitacao> --motivo <m>"
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- codigoSolicitacao e UUID (renomeado de <id> historico).\n  - JSON com os campos a alterar no formato API Inter.\n  - SEMPRE rodar --dry-run antes do envio real."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "SIM. ALTERA COBRANCA REAL. Aprovacao humana antes de executar sem --dry-run."
+          },
+          {
+            "title": "VALIDACOES AUTOMATICAS",
+            "content": "- argumento posicional + --json obrigatorios; JSON.parse.\n  - --dry-run retorna { dry_run: true, would_edit_boleto, changes } sem gravar."
+          },
+          {
+            "title": "RETORNO",
+            "content": "Objeto da cobranca atualizada. Com --dry-run: preview das mudancas."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "cat changes.json | sde bancointer boleto-editar 550e8400-... --dry-run\n  cat changes.json | sde bancointer boleto-editar 550e8400-..."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "JSON invalido      -> erro de validacao, nada alterado.\n  UUID inexistente   -> API Inter retorna erro."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "boletos -> boleto-editar <codigoSolicitacao>"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Criar    -> sde bancointer boleto-criar\n  Cancelar -> sde bancointer boleto-cancelar <codigoSolicitacao> --motivo <m>\n  Detalhe  -> sde bancointer boleto <codigoSolicitacao>"
+          },
+          {
+            "title": "ENDPOINT",
+            "content": "Banco Inter API cobranca/cobrancas/<codigoSolicitacao> (PATCH). OAuth2 + mTLS. WRITE FINANCEIRO."
+          }
+        ],
+        "permissions": ["bancointer:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": false,
+          "idempotent": false,
+          "hitlRequired": true,
+          "confirmationRequired": true,
+          "dryRunSupported": true,
+          "gates": ["confirmation:required", "hitl:required", "permission:bancointer:write", "preview:dry-run"]
+        },
+        "validationCommands": [
+          "ravi bancointer boleto-editar --help --json",
+          "ravi apps show bancointer --json",
+          "ravi apps run bancointer help --json",
+          "ravi apps check bancointer --json"
+        ],
+        "sourceText": "Usage: sde bancointer boleto-editar [options] <codigoSolicitacao>\n\nEditar dados de boleto existente. codigoSolicitacao = UUID retornado por bancointer boletos.\n\nOptions:\n  --json <json>  Campos a alterar em JSON\n  --yes          Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema       Imprime JSONSchema do input esperado e sai (default: false)\n  --dry-run      Mostra payload que seria enviado sem executar (default: false)\n  -h, --help     display help for command\nsde bancointer boleto-editar --help (padrao-ouro)\n\nEditar dados de boleto existente. WRITE FINANCEIRO.\n\nCUSTO / SEGURANCA\n  - FINANCEIRO — EFEITO REAL: altera uma cobranca REAL ja emitida no Banco Inter.\n    NUNCA testar em producao. HITL OBRIGATORIO.\n  - NAO idempotente no sentido de auditoria (altera estado da cobranca).\n  - Reversivel? Apenas re-editando ou cancelando; mudancas tem efeito imediato.\n  - Preview seguro: --dry-run mostra would_edit_boleto + changes sem aplicar.\n\nARGUMENTOS\n  <codigoSolicitacao>  UUID do boleto a editar (obrigatorio, posicional).\n                       Origem: bancointer boletos.\n  --json <json>        Campos a alterar em JSON (obrigatorio).\n  --dry-run            Mostra mudancas sem aplicar.\n\nUSE\n  Ajustar dados de uma cobranca ja emitida (ex.: vencimento, valor) apos aprovacao.\n\nNAO USE\n  Criar nova cobranca -> boleto-criar\n  Cancelar            -> boleto-cancelar <codigoSolicitacao> --motivo <m>\n\nREGRAS HARD\n  - codigoSolicitacao e UUID (renomeado de <id> historico).\n  - JSON com os campos a alterar no formato API Inter.\n  - SEMPRE rodar --dry-run antes do envio real.\n\nHITL OBRIGATORIO\n  SIM. ALTERA COBRANCA REAL. Aprovacao humana antes de executar sem --dry-run.\n\nVALIDACOES AUTOMATICAS\n  - argumento posicional + --json obrigatorios; JSON.parse.\n  - --dry-run retorna { dry_run: true, would_edit_boleto, changes } sem gravar.\n\nRETORNO\n  Objeto da cobranca atualizada. Com --dry-run: preview das mudancas.\n\nEXAMPLES\n  cat changes.json | sde bancointer boleto-editar 550e8400-... --dry-run\n  cat changes.json | sde bancointer boleto-editar 550e8400-...\n\nON ERROR\n  JSON invalido      -> erro de validacao, nada alterado.\n  UUID inexistente   -> API Inter retorna erro.\n\nPIPELINE\n  boletos -> boleto-editar <codigoSolicitacao>\n\nSEE ALSO\n  Criar    -> sde bancointer boleto-criar\n  Cancelar -> sde bancointer boleto-cancelar <codigoSolicitacao> --motivo <m>\n  Detalhe  -> sde bancointer boleto <codigoSolicitacao>\n\nENDPOINT\n  Banco Inter API cobranca/cobrancas/<codigoSolicitacao> (PATCH). OAuth2 + mTLS. WRITE FINANCEIRO.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde bancointer boleto-editar {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "bancointer:write"
+    },
+    "bancointer.boletos-sumario": {
+      "interface": "cli",
+      "command": "sde bancointer boletos-sumario {args} --json",
+      "mutating": false,
+      "json": true,
+      "description": "Sumario de cobrancas por periodo (totais por situacao). Janela > 15d pode subcontar.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "boletos-sumario",
+        "properties": {
+          "inicio": {
+            "type": "string",
+            "description": "Data inicial"
+          },
+          "fim": {
+            "type": "string",
+            "description": "Data final"
+          }
+        },
+        "required": ["inicio", "fim"]
+      },
+      "help": {
+        "summary": "Sumario de cobrancas por periodo (totais por situacao). Janela > 15d pode subcontar.",
+        "usage": "ravi apps run bancointer boletos-sumario --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--inicio <YYYY-MM-DD>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Data inicial"
+          },
+          {
+            "flags": "--fim <YYYY-MM-DD>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Data final"
+          },
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          }
+        ],
+        "examples": ["ravi apps run bancointer boletos-sumario --json -- --inicio 2026-05-01 --fim 2026-05-15"],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- READ-ONLY: agrega totais. NAO movimenta. SEGURO.\n  - Idempotente: sem efeito colateral.\n  - Reversivel? N/A.\n  - Rate limit: API Inter (sem auto-split interno). Sem HITL."
+          },
+          {
+            "title": "ARGUMENTOS",
+            "content": "--inicio <YYYY-MM-DD>  Data inicial (obrigatorio).\n  --fim <YYYY-MM-DD>     Data final (obrigatorio)."
+          },
+          {
+            "title": "USE",
+            "content": "Visao agregada: quantos/quanto por situacao (a receber, recebido, atrasado...)."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Lista item a item -> boletos\n  Detalhe de um     -> boleto <codigoSolicitacao>"
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- Datas YYYY-MM-DD.\n  - Janela > 15d pode SUBCONTAR (limite 100/chamada, sem auto-split aqui).\n    Para contagem confiavel em janela ampla, usar boletos --auto-split 15."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "Nao. Read-only."
+          },
+          {
+            "title": "VALIDACOES AUTOMATICAS",
+            "content": "- --inicio e --fim obrigatorios.\n  - AVISO quando janela > 15d (risco de subcontagem)."
+          },
+          {
+            "title": "RETORNO",
+            "content": "Objeto com totais por situacao de cobranca no periodo."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "sde bancointer boletos-sumario --inicio 2026-05-01 --fim 2026-05-15"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Falta --inicio/--fim -> erro de validacao."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "boletos-sumario -> (se janela ampla) boletos --auto-split 15"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Listar boletos -> sde bancointer boletos\n  Detalhe boleto -> sde bancointer boleto <codigoSolicitacao>"
+          },
+          {
+            "title": "ENDPOINT",
+            "content": "Banco Inter API cobranca/cobrancas/sumario (GET). OAuth2 + mTLS. Max 100/chamada."
+          }
+        ],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": true,
+          "hitlRequired": true,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": ["hitl:required"]
+        },
+        "validationCommands": [
+          "ravi bancointer boletos-sumario --help --json",
+          "ravi apps show bancointer --json",
+          "ravi apps run bancointer help --json",
+          "ravi apps check bancointer --json"
+        ],
+        "sourceText": "Usage: sde bancointer boletos-sumario [options]\n\nSumario de cobrancas por periodo (totais por situacao). Janela > 15d pode subcontar.\n\nOptions:\n  --inicio <YYYY-MM-DD>  Data inicial\n  --fim <YYYY-MM-DD>     Data final\n  --json                 Output puro JSON em stdout, logs em stderr (default: false)\n  --yes                  Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema               Imprime JSONSchema do input esperado e sai (default: false)\n  -h, --help             display help for command\nsde bancointer boletos-sumario --help (padrao-ouro)\n\nSumario de cobrancas por periodo (totais por situacao). READ-ONLY.\n\nCUSTO / SEGURANCA\n  - READ-ONLY: agrega totais. NAO movimenta. SEGURO.\n  - Idempotente: sem efeito colateral.\n  - Reversivel? N/A.\n  - Rate limit: API Inter (sem auto-split interno). Sem HITL.\n\nARGUMENTOS\n  --inicio <YYYY-MM-DD>  Data inicial (obrigatorio).\n  --fim <YYYY-MM-DD>     Data final (obrigatorio).\n\nUSE\n  Visao agregada: quantos/quanto por situacao (a receber, recebido, atrasado...).\n\nNAO USE\n  Lista item a item -> boletos\n  Detalhe de um     -> boleto <codigoSolicitacao>\n\nREGRAS HARD\n  - Datas YYYY-MM-DD.\n  - Janela > 15d pode SUBCONTAR (limite 100/chamada, sem auto-split aqui).\n    Para contagem confiavel em janela ampla, usar boletos --auto-split 15.\n\nHITL OBRIGATORIO\n  Nao. Read-only.\n\nVALIDACOES AUTOMATICAS\n  - --inicio e --fim obrigatorios.\n  - AVISO quando janela > 15d (risco de subcontagem).\n\nRETORNO\n  Objeto com totais por situacao de cobranca no periodo.\n\nEXAMPLES\n  sde bancointer boletos-sumario --inicio 2026-05-01 --fim 2026-05-15\n\nON ERROR\n  Falta --inicio/--fim -> erro de validacao.\n\nPIPELINE\n  boletos-sumario -> (se janela ampla) boletos --auto-split 15\n\nSEE ALSO\n  Listar boletos -> sde bancointer boletos\n  Detalhe boleto -> sde bancointer boleto <codigoSolicitacao>\n\nENDPOINT\n  Banco Inter API cobranca/cobrancas/sumario (GET). OAuth2 + mTLS. Max 100/chamada.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde bancointer boletos-sumario {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "bancointer.webhook-set": {
+      "interface": "cli",
+      "command": "sde bancointer webhook-set {args} --json",
+      "mutating": true,
+      "json": true,
+      "description": "Configurar webhook de cobranca. ATENCAO: sobrescreve webhook anterior (config global Banco Inter, afeta todos os eventos de cobranca da conta). Use webhook-get antes para confirmar URL atual.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "webhook-set",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "URL do webhook (HTTPS publico, sem autenticacao basica)"
+          }
+        },
+        "required": ["url"]
+      },
+      "help": {
+        "summary": "Configurar webhook de cobranca. ATENCAO: sobrescreve webhook anterior (config global Banco Inter, afeta todos os eventos de cobranca da conta). Use webhook-get antes para confirmar URL atual.",
+        "usage": "ravi apps run bancointer webhook-set --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--url <webhookUrl>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "URL do webhook (HTTPS publico, sem autenticacao basica)"
+          },
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          },
+          {
+            "flags": "--dry-run",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Mostra payload que seria enviado sem executar"
+          }
+        ],
+        "examples": [
+          "ravi apps run bancointer webhook-set --json --",
+          "ravi apps run bancointer webhook-set --json -- --url https://router.sdebot.top/inter-cobranca --dry-run",
+          "ravi apps run bancointer webhook-set --json -- --url https://router.sdebot.top/inter-cobranca"
+        ],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- WRITE config GLOBAL: define a URL de callback de TODOS os eventos de cobranca da conta.\n    SOBRESCREVE o webhook anterior SEM confirmacao da API. Nao move dinheiro,\n    mas erra-la quebra a integracao de cobranca inteira.\n  - NAO idempotente em historico (sobrescreve). Idempotente se mesma URL.\n  - Reversivel? Re-setando a URL antiga (consulte webhook-get ANTES) ou webhook-delete.\n  - Preview seguro: --dry-run mostra would_set_webhook sem aplicar."
+          },
+          {
+            "title": "ARGUMENTOS",
+            "content": "--url <webhookUrl>  URL do webhook (obrigatorio). HTTPS publico, sem basic-auth.\n  --dry-run           Mostra a URL sem aplicar."
+          },
+          {
+            "title": "USE",
+            "content": "Apontar callbacks de cobranca para um endpoint HTTPS publico (ex.: N8N/router)."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Conferir URL atual -> webhook-get (faca SEMPRE antes)\n  Remover webhook    -> webhook-delete"
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- URL HTTPS publica, alcancavel pela Inter, sem autenticacao basica.\n  - SEMPRE rodar webhook-get antes (sobrescreve sem aviso).\n  - Config GLOBAL: afeta todos os eventos de cobranca."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "SIM. Sobrescreve config global de producao. Aprovacao humana antes de executar sem --dry-run."
+          },
+          {
+            "title": "VALIDACOES AUTOMATICAS",
+            "content": "- --url obrigatorio.\n  - --dry-run retorna { dry_run: true, would_set_webhook } sem gravar."
+          },
+          {
+            "title": "RETORNO",
+            "content": "Confirmacao da config. Com --dry-run: preview."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "sde bancointer webhook-get\n  sde bancointer webhook-set --url https://router.sdebot.top/inter-cobranca --dry-run\n  sde bancointer webhook-set --url https://router.sdebot.top/inter-cobranca"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Falta --url        -> erro de validacao, nada alterado.\n  URL invalida/Inter -> API rejeita; config anterior pode permanecer."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "webhook-get -> webhook-set --url <url> -> webhook-callbacks (verifica entregas)"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Consultar  -> sde bancointer webhook-get\n  Remover    -> sde bancointer webhook-delete\n  Callbacks  -> sde bancointer webhook-callbacks"
+          },
+          {
+            "title": "ENDPOINT",
+            "content": "Banco Inter API cobranca/webhook (PUT). Config global. OAuth2 + mTLS. WRITE."
+          }
+        ],
+        "permissions": ["bancointer:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": false,
+          "idempotent": false,
+          "hitlRequired": true,
+          "confirmationRequired": true,
+          "dryRunSupported": true,
+          "gates": ["confirmation:required", "hitl:required", "permission:bancointer:write", "preview:dry-run"]
+        },
+        "validationCommands": [
+          "ravi bancointer webhook-set --help --json",
+          "ravi apps show bancointer --json",
+          "ravi apps run bancointer help --json",
+          "ravi apps check bancointer --json"
+        ],
+        "sourceText": "Usage: sde bancointer webhook-set [options]\n\nConfigurar webhook de cobranca. ATENCAO: sobrescreve webhook anterior (config global Banco Inter,\nafeta todos os eventos de cobranca da conta). Use webhook-get antes para confirmar URL atual.\n\nOptions:\n  --url <webhookUrl>  URL do webhook (HTTPS publico, sem autenticacao basica)\n  --json              Output puro JSON em stdout, logs em stderr (default: false)\n  --yes               Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema            Imprime JSONSchema do input esperado e sai (default: false)\n  --dry-run           Mostra payload que seria enviado sem executar (default: false)\n  -h, --help          display help for command\nsde bancointer webhook-set --help (padrao-ouro)\n\nConfigurar webhook de cobranca (config global). WRITE.\n\nCUSTO / SEGURANCA\n  - WRITE config GLOBAL: define a URL de callback de TODOS os eventos de cobranca da conta.\n    SOBRESCREVE o webhook anterior SEM confirmacao da API. Nao move dinheiro,\n    mas erra-la quebra a integracao de cobranca inteira.\n  - NAO idempotente em historico (sobrescreve). Idempotente se mesma URL.\n  - Reversivel? Re-setando a URL antiga (consulte webhook-get ANTES) ou webhook-delete.\n  - Preview seguro: --dry-run mostra would_set_webhook sem aplicar.\n\nARGUMENTOS\n  --url <webhookUrl>  URL do webhook (obrigatorio). HTTPS publico, sem basic-auth.\n  --dry-run           Mostra a URL sem aplicar.\n\nUSE\n  Apontar callbacks de cobranca para um endpoint HTTPS publico (ex.: N8N/router).\n\nNAO USE\n  Conferir URL atual -> webhook-get (faca SEMPRE antes)\n  Remover webhook    -> webhook-delete\n\nREGRAS HARD\n  - URL HTTPS publica, alcancavel pela Inter, sem autenticacao basica.\n  - SEMPRE rodar webhook-get antes (sobrescreve sem aviso).\n  - Config GLOBAL: afeta todos os eventos de cobranca.\n\nHITL OBRIGATORIO\n  SIM. Sobrescreve config global de producao. Aprovacao humana antes de executar sem --dry-run.\n\nVALIDACOES AUTOMATICAS\n  - --url obrigatorio.\n  - --dry-run retorna { dry_run: true, would_set_webhook } sem gravar.\n\nRETORNO\n  Confirmacao da config. Com --dry-run: preview.\n\nEXAMPLES\n  sde bancointer webhook-get\n  sde bancointer webhook-set --url https://router.sdebot.top/inter-cobranca --dry-run\n  sde bancointer webhook-set --url https://router.sdebot.top/inter-cobranca\n\nON ERROR\n  Falta --url        -> erro de validacao, nada alterado.\n  URL invalida/Inter -> API rejeita; config anterior pode permanecer.\n\nPIPELINE\n  webhook-get -> webhook-set --url <url> -> webhook-callbacks (verifica entregas)\n\nSEE ALSO\n  Consultar  -> sde bancointer webhook-get\n  Remover    -> sde bancointer webhook-delete\n  Callbacks  -> sde bancointer webhook-callbacks\n\nENDPOINT\n  Banco Inter API cobranca/webhook (PUT). Config global. OAuth2 + mTLS. WRITE.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde bancointer webhook-set {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "bancointer:write"
+    },
+    "bancointer.webhook-get": {
+      "interface": "cli",
+      "command": "sde bancointer webhook-get {args} --json",
+      "mutating": false,
+      "json": true,
+      "description": "Consultar webhook de cobranca configurado (config global). Use antes de `webhook-set` (sobrescreve) ou `webhook-delete` (destrutivo) para confirmar URL ativa.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "webhook-get",
+        "properties": {},
+        "required": []
+      },
+      "help": {
+        "summary": "Consultar webhook de cobranca configurado (config global). Use antes de `webhook-set` (sobrescreve) ou `webhook-delete` (destrutivo) para confirmar URL ativa.",
+        "usage": "ravi apps run bancointer webhook-get --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          }
+        ],
+        "examples": ["ravi apps run bancointer webhook-get --json --"],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- READ-ONLY: le a config atual do webhook. NAO altera nada. SEGURO.\n  - Idempotente: sem efeito colateral.\n  - Reversivel? N/A.\n  - Rate limit: API Inter. Sem HITL."
+          },
+          {
+            "title": "ARGUMENTOS",
+            "content": "(nenhum)"
+          },
+          {
+            "title": "USE",
+            "content": "Confirmar a URL de webhook ativa ANTES de webhook-set (sobrescreve) ou\n  webhook-delete (destrutivo). Sempre consultar antes de mexer."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Trocar a URL    -> webhook-set --url <https-url>\n  Remover webhook -> webhook-delete\n  Ver callbacks   -> webhook-callbacks"
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- Config e GLOBAL da conta: afeta todos os eventos de cobranca."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "Nao. Read-only."
+          },
+          {
+            "title": "VALIDACOES AUTOMATICAS",
+            "content": "Nenhuma entrada a validar."
+          },
+          {
+            "title": "RETORNO",
+            "content": "Objeto com a URL de webhook atualmente configurada (ou vazio se nenhum)."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "sde bancointer webhook-get"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Falha mTLS/OAuth -> verificar certificado e credenciais."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "webhook-get -> webhook-set / webhook-delete (sempre conferir antes)"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Definir webhook  -> sde bancointer webhook-set --url <https-url>\n  Remover webhook  -> sde bancointer webhook-delete\n  Callbacks        -> sde bancointer webhook-callbacks"
+          },
+          {
+            "title": "ENDPOINT",
+            "content": "Banco Inter API cobranca/webhook (GET). Config global. OAuth2 + mTLS."
+          }
+        ],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": true,
+          "hitlRequired": true,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": ["hitl:required"]
+        },
+        "validationCommands": [
+          "ravi bancointer webhook-get --help --json",
+          "ravi apps show bancointer --json",
+          "ravi apps run bancointer help --json",
+          "ravi apps check bancointer --json"
+        ],
+        "sourceText": "Usage: sde bancointer webhook-get [options]\n\nConsultar webhook de cobranca configurado (config global). Use antes de `webhook-set` (sobrescreve)\nou `webhook-delete` (destrutivo) para confirmar URL ativa.\n\nOptions:\n  --json      Output puro JSON em stdout, logs em stderr (default: false)\n  --yes       Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema    Imprime JSONSchema do input esperado e sai (default: false)\n  -h, --help  display help for command\nsde bancointer webhook-get --help (padrao-ouro)\n\nConsultar webhook de cobranca configurado (config global). READ-ONLY.\n\nCUSTO / SEGURANCA\n  - READ-ONLY: le a config atual do webhook. NAO altera nada. SEGURO.\n  - Idempotente: sem efeito colateral.\n  - Reversivel? N/A.\n  - Rate limit: API Inter. Sem HITL.\n\nARGUMENTOS\n  (nenhum)\n\nUSE\n  Confirmar a URL de webhook ativa ANTES de webhook-set (sobrescreve) ou\n  webhook-delete (destrutivo). Sempre consultar antes de mexer.\n\nNAO USE\n  Trocar a URL    -> webhook-set --url <https-url>\n  Remover webhook -> webhook-delete\n  Ver callbacks   -> webhook-callbacks\n\nREGRAS HARD\n  - Config e GLOBAL da conta: afeta todos os eventos de cobranca.\n\nHITL OBRIGATORIO\n  Nao. Read-only.\n\nVALIDACOES AUTOMATICAS\n  Nenhuma entrada a validar.\n\nRETORNO\n  Objeto com a URL de webhook atualmente configurada (ou vazio se nenhum).\n\nEXAMPLES\n  sde bancointer webhook-get\n\nON ERROR\n  Falha mTLS/OAuth -> verificar certificado e credenciais.\n\nPIPELINE\n  webhook-get -> webhook-set / webhook-delete (sempre conferir antes)\n\nSEE ALSO\n  Definir webhook  -> sde bancointer webhook-set --url <https-url>\n  Remover webhook  -> sde bancointer webhook-delete\n  Callbacks        -> sde bancointer webhook-callbacks\n\nENDPOINT\n  Banco Inter API cobranca/webhook (GET). Config global. OAuth2 + mTLS.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde bancointer webhook-get {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "bancointer.webhook-delete": {
+      "interface": "cli",
+      "command": "sde bancointer webhook-delete {args} --json",
+      "mutating": true,
+      "json": true,
+      "description": "Remover webhook de cobranca (destrutivo - config global). Apos remocao nenhum callback eh enviado; eventos perdidos durante ausencia NAO sao reenviados retroativamente.",
+      "destructive": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "webhook-delete",
+        "properties": {},
+        "required": []
+      },
+      "help": {
+        "summary": "Remover webhook de cobranca (destrutivo - config global). Apos remocao nenhum callback eh enviado; eventos perdidos durante ausencia NAO sao reenviados retroativamente.",
+        "usage": "ravi apps run bancointer webhook-delete --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          },
+          {
+            "flags": "--dry-run",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Mostra payload que seria enviado sem executar"
+          }
+        ],
+        "examples": [
+          "ravi apps run bancointer webhook-delete --json --",
+          "ravi apps run bancointer webhook-delete --json -- --dry-run"
+        ],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- DESTRUTIVO config GLOBAL: remove a URL de callback de cobranca da conta.\n    Nao move dinheiro, mas APOS a remocao NENHUM callback e enviado e os eventos\n    perdidos durante a ausencia NAO sao reenviados retroativamente. HITL OBRIGATORIO.\n  - NAO idempotente em consequencia (perda de eventos durante o gap).\n  - Reversivel? Apenas reconfigurando via webhook-set; eventos do gap sao perdidos.\n  - Preview seguro: --dry-run mostra would_delete_webhook sem remover."
+          },
+          {
+            "title": "ARGUMENTOS",
+            "content": "--dry-run  Mostra a intencao sem remover."
+          },
+          {
+            "title": "USE",
+            "content": "Desligar a integracao de callbacks de cobranca (manutencao/migracao planejada)."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Trocar URL          -> webhook-set --url <nova-url>\n  Conferir URL atual  -> webhook-get (faca SEMPRE antes)"
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- SEMPRE rodar webhook-get antes (para poder restaurar depois).\n  - Eventos durante a ausencia sao PERDIDOS — planeje o gap."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "SIM. Remove config global de producao com perda de eventos no gap. Aprovacao humana\n  antes de executar sem --dry-run."
+          },
+          {
+            "title": "VALIDACOES AUTOMATICAS",
+            "content": "- --dry-run retorna { dry_run: true, would_delete_webhook } sem remover."
+          },
+          {
+            "title": "RETORNO",
+            "content": "Confirmacao da remocao. Com --dry-run: preview."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "sde bancointer webhook-get\n  sde bancointer webhook-delete --dry-run\n  sde bancointer webhook-delete"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Falha API Inter -> webhook pode permanecer configurado (verificar com webhook-get)."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "webhook-get -> webhook-delete -> (mais tarde) webhook-set --url <url>"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Consultar -> sde bancointer webhook-get\n  Definir   -> sde bancointer webhook-set --url <url>"
+          },
+          {
+            "title": "ENDPOINT",
+            "content": "Banco Inter API cobranca/webhook (DELETE). Config global. OAuth2 + mTLS. DESTRUTIVO."
+          }
+        ],
+        "permissions": ["bancointer:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": true,
+          "idempotent": false,
+          "hitlRequired": true,
+          "confirmationRequired": true,
+          "dryRunSupported": true,
+          "gates": ["confirmation:required", "hitl:required", "permission:bancointer:write", "preview:dry-run"]
+        },
+        "validationCommands": [
+          "ravi bancointer webhook-delete --help --json",
+          "ravi apps show bancointer --json",
+          "ravi apps run bancointer help --json",
+          "ravi apps check bancointer --json"
+        ],
+        "sourceText": "Usage: sde bancointer webhook-delete [options]\n\nRemover webhook de cobranca (destrutivo - config global). Apos remocao nenhum callback eh enviado;\neventos perdidos durante ausencia NAO sao reenviados retroativamente.\n\nOptions:\n  --json      Output puro JSON em stdout, logs em stderr (default: false)\n  --yes       Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema    Imprime JSONSchema do input esperado e sai (default: false)\n  --dry-run   Mostra payload que seria enviado sem executar (default: false)\n  -h, --help  display help for command\nsde bancointer webhook-delete --help (padrao-ouro)\n\nRemover webhook de cobranca (config global). DESTRUTIVO.\n\nCUSTO / SEGURANCA\n  - DESTRUTIVO config GLOBAL: remove a URL de callback de cobranca da conta.\n    Nao move dinheiro, mas APOS a remocao NENHUM callback e enviado e os eventos\n    perdidos durante a ausencia NAO sao reenviados retroativamente. HITL OBRIGATORIO.\n  - NAO idempotente em consequencia (perda de eventos durante o gap).\n  - Reversivel? Apenas reconfigurando via webhook-set; eventos do gap sao perdidos.\n  - Preview seguro: --dry-run mostra would_delete_webhook sem remover.\n\nARGUMENTOS\n  --dry-run  Mostra a intencao sem remover.\n\nUSE\n  Desligar a integracao de callbacks de cobranca (manutencao/migracao planejada).\n\nNAO USE\n  Trocar URL          -> webhook-set --url <nova-url>\n  Conferir URL atual  -> webhook-get (faca SEMPRE antes)\n\nREGRAS HARD\n  - SEMPRE rodar webhook-get antes (para poder restaurar depois).\n  - Eventos durante a ausencia sao PERDIDOS — planeje o gap.\n\nHITL OBRIGATORIO\n  SIM. Remove config global de producao com perda de eventos no gap. Aprovacao humana\n  antes de executar sem --dry-run.\n\nVALIDACOES AUTOMATICAS\n  - --dry-run retorna { dry_run: true, would_delete_webhook } sem remover.\n\nRETORNO\n  Confirmacao da remocao. Com --dry-run: preview.\n\nEXAMPLES\n  sde bancointer webhook-get\n  sde bancointer webhook-delete --dry-run\n  sde bancointer webhook-delete\n\nON ERROR\n  Falha API Inter -> webhook pode permanecer configurado (verificar com webhook-get).\n\nPIPELINE\n  webhook-get -> webhook-delete -> (mais tarde) webhook-set --url <url>\n\nSEE ALSO\n  Consultar -> sde bancointer webhook-get\n  Definir   -> sde bancointer webhook-set --url <url>\n\nENDPOINT\n  Banco Inter API cobranca/webhook (DELETE). Config global. OAuth2 + mTLS. DESTRUTIVO.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde bancointer webhook-delete {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "bancointer:write"
+    },
+    "bancointer.webhook-callbacks": {
+      "interface": "cli",
+      "command": "sde bancointer webhook-callbacks {args} --json",
+      "mutating": false,
+      "json": true,
+      "description": "Listar callbacks do webhook de cobranca. API Inter retorna max 50 callbacks por chamada.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "webhook-callbacks",
+        "properties": {
+          "inicio": {
+            "type": "string",
+            "description": "Data/hora inicio (ISO 8601)"
+          },
+          "fim": {
+            "type": "string",
+            "description": "Data/hora fim (ISO 8601)"
+          }
+        },
+        "required": []
+      },
+      "help": {
+        "summary": "Listar callbacks do webhook de cobranca. API Inter retorna max 50 callbacks por chamada.",
+        "usage": "ravi apps run bancointer webhook-callbacks --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--inicio <ISO-datetime>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Data/hora inicio (ISO 8601)"
+          },
+          {
+            "flags": "--fim <ISO-datetime>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Data/hora fim (ISO 8601)"
+          },
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          }
+        ],
+        "examples": [
+          "ravi apps run bancointer webhook-callbacks --json --",
+          "ravi apps run bancointer webhook-callbacks --json -- --inicio 2026-06-01T00:00:00Z --fim 2026-06-03T23:59:59Z"
+        ],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- READ-ONLY: lista entregas de callback. NAO altera nada. SEGURO.\n  - Idempotente: sem efeito colateral.\n  - Reversivel? N/A.\n  - Rate limit: API Inter. Sem HITL."
+          },
+          {
+            "title": "ARGUMENTOS",
+            "content": "--inicio <ISO-datetime>  Data/hora inicio (ISO 8601).\n  --fim <ISO-datetime>     Data/hora fim (ISO 8601)."
+          },
+          {
+            "title": "USE",
+            "content": "Auditar entregas de webhook; identificar callbacks falhos antes de webhook-retry."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Reenviar falhos -> webhook-retry\n  Ver config URL  -> webhook-get"
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- Datas em ISO 8601 datetime (nao apenas YYYY-MM-DD).\n  - Se retornar 50 itens: provavel truncamento, estreite a janela."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "Nao. Read-only."
+          },
+          {
+            "title": "VALIDACOES AUTOMATICAS",
+            "content": "- AVISO quando retornar 50 itens (limite API Inter)."
+          },
+          {
+            "title": "RETORNO",
+            "content": "Array de callbacks com status de entrega."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "sde bancointer webhook-callbacks\n  sde bancointer webhook-callbacks --inicio 2026-06-01T00:00:00Z --fim 2026-06-03T23:59:59Z"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Falha mTLS/OAuth -> verificar certificado e credenciais."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "webhook-callbacks -> webhook-retry (reenviar falhos)"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Reenviar falhos -> sde bancointer webhook-retry\n  Ver config      -> sde bancointer webhook-get"
+          },
+          {
+            "title": "ENDPOINT",
+            "content": "Banco Inter API cobranca/webhook/callbacks (GET). OAuth2 + mTLS. Max 50/chamada."
+          }
+        ],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": true,
+          "hitlRequired": true,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": ["hitl:required"]
+        },
+        "validationCommands": [
+          "ravi bancointer webhook-callbacks --help --json",
+          "ravi apps show bancointer --json",
+          "ravi apps run bancointer help --json",
+          "ravi apps check bancointer --json"
+        ],
+        "sourceText": "Usage: sde bancointer webhook-callbacks [options]\n\nListar callbacks do webhook de cobranca. API Inter retorna max 50 callbacks por chamada.\n\nOptions:\n  --inicio <ISO-datetime>  Data/hora inicio (ISO 8601)\n  --fim <ISO-datetime>     Data/hora fim (ISO 8601)\n  --json                   Output puro JSON em stdout, logs em stderr (default: false)\n  --yes                    Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema                 Imprime JSONSchema do input esperado e sai (default: false)\n  -h, --help               display help for command\nsde bancointer webhook-callbacks --help (padrao-ouro)\n\nListar callbacks do webhook de cobranca. READ-ONLY.\nAPI Inter retorna no max 50 callbacks por chamada.\n\nCUSTO / SEGURANCA\n  - READ-ONLY: lista entregas de callback. NAO altera nada. SEGURO.\n  - Idempotente: sem efeito colateral.\n  - Reversivel? N/A.\n  - Rate limit: API Inter. Sem HITL.\n\nARGUMENTOS\n  --inicio <ISO-datetime>  Data/hora inicio (ISO 8601).\n  --fim <ISO-datetime>     Data/hora fim (ISO 8601).\n\nUSE\n  Auditar entregas de webhook; identificar callbacks falhos antes de webhook-retry.\n\nNAO USE\n  Reenviar falhos -> webhook-retry\n  Ver config URL  -> webhook-get\n\nREGRAS HARD\n  - Datas em ISO 8601 datetime (nao apenas YYYY-MM-DD).\n  - Se retornar 50 itens: provavel truncamento, estreite a janela.\n\nHITL OBRIGATORIO\n  Nao. Read-only.\n\nVALIDACOES AUTOMATICAS\n  - AVISO quando retornar 50 itens (limite API Inter).\n\nRETORNO\n  Array de callbacks com status de entrega.\n\nEXAMPLES\n  sde bancointer webhook-callbacks\n  sde bancointer webhook-callbacks --inicio 2026-06-01T00:00:00Z --fim 2026-06-03T23:59:59Z\n\nON ERROR\n  Falha mTLS/OAuth -> verificar certificado e credenciais.\n\nPIPELINE\n  webhook-callbacks -> webhook-retry (reenviar falhos)\n\nSEE ALSO\n  Reenviar falhos -> sde bancointer webhook-retry\n  Ver config      -> sde bancointer webhook-get\n\nENDPOINT\n  Banco Inter API cobranca/webhook/callbacks (GET). OAuth2 + mTLS. Max 50/chamada.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde bancointer webhook-callbacks {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "bancointer.webhook-retry": {
+      "interface": "cli",
+      "command": "sde bancointer webhook-retry {args} --json",
+      "mutating": true,
+      "json": true,
+      "description": "Reenviar callbacks falhos do webhook de cobranca. Use `bancointer webhook-callbacks` antes para verificar quais falharam.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "webhook-retry",
+        "properties": {},
+        "required": []
+      },
+      "help": {
+        "summary": "Reenviar callbacks falhos do webhook de cobranca. Use `bancointer webhook-callbacks` antes para verificar quais falharam.",
+        "usage": "ravi apps run bancointer webhook-retry --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          },
+          {
+            "flags": "--dry-run",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Mostra payload que seria enviado sem executar"
+          }
+        ],
+        "examples": [
+          "ravi apps run bancointer webhook-retry --json --",
+          "ravi apps run bancointer webhook-retry --json -- --dry-run"
+        ],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- WRITE NAO-FINANCEIRO: dispara reentrega de callbacks que falharam.\n    Nao move dinheiro, mas REENVIA notificacoes ao seu endpoint (efeito real:\n    consumidores downstream podem reprocessar eventos). HITL recomendado.\n  - NAO idempotente do lado do consumidor (pode causar reprocessamento duplicado).\n  - Reversivel? NAO — uma vez reenviados, os callbacks ja foram entregues.\n  - Preview seguro: --dry-run mostra would_retry_failed_callbacks sem reenviar."
+          },
+          {
+            "title": "ARGUMENTOS",
+            "content": "--dry-run  Mostra a intencao sem reenviar."
+          },
+          {
+            "title": "USE",
+            "content": "Recuperar callbacks que nao chegaram (ex.: endpoint estava fora do ar).\n  Rodar webhook-callbacks ANTES para confirmar quais falharam."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Ver o que falhou -> webhook-callbacks\n  Trocar URL       -> webhook-set"
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- Garantir que o endpoint downstream e idempotente (pode receber duplicatas).\n  - Conferir webhook-callbacks antes de disparar reentrega em massa."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "Recomendado. Pode causar reprocessamento downstream. Aprovacao antes de executar sem --dry-run."
+          },
+          {
+            "title": "VALIDACOES AUTOMATICAS",
+            "content": "- --dry-run retorna { dry_run: true, would_retry_failed_callbacks } sem reenviar."
+          },
+          {
+            "title": "RETORNO",
+            "content": "Confirmacao do reenvio. Com --dry-run: preview."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "sde bancointer webhook-callbacks\n  sde bancointer webhook-retry --dry-run\n  sde bancointer webhook-retry"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Falha API Inter -> reentrega pode nao ocorrer (verificar webhook-callbacks)."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "webhook-callbacks -> webhook-retry"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Listar callbacks -> sde bancointer webhook-callbacks\n  Config webhook   -> sde bancointer webhook-get"
+          },
+          {
+            "title": "ENDPOINT",
+            "content": "Banco Inter API cobranca/webhook (reentrega de callbacks). OAuth2 + mTLS. WRITE."
+          }
+        ],
+        "permissions": ["bancointer:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": false,
+          "idempotent": false,
+          "hitlRequired": true,
+          "confirmationRequired": true,
+          "dryRunSupported": true,
+          "gates": ["confirmation:required", "hitl:required", "permission:bancointer:write", "preview:dry-run"]
+        },
+        "validationCommands": [
+          "ravi bancointer webhook-retry --help --json",
+          "ravi apps show bancointer --json",
+          "ravi apps run bancointer help --json",
+          "ravi apps check bancointer --json"
+        ],
+        "sourceText": "Usage: sde bancointer webhook-retry [options]\n\nReenviar callbacks falhos do webhook de cobranca. Use `bancointer webhook-callbacks` antes para\nverificar quais falharam.\n\nOptions:\n  --json      Output puro JSON em stdout, logs em stderr (default: false)\n  --yes       Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema    Imprime JSONSchema do input esperado e sai (default: false)\n  --dry-run   Mostra payload que seria enviado sem executar (default: false)\n  -h, --help  display help for command\nsde bancointer webhook-retry --help (padrao-ouro)\n\nReenviar callbacks falhos do webhook de cobranca. WRITE (efeito externo).\n\nCUSTO / SEGURANCA\n  - WRITE NAO-FINANCEIRO: dispara reentrega de callbacks que falharam.\n    Nao move dinheiro, mas REENVIA notificacoes ao seu endpoint (efeito real:\n    consumidores downstream podem reprocessar eventos). HITL recomendado.\n  - NAO idempotente do lado do consumidor (pode causar reprocessamento duplicado).\n  - Reversivel? NAO — uma vez reenviados, os callbacks ja foram entregues.\n  - Preview seguro: --dry-run mostra would_retry_failed_callbacks sem reenviar.\n\nARGUMENTOS\n  --dry-run  Mostra a intencao sem reenviar.\n\nUSE\n  Recuperar callbacks que nao chegaram (ex.: endpoint estava fora do ar).\n  Rodar webhook-callbacks ANTES para confirmar quais falharam.\n\nNAO USE\n  Ver o que falhou -> webhook-callbacks\n  Trocar URL       -> webhook-set\n\nREGRAS HARD\n  - Garantir que o endpoint downstream e idempotente (pode receber duplicatas).\n  - Conferir webhook-callbacks antes de disparar reentrega em massa.\n\nHITL OBRIGATORIO\n  Recomendado. Pode causar reprocessamento downstream. Aprovacao antes de executar sem --dry-run.\n\nVALIDACOES AUTOMATICAS\n  - --dry-run retorna { dry_run: true, would_retry_failed_callbacks } sem reenviar.\n\nRETORNO\n  Confirmacao do reenvio. Com --dry-run: preview.\n\nEXAMPLES\n  sde bancointer webhook-callbacks\n  sde bancointer webhook-retry --dry-run\n  sde bancointer webhook-retry\n\nON ERROR\n  Falha API Inter -> reentrega pode nao ocorrer (verificar webhook-callbacks).\n\nPIPELINE\n  webhook-callbacks -> webhook-retry\n\nSEE ALSO\n  Listar callbacks -> sde bancointer webhook-callbacks\n  Config webhook   -> sde bancointer webhook-get\n\nENDPOINT\n  Banco Inter API cobranca/webhook (reentrega de callbacks). OAuth2 + mTLS. WRITE.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde bancointer webhook-retry {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "bancointer:write"
+    },
+    "bancointer.boletos-para-notificar": {
+      "interface": "cli",
+      "command": "sde bancointer boletos-para-notificar {args} --json",
+      "mutating": false,
+      "json": true,
+      "description": "Boletos pendentes de notificacao (EMISSAO, LEMBRETE_2DIAS, VENCIMENTO_HOJE). Output alimenta `bancointer boleto-notificado <codigoSolicitacao> --tipo <tipo>` para marcar como enviado.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "boletos-para-notificar",
+        "properties": {},
+        "required": []
+      },
+      "help": {
+        "summary": "Boletos pendentes de notificacao (EMISSAO, LEMBRETE_2DIAS, VENCIMENTO_HOJE). Output alimenta `bancointer boleto-notificado <codigoSolicitacao> --tipo <tipo>` para marcar como enviado.",
+        "usage": "ravi apps run bancointer boletos-para-notificar --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          }
+        ],
+        "examples": ["ravi apps run bancointer boletos-para-notificar --json --"],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- READ-ONLY: lista o que precisa notificar (consulta de estado local/banco). SEGURO.\n  - Idempotente: sem efeito colateral.\n  - Reversivel? N/A.\n  - Sem HITL."
+          },
+          {
+            "title": "ARGUMENTOS",
+            "content": "(nenhum)"
+          },
+          {
+            "title": "USE",
+            "content": "Obter a fila de boletos que ainda precisam de aviso ao cliente.\n  Output alimenta boleto-notificado <codigoSolicitacao> --tipo <tipo>."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Marcar como enviado -> boleto-notificado <codigoSolicitacao> --tipo <tipo>\n  Listar todos boletos -> boletos"
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- Cada item traz codigoSolicitacao + tipo sugerido (um dos 3 enums)."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "Nao. Read-only. (O envio em si e externo; marcar como notificado e write.)"
+          },
+          {
+            "title": "VALIDACOES AUTOMATICAS",
+            "content": "Nenhuma entrada a validar."
+          },
+          {
+            "title": "RETORNO",
+            "content": "Array de boletos pendentes com codigoSolicitacao, tipo e dados do pagador."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "sde bancointer boletos-para-notificar"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Falha de acesso ao banco/API -> verificar conexao e credenciais."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "boletos-para-notificar -> (enviar msg ao cliente) -> boleto-notificado"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Marcar notificado -> sde bancointer boleto-notificado <codigoSolicitacao> --tipo <tipo>\n  Listar boletos    -> sde bancointer boletos"
+          },
+          {
+            "title": "ENDPOINT",
+            "content": "Estado local (banco crm) + Banco Inter cobranca. Read-only."
+          }
+        ],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": true,
+          "hitlRequired": true,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": ["hitl:required"]
+        },
+        "validationCommands": [
+          "ravi bancointer boletos-para-notificar --help --json",
+          "ravi apps show bancointer --json",
+          "ravi apps run bancointer help --json",
+          "ravi apps check bancointer --json"
+        ],
+        "sourceText": "Usage: sde bancointer boletos-para-notificar [options]\n\nBoletos pendentes de notificacao (EMISSAO, LEMBRETE_2DIAS, VENCIMENTO_HOJE). Output alimenta\n`bancointer boleto-notificado <codigoSolicitacao> --tipo <tipo>` para marcar como enviado.\n\nOptions:\n  --json      Output puro JSON em stdout, logs em stderr (default: false)\n  --yes       Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema    Imprime JSONSchema do input esperado e sai (default: false)\n  -h, --help  display help for command\nsde bancointer boletos-para-notificar --help (padrao-ouro)\n\nBoletos pendentes de notificacao. READ-ONLY.\nTipos: EMISSAO, LEMBRETE_2DIAS, VENCIMENTO_HOJE.\n\nCUSTO / SEGURANCA\n  - READ-ONLY: lista o que precisa notificar (consulta de estado local/banco). SEGURO.\n  - Idempotente: sem efeito colateral.\n  - Reversivel? N/A.\n  - Sem HITL.\n\nARGUMENTOS\n  (nenhum)\n\nUSE\n  Obter a fila de boletos que ainda precisam de aviso ao cliente.\n  Output alimenta boleto-notificado <codigoSolicitacao> --tipo <tipo>.\n\nNAO USE\n  Marcar como enviado -> boleto-notificado <codigoSolicitacao> --tipo <tipo>\n  Listar todos boletos -> boletos\n\nREGRAS HARD\n  - Cada item traz codigoSolicitacao + tipo sugerido (um dos 3 enums).\n\nHITL OBRIGATORIO\n  Nao. Read-only. (O envio em si e externo; marcar como notificado e write.)\n\nVALIDACOES AUTOMATICAS\n  Nenhuma entrada a validar.\n\nRETORNO\n  Array de boletos pendentes com codigoSolicitacao, tipo e dados do pagador.\n\nEXAMPLES\n  sde bancointer boletos-para-notificar\n\nON ERROR\n  Falha de acesso ao banco/API -> verificar conexao e credenciais.\n\nPIPELINE\n  boletos-para-notificar -> (enviar msg ao cliente) -> boleto-notificado\n\nSEE ALSO\n  Marcar notificado -> sde bancointer boleto-notificado <codigoSolicitacao> --tipo <tipo>\n  Listar boletos    -> sde bancointer boletos\n\nENDPOINT\n  Estado local (banco crm) + Banco Inter cobranca. Read-only.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde bancointer boletos-para-notificar {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "bancointer.boleto-notificado": {
+      "interface": "cli",
+      "command": "sde bancointer boleto-notificado {args} --json",
+      "mutating": true,
+      "json": true,
+      "description": "Registrar boleto como notificado (evita duplicidade). codigoSolicitacao vem de `bancointer boletos-para-notificar`. Tipo deve ser um dos 3 enums abaixo (case-sensitive).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "boleto-notificado",
+        "properties": {
+          "codigoSolicitacao": {
+            "type": "string",
+            "description": ""
+          },
+          "tipo": {
+            "type": "string",
+            "description": "Tipo (obrigatorio, enum): EMISSAO | LEMBRETE_2DIAS | VENCIMENTO_HOJE"
+          },
+          "cpf": {
+            "type": "string",
+            "description": "CPF/CNPJ do pagador"
+          },
+          "telefone": {
+            "type": "string",
+            "description": "Telefone do pagador"
+          },
+          "nome": {
+            "type": "string",
+            "description": "Nome do pagador"
+          },
+          "valor": {
+            "type": "string",
+            "description": "Valor do boleto"
+          }
+        },
+        "required": ["codigoSolicitacao", "tipo"]
+      },
+      "help": {
+        "summary": "Registrar boleto como notificado (evita duplicidade). codigoSolicitacao vem de `bancointer boletos-para-notificar`. Tipo deve ser um dos 3 enums abaixo (case-sensitive).",
+        "usage": "ravi apps run bancointer boleto-notificado --json -- <codigoSolicitacao> [options]",
+        "arguments": [
+          {
+            "name": "codigoSolicitacao",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "UUID do boleto (obrigatorio, posicional)."
+          }
+        ],
+        "options": [
+          {
+            "flags": "--tipo <tipo>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Tipo (obrigatorio, enum): EMISSAO | LEMBRETE_2DIAS | VENCIMENTO_HOJE"
+          },
+          {
+            "flags": "--cpf <cpfCnpj>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "CPF/CNPJ do pagador"
+          },
+          {
+            "flags": "--telefone <tel>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Telefone do pagador"
+          },
+          {
+            "flags": "--nome <nome>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Nome do pagador"
+          },
+          {
+            "flags": "--valor <valor>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Valor do boleto"
+          },
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          },
+          {
+            "flags": "--dry-run",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Mostra payload que seria enviado sem executar"
+          }
+        ],
+        "examples": [
+          "ravi apps run bancointer boleto-notificado --json -- 550e8400-... --tipo LEMBRETE_2DIAS --dry-run",
+          "ravi apps run bancointer boleto-notificado --json -- 550e8400-... --tipo VENCIMENTO_HOJE --telefone 5531999999999"
+        ],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- WRITE NAO-FINANCEIRO: grava no estado local (banco crm) que o aviso foi enviado.\n    NAO movimenta dinheiro, NAO altera a cobranca no Banco Inter.\n  - Idempotente por (codigoSolicitacao, tipo): evita re-notificar.\n  - Reversivel? Estado local — pode ser reajustado no banco se necessario.\n  - HITL leve: confirme que o aviso REALMENTE foi enviado antes de marcar."
+          },
+          {
+            "title": "ARGUMENTOS",
+            "content": "<codigoSolicitacao>  UUID do boleto (obrigatorio, posicional).\n                       Origem: bancointer boletos-para-notificar.\n  --tipo <tipo>        OBRIGATORIO (enum, case-sensitive):\n                       EMISSAO | LEMBRETE_2DIAS | VENCIMENTO_HOJE\n  --cpf <cpfCnpj>      CPF/CNPJ do pagador (opcional, metadado).\n  --telefone <tel>     Telefone do pagador (opcional, metadado).\n  --nome <nome>        Nome do pagador (opcional, metadado).\n  --valor <valor>      Valor do boleto (opcional, metadado).\n  --dry-run            Mostra o registro sem gravar."
+          },
+          {
+            "title": "USE",
+            "content": "Apos enviar o aviso ao cliente, marcar para nao reenviar o mesmo tipo."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Ver quem falta notificar -> boletos-para-notificar\n  Alterar a cobranca       -> boleto-editar"
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- --tipo deve ser um dos 3 enums (case-sensitive).\n  - So marcar DEPOIS do envio real, senao o cliente fica sem aviso."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "Leve. Nao mexe em dinheiro, mas marcar errado suprime avisos futuros."
+          },
+          {
+            "title": "VALIDACOES AUTOMATICAS",
+            "content": "- argumento posicional + --tipo obrigatorios.\n  - --dry-run retorna { dry_run: true, would_register } sem gravar."
+          },
+          {
+            "title": "RETORNO",
+            "content": "Confirmacao do registro de notificacao. Com --dry-run: preview."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "sde bancointer boleto-notificado 550e8400-... --tipo LEMBRETE_2DIAS --dry-run\n  sde bancointer boleto-notificado 550e8400-... --tipo VENCIMENTO_HOJE --telefone 5531999999999"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Falta --tipo / enum invalido -> erro de validacao, nada gravado."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "boletos-para-notificar -> (enviar aviso) -> boleto-notificado <codigoSolicitacao> --tipo <tipo>"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Fila a notificar -> sde bancointer boletos-para-notificar\n  Detalhe boleto   -> sde bancointer boleto <codigoSolicitacao>"
+          },
+          {
+            "title": "ENDPOINT",
+            "content": "Estado local (banco crm). NAO chama Banco Inter. WRITE local."
+          }
+        ],
+        "permissions": ["bancointer:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": false,
+          "idempotent": true,
+          "hitlRequired": true,
+          "confirmationRequired": true,
+          "dryRunSupported": true,
+          "gates": ["confirmation:required", "hitl:required", "permission:bancointer:write", "preview:dry-run"]
+        },
+        "validationCommands": [
+          "ravi bancointer boleto-notificado --help --json",
+          "ravi apps show bancointer --json",
+          "ravi apps run bancointer help --json",
+          "ravi apps check bancointer --json"
+        ],
+        "sourceText": "Usage: sde bancointer boleto-notificado [options] <codigoSolicitacao>\n\nRegistrar boleto como notificado (evita duplicidade). codigoSolicitacao vem de `bancointer\nboletos-para-notificar`. Tipo deve ser um dos 3 enums abaixo (case-sensitive).\n\nOptions:\n  --tipo <tipo>     Tipo (obrigatorio, enum): EMISSAO | LEMBRETE_2DIAS | VENCIMENTO_HOJE\n  --cpf <cpfCnpj>   CPF/CNPJ do pagador\n  --telefone <tel>  Telefone do pagador\n  --nome <nome>     Nome do pagador\n  --valor <valor>   Valor do boleto\n  --json            Output puro JSON em stdout, logs em stderr (default: false)\n  --yes             Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema          Imprime JSONSchema do input esperado e sai (default: false)\n  --dry-run         Mostra payload que seria enviado sem executar (default: false)\n  -h, --help        display help for command\nsde bancointer boleto-notificado --help (padrao-ouro)\n\nRegistrar boleto como notificado (evita duplicidade). WRITE (estado local).\n\nCUSTO / SEGURANCA\n  - WRITE NAO-FINANCEIRO: grava no estado local (banco crm) que o aviso foi enviado.\n    NAO movimenta dinheiro, NAO altera a cobranca no Banco Inter.\n  - Idempotente por (codigoSolicitacao, tipo): evita re-notificar.\n  - Reversivel? Estado local — pode ser reajustado no banco se necessario.\n  - HITL leve: confirme que o aviso REALMENTE foi enviado antes de marcar.\n\nARGUMENTOS\n  <codigoSolicitacao>  UUID do boleto (obrigatorio, posicional).\n                       Origem: bancointer boletos-para-notificar.\n  --tipo <tipo>        OBRIGATORIO (enum, case-sensitive):\n                       EMISSAO | LEMBRETE_2DIAS | VENCIMENTO_HOJE\n  --cpf <cpfCnpj>      CPF/CNPJ do pagador (opcional, metadado).\n  --telefone <tel>     Telefone do pagador (opcional, metadado).\n  --nome <nome>        Nome do pagador (opcional, metadado).\n  --valor <valor>      Valor do boleto (opcional, metadado).\n  --dry-run            Mostra o registro sem gravar.\n\nUSE\n  Apos enviar o aviso ao cliente, marcar para nao reenviar o mesmo tipo.\n\nNAO USE\n  Ver quem falta notificar -> boletos-para-notificar\n  Alterar a cobranca       -> boleto-editar\n\nREGRAS HARD\n  - --tipo deve ser um dos 3 enums (case-sensitive).\n  - So marcar DEPOIS do envio real, senao o cliente fica sem aviso.\n\nHITL OBRIGATORIO\n  Leve. Nao mexe em dinheiro, mas marcar errado suprime avisos futuros.\n\nVALIDACOES AUTOMATICAS\n  - argumento posicional + --tipo obrigatorios.\n  - --dry-run retorna { dry_run: true, would_register } sem gravar.\n\nRETORNO\n  Confirmacao do registro de notificacao. Com --dry-run: preview.\n\nEXAMPLES\n  sde bancointer boleto-notificado 550e8400-... --tipo LEMBRETE_2DIAS --dry-run\n  sde bancointer boleto-notificado 550e8400-... --tipo VENCIMENTO_HOJE --telefone 5531999999999\n\nON ERROR\n  Falta --tipo / enum invalido -> erro de validacao, nada gravado.\n\nPIPELINE\n  boletos-para-notificar -> (enviar aviso) -> boleto-notificado <codigoSolicitacao> --tipo <tipo>\n\nSEE ALSO\n  Fila a notificar -> sde bancointer boletos-para-notificar\n  Detalhe boleto   -> sde bancointer boleto <codigoSolicitacao>\n\nENDPOINT\n  Estado local (banco crm). NAO chama Banco Inter. WRITE local.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde bancointer boleto-notificado {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "bancointer:write"
+    }
+  },
+  "permissions": {
+    "required": [],
+    "optional": [],
+    "mutating": ["bancointer:write"]
+  },
+  "storage": {
+    "sqlite": [],
+    "files": []
+  },
+  "artifacts": [],
+  "events": {
+    "emits": [
+      {
+        "topic": "ravi.apps.bancointer.changed",
+        "when": "imported CLI app state changes",
+        "durability": "logged",
+        "schema": "events/bancointer-changed.v1.json"
+      }
+    ],
+    "consumes": []
+  },
+  "skills": ["ravi-system-bancointer"],
+  "health": {
+    "checks": [
+      {
+        "type": "builtin",
+        "handler": "apps.manifest.check"
+      }
+    ]
+  },
+  "versioning": {
+    "compatibility": "semver",
+    "migrations": []
+  }
+}

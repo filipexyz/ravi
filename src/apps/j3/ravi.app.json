@@ -1,0 +1,1391 @@
+{
+  "schema": "ravi.app/v1",
+  "id": "j3",
+  "name": "J3",
+  "version": "0.1.0",
+  "description": "J3 Entregas - Frete SP Capital/Grande SP",
+  "interfaces": {
+    "cli": {
+      "command": "ravi j3",
+      "json": true,
+      "health": "ravi j3 check --json"
+    },
+    "ui": {
+      "routes": [
+        {
+          "id": "main",
+          "path": "/apps/j3",
+          "label": "J3",
+          "icon": "app-window",
+          "view": "main"
+        }
+      ],
+      "views": [
+        {
+          "id": "main",
+          "type": "dashboard",
+          "title": "J3",
+          "density": "compact",
+          "query": {
+            "operation": "j3.check"
+          },
+          "refreshOn": ["ravi.apps.j3.changed"],
+          "actions": [
+            {
+              "id": "regras",
+              "label": "Regras",
+              "icon": "list",
+              "operation": "j3.regras",
+              "placement": "toolbar"
+            },
+            {
+              "id": "faixas",
+              "label": "Faixas",
+              "icon": "list",
+              "operation": "j3.faixas",
+              "placement": "toolbar"
+            },
+            {
+              "id": "cep",
+              "label": "Cep",
+              "icon": "list",
+              "operation": "j3.cep",
+              "placement": "toolbar"
+            },
+            {
+              "id": "cotar",
+              "label": "Cotar",
+              "icon": "list",
+              "operation": "j3.cotar",
+              "placement": "toolbar"
+            },
+            {
+              "id": "simular",
+              "label": "Simular",
+              "icon": "list",
+              "operation": "j3.simular",
+              "placement": "toolbar"
+            },
+            {
+              "id": "health",
+              "label": "Health",
+              "icon": "list",
+              "operation": "j3.health",
+              "placement": "toolbar"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "operations": {
+    "j3.help": {
+      "interface": "builtin",
+      "handler": "apps.help",
+      "mutating": false
+    },
+    "j3.show": {
+      "interface": "builtin",
+      "handler": "apps.manifest.show",
+      "mutating": false
+    },
+    "j3.check": {
+      "interface": "builtin",
+      "handler": "apps.manifest.check",
+      "mutating": false,
+      "outputSchema": "schemas/j3-check.v1.json"
+    },
+    "j3.regras": {
+      "interface": "cli",
+      "command": "sde j3 regras {args} --json",
+      "mutating": false,
+      "json": true,
+      "description": "Mostrar regras e limites J3",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "regras",
+        "properties": {},
+        "required": []
+      },
+      "help": {
+        "summary": "Mostrar regras e limites J3",
+        "usage": "ravi apps run j3 regras --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          }
+        ],
+        "examples": ["ravi apps run j3 regras --json --"],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANÇA",
+            "content": "- READ-only. Cálculo local. Sem custo."
+          },
+          {
+            "title": "RETORNO",
+            "content": "{ regras: { maxLadoCm, maxSomaCm, maxPesoKg, precoFixo, percentualValor, prazo, formula } }\n\nREGRAS J3 (resumo)\n  - Lado máximo: 70cm\n  - Soma das dimensões: ≤300cm\n  - Peso máximo: 30kg\n  - Markup ~33% (precoFixo + percentualValor × valor)\n  - Cobertura: SP Capital e Grande SP"
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "$ sde j3 regras"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Faixas CEP     → sde j3 faixas\n  Verificar CEP  → sde j3 cep <cep>\n  Simular frete  → sde j3 simular"
+          }
+        ],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi j3 regras --help --json",
+          "ravi apps show j3 --json",
+          "ravi apps run j3 help --json",
+          "ravi apps check j3 --json"
+        ],
+        "sourceText": "Usage: sde j3 regras [options]\n\nMostrar regras e limites J3\n\nOptions:\n  --json      Output puro JSON em stdout, logs em stderr (default: false)\n  --yes       Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema    Imprime JSONSchema do input esperado e sai (default: false)\n  -h, --help  display help for command\n\nUsage: sde j3 regras\n\nMostrar regras e limites da J3 Entregas para cotação e envio.\n\nCUSTO / SEGURANÇA\n  - READ-only. Cálculo local. Sem custo.\n\nRETORNO\n  { regras: { maxLadoCm, maxSomaCm, maxPesoKg, precoFixo, percentualValor, prazo, formula } }\n\nREGRAS J3 (resumo)\n  - Lado máximo: 70cm\n  - Soma das dimensões: ≤300cm\n  - Peso máximo: 30kg\n  - Markup ~33% (precoFixo + percentualValor × valor)\n  - Cobertura: SP Capital e Grande SP\n\nEXAMPLES\n  $ sde j3 regras\n\nSEE ALSO\n  Faixas CEP     → sde j3 faixas\n  Verificar CEP  → sde j3 cep <cep>\n  Simular frete  → sde j3 simular",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde j3 regras {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "j3.faixas": {
+      "interface": "cli",
+      "command": "sde j3 faixas {args} --json",
+      "mutating": false,
+      "json": true,
+      "description": "Listar faixas de CEP atendidas",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "faixas",
+        "properties": {
+          "filtro": {
+            "type": "string",
+            "description": "Filtrar por região"
+          }
+        },
+        "required": []
+      },
+      "help": {
+        "summary": "Listar faixas de CEP atendidas",
+        "usage": "ravi apps run j3 faixas --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "-f, --filtro <texto>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Filtrar por região"
+          },
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          }
+        ],
+        "examples": ["ravi apps run j3 faixas --json --", "ravi apps run j3 faixas --json -- -f \"Santo André\""],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANÇA",
+            "content": "- READ-only. Cálculo local. Sem custo."
+          },
+          {
+            "title": "ARGUMENTOS / FILTROS",
+            "content": "-f, --filtro <texto>   Filtrar por nome de região (busca case-insensitive no título)."
+          },
+          {
+            "title": "RETORNO",
+            "content": "{ total: N, faixas: [{ regiao, cepInicio, cepFim }] }"
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "$ sde j3 faixas\n  $ sde j3 faixas -f \"Santo André\""
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Verificar CEP específico → sde j3 cep <cep>\n  Regras J3                → sde j3 regras"
+          }
+        ],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi j3 faixas --help --json",
+          "ravi apps show j3 --json",
+          "ravi apps run j3 help --json",
+          "ravi apps check j3 --json"
+        ],
+        "sourceText": "Usage: sde j3 faixas [options]\n\nListar faixas de CEP atendidas\n\nOptions:\n  -f, --filtro <texto>  Filtrar por região\n  --json                Output puro JSON em stdout, logs em stderr (default: false)\n  --yes                 Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema              Imprime JSONSchema do input esperado e sai (default: false)\n  -h, --help            display help for command\n\nUsage: sde j3 faixas [-f <texto>]\n\nListar faixas de CEP atendidas pela J3 Entregas.\n\nCUSTO / SEGURANÇA\n  - READ-only. Cálculo local. Sem custo.\n\nARGUMENTOS / FILTROS\n  -f, --filtro <texto>   Filtrar por nome de região (busca case-insensitive no título).\n\nRETORNO\n  { total: N, faixas: [{ regiao, cepInicio, cepFim }] }\n\nEXAMPLES\n  $ sde j3 faixas\n  $ sde j3 faixas -f \"Santo André\"\n\nSEE ALSO\n  Verificar CEP específico → sde j3 cep <cep>\n  Regras J3                → sde j3 regras",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde j3 faixas {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "j3.cep": {
+      "interface": "cli",
+      "command": "sde j3 cep {args} --json",
+      "mutating": false,
+      "json": true,
+      "description": "Verificar se CEP está na área de cobertura",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "cep",
+        "properties": {
+          "cep": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["cep"]
+      },
+      "help": {
+        "summary": "Verificar se CEP está na área de cobertura",
+        "usage": "ravi apps run j3 cep --json -- <cep> [options]",
+        "arguments": [
+          {
+            "name": "cep",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "CEP de destino (obrigatório). Com ou sem hífen."
+          }
+        ],
+        "options": [
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          }
+        ],
+        "examples": ["ravi apps run j3 cep --json -- 01310-100", "ravi apps run j3 cep --json -- 01310100"],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANÇA",
+            "content": "- READ-only. Cálculo local. Sem custo."
+          },
+          {
+            "title": "ARGUMENTOS / FILTROS",
+            "content": "<cep>   CEP de destino (obrigatório). Com ou sem hífen."
+          },
+          {
+            "title": "USE",
+            "content": "- SEMPRE verificar antes de contratar J3 (sde logistics contratar-j3).\n  - CEP fora da cobertura → usar FM ou GF."
+          },
+          {
+            "title": "RETORNO",
+            "content": "{ cep, elegivel: boolean, regiao: string|null }"
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "$ sde j3 cep 01310-100\n  $ sde j3 cep 01310100"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "elegivel: false, regiao: null → CEP fora da cobertura J3."
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Faixas CEP cobertas → sde j3 faixas\n  Simular frete J3    → sde j3 simular\n  Contratar J3        → sde logistics contratar-j3"
+          }
+        ],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi j3 cep --help --json",
+          "ravi apps show j3 --json",
+          "ravi apps run j3 help --json",
+          "ravi apps check j3 --json"
+        ],
+        "sourceText": "Usage: sde j3 cep [options] <cep>\n\nVerificar se CEP está na área de cobertura\n\nOptions:\n  --json      Output puro JSON em stdout, logs em stderr (default: false)\n  --yes       Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema    Imprime JSONSchema do input esperado e sai (default: false)\n  -h, --help  display help for command\n\nUsage: sde j3 cep <cep>\n\nVerificar se um CEP está na área de cobertura J3 Entregas.\n\nCUSTO / SEGURANÇA\n  - READ-only. Cálculo local. Sem custo.\n\nARGUMENTOS / FILTROS\n  <cep>   CEP de destino (obrigatório). Com ou sem hífen.\n\nUSE\n  - SEMPRE verificar antes de contratar J3 (sde logistics contratar-j3).\n  - CEP fora da cobertura → usar FM ou GF.\n\nRETORNO\n  { cep, elegivel: boolean, regiao: string|null }\n\nEXAMPLES\n  $ sde j3 cep 01310-100\n  $ sde j3 cep 01310100\n\nON ERROR\n  elegivel: false, regiao: null → CEP fora da cobertura J3.\n\nSEE ALSO\n  Faixas CEP cobertas → sde j3 faixas\n  Simular frete J3    → sde j3 simular\n  Contratar J3        → sde logistics contratar-j3",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde j3 cep {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "j3.cotar": {
+      "interface": "cli",
+      "command": "sde j3 cotar {args} --json",
+      "mutating": false,
+      "json": true,
+      "description": "Cotar frete J3 (volumes homogeneos)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "cotar",
+        "properties": {
+          "cep": {
+            "type": "string",
+            "description": "CEP de destino"
+          },
+          "valor": {
+            "type": "string",
+            "description": "Valor UNITARIO por volume em R$"
+          },
+          "peso": {
+            "type": "string",
+            "description": "Peso UNITARIO por volume em kg"
+          },
+          "quantidade": {
+            "type": "string",
+            "description": "Quantidade de volumes",
+            "default": "1"
+          },
+          "largura": {
+            "type": "string",
+            "description": "Largura em cm (default 40 = caixa media)",
+            "default": "40"
+          },
+          "altura": {
+            "type": "string",
+            "description": "Altura em cm (default 30 = caixa media)",
+            "default": "30"
+          },
+          "comprimento": {
+            "type": "string",
+            "description": "Comprimento em cm (default 50 = caixa media)",
+            "default": "50"
+          }
+        },
+        "required": ["cep", "valor", "peso"]
+      },
+      "help": {
+        "summary": "Cotar frete J3 (volumes homogeneos)",
+        "usage": "ravi apps run j3 cotar --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "-c, --cep <cep>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "CEP de destino"
+          },
+          {
+            "flags": "-v, --valor <numero>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Valor UNITARIO por volume em R$"
+          },
+          {
+            "flags": "-p, --peso <numero>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Peso UNITARIO por volume em kg"
+          },
+          {
+            "flags": "-q, --quantidade <numero>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": "1",
+            "values": [],
+            "description": "Quantidade de volumes"
+          },
+          {
+            "flags": "-l, --largura <numero>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": "40",
+            "values": [],
+            "description": "Largura em cm (default 40 = caixa media)"
+          },
+          {
+            "flags": "-a, --altura <numero>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": "30",
+            "values": [],
+            "description": "Altura em cm (default 30 = caixa media)"
+          },
+          {
+            "flags": "--comprimento <numero>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": "50",
+            "values": [],
+            "description": "Comprimento em cm (default 50 = caixa media)"
+          },
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          }
+        ],
+        "examples": ["ravi apps run j3 cotar --json -- [options]"],
+        "sections": [],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi j3 cotar --help --json",
+          "ravi apps show j3 --json",
+          "ravi apps run j3 help --json",
+          "ravi apps check j3 --json"
+        ],
+        "sourceText": "Usage: sde j3 cotar [options]\n\nCotar frete J3 (volumes homogeneos)\n\nOptions:\n  -c, --cep <cep>            CEP de destino\n  -v, --valor <numero>       Valor UNITARIO por volume em R$\n  -p, --peso <numero>        Peso UNITARIO por volume em kg\n  -q, --quantidade <numero>  Quantidade de volumes (default: \"1\")\n  -l, --largura <numero>     Largura em cm (default 40 = caixa media) (default: \"40\")\n  -a, --altura <numero>      Altura em cm (default 30 = caixa media) (default: \"30\")\n  --comprimento <numero>     Comprimento em cm (default 50 = caixa media) (default: \"50\")\n  --json                     Output puro JSON em stdout, logs em stderr (default: false)\n  --yes                      Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema                   Imprime JSONSchema do input esperado e sai (default: false)\n  -h, --help                 display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde j3 cotar {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "j3.simular": {
+      "interface": "cli",
+      "command": "sde j3 simular {args} --json",
+      "mutating": false,
+      "json": true,
+      "description": "Simular cotação para múltiplas quantidades (peso/preco UNITARIO). Alias: --valor=--preco (compat com fm/gf/sde frete).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "simular",
+        "properties": {
+          "cep": {
+            "type": "string",
+            "description": "CEP de destino"
+          },
+          "preco": {
+            "type": "string",
+            "description": "Preço UNITARIO do produto em R$ (obrigatorio; alias: --valor)"
+          },
+          "valor": {
+            "type": "string",
+            "description": "Alias de --preco (compat com fm/gf/sde frete)"
+          },
+          "peso": {
+            "type": "string",
+            "description": "Peso UNITARIO em kg"
+          },
+          "largura": {
+            "type": "string",
+            "description": "Largura em cm"
+          },
+          "altura": {
+            "type": "string",
+            "description": "Altura em cm"
+          },
+          "comprimento": {
+            "type": "string",
+            "description": "Comprimento em cm"
+          },
+          "quantidades": {
+            "type": "string",
+            "description": "Quantidades para simular (ex: 1,2,3,4,5)",
+            "default": "1,2,3,4,5"
+          }
+        },
+        "required": ["cep", "peso", "largura", "altura", "comprimento"]
+      },
+      "help": {
+        "summary": "Simular cotação para múltiplas quantidades (peso/preco UNITARIO). Alias: --valor=--preco (compat com fm/gf/sde frete).",
+        "usage": "ravi apps run j3 simular --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "-c, --cep <cep>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "CEP de destino"
+          },
+          {
+            "flags": "--preco <numero>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Preço UNITARIO do produto em R$ (obrigatorio; alias: --valor)"
+          },
+          {
+            "flags": "--valor <numero>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Alias de --preco (compat com fm/gf/sde frete)"
+          },
+          {
+            "flags": "-p, --peso <numero>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Peso UNITARIO em kg"
+          },
+          {
+            "flags": "-l, --largura <numero>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Largura em cm"
+          },
+          {
+            "flags": "-a, --altura <numero>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Altura em cm"
+          },
+          {
+            "flags": "--comprimento <numero>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Comprimento em cm"
+          },
+          {
+            "flags": "-q, --quantidades <lista>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": "1,2,3,4,5",
+            "values": [],
+            "description": "Quantidades para simular (ex: 1,2,3,4,5)"
+          },
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          }
+        ],
+        "examples": [
+          "ravi apps run j3 simular --json -- -c 01310100 --preco 150 -p 0.5 -l 20 -a 15 --comprimento 10",
+          "ravi apps run j3 simular --json -- -c 01310100 --preco 150 -p 0.5 -l 20 -a 15 --comprimento 10 -q 1,2,5,10"
+        ],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANÇA",
+            "content": "- READ-only. Cálculo local sem chamada à API J3."
+          },
+          {
+            "title": "ARGUMENTOS / FILTROS",
+            "content": "-c, --cep <cep>            CEP de destino (obrigatório).\n  --preco <numero>           Preço UNITÁRIO do produto em R$ (obrigatório; alias: --valor).\n  --valor <numero>           Alias de --preco (compat com fm/gf).\n  -p, --peso <numero>        Peso UNITÁRIO em kg (obrigatório).\n  -l, --largura <numero>     Largura em cm (obrigatório).\n  -a, --altura <numero>      Altura em cm (obrigatório).\n  --comprimento <numero>     Comprimento em cm (obrigatório).\n  -q, --quantidades <lista>  Quantidades para simular, separadas por vírgula (default: 1,2,3,4,5)."
+          },
+          {
+            "title": "USE",
+            "content": "- Planejar frete J3 para múltiplas quantidades antes de contratar.\n  - Verificar elegibilidade e custo estimado por quantidade."
+          },
+          {
+            "title": "NÃO USE",
+            "content": "- Para contratar → sde j3 enviar (após verificar elegibilidade).\n  - Para cotar uma quantidade específica → sde j3 cotar.\n  - Para CEP fora de SP → usar FM ou GF."
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- Peso e preço são UNITÁRIOS — informar por unidade, não total.\n  - Limites J3: lado ≤70cm, soma ≤300cm, peso total ≤30kg.\n  - Markup J3 ~33% incluído no resultado."
+          },
+          {
+            "title": "RETORNO",
+            "content": "{ cep, produto: { preco, peso, dimensoes }, simulacoes: [{ quantidade, valorProdutos, pesoTotal, elegivel, frete, freteSemMarkup, prazo }] }"
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "$ sde j3 simular -c 01310100 --preco 150 -p 0.5 -l 20 -a 15 --comprimento 10\n  $ sde j3 simular -c 01310100 --preco 150 -p 0.5 -l 20 -a 15 --comprimento 10 -q 1,2,5,10"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Preco obrigatorio → passar --preco ou --valor.\n  elegivel: false → motivo explica (dimensão, CEP, peso)."
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Cotar J3 (1 qtd)     → sde j3 cotar\n  Verificar CEP J3     → sde j3 cep-cobertura <cep>\n  Enviar (contratar)   → sde j3 enviar"
+          },
+          {
+            "title": "ENDPOINT",
+            "content": "Local: J3.cotar(cep, volumes, valorTotal) — sem chamada API"
+          }
+        ],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi j3 simular --help --json",
+          "ravi apps show j3 --json",
+          "ravi apps run j3 help --json",
+          "ravi apps check j3 --json"
+        ],
+        "sourceText": "Usage: sde j3 simular [options]\n\nSimular cotação para múltiplas quantidades (peso/preco UNITARIO). Alias: --valor=--preco (compat com\nfm/gf/sde frete).\n\nOptions:\n  -c, --cep <cep>            CEP de destino\n  --preco <numero>           Preço UNITARIO do produto em R$ (obrigatorio; alias: --valor)\n  --valor <numero>           Alias de --preco (compat com fm/gf/sde frete)\n  -p, --peso <numero>        Peso UNITARIO em kg\n  -l, --largura <numero>     Largura em cm\n  -a, --altura <numero>      Altura em cm\n  --comprimento <numero>     Comprimento em cm\n  -q, --quantidades <lista>  Quantidades para simular (ex: 1,2,3,4,5) (default: \"1,2,3,4,5\")\n  --json                     Output puro JSON em stdout, logs em stderr (default: false)\n  --yes                      Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema                   Imprime JSONSchema do input esperado e sai (default: false)\n  -h, --help                 display help for command\n\nUsage: sde j3 simular -c <cep> (--preco|--valor) <n> -p <peso> -l <largura> -a <altura> --comprimento <n> [-q <qtds>]\n\nSimular cotação J3 para múltiplas quantidades. Peso e preço são UNITÁRIOS (por unidade do produto).\n\nCUSTO / SEGURANÇA\n  - READ-only. Cálculo local sem chamada à API J3.\n\nARGUMENTOS / FILTROS\n  -c, --cep <cep>            CEP de destino (obrigatório).\n  --preco <numero>           Preço UNITÁRIO do produto em R$ (obrigatório; alias: --valor).\n  --valor <numero>           Alias de --preco (compat com fm/gf).\n  -p, --peso <numero>        Peso UNITÁRIO em kg (obrigatório).\n  -l, --largura <numero>     Largura em cm (obrigatório).\n  -a, --altura <numero>      Altura em cm (obrigatório).\n  --comprimento <numero>     Comprimento em cm (obrigatório).\n  -q, --quantidades <lista>  Quantidades para simular, separadas por vírgula (default: 1,2,3,4,5).\n\nUSE\n  - Planejar frete J3 para múltiplas quantidades antes de contratar.\n  - Verificar elegibilidade e custo estimado por quantidade.\n\nNÃO USE\n  - Para contratar → sde j3 enviar (após verificar elegibilidade).\n  - Para cotar uma quantidade específica → sde j3 cotar.\n  - Para CEP fora de SP → usar FM ou GF.\n\nREGRAS HARD\n  - Peso e preço são UNITÁRIOS — informar por unidade, não total.\n  - Limites J3: lado ≤70cm, soma ≤300cm, peso total ≤30kg.\n  - Markup J3 ~33% incluído no resultado.\n\nRETORNO\n  { cep, produto: { preco, peso, dimensoes }, simulacoes: [{ quantidade, valorProdutos, pesoTotal, elegivel, frete, freteSemMarkup, prazo }] }\n\nEXAMPLES\n  $ sde j3 simular -c 01310100 --preco 150 -p 0.5 -l 20 -a 15 --comprimento 10\n  $ sde j3 simular -c 01310100 --preco 150 -p 0.5 -l 20 -a 15 --comprimento 10 -q 1,2,5,10\n\nON ERROR\n  Preco obrigatorio → passar --preco ou --valor.\n  elegivel: false → motivo explica (dimensão, CEP, peso).\n\nSEE ALSO\n  Cotar J3 (1 qtd)     → sde j3 cotar\n  Verificar CEP J3     → sde j3 cep-cobertura <cep>\n  Enviar (contratar)   → sde j3 enviar\n\nENDPOINT\n  Local: J3.cotar(cep, volumes, valorTotal) — sem chamada API",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde j3 simular {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "j3.health": {
+      "interface": "cli",
+      "command": "sde j3 health {args} --json",
+      "mutating": false,
+      "json": true,
+      "description": "Verificar conexão com API J3 (auth + cobertura)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "health",
+        "properties": {},
+        "required": []
+      },
+      "help": {
+        "summary": "Verificar conexão com API J3 (auth + cobertura)",
+        "usage": "ravi apps run j3 health --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          }
+        ],
+        "examples": ["ravi apps run j3 health --json --"],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANÇA",
+            "content": "- READ-only. Sem custo. Seguro."
+          },
+          {
+            "title": "RETORNO",
+            "content": "{ ok: boolean, ... }"
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "$ sde j3 health"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Saúde FM  → sde fm health\n  Saúde GF  → sde gf health"
+          }
+        ],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi j3 health --help --json",
+          "ravi apps show j3 --json",
+          "ravi apps run j3 help --json",
+          "ravi apps check j3 --json"
+        ],
+        "sourceText": "Usage: sde j3 health [options]\n\nVerificar conexão com API J3 (auth + cobertura)\n\nOptions:\n  --json      Output puro JSON em stdout, logs em stderr (default: false)\n  --yes       Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema    Imprime JSONSchema do input esperado e sai (default: false)\n  -h, --help  display help for command\n\nUsage: sde j3 health\n\nVerificar conectividade com a API J3 Entregas (auth + cobertura).\n\nCUSTO / SEGURANÇA\n  - READ-only. Sem custo. Seguro.\n\nRETORNO\n  { ok: boolean, ... }\n\nEXAMPLES\n  $ sde j3 health\n\nSEE ALSO\n  Saúde FM  → sde fm health\n  Saúde GF  → sde gf health",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde j3 health {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "j3.enviar": {
+      "interface": "cli",
+      "command": "sde j3 enviar {args} --json",
+      "mutating": true,
+      "json": true,
+      "description": "Criar pedido J3 via API (JSON via stdin)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "enviar",
+        "additionalProperties": true,
+        "description": "Input via stdin JSON (contrato livre) -- ver --help para os campos esperados."
+      },
+      "help": {
+        "summary": "Criar pedido J3 via API (JSON via stdin)",
+        "usage": "ravi apps run j3 enviar --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          },
+          {
+            "flags": "--dry-run",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Mostra payload que seria enviado sem executar"
+          }
+        ],
+        "examples": ["ravi apps run j3 enviar --json -- [options]"],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- DESTRUTIVO: cria contrato de transporte real e gera custo. NAO e idempotente -> reenviar o mesmo JSON cria OUTRO pedido (duplicidade). Defina shippingIntegrationId (numeroPedido) unico por pedido.\n  - Latencia: ~1-3s (auth JWT com cache 23h + POST /api/orders + 1 GET de stamp p/ orderId).\n  - Auth: JWT obtido de POST /api/auth/changeKey?key=J3_API_KEY. Requer J3_API_KEY em /home/ravi/sde/.env.\n  - Rate limit: nao documentado pela J3 (API privada). Tratar como nao-retentavel automaticamente em erro.\n  - Cobertura/dimensoes NAO sao validadas pela CLI no enviar -> valide ANTES com cep/cotar/simular."
+          },
+          {
+            "title": "USE",
+            "content": "- Pedido ja fechado no Tiny, endereco completo (CEP + logradouro + numero + bairro + cidade + UF), volumes com peso e dimensoes reais.\n  - CEP de destino dentro da cobertura J3 (confirmar com sde j3 cep <cep>).\n  - Volumes dentro dos limites: lado <= 70cm, soma das dimensoes <= 300cm, peso total <= 30kg.\n\nNAO USE (fora do escopo / redirect)\n  - Apenas cotar preco/prazo            -> sde j3 cotar / sde j3 simular (read-only)\n  - Verificar se CEP atende             -> sde j3 cep <cep>\n  - Destino fora de SP Capital/Grande SP -> usar sde frete (FM) ou sde gf (GoFretes)\n  - Volume acima de 70cm/300cm/30kg     -> J3 nao atende, cotar outra transportadora\n  - Acompanhar pedido ja criado         -> sde j3 rastrear <tracking>\n  - Reimprimir etiqueta                  -> sde j3 etiqueta <tracking>"
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- shippingIntegrationId (numeroPedido) DEVE ser unico e idealmente = numero do pedido Tiny. Reuso = pedido duplicado.\n  - CEP e normalizado (so digitos) antes de enviar; mande string, pode ter ou nao hifen.\n  - Cada volume vira packages com type=box, quantity=1. Multiplos volumes = um item por volume no array volumes.\n  - Valores monetarios em CENTAVOS (valorCentavos), pesos em GRAMAS (pesoGramas), dimensoes em CENTIMETROS.\n  - Limites J3 (config local): lado max 70cm, soma dimensoes max 300cm, peso total max 30kg. Acima -> J3 recusa/erro.\n\nHITL OBRIGATORIO (pare antes de --yes)\n  - Confirme com humano antes de criar: cliente/endereco corretos, valor declarado, quantidade de volumes e custo do frete.\n  - Cenarios de parada: endereco incompleto, valor declarado muito alto, CEP no limite da cobertura, reenvio de pedido ja existente."
+          },
+          {
+            "title": "VALIDACOES AUTOMATICAS",
+            "content": "- CEP normalizado (remove nao-digitos) antes do POST.\n  - complemento/telefone/nf opcionais -> omitidos do payload se vazios.\n  - isResidentialAddress fixado em true no payload.\n  - Apos criar, faz GET /api/orders/stamps/{trackingNumber} para recuperar orderId (necessario p/ cancelar). Falha desse GET NAO invalida o envio.\n  - Erros da API sao capturados -> retorno success:false + campo erro (nao lanca excecao para o caller).\n\nLIFECYCLE (status reais retornados por rastrear)\n  - status textual + statusCode numerico + subStatus + history (previousStatus -> newStatus + timestamp).\n  - Terminal de cancelamento: Canceled (enum exato usado em PATCH /api/orders/{orderId}/status?status=Canceled).\n  - Consultar estado vivo: sde j3 rastrear <tracking>.\n\nHITL TEMPLATE (WhatsApp markdown - *bold*, sem tabela)\n  Vou despachar pela J3 (SP/Grande SP):\n  *Pedido:* <numeroPedido>\n  *Destinatario:* <nome> - <telefone>\n  *Endereco:* <logradouro>, <numero> - <bairro>, <cidade>/<uf> - CEP <cep>\n  *Volumes:* <N> caixa(s) | peso total <X>kg | valor declarado R$ <Y>\n  *Frete cotado:* R$ <Z> (prazo ~1 dia)\n  Confirmo o envio?\n\nEXAMPLES (copy-paste reais)\n  # 1) Ver o schema do stdin\n  $ sde j3 enviar --schema\n\n  # 2) Conferir cobertura e cotar ANTES\n  $ sde j3 cep 05763470\n  $ sde j3 cotar < pedido.json\n\n  # 3) Dry-run (mostra payload, NAO envia)\n  $ cat pedido.json | sde j3 enviar --dry-run\n\n  # 4) Envio real (consome contrato)\n  $ cat pedido.json | sde j3 enviar --yes --json\n\n  # 5) Rastrear pelo tracking retornado\n  $ sde j3 rastrear <trackingNumber>\n\n  Exemplo de pedido.json (campos reais):\n  {\n    \"numeroPedido\": \"123456\",\n    \"destinatario\": \"Maria Silva\",\n    \"telefone\": \"5511987340036\",\n    \"nf\": \"000123456\",\n    \"endereco\": {\n      \"logradouro\": \"Av Paulista\", \"numero\": \"1000\", \"complemento\": \"sala 5\",\n      \"bairro\": \"Bela Vista\", \"cidade\": \"Sao Paulo\", \"uf\": \"SP\", \"cep\": \"01310-100\"\n    },\n    \"volumes\": [\n      { \"descricao\": \"Caixa 1\", \"pesoGramas\": 2000, \"larguraCm\": 30, \"alturaCm\": 20, \"comprimentoCm\": 40, \"valorCentavos\": 15000 }\n    ]\n  }\n\nON ERROR (codigo -> acao)\n  J3_API_KEY nao configurado        -> setar J3_API_KEY em /home/ravi/sde/.env\n  Auth J3 falhou (401/403)          -> chave invalida/expirada; revalidar key; checar sde j3 health\n  J3 API POST /api/orders (4xx)     -> payload invalido; rodar --dry-run e conferir CEP/dimensoes/valorCentavos\n  CEP fora de cobertura             -> sde j3 cep; se fora, usar sde frete (FM) ou sde gf (GoFretes)\n  Peso/dimensao acima do limite     -> J3 nao atende (max 70cm lado / 300cm soma / 30kg); outra transportadora\n  success:false + erro no JSON      -> NAO houve criacao; ler campo erro; nao reenviar cego (risco duplicar)\n  500/timeout                       -> nao reenviar automatico; confirmar com sde j3 rastrear se nada foi criado"
+          },
+          {
+            "title": "PIPELINE",
+            "content": "monta pedido.json (do Tiny) -> sde j3 cep <cep> -> sde j3 cotar -> HITL -> sde j3 enviar --dry-run -> sde j3 enviar --yes -> sde j3 etiqueta <tracking> (imprime) -> sde j3 rastrear <tracking> (acompanha)"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Cotar preco/prazo          -> sde j3 cotar\n  Simular varias quantidades -> sde j3 simular\n  Verificar CEP cobertura    -> sde j3 cep <cep>\n  Faixas de CEP atendidas    -> sde j3 faixas\n  Regras e limites           -> sde j3 regras\n  Rastrear pedido            -> sde j3 rastrear <tracking>\n  Buscar etiqueta PDF        -> sde j3 etiqueta <tracking>\n  Cancelar pedido            -> sde j3 cancelar <tracking>\n  Health (auth + cobertura)  -> sde j3 health\n  Outras transportadoras     -> sde frete (FM) / sde gf (GoFretes)\n\nFORMATO (campos reais do stdin / API J3TMS)\n  - numeroPedido: string (vira shippingIntegrationId; UNICO por pedido)\n  - destinatario: string | telefone: string opcional (DDI+DDD+numero, ex 5511987340036) | nf: string opcional\n  - endereco.cep: string com ou sem hifen (normalizado p/ digitos) | uf: sigla 2 letras (ex SP)\n  - volumes[].pesoGramas: inteiro em GRAMAS | larguraCm/alturaCm/comprimentoCm: numero em CENTIMETROS | valorCentavos: inteiro em CENTAVOS\n  - Decimais: nao se aplica nos campos da API (peso em gramas, valor em centavos -> inteiros)\n  - Datas: retornadas em history[].timestamp (ISO 8601 da API)\n  - Booleanos: true/false (JSON nativo) | enum de status terminal: Canceled"
+          }
+        ],
+        "permissions": ["j3:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": false,
+          "idempotent": true,
+          "hitlRequired": true,
+          "confirmationRequired": true,
+          "dryRunSupported": true,
+          "gates": ["confirmation:required", "hitl:required", "permission:j3:write", "preview:dry-run"]
+        },
+        "validationCommands": [
+          "ravi j3 enviar --help --json",
+          "ravi apps show j3 --json",
+          "ravi apps run j3 help --json",
+          "ravi apps check j3 --json"
+        ],
+        "sourceText": "Usage: sde j3 enviar [options]\n\nCriar pedido J3 via API (JSON via stdin)\n\nOptions:\n  --json      Output puro JSON em stdout, logs em stderr (default: false)\n  --yes       Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema    Imprime JSONSchema do input esperado e sai (default: false)\n  --dry-run   Mostra payload que seria enviado sem executar (default: false)\n  -h, --help  display help for command\nUsage: sde j3 enviar [options]\n\nCria pedido de coleta/entrega na J3 Entregas (frete SP Capital e Grande SP) enviando o JSON do pedido via stdin. POST /api/orders na API J3TMS (MAGMA4). DESTRUTIVO: gera contrato real de transporte com a transportadora e custo. Retorna trackingNumber (usado por rastrear/etiqueta/cancelar), orderCode, trackingUrl, stampUrl e orderId.\n\nOptions (todas booleanas, sem valor):\n  --json      boolean | default false | Output JSON puro em stdout, logs em stderr. Use em pipeline/automacao.\n  --yes       boolean | default false | Bypass da confirmacao da operacao destrutiva. SEM --yes a CLI pede confirmacao interativa.\n  --schema    boolean | default false | Imprime o JSONSchema do input esperado (stdin) e sai. Contrato livre (additionalProperties:true) -> os campos reais estao na secao FORMATO abaixo.\n  --dry-run   boolean | default false | Monta e mostra o payload que seria enviado SEM chamar a API. Read-only. Use sempre antes do envio real.\n\nO PAYLOAD DO PEDIDO vem por STDIN (JSON), nao por flags. Origem dos dados: endereco/itens do pedido Tiny.\n\nCUSTO / SEGURANCA\n  - DESTRUTIVO: cria contrato de transporte real e gera custo. NAO e idempotente -> reenviar o mesmo JSON cria OUTRO pedido (duplicidade). Defina shippingIntegrationId (numeroPedido) unico por pedido.\n  - Latencia: ~1-3s (auth JWT com cache 23h + POST /api/orders + 1 GET de stamp p/ orderId).\n  - Auth: JWT obtido de POST /api/auth/changeKey?key=J3_API_KEY. Requer J3_API_KEY em /home/ravi/sde/.env.\n  - Rate limit: nao documentado pela J3 (API privada). Tratar como nao-retentavel automaticamente em erro.\n  - Cobertura/dimensoes NAO sao validadas pela CLI no enviar -> valide ANTES com cep/cotar/simular.\n\nUSE\n  - Pedido ja fechado no Tiny, endereco completo (CEP + logradouro + numero + bairro + cidade + UF), volumes com peso e dimensoes reais.\n  - CEP de destino dentro da cobertura J3 (confirmar com sde j3 cep <cep>).\n  - Volumes dentro dos limites: lado <= 70cm, soma das dimensoes <= 300cm, peso total <= 30kg.\n\nNAO USE (fora do escopo / redirect)\n  - Apenas cotar preco/prazo            -> sde j3 cotar / sde j3 simular (read-only)\n  - Verificar se CEP atende             -> sde j3 cep <cep>\n  - Destino fora de SP Capital/Grande SP -> usar sde frete (FM) ou sde gf (GoFretes)\n  - Volume acima de 70cm/300cm/30kg     -> J3 nao atende, cotar outra transportadora\n  - Acompanhar pedido ja criado         -> sde j3 rastrear <tracking>\n  - Reimprimir etiqueta                  -> sde j3 etiqueta <tracking>\n\nREGRAS HARD\n  - shippingIntegrationId (numeroPedido) DEVE ser unico e idealmente = numero do pedido Tiny. Reuso = pedido duplicado.\n  - CEP e normalizado (so digitos) antes de enviar; mande string, pode ter ou nao hifen.\n  - Cada volume vira packages com type=box, quantity=1. Multiplos volumes = um item por volume no array volumes.\n  - Valores monetarios em CENTAVOS (valorCentavos), pesos em GRAMAS (pesoGramas), dimensoes em CENTIMETROS.\n  - Limites J3 (config local): lado max 70cm, soma dimensoes max 300cm, peso total max 30kg. Acima -> J3 recusa/erro.\n\nHITL OBRIGATORIO (pare antes de --yes)\n  - Confirme com humano antes de criar: cliente/endereco corretos, valor declarado, quantidade de volumes e custo do frete.\n  - Cenarios de parada: endereco incompleto, valor declarado muito alto, CEP no limite da cobertura, reenvio de pedido ja existente.\n\nVALIDACOES AUTOMATICAS\n  - CEP normalizado (remove nao-digitos) antes do POST.\n  - complemento/telefone/nf opcionais -> omitidos do payload se vazios.\n  - isResidentialAddress fixado em true no payload.\n  - Apos criar, faz GET /api/orders/stamps/{trackingNumber} para recuperar orderId (necessario p/ cancelar). Falha desse GET NAO invalida o envio.\n  - Erros da API sao capturados -> retorno success:false + campo erro (nao lanca excecao para o caller).\n\nLIFECYCLE (status reais retornados por rastrear)\n  - status textual + statusCode numerico + subStatus + history (previousStatus -> newStatus + timestamp).\n  - Terminal de cancelamento: Canceled (enum exato usado em PATCH /api/orders/{orderId}/status?status=Canceled).\n  - Consultar estado vivo: sde j3 rastrear <tracking>.\n\nHITL TEMPLATE (WhatsApp markdown - *bold*, sem tabela)\n  Vou despachar pela J3 (SP/Grande SP):\n  *Pedido:* <numeroPedido>\n  *Destinatario:* <nome> - <telefone>\n  *Endereco:* <logradouro>, <numero> - <bairro>, <cidade>/<uf> - CEP <cep>\n  *Volumes:* <N> caixa(s) | peso total <X>kg | valor declarado R$ <Y>\n  *Frete cotado:* R$ <Z> (prazo ~1 dia)\n  Confirmo o envio?\n\nEXAMPLES (copy-paste reais)\n  # 1) Ver o schema do stdin\n  $ sde j3 enviar --schema\n\n  # 2) Conferir cobertura e cotar ANTES\n  $ sde j3 cep 05763470\n  $ sde j3 cotar < pedido.json\n\n  # 3) Dry-run (mostra payload, NAO envia)\n  $ cat pedido.json | sde j3 enviar --dry-run\n\n  # 4) Envio real (consome contrato)\n  $ cat pedido.json | sde j3 enviar --yes --json\n\n  # 5) Rastrear pelo tracking retornado\n  $ sde j3 rastrear <trackingNumber>\n\n  Exemplo de pedido.json (campos reais):\n  {\n    \"numeroPedido\": \"123456\",\n    \"destinatario\": \"Maria Silva\",\n    \"telefone\": \"5511987340036\",\n    \"nf\": \"000123456\",\n    \"endereco\": {\n      \"logradouro\": \"Av Paulista\", \"numero\": \"1000\", \"complemento\": \"sala 5\",\n      \"bairro\": \"Bela Vista\", \"cidade\": \"Sao Paulo\", \"uf\": \"SP\", \"cep\": \"01310-100\"\n    },\n    \"volumes\": [\n      { \"descricao\": \"Caixa 1\", \"pesoGramas\": 2000, \"larguraCm\": 30, \"alturaCm\": 20, \"comprimentoCm\": 40, \"valorCentavos\": 15000 }\n    ]\n  }\n\nON ERROR (codigo -> acao)\n  J3_API_KEY nao configurado        -> setar J3_API_KEY em /home/ravi/sde/.env\n  Auth J3 falhou (401/403)          -> chave invalida/expirada; revalidar key; checar sde j3 health\n  J3 API POST /api/orders (4xx)     -> payload invalido; rodar --dry-run e conferir CEP/dimensoes/valorCentavos\n  CEP fora de cobertura             -> sde j3 cep; se fora, usar sde frete (FM) ou sde gf (GoFretes)\n  Peso/dimensao acima do limite     -> J3 nao atende (max 70cm lado / 300cm soma / 30kg); outra transportadora\n  success:false + erro no JSON      -> NAO houve criacao; ler campo erro; nao reenviar cego (risco duplicar)\n  500/timeout                       -> nao reenviar automatico; confirmar com sde j3 rastrear se nada foi criado\n\nPIPELINE\n  monta pedido.json (do Tiny) -> sde j3 cep <cep> -> sde j3 cotar -> HITL -> sde j3 enviar --dry-run -> sde j3 enviar --yes -> sde j3 etiqueta <tracking> (imprime) -> sde j3 rastrear <tracking> (acompanha)\n\nSEE ALSO\n  Cotar preco/prazo          -> sde j3 cotar\n  Simular varias quantidades -> sde j3 simular\n  Verificar CEP cobertura    -> sde j3 cep <cep>\n  Faixas de CEP atendidas    -> sde j3 faixas\n  Regras e limites           -> sde j3 regras\n  Rastrear pedido            -> sde j3 rastrear <tracking>\n  Buscar etiqueta PDF        -> sde j3 etiqueta <tracking>\n  Cancelar pedido            -> sde j3 cancelar <tracking>\n  Health (auth + cobertura)  -> sde j3 health\n  Outras transportadoras     -> sde frete (FM) / sde gf (GoFretes)\n\nFORMATO (campos reais do stdin / API J3TMS)\n  - numeroPedido: string (vira shippingIntegrationId; UNICO por pedido)\n  - destinatario: string | telefone: string opcional (DDI+DDD+numero, ex 5511987340036) | nf: string opcional\n  - endereco.cep: string com ou sem hifen (normalizado p/ digitos) | uf: sigla 2 letras (ex SP)\n  - volumes[].pesoGramas: inteiro em GRAMAS | larguraCm/alturaCm/comprimentoCm: numero em CENTIMETROS | valorCentavos: inteiro em CENTAVOS\n  - Decimais: nao se aplica nos campos da API (peso em gramas, valor em centavos -> inteiros)\n  - Datas: retornadas em history[].timestamp (ISO 8601 da API)\n  - Booleanos: true/false (JSON nativo) | enum de status terminal: Canceled",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde j3 enviar {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "j3:write"
+    },
+    "j3.rastrear": {
+      "interface": "cli",
+      "command": "sde j3 rastrear {args} --json",
+      "mutating": false,
+      "json": true,
+      "description": "Rastrear pedido J3 por tracking number. tracking = retornado por sde j3 enviar. (Em outros dominios: fm=`trackingCode`, gf=`quotationId`, logistics=`--rastreio`.)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "rastrear",
+        "properties": {
+          "tracking": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["tracking"]
+      },
+      "help": {
+        "summary": "Rastrear pedido J3 por tracking number. tracking = retornado por sde j3 enviar. (Em outros dominios: fm=`trackingCode`, gf=`quotationId`, logistics=`--rastreio`.)",
+        "usage": "ravi apps run j3 rastrear --json -- <tracking> [options]",
+        "arguments": [
+          {
+            "name": "tracking",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Tracking number J3 (obrigatório). Retornado por sde j3 enviar."
+          }
+        ],
+        "options": [
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          }
+        ],
+        "examples": ["ravi apps run j3 rastrear --json -- J3-ABC123"],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANÇA",
+            "content": "- READ-only. Seguro. Sem alterações."
+          },
+          {
+            "title": "ARGUMENTOS / FILTROS",
+            "content": "<tracking>   Tracking number J3 (obrigatório). Retornado por sde j3 enviar.\n               Em outros domínios: fm=trackingCode, gf=quotationId, logistics=--rastreio."
+          },
+          {
+            "title": "USE",
+            "content": "- Verificar status real de entrega J3.\n  - Input para processar-entregas após HITL."
+          },
+          {
+            "title": "NÃO USE",
+            "content": "- Para cancelar → sde j3 cancelar <tracking>.\n  - Para rastrear FM → sde fm rastrear <trackingCode>.\n  - Para rastrear GF → sde gf rastrear <quotationId>."
+          },
+          {
+            "title": "RETORNO",
+            "content": "{ status, statusCode, subStatus, history: [{ previousStatus, newStatus, timestamp }] }"
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "$ sde j3 rastrear J3-ABC123"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "tracking não encontrado → verificar number em sde j3 enviar retorno ou obs_interna [J3:tracking=X]."
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Enviar J3                → sde j3 enviar (retorna tracking)\n  Cancelar J3              → sde j3 cancelar <tracking>\n  Etiqueta J3              → sde j3 etiqueta <tracking>\n  Verificar divergências   → sde logistics verificar-entregas"
+          },
+          {
+            "title": "ENDPOINT",
+            "content": "Interno: J3.rastrear(tracking)"
+          }
+        ],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi j3 rastrear --help --json",
+          "ravi apps show j3 --json",
+          "ravi apps run j3 help --json",
+          "ravi apps check j3 --json"
+        ],
+        "sourceText": "Usage: sde j3 rastrear [options] <tracking>\n\nRastrear pedido J3 por tracking number. tracking = retornado por sde j3 enviar. (Em outros dominios:\nfm=`trackingCode`, gf=`quotationId`, logistics=`--rastreio`.)\n\nOptions:\n  --json      Output puro JSON em stdout, logs em stderr (default: false)\n  --yes       Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema    Imprime JSONSchema do input esperado e sai (default: false)\n  -h, --help  display help for command\n\nUsage: sde j3 rastrear <tracking>\n\nRastrear pedido J3 Entregas pelo tracking number.\n\nCUSTO / SEGURANÇA\n  - READ-only. Seguro. Sem alterações.\n\nARGUMENTOS / FILTROS\n  <tracking>   Tracking number J3 (obrigatório). Retornado por sde j3 enviar.\n               Em outros domínios: fm=trackingCode, gf=quotationId, logistics=--rastreio.\n\nUSE\n  - Verificar status real de entrega J3.\n  - Input para processar-entregas após HITL.\n\nNÃO USE\n  - Para cancelar → sde j3 cancelar <tracking>.\n  - Para rastrear FM → sde fm rastrear <trackingCode>.\n  - Para rastrear GF → sde gf rastrear <quotationId>.\n\nRETORNO\n  { status, statusCode, subStatus, history: [{ previousStatus, newStatus, timestamp }] }\n\nEXAMPLES\n  $ sde j3 rastrear J3-ABC123\n\nON ERROR\n  tracking não encontrado → verificar number em sde j3 enviar retorno ou obs_interna [J3:tracking=X].\n\nSEE ALSO\n  Enviar J3                → sde j3 enviar (retorna tracking)\n  Cancelar J3              → sde j3 cancelar <tracking>\n  Etiqueta J3              → sde j3 etiqueta <tracking>\n  Verificar divergências   → sde logistics verificar-entregas\n\nENDPOINT\n  Interno: J3.rastrear(tracking)",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde j3 rastrear {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "j3.etiqueta": {
+      "interface": "cli",
+      "command": "sde j3 etiqueta {args} --json",
+      "mutating": true,
+      "json": true,
+      "description": "Buscar etiqueta (stamp PDF) por tracking number. tracking = retornado por sde j3 enviar. (Em outros dominios: fm=`trackingCode`, gf=`quotationId`, logistics=`--rastreio`.)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "etiqueta",
+        "properties": {
+          "tracking": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["tracking"]
+      },
+      "help": {
+        "summary": "Buscar etiqueta (stamp PDF) por tracking number. tracking = retornado por sde j3 enviar. (Em outros dominios: fm=`trackingCode`, gf=`quotationId`, logistics=`--rastreio`.)",
+        "usage": "ravi apps run j3 etiqueta --json -- <tracking> [options]",
+        "arguments": [
+          {
+            "name": "tracking",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Tracking number J3 (obrigatório). Retornado por sde j3 enviar."
+          }
+        ],
+        "options": [
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          }
+        ],
+        "examples": ["ravi apps run j3 etiqueta --json -- J3-ABC123"],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANÇA",
+            "content": "- READ leve. Busca URL do PDF de etiqueta gerado no envio."
+          },
+          {
+            "title": "ARGUMENTOS / FILTROS",
+            "content": "<tracking>   Tracking number J3 (obrigatório). Retornado por sde j3 enviar.\n               Em outros domínios: fm=trackingCode, gf=quotationId, logistics=--rastreio."
+          },
+          {
+            "title": "USE",
+            "content": "- Reimprimir etiqueta de um envio já contratado.\n  - Obter URL do PDF para envio ao cliente."
+          },
+          {
+            "title": "NÃO USE",
+            "content": "- Para rastrear status → sde j3 rastrear <tracking>.\n  - Para cancelar → sde j3 cancelar <tracking>."
+          },
+          {
+            "title": "RETORNO",
+            "content": "{ stampUrl, tracking, ... }"
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "$ sde j3 etiqueta J3-ABC123"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "tracking não encontrado → verificar em retorno de sde j3 enviar ou obs_interna [J3:tracking=X]."
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Enviar J3      → sde j3 enviar (retorna tracking)\n  Rastrear J3    → sde j3 rastrear <tracking>\n  Cancelar J3    → sde j3 cancelar <tracking>"
+          },
+          {
+            "title": "ENDPOINT",
+            "content": "Interno: J3.etiqueta(tracking)"
+          }
+        ],
+        "permissions": ["j3:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": true,
+          "dryRunSupported": false,
+          "gates": ["confirmation:required", "permission:j3:write"]
+        },
+        "validationCommands": [
+          "ravi j3 etiqueta --help --json",
+          "ravi apps show j3 --json",
+          "ravi apps run j3 help --json",
+          "ravi apps check j3 --json"
+        ],
+        "sourceText": "Usage: sde j3 etiqueta [options] <tracking>\n\nBuscar etiqueta (stamp PDF) por tracking number. tracking = retornado por sde j3 enviar. (Em outros\ndominios: fm=`trackingCode`, gf=`quotationId`, logistics=`--rastreio`.)\n\nOptions:\n  --json      Output puro JSON em stdout, logs em stderr (default: false)\n  --yes       Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema    Imprime JSONSchema do input esperado e sai (default: false)\n  -h, --help  display help for command\n\nUsage: sde j3 etiqueta <tracking>\n\nBuscar etiqueta PDF (stamp) por tracking number J3.\n\nCUSTO / SEGURANÇA\n  - READ leve. Busca URL do PDF de etiqueta gerado no envio.\n\nARGUMENTOS / FILTROS\n  <tracking>   Tracking number J3 (obrigatório). Retornado por sde j3 enviar.\n               Em outros domínios: fm=trackingCode, gf=quotationId, logistics=--rastreio.\n\nUSE\n  - Reimprimir etiqueta de um envio já contratado.\n  - Obter URL do PDF para envio ao cliente.\n\nNÃO USE\n  - Para rastrear status → sde j3 rastrear <tracking>.\n  - Para cancelar → sde j3 cancelar <tracking>.\n\nRETORNO\n  { stampUrl, tracking, ... }\n\nEXAMPLES\n  $ sde j3 etiqueta J3-ABC123\n\nON ERROR\n  tracking não encontrado → verificar em retorno de sde j3 enviar ou obs_interna [J3:tracking=X].\n\nSEE ALSO\n  Enviar J3      → sde j3 enviar (retorna tracking)\n  Rastrear J3    → sde j3 rastrear <tracking>\n  Cancelar J3    → sde j3 cancelar <tracking>\n\nENDPOINT\n  Interno: J3.etiqueta(tracking)",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde j3 etiqueta {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "j3:write"
+    },
+    "j3.cancelar": {
+      "interface": "cli",
+      "command": "sde j3 cancelar {args} --json",
+      "mutating": true,
+      "json": true,
+      "description": "Cancelar pedido J3 por tracking number (destrutivo: cancela contrato com transportadora). tracking = retornado por sde j3 enviar. (Em outros dominios: fm=`trackingCode`, gf=`quotationId`, logistics=`--rastreio`.)",
+      "destructive": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "cancelar",
+        "properties": {
+          "tracking": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["tracking"]
+      },
+      "help": {
+        "summary": "Cancelar pedido J3 por tracking number (destrutivo: cancela contrato com transportadora). tracking = retornado por sde j3 enviar. (Em outros dominios: fm=`trackingCode`, gf=`quotationId`, logistics=`--rastreio`.)",
+        "usage": "ravi apps run j3 cancelar --json -- <tracking> [options]",
+        "arguments": [
+          {
+            "name": "tracking",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "string OBRIGATORIO | trackingNumber retornado por sde j3 enviar. (Em outros dominios o identificador difere: fm=trackingCode, gf=quotationId, logistics=--rastreio.)"
+          }
+        ],
+        "options": [
+          {
+            "flags": "--json",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Output puro JSON em stdout, logs em stderr"
+          },
+          {
+            "flags": "--yes",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Bypass de confirmacao em operacoes destrutivas"
+          },
+          {
+            "flags": "--schema",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Imprime JSONSchema do input esperado e sai"
+          },
+          {
+            "flags": "--dry-run",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": false,
+            "values": [],
+            "description": "Mostra payload que seria enviado sem executar"
+          }
+        ],
+        "examples": ["ravi apps run j3 cancelar --json -- <tracking> [options]"],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- DESTRUTIVO e IRREVERSIVEL pela CLI: muda o status do pedido para Canceled. Nao ha comando de reativacao.\n  - Idempotencia: cancelar um pedido ja cancelado tende a retornar erro da API (nao recria nada). Nao re-tentar cegamente.\n  - Latencia: ~1-3s (auth JWT cache 23h + GET stamps + PATCH status).\n  - Auth: JWT via POST /api/auth/changeKey?key=J3_API_KEY (requer J3_API_KEY em /home/ravi/sde/.env).\n  - Rate limit: nao documentado (API privada). Tratar erro como nao-retentavel automaticamente."
+          },
+          {
+            "title": "USE",
+            "content": "- Pedido criado por engano, endereco/valor errado, ou cliente cancelou ANTES da coleta/transporte.\n  - Voce tem o trackingNumber exato do envio (sde j3 enviar / sde j3 rastrear).\n\nNAO USE (fora do escopo / redirect)\n  - So consultar status                 -> sde j3 rastrear <tracking>\n  - Reimprimir etiqueta                 -> sde j3 etiqueta <tracking>\n  - Criar/refazer o pedido              -> sde j3 enviar (cria pedido NOVO, com numeroPedido diferente)\n  - Cancelar pedido no Tiny             -> sde orders cancelar-pedido <id> (canal/ERP diferente)\n  - Pedido ja em transito/entregue      -> cancelamento pode ser recusado pela J3; tratar com a transportadora"
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- Requer orderId (UUID) resolvido a partir do tracking via stamps. Se o tracking nao resolver orderId -> nao cancela.\n  - status enviado e EXATAMENTE Canceled (case-sensitive) no query param.\n  - Cancelar NAO apaga o pedido no Tiny nem reverte estoque/NF -> cuidar do lado ERP separadamente.\n\nHITL OBRIGATORIO (pare antes de --yes)\n  - Confirme com humano: e este pedido mesmo? (mostrar tracking + destinatario/cidade via rastrear). Cancelamento e irreversivel.\n  - Cenarios de parada: pedido possivelmente ja coletado/em transito; duvida sobre qual tracking; impacto no pedido Tiny."
+          },
+          {
+            "title": "VALIDACOES AUTOMATICAS",
+            "content": "- Resolve orderId via GET /api/orders/stamps/{tracking}. Se stamp.orderId ausente -> erro Nao foi possivel obter orderId para cancelamento.\n  - Erros da API capturados -> retorno success:false + campo erro (nao lanca excecao para o caller).\n\nLIFECYCLE (enums reais)\n  - Estado alvo deste comando: Canceled (terminal).\n  - Demais status sao retornados por sde j3 rastrear (status textual + statusCode + subStatus + history).\n  - Verificar resultado: sde j3 rastrear <tracking> deve refletir Canceled apos sucesso.\n\nHITL TEMPLATE (WhatsApp markdown - *bold*, sem tabela)\n  Vou CANCELAR este envio J3 (acao irreversivel):\n  *Tracking:* <tracking>\n  *Destinatario/Cidade:* <nome> - <cidade>/<uf>\n  *Status atual:* <status de rastrear>\n  Confirmo o cancelamento?\n\nEXAMPLES (copy-paste reais)\n  # 1) Conferir o pedido antes\n  $ sde j3 rastrear <tracking>\n\n  # 2) Dry-run (mostra o que faria, NAO cancela)\n  $ sde j3 cancelar <tracking> --dry-run\n\n  # 3) Cancelamento real\n  $ sde j3 cancelar <tracking> --yes --json\n\n  # 4) Confirmar que ficou Canceled\n  $ sde j3 rastrear <tracking>\n\nON ERROR (codigo -> acao)\n  Nao foi possivel obter orderId       -> tracking invalido ou sem stamp; confirmar com sde j3 rastrear; pode nao ser pedido J3\n  J3 API PATCH .../status (4xx)        -> status nao permite cancelar (ex ja em transito/entregue) ou ja Canceled; checar rastrear\n  Auth J3 falhou (401/403)             -> J3_API_KEY invalida/expirada; revalidar; sde j3 health\n  J3_API_KEY nao configurado           -> setar J3_API_KEY em /home/ravi/sde/.env\n  success:false + erro no JSON         -> cancelamento NAO efetivado; ler campo erro; nao re-tentar cego\n  500/timeout                          -> confirmar estado real com sde j3 rastrear antes de re-tentar"
+          },
+          {
+            "title": "PIPELINE",
+            "content": "sde j3 rastrear <tracking> (confirmar pedido) -> HITL -> sde j3 cancelar <tracking> --dry-run -> sde j3 cancelar <tracking> --yes -> sde j3 rastrear <tracking> (verificar Canceled) -> (se aplicavel) ajustar pedido no Tiny via sde orders"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "Rastrear pedido            -> sde j3 rastrear <tracking>\n  Buscar etiqueta PDF        -> sde j3 etiqueta <tracking>\n  Criar pedido               -> sde j3 enviar\n  Cancelar pedido no ERP     -> sde orders cancelar-pedido <id>\n  Health (auth + cobertura)  -> sde j3 health"
+          },
+          {
+            "title": "FORMATO (J3TMS)",
+            "content": "- tracking: string trackingNumber (retornado por enviar)\n  - orderId: UUID resolvido internamente via stamps (nao informado pelo usuario)\n  - status terminal: Canceled (case-sensitive, query param da API)\n  - Datas/timestamps: ISO 8601 (history de rastrear) | Booleanos: true/false (JSON)"
+          }
+        ],
+        "permissions": ["j3:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": true,
+          "idempotent": null,
+          "hitlRequired": true,
+          "confirmationRequired": true,
+          "dryRunSupported": true,
+          "gates": ["confirmation:required", "hitl:required", "permission:j3:write", "preview:dry-run"]
+        },
+        "validationCommands": [
+          "ravi j3 cancelar --help --json",
+          "ravi apps show j3 --json",
+          "ravi apps run j3 help --json",
+          "ravi apps check j3 --json"
+        ],
+        "sourceText": "Usage: sde j3 cancelar [options] <tracking>\n\nCancelar pedido J3 por tracking number (destrutivo: cancela contrato com transportadora). tracking =\nretornado por sde j3 enviar. (Em outros dominios: fm=`trackingCode`, gf=`quotationId`,\nlogistics=`--rastreio`.)\n\nOptions:\n  --json      Output puro JSON em stdout, logs em stderr (default: false)\n  --yes       Bypass de confirmacao em operacoes destrutivas (default: false)\n  --schema    Imprime JSONSchema do input esperado e sai (default: false)\n  --dry-run   Mostra payload que seria enviado sem executar (default: false)\n  -h, --help  display help for command\nUsage: sde j3 cancelar [options] <tracking>\n\nCancela um pedido J3 ja criado, pelo tracking number. DESTRUTIVO: encerra o contrato com a transportadora (PATCH /api/orders/{orderId}/status?status=Canceled). Internamente: resolve o orderId (UUID) via GET /api/orders/stamps/{tracking} e depois aplica o PATCH de status para Canceled.\n\nArgument:\n  <tracking>  string OBRIGATORIO | trackingNumber retornado por sde j3 enviar. (Em outros dominios o identificador difere: fm=trackingCode, gf=quotationId, logistics=--rastreio.)\n\nOptions (booleanas, sem valor):\n  --json      boolean | default false | Output JSON puro em stdout, logs em stderr.\n  --yes       boolean | default false | Bypass da confirmacao. SEM --yes a CLI pede confirmacao (operacao destrutiva).\n  --schema    boolean | default false | Imprime JSONSchema do input e sai. Este comando usa argumento posicional <tracking>, nao stdin.\n  --dry-run   boolean | default false | Mostra a acao que seria feita sem executar o PATCH. Read-only.\n\nCUSTO / SEGURANCA\n  - DESTRUTIVO e IRREVERSIVEL pela CLI: muda o status do pedido para Canceled. Nao ha comando de reativacao.\n  - Idempotencia: cancelar um pedido ja cancelado tende a retornar erro da API (nao recria nada). Nao re-tentar cegamente.\n  - Latencia: ~1-3s (auth JWT cache 23h + GET stamps + PATCH status).\n  - Auth: JWT via POST /api/auth/changeKey?key=J3_API_KEY (requer J3_API_KEY em /home/ravi/sde/.env).\n  - Rate limit: nao documentado (API privada). Tratar erro como nao-retentavel automaticamente.\n\nUSE\n  - Pedido criado por engano, endereco/valor errado, ou cliente cancelou ANTES da coleta/transporte.\n  - Voce tem o trackingNumber exato do envio (sde j3 enviar / sde j3 rastrear).\n\nNAO USE (fora do escopo / redirect)\n  - So consultar status                 -> sde j3 rastrear <tracking>\n  - Reimprimir etiqueta                 -> sde j3 etiqueta <tracking>\n  - Criar/refazer o pedido              -> sde j3 enviar (cria pedido NOVO, com numeroPedido diferente)\n  - Cancelar pedido no Tiny             -> sde orders cancelar-pedido <id> (canal/ERP diferente)\n  - Pedido ja em transito/entregue      -> cancelamento pode ser recusado pela J3; tratar com a transportadora\n\nREGRAS HARD\n  - Requer orderId (UUID) resolvido a partir do tracking via stamps. Se o tracking nao resolver orderId -> nao cancela.\n  - status enviado e EXATAMENTE Canceled (case-sensitive) no query param.\n  - Cancelar NAO apaga o pedido no Tiny nem reverte estoque/NF -> cuidar do lado ERP separadamente.\n\nHITL OBRIGATORIO (pare antes de --yes)\n  - Confirme com humano: e este pedido mesmo? (mostrar tracking + destinatario/cidade via rastrear). Cancelamento e irreversivel.\n  - Cenarios de parada: pedido possivelmente ja coletado/em transito; duvida sobre qual tracking; impacto no pedido Tiny.\n\nVALIDACOES AUTOMATICAS\n  - Resolve orderId via GET /api/orders/stamps/{tracking}. Se stamp.orderId ausente -> erro Nao foi possivel obter orderId para cancelamento.\n  - Erros da API capturados -> retorno success:false + campo erro (nao lanca excecao para o caller).\n\nLIFECYCLE (enums reais)\n  - Estado alvo deste comando: Canceled (terminal).\n  - Demais status sao retornados por sde j3 rastrear (status textual + statusCode + subStatus + history).\n  - Verificar resultado: sde j3 rastrear <tracking> deve refletir Canceled apos sucesso.\n\nHITL TEMPLATE (WhatsApp markdown - *bold*, sem tabela)\n  Vou CANCELAR este envio J3 (acao irreversivel):\n  *Tracking:* <tracking>\n  *Destinatario/Cidade:* <nome> - <cidade>/<uf>\n  *Status atual:* <status de rastrear>\n  Confirmo o cancelamento?\n\nEXAMPLES (copy-paste reais)\n  # 1) Conferir o pedido antes\n  $ sde j3 rastrear <tracking>\n\n  # 2) Dry-run (mostra o que faria, NAO cancela)\n  $ sde j3 cancelar <tracking> --dry-run\n\n  # 3) Cancelamento real\n  $ sde j3 cancelar <tracking> --yes --json\n\n  # 4) Confirmar que ficou Canceled\n  $ sde j3 rastrear <tracking>\n\nON ERROR (codigo -> acao)\n  Nao foi possivel obter orderId       -> tracking invalido ou sem stamp; confirmar com sde j3 rastrear; pode nao ser pedido J3\n  J3 API PATCH .../status (4xx)        -> status nao permite cancelar (ex ja em transito/entregue) ou ja Canceled; checar rastrear\n  Auth J3 falhou (401/403)             -> J3_API_KEY invalida/expirada; revalidar; sde j3 health\n  J3_API_KEY nao configurado           -> setar J3_API_KEY em /home/ravi/sde/.env\n  success:false + erro no JSON         -> cancelamento NAO efetivado; ler campo erro; nao re-tentar cego\n  500/timeout                          -> confirmar estado real com sde j3 rastrear antes de re-tentar\n\nPIPELINE\n  sde j3 rastrear <tracking> (confirmar pedido) -> HITL -> sde j3 cancelar <tracking> --dry-run -> sde j3 cancelar <tracking> --yes -> sde j3 rastrear <tracking> (verificar Canceled) -> (se aplicavel) ajustar pedido no Tiny via sde orders\n\nSEE ALSO\n  Rastrear pedido            -> sde j3 rastrear <tracking>\n  Buscar etiqueta PDF        -> sde j3 etiqueta <tracking>\n  Criar pedido               -> sde j3 enviar\n  Cancelar pedido no ERP     -> sde orders cancelar-pedido <id>\n  Health (auth + cobertura)  -> sde j3 health\n\nFORMATO (J3TMS)\n  - tracking: string trackingNumber (retornado por enviar)\n  - orderId: UUID resolvido internamente via stamps (nao informado pelo usuario)\n  - status terminal: Canceled (case-sensitive, query param da API)\n  - Datas/timestamps: ISO 8601 (history de rastrear) | Booleanos: true/false (JSON)",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde j3 cancelar {args} --json",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "j3:write"
+    }
+  },
+  "permissions": {
+    "required": [],
+    "optional": [],
+    "mutating": ["j3:write"]
+  },
+  "storage": {
+    "sqlite": [],
+    "files": []
+  },
+  "artifacts": [],
+  "events": {
+    "emits": [
+      {
+        "topic": "ravi.apps.j3.changed",
+        "when": "imported CLI app state changes",
+        "durability": "logged",
+        "schema": "events/j3-changed.v1.json"
+      }
+    ],
+    "consumes": []
+  },
+  "skills": ["ravi-system-j3"],
+  "health": {
+    "checks": [
+      {
+        "type": "builtin",
+        "handler": "apps.manifest.check"
+      }
+    ]
+  },
+  "versioning": {
+    "compatibility": "semver",
+    "migrations": []
+  }
+}

@@ -1,0 +1,174 @@
+{
+  "schema": "ravi.app/v1",
+  "id": "galvanotek",
+  "name": "Galvanotek",
+  "version": "0.1.0",
+  "description": "Galvanotek — Coletor cross-platform G-Suite (GA4 + GSC + cross merge)",
+  "interfaces": {
+    "cli": {
+      "command": "ravi galvanotek",
+      "json": true,
+      "health": "ravi galvanotek check --json"
+    },
+    "ui": {
+      "routes": [
+        {
+          "id": "main",
+          "path": "/apps/galvanotek",
+          "label": "Galvanotek",
+          "icon": "app-window",
+          "view": "main"
+        }
+      ],
+      "views": [
+        {
+          "id": "main",
+          "type": "dashboard",
+          "title": "Galvanotek",
+          "density": "compact",
+          "query": {
+            "operation": "galvanotek.check"
+          },
+          "refreshOn": ["ravi.apps.galvanotek.changed"],
+          "actions": [
+            {
+              "id": "collect-all",
+              "label": "Collect All",
+              "icon": "play",
+              "operation": "galvanotek.collect-all",
+              "placement": "menu"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "operations": {
+    "galvanotek.help": {
+      "interface": "builtin",
+      "handler": "apps.help",
+      "mutating": false
+    },
+    "galvanotek.show": {
+      "interface": "builtin",
+      "handler": "apps.manifest.show",
+      "mutating": false
+    },
+    "galvanotek.check": {
+      "interface": "builtin",
+      "handler": "apps.manifest.check",
+      "mutating": false,
+      "outputSchema": "schemas/galvanotek-check.v1.json"
+    },
+    "galvanotek.collect-all": {
+      "interface": "cli",
+      "command": "sde galvanotek collect-all {args}",
+      "mutating": true,
+      "json": false,
+      "description": "Coleta determinística cross-platform: GA4 + GSC + deltas + funnel orgânico. Output JSON pronto pra agente analista.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "collect-all",
+        "properties": {
+          "window": {
+            "type": "string",
+            "description": "Janela em dias (default: 7)",
+            "default": "7"
+          },
+          "output": {
+            "type": "string",
+            "description": "Salvar JSON em caminho (default: stdout)"
+          }
+        },
+        "required": []
+      },
+      "help": {
+        "summary": "Coleta determinística cross-platform: GA4 + GSC + deltas + funnel orgânico. Output JSON pronto pra agente analista.",
+        "usage": "ravi apps run galvanotek collect-all --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "-w, --window <days>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": "7",
+            "values": [],
+            "description": "Janela em dias (default: 7)"
+          },
+          {
+            "flags": "-o, --output <path>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Salvar JSON em caminho (default: stdout)"
+          }
+        ],
+        "examples": ["ravi apps run galvanotek collect-all --json -- [options]"],
+        "sections": [],
+        "permissions": ["galvanotek:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": ["permission:galvanotek:write"]
+        },
+        "validationCommands": [
+          "ravi galvanotek collect-all --help --json",
+          "ravi apps show galvanotek --json",
+          "ravi apps run galvanotek help --json",
+          "ravi apps check galvanotek --json"
+        ],
+        "sourceText": "Usage: sde galvanotek collect-all [options]\n\nColeta determinística cross-platform: GA4 + GSC + deltas + funnel orgânico. Output JSON pronto pra\nagente analista.\n\nOptions:\n  -w, --window <days>  Janela em dias (default: 7) (default: \"7\")\n  -o, --output <path>  Salvar JSON em caminho (default: stdout)\n  -h, --help           display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde galvanotek collect-all {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "galvanotek:write"
+    }
+  },
+  "permissions": {
+    "required": [],
+    "optional": [],
+    "mutating": ["galvanotek:write"]
+  },
+  "storage": {
+    "sqlite": [],
+    "files": []
+  },
+  "artifacts": [],
+  "events": {
+    "emits": [
+      {
+        "topic": "ravi.apps.galvanotek.changed",
+        "when": "imported CLI app state changes",
+        "durability": "logged",
+        "schema": "events/galvanotek-changed.v1.json"
+      }
+    ],
+    "consumes": []
+  },
+  "skills": ["ravi-system-galvanotek"],
+  "health": {
+    "checks": [
+      {
+        "type": "builtin",
+        "handler": "apps.manifest.check"
+      }
+    ]
+  },
+  "versioning": {
+    "compatibility": "semver",
+    "migrations": []
+  }
+}

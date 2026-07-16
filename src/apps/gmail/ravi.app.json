@@ -1,0 +1,3519 @@
+{
+  "schema": "ravi.app/v1",
+  "id": "gmail",
+  "name": "Gmail",
+  "version": "0.1.0",
+  "description": "Gmail - API direta Google (multi-conta)",
+  "interfaces": {
+    "cli": {
+      "command": "ravi gmail",
+      "json": true,
+      "health": "ravi gmail check --json"
+    },
+    "ui": {
+      "routes": [
+        {
+          "id": "main",
+          "path": "/apps/gmail",
+          "label": "Gmail",
+          "icon": "app-window",
+          "view": "main"
+        }
+      ],
+      "views": [
+        {
+          "id": "main",
+          "type": "dashboard",
+          "title": "Gmail",
+          "density": "compact",
+          "query": {
+            "operation": "gmail.check"
+          },
+          "refreshOn": ["ravi.apps.gmail.changed"],
+          "actions": [
+            {
+              "id": "contas",
+              "label": "Contas",
+              "icon": "list",
+              "operation": "gmail.contas",
+              "placement": "toolbar"
+            },
+            {
+              "id": "auth-url",
+              "label": "Auth Url",
+              "icon": "list",
+              "operation": "gmail.auth-url",
+              "placement": "toolbar"
+            },
+            {
+              "id": "auth",
+              "label": "Auth",
+              "icon": "play",
+              "operation": "gmail.auth",
+              "placement": "menu"
+            },
+            {
+              "id": "perfil",
+              "label": "Perfil",
+              "icon": "list",
+              "operation": "gmail.perfil",
+              "placement": "toolbar"
+            },
+            {
+              "id": "inbox",
+              "label": "Inbox",
+              "icon": "list",
+              "operation": "gmail.inbox",
+              "placement": "toolbar"
+            },
+            {
+              "id": "ler",
+              "label": "Ler",
+              "icon": "list",
+              "operation": "gmail.ler",
+              "placement": "toolbar"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "operations": {
+    "gmail.help": {
+      "interface": "builtin",
+      "handler": "apps.help",
+      "mutating": false
+    },
+    "gmail.show": {
+      "interface": "builtin",
+      "handler": "apps.manifest.show",
+      "mutating": false
+    },
+    "gmail.check": {
+      "interface": "builtin",
+      "handler": "apps.manifest.check",
+      "mutating": false,
+      "outputSchema": "schemas/gmail-check.v1.json"
+    },
+    "gmail.contas": {
+      "interface": "cli",
+      "command": "sde gmail contas {args}",
+      "mutating": false,
+      "json": false,
+      "description": "Listar contas configuradas",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "contas",
+        "properties": {},
+        "required": []
+      },
+      "help": {
+        "summary": "Listar contas configuradas",
+        "usage": "ravi apps run gmail contas --json",
+        "arguments": [],
+        "options": [],
+        "examples": ["ravi apps run gmail contas --json"],
+        "sections": [],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi gmail contas --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail contas [options]\n\nListar contas configuradas\n\nOptions:\n  -h, --help  display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail contas {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "gmail.auth-url": {
+      "interface": "cli",
+      "command": "sde gmail auth-url {args}",
+      "mutating": false,
+      "json": false,
+      "description": "Gerar URL de autenticacao OAuth2",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "auth-url",
+        "properties": {},
+        "required": []
+      },
+      "help": {
+        "summary": "Gerar URL de autenticacao OAuth2",
+        "usage": "ravi apps run gmail auth-url --json",
+        "arguments": [],
+        "options": [],
+        "examples": ["ravi apps run gmail auth-url --json"],
+        "sections": [
+          {
+            "title": "CUSTO/SEGURANCA",
+            "content": "READ-ONLY local. Apenas gera a URL de consentimento OAuth do Google. Nao faz\n  chamada externa, nao altera nada. Sem efeito externo. Sem HITL.\n  Escopos solicitados no consentimento: webmasters.readonly, webmasters\n  (read/write de sites e sitemaps) e siteverification."
+          },
+          {
+            "title": "ARGUMENTOS/FILTROS",
+            "content": "(nenhum)"
+          },
+          {
+            "title": "USE",
+            "content": "- Primeira configuracao do dominio gsc quando ainda nao ha token salvo.\n  - Quando chamadas retornam erro de auth/token expirado e e preciso reautenticar."
+          },
+          {
+            "title": "NAO USE",
+            "content": "- Para autenticar de fato. Esta etapa so gera a URL; depois use: sde gsc auth CODE.\n  - Em rotina automatizada (o passo seguinte exige interacao humana no browser).\n\nRETORNO (shape)\n  Imprime texto livre com a URL de autorizacao e instrucao para rodar\n  sde gsc auth CODE. Em erro: JSON { success: false, error }."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "sde gsc auth-url"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "\"Formato de credenciais inválido\" -> arquivo de credentials OAuth ausente\n  ou em formato inesperado (espera bloco installed). Verificar credenciais."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "sde gsc auth-url  ->  (abrir URL no browser, autorizar)  ->  sde gsc auth CODE\n  ->  sde gsc sites (validar)"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "sde gsc auth, sde gsc config, sde gsc sites\n\nENDPOINT (Google API)\n  Nenhum. Usa google.auth.OAuth2.generateAuthUrl localmente."
+          }
+        ],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi gmail auth-url --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail auth-url [options]\n\nGerar URL de autenticacao OAuth2\n\nOptions:\n  -h, --help  display help for command\nsde gsc auth-url\n\nCUSTO/SEGURANCA\n  READ-ONLY local. Apenas gera a URL de consentimento OAuth do Google. Nao faz\n  chamada externa, nao altera nada. Sem efeito externo. Sem HITL.\n  Escopos solicitados no consentimento: webmasters.readonly, webmasters\n  (read/write de sites e sitemaps) e siteverification.\n\nARGUMENTOS/FILTROS\n  (nenhum)\n\nUSE\n  - Primeira configuracao do dominio gsc quando ainda nao ha token salvo.\n  - Quando chamadas retornam erro de auth/token expirado e e preciso reautenticar.\n\nNAO USE\n  - Para autenticar de fato. Esta etapa so gera a URL; depois use: sde gsc auth CODE.\n  - Em rotina automatizada (o passo seguinte exige interacao humana no browser).\n\nRETORNO (shape)\n  Imprime texto livre com a URL de autorizacao e instrucao para rodar\n  sde gsc auth CODE. Em erro: JSON { success: false, error }.\n\nEXAMPLES\n  sde gsc auth-url\n\nON ERROR\n  \"Formato de credenciais inválido\" -> arquivo de credentials OAuth ausente\n  ou em formato inesperado (espera bloco installed). Verificar credenciais.\n\nPIPELINE\n  sde gsc auth-url  ->  (abrir URL no browser, autorizar)  ->  sde gsc auth CODE\n  ->  sde gsc sites (validar)\n\nSEE ALSO\n  sde gsc auth, sde gsc config, sde gsc sites\n\nENDPOINT (Google API)\n  Nenhum. Usa google.auth.OAuth2.generateAuthUrl localmente.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail auth-url {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "gmail.auth": {
+      "interface": "cli",
+      "command": "sde gmail auth {args}",
+      "mutating": true,
+      "json": false,
+      "description": "Autenticar com codigo do Google",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "auth",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["code"]
+      },
+      "help": {
+        "summary": "Autenticar com codigo do Google",
+        "usage": "ravi apps run gmail auth --json -- <code>",
+        "arguments": [
+          {
+            "name": "code",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "(obrigatorio)  Codigo de autorizacao retornado pelo Google apos o"
+          }
+        ],
+        "options": [],
+        "examples": ["ravi apps run gmail auth --json -- 4/0AVMBsJ...codigo-do-google"],
+        "sections": [
+          {
+            "title": "CUSTO/SEGURANCA",
+            "content": "WRITE LOCAL (sem efeito externo no Google). Troca o code de autorizacao por\n  tokens OAuth e SALVA o token em disco (refresh + access). Nao altera nada na\n  conta Google; apenas persiste credenciais locais. Sem HITL, mas trata-se de\n  segredo: o token concede acesso read/write a Search Console."
+          },
+          {
+            "title": "ARGUMENTOS/FILTROS",
+            "content": "<code>  (obrigatorio)  Codigo de autorizacao retornado pelo Google apos o\n                         consentimento via sde gsc auth-url."
+          },
+          {
+            "title": "USE",
+            "content": "- Concluir o fluxo OAuth logo apos sde gsc auth-url.\n  - Renovar credenciais quando o token salvo expira ou e revogado."
+          },
+          {
+            "title": "NAO USE",
+            "content": "- Sem antes rodar sde gsc auth-url (o code so e valido para aquele fluxo).\n  - Reutilizar um code antigo: codes sao de uso unico e expiram em minutos."
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- O code expira rapido; gerar e usar na mesma sessao.\n  - Nao versionar nem logar o token resultante (segredo).\n\nRETORNO (shape)\n  Sucesso: JSON { success: true, message: \"Autenticado com sucesso!\" }\n  Erro:    JSON { success: false, error }"
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "sde gsc auth 4/0AVMBsJ...codigo-do-google"
+          },
+          {
+            "title": "ON ERROR",
+            "content": "invalid_grant / \"Malformed auth code\" -> code expirado ou ja usado;\n  gere outro com sde gsc auth-url."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "sde gsc auth-url  ->  sde gsc auth CODE  ->  sde gsc sites"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "sde gsc auth-url, sde gsc sites, sde gsc config\n\nENDPOINT (Google API)\n  OAuth2 token exchange (oauth2.googleapis.com/token) via getToken(code)."
+          }
+        ],
+        "permissions": ["gmail:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": ["permission:gmail:write"]
+        },
+        "validationCommands": [
+          "ravi gmail auth --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail auth [options] <code>\n\nAutenticar com codigo do Google\n\nOptions:\n  -h, --help  display help for command\nsde gsc auth <code>\n\nCUSTO/SEGURANCA\n  WRITE LOCAL (sem efeito externo no Google). Troca o code de autorizacao por\n  tokens OAuth e SALVA o token em disco (refresh + access). Nao altera nada na\n  conta Google; apenas persiste credenciais locais. Sem HITL, mas trata-se de\n  segredo: o token concede acesso read/write a Search Console.\n\nARGUMENTOS/FILTROS\n  <code>  (obrigatorio)  Codigo de autorizacao retornado pelo Google apos o\n                         consentimento via sde gsc auth-url.\n\nUSE\n  - Concluir o fluxo OAuth logo apos sde gsc auth-url.\n  - Renovar credenciais quando o token salvo expira ou e revogado.\n\nNAO USE\n  - Sem antes rodar sde gsc auth-url (o code so e valido para aquele fluxo).\n  - Reutilizar um code antigo: codes sao de uso unico e expiram em minutos.\n\nREGRAS HARD\n  - O code expira rapido; gerar e usar na mesma sessao.\n  - Nao versionar nem logar o token resultante (segredo).\n\nRETORNO (shape)\n  Sucesso: JSON { success: true, message: \"Autenticado com sucesso!\" }\n  Erro:    JSON { success: false, error }\n\nEXAMPLES\n  sde gsc auth 4/0AVMBsJ...codigo-do-google\n\nON ERROR\n  invalid_grant / \"Malformed auth code\" -> code expirado ou ja usado;\n  gere outro com sde gsc auth-url.\n\nPIPELINE\n  sde gsc auth-url  ->  sde gsc auth CODE  ->  sde gsc sites\n\nSEE ALSO\n  sde gsc auth-url, sde gsc sites, sde gsc config\n\nENDPOINT (Google API)\n  OAuth2 token exchange (oauth2.googleapis.com/token) via getToken(code).",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail auth {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "gmail:write"
+    },
+    "gmail.perfil": {
+      "interface": "cli",
+      "command": "sde gmail perfil {args}",
+      "mutating": false,
+      "json": false,
+      "description": "Ver perfil da conta autenticada",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "perfil",
+        "properties": {},
+        "required": []
+      },
+      "help": {
+        "summary": "Ver perfil da conta autenticada",
+        "usage": "ravi apps run gmail perfil --json",
+        "arguments": [],
+        "options": [],
+        "examples": ["ravi apps run gmail perfil --json"],
+        "sections": [],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi gmail perfil --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail perfil [options]\n\nVer perfil da conta autenticada\n\nOptions:\n  -h, --help  display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail perfil {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "gmail.inbox": {
+      "interface": "cli",
+      "command": "sde gmail inbox {args}",
+      "mutating": false,
+      "json": false,
+      "description": "Listar emails nao lidos",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "inbox",
+        "properties": {
+          "limite": {
+            "type": "string",
+            "description": "Maximo de emails",
+            "default": "20"
+          }
+        },
+        "required": []
+      },
+      "help": {
+        "summary": "Listar emails nao lidos",
+        "usage": "ravi apps run gmail inbox --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--limite <n>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": "20",
+            "values": [],
+            "description": "Maximo de emails"
+          }
+        ],
+        "examples": ["ravi apps run gmail inbox --json -- [options]"],
+        "sections": [],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi gmail inbox --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail inbox [options]\n\nListar emails nao lidos\n\nOptions:\n  --limite <n>  Maximo de emails (default: \"20\")\n  -h, --help    display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail inbox {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "gmail.ler": {
+      "interface": "cli",
+      "command": "sde gmail ler {args}",
+      "mutating": false,
+      "json": false,
+      "description": "Ler email completo por ID",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "ler",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["messageId"]
+      },
+      "help": {
+        "summary": "Ler email completo por ID",
+        "usage": "ravi apps run gmail ler --json -- <messageId>",
+        "arguments": [
+          {
+            "name": "messageId",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Argumento obrigatorio messageId."
+          }
+        ],
+        "options": [],
+        "examples": ["ravi apps run gmail ler --json -- <messageId>"],
+        "sections": [],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi gmail ler --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail ler [options] <messageId>\n\nLer email completo por ID\n\nOptions:\n  -h, --help  display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail ler {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "gmail.enviar": {
+      "interface": "cli",
+      "command": "sde gmail enviar {args}",
+      "mutating": true,
+      "json": false,
+      "description": "Enviar email",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "enviar",
+        "properties": {
+          "para": {
+            "type": "string",
+            "description": "Email do destinatario"
+          },
+          "assunto": {
+            "type": "string",
+            "description": "Assunto do email"
+          },
+          "corpo": {
+            "type": "string",
+            "description": "Corpo do email"
+          },
+          "html": {
+            "type": "boolean",
+            "description": "Enviar como HTML"
+          },
+          "cc": {
+            "type": "string",
+            "description": "Copia"
+          },
+          "bcc": {
+            "type": "string",
+            "description": "Copia oculta"
+          }
+        },
+        "required": ["para", "assunto", "corpo"]
+      },
+      "help": {
+        "summary": "Enviar email",
+        "usage": "ravi apps run gmail enviar --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--para <email>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Email do destinatario"
+          },
+          {
+            "flags": "--assunto <texto>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Assunto do email"
+          },
+          {
+            "flags": "--corpo <texto>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Corpo do email"
+          },
+          {
+            "flags": "--html",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": null,
+            "values": [],
+            "description": "Enviar como HTML"
+          },
+          {
+            "flags": "--cc <email>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Copia"
+          },
+          {
+            "flags": "--bcc <email>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Copia oculta"
+          }
+        ],
+        "examples": [
+          "- ravi apps run gmail enviar --json -- --para cliente@exemplo.com --assunto \"Orcamento caixas\" --corpo \"Segue proposta conforme conversado.\"",
+          "- sde gmail --conta gouveia enviar --para fornecedor@exemplo.com --assunto Cotacao --corpo \"Bom dia, poderia cotar?\" --cc copia@exemplo.com",
+          "- ravi apps run gmail enviar --json -- --para a@x.com --assunto Aviso --corpo \"<b>Ola</b>\" --html",
+          "ON ERROR (codigo -> acao)",
+          "- 400 -> request malformado (corpo/MIME invalido). Revisar parametros.",
+          "- 401 -> credencial invalida. Reautenticar: sde gmail auth-url / sde gmail auth <code>.",
+          "- 403 rateLimitExceeded / userRateLimitExceeded -> backoff exponencial, aguardar >=1s e repetir.",
+          "- 403 dailyLimitExceeded -> limite diario de envio atingido. Parar ate o dia seguinte.",
+          "- 429 -> excesso de requisicoes. Backoff exponencial.",
+          "- 500/502/503/504 -> erro temporario Google. Repetir com backoff."
+        ],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- Rate: messages.send custa 100 unidades de quota; limite per-user 250 unidades/usuario/seg -> na pratica ~2 envios/seg.\n- Limite diario de destinatarios: ~2000/dia (Google Workspace) ou ~500/dia (conta free). Estouro -> 403.\n- Latencia tipica: 0.8s a 3s.\n- Idempotencia: NAO. Cada chamada gera um envio novo. Repetir = email duplicado.\n- Classe: DESTRUTIVO (efeito externo irreversivel).\n\nUSE quando\n- Precisa disparar um email novo, sem responder/encaminhar nada.\n- Comunicacao com cliente/fornecedor a partir de setor ou gouveia.\n\nNAO USE quando\n- Vai responder um email recebido -> use sde gmail responder <messageId>.\n- Vai reencaminhar email -> use sde gmail encaminhar <messageId>.\n- Precisa anexar arquivo -> use sde gmail enviar-anexo.\n- Quer revisar antes -> use sde gmail criar-rascunho e depois sde gmail enviar-rascunho."
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- --para, --assunto e --corpo sao obrigatorios.\n- Nunca usar para campanhas em massa (bloqueio por spam/limite diario).\n- Conta deve estar autenticada (ver sde gmail health)."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "- SIM. Toda saida de email para terceiros exige aprovacao humana do texto, destinatario e conta antes do envio.\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Subject codificado MIME automaticamente.\n- Corpo convertido base64 automaticamente.\n- Nao ha validacao de formato de email nem de tamanho -> validar manualmente."
+          },
+          {
+            "title": "LIFECYCLE",
+            "content": "- Sem maquina de estados local. Resposta da API: success=true + messageId + threadId. Label aplicada pelo Gmail: SENT."
+          },
+          {
+            "title": "HITL TEMPLATE",
+            "content": "- Conta (From): setor\n- Para: ...\n- Cc / Bcc: ...\n- Assunto: ...\n- Corpo (preview): ...\n- Confirmar envio? (sim/nao)"
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "- sde gmail enviar --para cliente@exemplo.com --assunto \"Orcamento caixas\" --corpo \"Segue proposta conforme conversado.\"\n- sde gmail --conta gouveia enviar --para fornecedor@exemplo.com --assunto Cotacao --corpo \"Bom dia, poderia cotar?\" --cc copia@exemplo.com\n- sde gmail enviar --para a@x.com --assunto Aviso --corpo \"<b>Ola</b>\" --html\n\nON ERROR (codigo -> acao)\n- 400 -> request malformado (corpo/MIME invalido). Revisar parametros.\n- 401 -> credencial invalida. Reautenticar: sde gmail auth-url / sde gmail auth <code>.\n- 403 rateLimitExceeded / userRateLimitExceeded -> backoff exponencial, aguardar >=1s e repetir.\n- 403 dailyLimitExceeded -> limite diario de envio atingido. Parar ate o dia seguinte.\n- 429 -> excesso de requisicoes. Backoff exponencial.\n- 500/502/503/504 -> erro temporario Google. Repetir com backoff."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "- sde gmail health -> verificar auth\n- (opcional) sde gmail criar-rascunho ... -> sde gmail enviar-rascunho <draftId>\n- sde gmail enviar ... -> messageId\n- sde gmail ler <messageId> -> conferir"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "- sde gmail enviar-anexo, sde gmail responder, sde gmail encaminhar, sde gmail criar-rascunho, sde gmail health"
+          },
+          {
+            "title": "FORMATO",
+            "content": "- Datas: ISO 8601 nas respostas da API.\n- Decimais: nao aplicavel.\n- Booleanos: flags presenca (--html). Nao usar true/false.\n- Enums reais: --conta = setor | gouveia. Labels Gmail nas respostas: SENT, INBOX, UNREAD, etc."
+          }
+        ],
+        "permissions": ["gmail:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": true,
+          "confirmationRequired": true,
+          "dryRunSupported": false,
+          "gates": ["confirmation:required", "hitl:required", "permission:gmail:write"]
+        },
+        "validationCommands": [
+          "ravi gmail enviar --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail enviar [options]\n\nEnviar email\n\nOptions:\n  --para <email>     Email do destinatario\n  --assunto <texto>  Assunto do email\n  --corpo <texto>    Corpo do email\n  --html             Enviar como HTML\n  --cc <email>       Copia\n  --bcc <email>      Copia oculta\n  -h, --help         display help for command\nUsage: sde gmail enviar --para <email> --assunto <texto> --corpo <texto> [--html] [--cc <email>] [--bcc <email>] [--conta <alias>]\n\nEnvia um email novo (nao thread). Monta MIME RFC 2822 (From/To/Subject/Content-Type) com corpo em base64, codifica em base64url e chama gmail.users.messages.send (userId me). DESTRUTIVO: o email sai imediatamente, nao ha desfazer.\n\nOPTIONS (por flag: tipo / formato / default / origem)\n- --para <email>      string, OBRIGATORIA. Endereco do destinatario. Header To. Sem validacao de formato no codigo -> garanta email valido. Multiplos: separar por virgula.\n- --assunto <texto>   string, OBRIGATORIA. Vira Subject codificado MIME =?UTF-8?B?...?= (acentos seguros).\n- --corpo <texto>     string, OBRIGATORIA. Corpo. Codificado base64. text/plain por padrao.\n- --html              booleano flag (presente=true), default false. Quando presente Content-Type = text/html.\n- --cc <email>        string, opcional. Header Cc. Multiplos separados por virgula.\n- --bcc <email>       string, opcional. Header Bcc (oculto).\n- --conta <alias>     enum REAL: setor | gouveia. default setor. Define a caixa remetente (From).\n\nCUSTO / SEGURANCA\n- Rate: messages.send custa 100 unidades de quota; limite per-user 250 unidades/usuario/seg -> na pratica ~2 envios/seg.\n- Limite diario de destinatarios: ~2000/dia (Google Workspace) ou ~500/dia (conta free). Estouro -> 403.\n- Latencia tipica: 0.8s a 3s.\n- Idempotencia: NAO. Cada chamada gera um envio novo. Repetir = email duplicado.\n- Classe: DESTRUTIVO (efeito externo irreversivel).\n\nUSE quando\n- Precisa disparar um email novo, sem responder/encaminhar nada.\n- Comunicacao com cliente/fornecedor a partir de setor ou gouveia.\n\nNAO USE quando\n- Vai responder um email recebido -> use sde gmail responder <messageId>.\n- Vai reencaminhar email -> use sde gmail encaminhar <messageId>.\n- Precisa anexar arquivo -> use sde gmail enviar-anexo.\n- Quer revisar antes -> use sde gmail criar-rascunho e depois sde gmail enviar-rascunho.\n\nREGRAS HARD\n- --para, --assunto e --corpo sao obrigatorios.\n- Nunca usar para campanhas em massa (bloqueio por spam/limite diario).\n- Conta deve estar autenticada (ver sde gmail health).\n\nHITL OBRIGATORIO\n- SIM. Toda saida de email para terceiros exige aprovacao humana do texto, destinatario e conta antes do envio.\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Subject codificado MIME automaticamente.\n- Corpo convertido base64 automaticamente.\n- Nao ha validacao de formato de email nem de tamanho -> validar manualmente.\n\nLIFECYCLE\n- Sem maquina de estados local. Resposta da API: success=true + messageId + threadId. Label aplicada pelo Gmail: SENT.\n\nHITL TEMPLATE\n- Conta (From): setor\n- Para: ...\n- Cc / Bcc: ...\n- Assunto: ...\n- Corpo (preview): ...\n- Confirmar envio? (sim/nao)\n\nEXAMPLES\n- sde gmail enviar --para cliente@exemplo.com --assunto \"Orcamento caixas\" --corpo \"Segue proposta conforme conversado.\"\n- sde gmail --conta gouveia enviar --para fornecedor@exemplo.com --assunto Cotacao --corpo \"Bom dia, poderia cotar?\" --cc copia@exemplo.com\n- sde gmail enviar --para a@x.com --assunto Aviso --corpo \"<b>Ola</b>\" --html\n\nON ERROR (codigo -> acao)\n- 400 -> request malformado (corpo/MIME invalido). Revisar parametros.\n- 401 -> credencial invalida. Reautenticar: sde gmail auth-url / sde gmail auth <code>.\n- 403 rateLimitExceeded / userRateLimitExceeded -> backoff exponencial, aguardar >=1s e repetir.\n- 403 dailyLimitExceeded -> limite diario de envio atingido. Parar ate o dia seguinte.\n- 429 -> excesso de requisicoes. Backoff exponencial.\n- 500/502/503/504 -> erro temporario Google. Repetir com backoff.\n\nPIPELINE\n- sde gmail health -> verificar auth\n- (opcional) sde gmail criar-rascunho ... -> sde gmail enviar-rascunho <draftId>\n- sde gmail enviar ... -> messageId\n- sde gmail ler <messageId> -> conferir\n\nSEE ALSO\n- sde gmail enviar-anexo, sde gmail responder, sde gmail encaminhar, sde gmail criar-rascunho, sde gmail health\n\nFORMATO\n- Datas: ISO 8601 nas respostas da API.\n- Decimais: nao aplicavel.\n- Booleanos: flags presenca (--html). Nao usar true/false.\n- Enums reais: --conta = setor | gouveia. Labels Gmail nas respostas: SENT, INBOX, UNREAD, etc.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail enviar {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "gmail:write"
+    },
+    "gmail.enviar-anexo": {
+      "interface": "cli",
+      "command": "sde gmail enviar-anexo {args}",
+      "mutating": true,
+      "json": false,
+      "description": "Enviar email com anexo",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "enviar-anexo",
+        "properties": {
+          "para": {
+            "type": "string",
+            "description": "Email do destinatario"
+          },
+          "assunto": {
+            "type": "string",
+            "description": "Assunto do email"
+          },
+          "corpo": {
+            "type": "string",
+            "description": "Corpo do email"
+          },
+          "anexo": {
+            "type": "string",
+            "description": "Caminho(s) do(s) arquivo(s) anexo(s) - aceita multiplos"
+          },
+          "html": {
+            "type": "boolean",
+            "description": "Enviar como HTML"
+          },
+          "cc": {
+            "type": "string",
+            "description": "Copia (separar multiplos por virgula)"
+          },
+          "bcc": {
+            "type": "string",
+            "description": "Copia oculta (separar multiplos por virgula)"
+          }
+        },
+        "required": ["para", "assunto", "corpo", "anexo"]
+      },
+      "help": {
+        "summary": "Enviar email com anexo",
+        "usage": "ravi apps run gmail enviar-anexo --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--para <email>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Email do destinatario"
+          },
+          {
+            "flags": "--assunto <texto>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Assunto do email"
+          },
+          {
+            "flags": "--corpo <texto>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Corpo do email"
+          },
+          {
+            "flags": "--anexo <caminhos...>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Caminho(s) do(s) arquivo(s) anexo(s) - aceita multiplos"
+          },
+          {
+            "flags": "--html",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": null,
+            "values": [],
+            "description": "Enviar como HTML"
+          },
+          {
+            "flags": "--cc <email>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Copia (separar multiplos por virgula)"
+          },
+          {
+            "flags": "--bcc <email>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Copia oculta (separar multiplos por virgula)"
+          }
+        ],
+        "examples": [
+          "- ravi apps run gmail enviar-anexo --json -- --para cliente@exemplo.com --assunto \"NF-e pedido 1234\" --corpo \"Segue a nota.\" --anexo /tmp/nfe-1234.pdf",
+          "- ravi apps run gmail enviar-anexo --json -- --para a@x.com --assunto Docs --corpo \"Documentos em anexo\" --anexo /tmp/a.pdf /tmp/b.xml --cc copia@x.com",
+          "ON ERROR (codigo -> acao)",
+          "- Erro Anexo nao encontrado -> caminho invalido no servidor. Corrigir o caminho.",
+          "- 400 -> mensagem malformada ou muito grande. Verificar tamanho.",
+          "- 401 -> reautenticar (sde gmail auth-url / auth).",
+          "- 403 rateLimitExceeded -> backoff >=1s e repetir.",
+          "- 403 dailyLimitExceeded -> limite diario atingido.",
+          "- 429 -> backoff exponencial.",
+          "- 500/503 -> erro temporario, repetir com backoff."
+        ],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- Rate: messages.send = 100 unidades de quota.\n- Tamanho maximo total da mensagem (com anexos) no envio simples: 25 MB. Acima disso usar upload resumable (nao implementado aqui) -> falha.\n- Latencia cresce com tamanho do anexo (segundos a dezenas de segundos).\n- Idempotencia: NAO. Repetir = email duplicado.\n- MIME detectado por extensao (pdf, xml, json, csv, txt, html, jpg, ...). Extensao desconhecida -> tratada como octet-stream generico.\n- Classe: DESTRUTIVO.\n\nUSE quando\n- Precisa enviar PDF, XML de NF-e, planilha, imagem junto ao email.\n\nNAO USE quando\n- Sem anexo -> use sde gmail enviar.\n- Anexo > 25 MB -> nao suportado; enviar link de download.\n- Responder mantendo thread -> use sde gmail responder (nao suporta anexo; envie separado)."
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- Caminhos de anexo devem existir e ser legiveis no servidor.\n- Soma dos anexos + corpo <= 25 MB.\n- --para, --assunto, --corpo, --anexo obrigatorios."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "- SIM. Aprovar destinatario, conta, texto E lista de anexos antes do envio.\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Verifica existencia de cada anexo (erro Anexo nao encontrado: <caminho>).\n- Detecta MIME por extensao.\n- Codifica nome de arquivo nao-ASCII em =?UTF-8?B?...?=."
+          },
+          {
+            "title": "LIFECYCLE",
+            "content": "- Sem estados locais. Resposta: success=true + messageId + threadId. Label Gmail: SENT."
+          },
+          {
+            "title": "HITL TEMPLATE",
+            "content": "- Conta (From): setor\n- Para / Cc / Bcc: ...\n- Assunto: ...\n- Anexos: arquivo1.pdf, arquivo2.xml\n- Corpo (preview): ...\n- Confirmar envio com anexos? (sim/nao)"
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "- sde gmail enviar-anexo --para cliente@exemplo.com --assunto \"NF-e pedido 1234\" --corpo \"Segue a nota.\" --anexo /tmp/nfe-1234.pdf\n- sde gmail enviar-anexo --para a@x.com --assunto Docs --corpo \"Documentos em anexo\" --anexo /tmp/a.pdf /tmp/b.xml --cc copia@x.com\n\nON ERROR (codigo -> acao)\n- Erro Anexo nao encontrado -> caminho invalido no servidor. Corrigir o caminho.\n- 400 -> mensagem malformada ou muito grande. Verificar tamanho.\n- 401 -> reautenticar (sde gmail auth-url / auth).\n- 403 rateLimitExceeded -> backoff >=1s e repetir.\n- 403 dailyLimitExceeded -> limite diario atingido.\n- 429 -> backoff exponencial.\n- 500/503 -> erro temporario, repetir com backoff."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "- gerar/baixar arquivo no servidor -> sde gmail enviar-anexo --anexo <caminho> -> messageId -> sde gmail ler <messageId>"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "- sde gmail enviar, sde gmail responder, sde gmail anexos, sde gmail baixar-anexo"
+          },
+          {
+            "title": "FORMATO",
+            "content": "- Datas: ISO 8601 nas respostas.\n- Booleanos: flag --html (presenca).\n- Enums reais: --conta = setor | gouveia.\n- MIME por extensao: .pdf application/pdf, .xml application/xml, .csv text/csv, .jpg image/jpeg, etc."
+          }
+        ],
+        "permissions": ["gmail:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": true,
+          "confirmationRequired": true,
+          "dryRunSupported": false,
+          "gates": ["confirmation:required", "hitl:required", "permission:gmail:write"]
+        },
+        "validationCommands": [
+          "ravi gmail enviar-anexo --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail enviar-anexo [options]\n\nEnviar email com anexo\n\nOptions:\n  --para <email>         Email do destinatario\n  --assunto <texto>      Assunto do email\n  --corpo <texto>        Corpo do email\n  --anexo <caminhos...>  Caminho(s) do(s) arquivo(s) anexo(s) - aceita multiplos\n  --html                 Enviar como HTML\n  --cc <email>           Copia (separar multiplos por virgula)\n  --bcc <email>          Copia oculta (separar multiplos por virgula)\n  -h, --help             display help for command\nUsage: sde gmail enviar-anexo --para <email> --assunto <texto> --corpo <texto> --anexo <caminhos...> [--html] [--cc <email>] [--bcc <email>] [--conta <alias>]\n\nEnvia email com um ou mais anexos. Monta MIME multipart/mixed (boundary gerado), le cada arquivo do disco, detecta MIME por extensao e codifica base64. Chama gmail.users.messages.send. DESTRUTIVO e irreversivel.\n\nOPTIONS (por flag: tipo / formato / default / origem)\n- --para <email>          string OBRIGATORIA. Header To.\n- --assunto <texto>       string OBRIGATORIA. Subject MIME.\n- --corpo <texto>         string OBRIGATORIA. Primeira parte multipart.\n- --anexo <caminhos...>   lista de caminhos OBRIGATORIA. Aceita multiplos arquivos separados por espaco. Cada caminho deve EXISTIR no disco do servidor (fs.existsSync) senao lanca erro Anexo nao encontrado.\n- --html                  flag, default false. Corpo como text/html.\n- --cc <email>            string opcional, multiplos por virgula.\n- --bcc <email>           string opcional, multiplos por virgula.\n- --conta <alias>         enum REAL: setor | gouveia. default setor.\n\nCUSTO / SEGURANCA\n- Rate: messages.send = 100 unidades de quota.\n- Tamanho maximo total da mensagem (com anexos) no envio simples: 25 MB. Acima disso usar upload resumable (nao implementado aqui) -> falha.\n- Latencia cresce com tamanho do anexo (segundos a dezenas de segundos).\n- Idempotencia: NAO. Repetir = email duplicado.\n- MIME detectado por extensao (pdf, xml, json, csv, txt, html, jpg, ...). Extensao desconhecida -> tratada como octet-stream generico.\n- Classe: DESTRUTIVO.\n\nUSE quando\n- Precisa enviar PDF, XML de NF-e, planilha, imagem junto ao email.\n\nNAO USE quando\n- Sem anexo -> use sde gmail enviar.\n- Anexo > 25 MB -> nao suportado; enviar link de download.\n- Responder mantendo thread -> use sde gmail responder (nao suporta anexo; envie separado).\n\nREGRAS HARD\n- Caminhos de anexo devem existir e ser legiveis no servidor.\n- Soma dos anexos + corpo <= 25 MB.\n- --para, --assunto, --corpo, --anexo obrigatorios.\n\nHITL OBRIGATORIO\n- SIM. Aprovar destinatario, conta, texto E lista de anexos antes do envio.\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Verifica existencia de cada anexo (erro Anexo nao encontrado: <caminho>).\n- Detecta MIME por extensao.\n- Codifica nome de arquivo nao-ASCII em =?UTF-8?B?...?=.\n\nLIFECYCLE\n- Sem estados locais. Resposta: success=true + messageId + threadId. Label Gmail: SENT.\n\nHITL TEMPLATE\n- Conta (From): setor\n- Para / Cc / Bcc: ...\n- Assunto: ...\n- Anexos: arquivo1.pdf, arquivo2.xml\n- Corpo (preview): ...\n- Confirmar envio com anexos? (sim/nao)\n\nEXAMPLES\n- sde gmail enviar-anexo --para cliente@exemplo.com --assunto \"NF-e pedido 1234\" --corpo \"Segue a nota.\" --anexo /tmp/nfe-1234.pdf\n- sde gmail enviar-anexo --para a@x.com --assunto Docs --corpo \"Documentos em anexo\" --anexo /tmp/a.pdf /tmp/b.xml --cc copia@x.com\n\nON ERROR (codigo -> acao)\n- Erro Anexo nao encontrado -> caminho invalido no servidor. Corrigir o caminho.\n- 400 -> mensagem malformada ou muito grande. Verificar tamanho.\n- 401 -> reautenticar (sde gmail auth-url / auth).\n- 403 rateLimitExceeded -> backoff >=1s e repetir.\n- 403 dailyLimitExceeded -> limite diario atingido.\n- 429 -> backoff exponencial.\n- 500/503 -> erro temporario, repetir com backoff.\n\nPIPELINE\n- gerar/baixar arquivo no servidor -> sde gmail enviar-anexo --anexo <caminho> -> messageId -> sde gmail ler <messageId>\n\nSEE ALSO\n- sde gmail enviar, sde gmail responder, sde gmail anexos, sde gmail baixar-anexo\n\nFORMATO\n- Datas: ISO 8601 nas respostas.\n- Booleanos: flag --html (presenca).\n- Enums reais: --conta = setor | gouveia.\n- MIME por extensao: .pdf application/pdf, .xml application/xml, .csv text/csv, .jpg image/jpeg, etc.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail enviar-anexo {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "gmail:write"
+    },
+    "gmail.buscar": {
+      "interface": "cli",
+      "command": "sde gmail buscar {args}",
+      "mutating": false,
+      "json": false,
+      "description": "Buscar emails (sintaxe Gmail: from:x subject:y)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "buscar",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": ""
+          },
+          "limite": {
+            "type": "string",
+            "description": "Maximo de resultados",
+            "default": "20"
+          }
+        },
+        "required": ["query"]
+      },
+      "help": {
+        "summary": "Buscar emails (sintaxe Gmail: from:x subject:y)",
+        "usage": "ravi apps run gmail buscar --json -- <query> [options]",
+        "arguments": [
+          {
+            "name": "query",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Argumento obrigatorio query."
+          }
+        ],
+        "options": [
+          {
+            "flags": "--limite <n>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": "20",
+            "values": [],
+            "description": "Maximo de resultados"
+          }
+        ],
+        "examples": ["ravi apps run gmail buscar --json -- <query> [options]"],
+        "sections": [],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi gmail buscar --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail buscar [options] <query>\n\nBuscar emails (sintaxe Gmail: from:x subject:y)\n\nOptions:\n  --limite <n>  Maximo de resultados (default: \"20\")\n  -h, --help    display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail buscar {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "gmail.responder": {
+      "interface": "cli",
+      "command": "sde gmail responder {args}",
+      "mutating": true,
+      "json": false,
+      "description": "Responder a um email",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "responder",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": ""
+          },
+          "corpo": {
+            "type": "string",
+            "description": "Corpo da resposta"
+          },
+          "html": {
+            "type": "boolean",
+            "description": "Enviar como HTML"
+          },
+          "replyAll": {
+            "type": "boolean",
+            "description": "Responder para todos (from + to + cc)"
+          },
+          "cc": {
+            "type": "string",
+            "description": "Adicionar destinatario em copia"
+          }
+        },
+        "required": ["messageId", "corpo"]
+      },
+      "help": {
+        "summary": "Responder a um email",
+        "usage": "ravi apps run gmail responder --json -- <messageId> [options]",
+        "arguments": [
+          {
+            "name": "messageId",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Argumento obrigatorio messageId."
+          }
+        ],
+        "options": [
+          {
+            "flags": "--corpo <texto>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Corpo da resposta"
+          },
+          {
+            "flags": "--html",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": null,
+            "values": [],
+            "description": "Enviar como HTML"
+          },
+          {
+            "flags": "--reply-all",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": null,
+            "values": [],
+            "description": "Responder para todos (from + to + cc)"
+          },
+          {
+            "flags": "--cc <email>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Adicionar destinatario em copia"
+          }
+        ],
+        "examples": [
+          "- ravi apps run gmail responder --json -- 18f2a3bcd1234567 --corpo \"Obrigado, fechado.\"",
+          "- ravi apps run gmail responder --json -- 18f2a3bcd1234567 --corpo \"Segue retorno a todos\" --reply-all",
+          "- sde gmail --conta gouveia responder 18f2a3bcd1234567 --corpo \"<p>Ok</p>\" --html --cc extra@x.com",
+          "ON ERROR (codigo -> acao)",
+          "- 404 -> messageId inexistente/errado. Conferir via sde gmail buscar.",
+          "- 400 -> request malformado. Revisar corpo.",
+          "- 401 -> reautenticar.",
+          "- 403 rateLimitExceeded -> backoff >=1s.",
+          "- 429 -> backoff exponencial.",
+          "- 500/503 -> erro temporario, repetir."
+        ],
+        "sections": [
+          {
+            "title": "ARG POSICIONAL",
+            "content": "- <messageId>   string OBRIGATORIA. ID Gmail da mensagem a responder (obter via sde gmail inbox / buscar / ler).\n\nOPTIONS (por flag: tipo / formato / default / origem)\n- --corpo <texto>   string OBRIGATORIA. Texto da resposta.\n- --html            flag, default false. Resposta em text/html.\n- --reply-all       flag, default false. Quando presente inclui To + Cc do original como Cc (remove o proprio endereco e o destinatario principal, parser stateful que respeita virgulas dentro de aspas e <>).\n- --cc <email>      string opcional. Cc adicional, multiplos por virgula (deduplicado).\n- --conta <alias>   enum REAL: setor | gouveia. default setor."
+          },
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- Rate: 1 messages.get (5 unidades) + 1 messages.send (100 unidades).\n- Idempotencia: NAO. Repetir = resposta duplicada na thread.\n- --reply-all pode vazar a resposta para muitos destinatarios. Revisar a lista de Cc resultante.\n- Classe: DESTRUTIVO.\n\nUSE quando\n- Responder cliente/fornecedor preservando o historico da conversa.\n\nNAO USE quando\n- Email novo sem contexto -> sde gmail enviar.\n- Repassar para terceiro -> sde gmail encaminhar."
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- <messageId> e --corpo obrigatorios.\n- Com --reply-all, conferir destinatarios antes (evitar reply-all indevido)."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "- SIM. Aprovar corpo, conta e (se reply-all) a lista completa de destinatarios.\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Le original e deriva Reply-To automaticamente.\n- Prefixa Re: no assunto.\n- Parser de enderecos respeita aspas e angle brackets, remove o proprio email e duplicados."
+          },
+          {
+            "title": "LIFECYCLE",
+            "content": "- Sem estados locais. Resposta: success=true + messageId + threadId (mesma thread do original). Label: SENT."
+          },
+          {
+            "title": "HITL TEMPLATE",
+            "content": "- Conta (From): setor\n- Respondendo messageId: ...\n- Reply-all: sim/nao -> destinatarios resultantes: ...\n- Corpo (preview): ...\n- Confirmar resposta? (sim/nao)"
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "- sde gmail responder 18f2a3bcd1234567 --corpo \"Obrigado, fechado.\"\n- sde gmail responder 18f2a3bcd1234567 --corpo \"Segue retorno a todos\" --reply-all\n- sde gmail --conta gouveia responder 18f2a3bcd1234567 --corpo \"<p>Ok</p>\" --html --cc extra@x.com\n\nON ERROR (codigo -> acao)\n- 404 -> messageId inexistente/errado. Conferir via sde gmail buscar.\n- 400 -> request malformado. Revisar corpo.\n- 401 -> reautenticar.\n- 403 rateLimitExceeded -> backoff >=1s.\n- 429 -> backoff exponencial.\n- 500/503 -> erro temporario, repetir."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "- sde gmail inbox / buscar -> messageId -> sde gmail responder <messageId> -> sde gmail thread <threadId>"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "- sde gmail enviar, sde gmail encaminhar, sde gmail thread, sde gmail ler"
+          },
+          {
+            "title": "FORMATO",
+            "content": "- Datas: ISO 8601 nas respostas.\n- Booleanos: flags presenca (--html, --reply-all).\n- Enums reais: --conta = setor | gouveia. Assunto recebe prefixo Re:."
+          }
+        ],
+        "permissions": ["gmail:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": true,
+          "confirmationRequired": true,
+          "dryRunSupported": false,
+          "gates": ["confirmation:required", "hitl:required", "permission:gmail:write"]
+        },
+        "validationCommands": [
+          "ravi gmail responder --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail responder [options] <messageId>\n\nResponder a um email\n\nOptions:\n  --corpo <texto>  Corpo da resposta\n  --html           Enviar como HTML\n  --reply-all      Responder para todos (from + to + cc)\n  --cc <email>     Adicionar destinatario em copia\n  -h, --help       display help for command\nUsage: sde gmail responder <messageId> --corpo <texto> [--html] [--reply-all] [--cc <email>] [--conta <alias>]\n\nResponde a um email existente MANTENDO a thread. Le o email original, extrai Reply-To/From, prefixa Re: no assunto, seta In-Reply-To/References e threadId, depois chama messages.send. DESTRUTIVO.\n\nARG POSICIONAL\n- <messageId>   string OBRIGATORIA. ID Gmail da mensagem a responder (obter via sde gmail inbox / buscar / ler).\n\nOPTIONS (por flag: tipo / formato / default / origem)\n- --corpo <texto>   string OBRIGATORIA. Texto da resposta.\n- --html            flag, default false. Resposta em text/html.\n- --reply-all       flag, default false. Quando presente inclui To + Cc do original como Cc (remove o proprio endereco e o destinatario principal, parser stateful que respeita virgulas dentro de aspas e <>).\n- --cc <email>      string opcional. Cc adicional, multiplos por virgula (deduplicado).\n- --conta <alias>   enum REAL: setor | gouveia. default setor.\n\nCUSTO / SEGURANCA\n- Rate: 1 messages.get (5 unidades) + 1 messages.send (100 unidades).\n- Idempotencia: NAO. Repetir = resposta duplicada na thread.\n- --reply-all pode vazar a resposta para muitos destinatarios. Revisar a lista de Cc resultante.\n- Classe: DESTRUTIVO.\n\nUSE quando\n- Responder cliente/fornecedor preservando o historico da conversa.\n\nNAO USE quando\n- Email novo sem contexto -> sde gmail enviar.\n- Repassar para terceiro -> sde gmail encaminhar.\n\nREGRAS HARD\n- <messageId> e --corpo obrigatorios.\n- Com --reply-all, conferir destinatarios antes (evitar reply-all indevido).\n\nHITL OBRIGATORIO\n- SIM. Aprovar corpo, conta e (se reply-all) a lista completa de destinatarios.\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Le original e deriva Reply-To automaticamente.\n- Prefixa Re: no assunto.\n- Parser de enderecos respeita aspas e angle brackets, remove o proprio email e duplicados.\n\nLIFECYCLE\n- Sem estados locais. Resposta: success=true + messageId + threadId (mesma thread do original). Label: SENT.\n\nHITL TEMPLATE\n- Conta (From): setor\n- Respondendo messageId: ...\n- Reply-all: sim/nao -> destinatarios resultantes: ...\n- Corpo (preview): ...\n- Confirmar resposta? (sim/nao)\n\nEXAMPLES\n- sde gmail responder 18f2a3bcd1234567 --corpo \"Obrigado, fechado.\"\n- sde gmail responder 18f2a3bcd1234567 --corpo \"Segue retorno a todos\" --reply-all\n- sde gmail --conta gouveia responder 18f2a3bcd1234567 --corpo \"<p>Ok</p>\" --html --cc extra@x.com\n\nON ERROR (codigo -> acao)\n- 404 -> messageId inexistente/errado. Conferir via sde gmail buscar.\n- 400 -> request malformado. Revisar corpo.\n- 401 -> reautenticar.\n- 403 rateLimitExceeded -> backoff >=1s.\n- 429 -> backoff exponencial.\n- 500/503 -> erro temporario, repetir.\n\nPIPELINE\n- sde gmail inbox / buscar -> messageId -> sde gmail responder <messageId> -> sde gmail thread <threadId>\n\nSEE ALSO\n- sde gmail enviar, sde gmail encaminhar, sde gmail thread, sde gmail ler\n\nFORMATO\n- Datas: ISO 8601 nas respostas.\n- Booleanos: flags presenca (--html, --reply-all).\n- Enums reais: --conta = setor | gouveia. Assunto recebe prefixo Re:.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail responder {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "gmail:write"
+    },
+    "gmail.encaminhar": {
+      "interface": "cli",
+      "command": "sde gmail encaminhar {args}",
+      "mutating": true,
+      "json": false,
+      "description": "Encaminhar email",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "encaminhar",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": ""
+          },
+          "para": {
+            "type": "string",
+            "description": "Destinatario"
+          },
+          "texto": {
+            "type": "string",
+            "description": "Texto adicional antes do encaminhamento"
+          }
+        },
+        "required": ["messageId", "para"]
+      },
+      "help": {
+        "summary": "Encaminhar email",
+        "usage": "ravi apps run gmail encaminhar --json -- <messageId> [options]",
+        "arguments": [
+          {
+            "name": "messageId",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Argumento obrigatorio messageId."
+          }
+        ],
+        "options": [
+          {
+            "flags": "--para <email>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Destinatario"
+          },
+          {
+            "flags": "--texto <texto>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Texto adicional antes do encaminhamento"
+          }
+        ],
+        "examples": [
+          "- ravi apps run gmail encaminhar --json -- 18f2a3bcd1234567 --para colega@exemplo.com",
+          "- ravi apps run gmail encaminhar --json -- 18f2a3bcd1234567 --para colega@exemplo.com --texto \"Veja o anexo abaixo.\"",
+          "- sde gmail --conta gouveia encaminhar 18f2a3bcd1234567 --para outro@x.com",
+          "ON ERROR (codigo -> acao)",
+          "- 404 -> messageId inexistente. Conferir via sde gmail buscar.",
+          "- 400 -> mensagem reescrita invalida ou muito grande. Verificar tamanho/anexos.",
+          "- 401 -> reautenticar.",
+          "- 403 rateLimitExceeded -> backoff >=1s.",
+          "- 429 -> backoff exponencial.",
+          "- 500/503 -> erro temporario, repetir."
+        ],
+        "sections": [
+          {
+            "title": "ARG POSICIONAL",
+            "content": "- <messageId>   string OBRIGATORIA. ID Gmail da mensagem a encaminhar.\n\nOPTIONS (por flag: tipo / formato / default / origem)\n- --para <email>    string OBRIGATORIA. Novo destinatario. Header To.\n- --texto <texto>   string opcional. Texto adicional antes do conteudo encaminhado.\n- --conta <alias>   enum REAL: setor | gouveia. default setor. Define From."
+          },
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- Rate: 1 messages.get raw (5 unidades) + 1 messages.send (100 unidades).\n- Preserva anexos originais -> mensagem pode ser grande (limite 25 MB no envio simples).\n- Idempotencia: NAO. Repetir = encaminhamento duplicado.\n- ATENCAO: encaminha conteudo integral do email original (possivel dado sensivel). Confirmar destinatario.\n- Classe: DESTRUTIVO.\n\nUSE quando\n- Repassar um email recebido (com anexos) para outra pessoa.\n\nNAO USE quando\n- Responder na propria thread -> sde gmail responder.\n- Email novo -> sde gmail enviar."
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- <messageId> e --para obrigatorios.\n- Conferir que o destinatario pode receber o conteudo encaminhado."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "- SIM. Aprovar destinatario --para, conta e confirmar que o conteudo original pode ser repassado.\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Reescreve To/From/Subject.\n- Remove headers DKIM-Signature, Return-Path e Received do original.\n- Mantem anexos do raw original."
+          },
+          {
+            "title": "LIFECYCLE",
+            "content": "- Sem estados locais. Resposta: success=true + messageId + threadId. Label: SENT."
+          },
+          {
+            "title": "HITL TEMPLATE",
+            "content": "- Conta (From): setor\n- Encaminhando messageId: ...\n- Para: ...\n- Texto adicional: ...\n- Conteudo original contem dado sensivel? (verificado)\n- Confirmar encaminhamento? (sim/nao)"
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "- sde gmail encaminhar 18f2a3bcd1234567 --para colega@exemplo.com\n- sde gmail encaminhar 18f2a3bcd1234567 --para colega@exemplo.com --texto \"Veja o anexo abaixo.\"\n- sde gmail --conta gouveia encaminhar 18f2a3bcd1234567 --para outro@x.com\n\nON ERROR (codigo -> acao)\n- 404 -> messageId inexistente. Conferir via sde gmail buscar.\n- 400 -> mensagem reescrita invalida ou muito grande. Verificar tamanho/anexos.\n- 401 -> reautenticar.\n- 403 rateLimitExceeded -> backoff >=1s.\n- 429 -> backoff exponencial.\n- 500/503 -> erro temporario, repetir."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "- sde gmail buscar / inbox -> messageId -> sde gmail encaminhar <messageId> --para <email>"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "- sde gmail enviar, sde gmail responder, sde gmail anexos"
+          },
+          {
+            "title": "FORMATO",
+            "content": "- Datas: ISO 8601 nas respostas.\n- Enums reais: --conta = setor | gouveia. Assunto recebe prefixo Fwd:."
+          }
+        ],
+        "permissions": ["gmail:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": true,
+          "confirmationRequired": true,
+          "dryRunSupported": false,
+          "gates": ["confirmation:required", "hitl:required", "permission:gmail:write"]
+        },
+        "validationCommands": [
+          "ravi gmail encaminhar --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail encaminhar [options] <messageId>\n\nEncaminhar email\n\nOptions:\n  --para <email>   Destinatario\n  --texto <texto>  Texto adicional antes do encaminhamento\n  -h, --help       display help for command\nUsage: sde gmail encaminhar <messageId> --para <email> [--texto <texto>] [--conta <alias>]\n\nEncaminha um email (com anexos originais preservados). Busca a mensagem em format=raw, reescreve headers To/From/Subject (prefixo Fwd:), remove DKIM-Signature/Return-Path/Received e reenvia via messages.send. DESTRUTIVO.\n\nARG POSICIONAL\n- <messageId>   string OBRIGATORIA. ID Gmail da mensagem a encaminhar.\n\nOPTIONS (por flag: tipo / formato / default / origem)\n- --para <email>    string OBRIGATORIA. Novo destinatario. Header To.\n- --texto <texto>   string opcional. Texto adicional antes do conteudo encaminhado.\n- --conta <alias>   enum REAL: setor | gouveia. default setor. Define From.\n\nCUSTO / SEGURANCA\n- Rate: 1 messages.get raw (5 unidades) + 1 messages.send (100 unidades).\n- Preserva anexos originais -> mensagem pode ser grande (limite 25 MB no envio simples).\n- Idempotencia: NAO. Repetir = encaminhamento duplicado.\n- ATENCAO: encaminha conteudo integral do email original (possivel dado sensivel). Confirmar destinatario.\n- Classe: DESTRUTIVO.\n\nUSE quando\n- Repassar um email recebido (com anexos) para outra pessoa.\n\nNAO USE quando\n- Responder na propria thread -> sde gmail responder.\n- Email novo -> sde gmail enviar.\n\nREGRAS HARD\n- <messageId> e --para obrigatorios.\n- Conferir que o destinatario pode receber o conteudo encaminhado.\n\nHITL OBRIGATORIO\n- SIM. Aprovar destinatario --para, conta e confirmar que o conteudo original pode ser repassado.\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Reescreve To/From/Subject.\n- Remove headers DKIM-Signature, Return-Path e Received do original.\n- Mantem anexos do raw original.\n\nLIFECYCLE\n- Sem estados locais. Resposta: success=true + messageId + threadId. Label: SENT.\n\nHITL TEMPLATE\n- Conta (From): setor\n- Encaminhando messageId: ...\n- Para: ...\n- Texto adicional: ...\n- Conteudo original contem dado sensivel? (verificado)\n- Confirmar encaminhamento? (sim/nao)\n\nEXAMPLES\n- sde gmail encaminhar 18f2a3bcd1234567 --para colega@exemplo.com\n- sde gmail encaminhar 18f2a3bcd1234567 --para colega@exemplo.com --texto \"Veja o anexo abaixo.\"\n- sde gmail --conta gouveia encaminhar 18f2a3bcd1234567 --para outro@x.com\n\nON ERROR (codigo -> acao)\n- 404 -> messageId inexistente. Conferir via sde gmail buscar.\n- 400 -> mensagem reescrita invalida ou muito grande. Verificar tamanho/anexos.\n- 401 -> reautenticar.\n- 403 rateLimitExceeded -> backoff >=1s.\n- 429 -> backoff exponencial.\n- 500/503 -> erro temporario, repetir.\n\nPIPELINE\n- sde gmail buscar / inbox -> messageId -> sde gmail encaminhar <messageId> --para <email>\n\nSEE ALSO\n- sde gmail enviar, sde gmail responder, sde gmail anexos\n\nFORMATO\n- Datas: ISO 8601 nas respostas.\n- Enums reais: --conta = setor | gouveia. Assunto recebe prefixo Fwd:.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail encaminhar {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "gmail:write"
+    },
+    "gmail.thread": {
+      "interface": "cli",
+      "command": "sde gmail thread {args}",
+      "mutating": false,
+      "json": false,
+      "description": "Ver conversa completa de uma thread",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "thread",
+        "properties": {
+          "threadId": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["threadId"]
+      },
+      "help": {
+        "summary": "Ver conversa completa de uma thread",
+        "usage": "ravi apps run gmail thread --json -- <threadId>",
+        "arguments": [
+          {
+            "name": "threadId",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Argumento obrigatorio threadId."
+          }
+        ],
+        "options": [],
+        "examples": ["ravi apps run gmail thread --json -- <threadId>"],
+        "sections": [],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi gmail thread --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail thread [options] <threadId>\n\nVer conversa completa de uma thread\n\nOptions:\n  -h, --help  display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail thread {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "gmail.labels": {
+      "interface": "cli",
+      "command": "sde gmail labels {args}",
+      "mutating": false,
+      "json": false,
+      "description": "Listar labels/pastas",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "labels",
+        "properties": {
+          "contadores": {
+            "type": "boolean",
+            "description": "Enriquecer cada label com contadores via labels.get"
+          }
+        },
+        "required": []
+      },
+      "help": {
+        "summary": "Listar labels/pastas",
+        "usage": "ravi apps run gmail labels --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--contadores",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": null,
+            "values": [],
+            "description": "Enriquecer cada label com contadores via labels.get"
+          }
+        ],
+        "examples": ["ravi apps run gmail labels --json -- [options]"],
+        "sections": [],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi gmail labels --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail labels [options]\n\nListar labels/pastas\n\nOptions:\n  --contadores  Enriquecer cada label com contadores via labels.get\n  -h, --help    display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail labels {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "gmail.criar-label": {
+      "interface": "cli",
+      "command": "sde gmail criar-label {args}",
+      "mutating": true,
+      "json": false,
+      "description": "Criar nova label",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "criar-label",
+        "properties": {
+          "nome": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["nome"]
+      },
+      "help": {
+        "summary": "Criar nova label",
+        "usage": "ravi apps run gmail criar-label --json -- <nome>",
+        "arguments": [
+          {
+            "name": "nome",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Argumento obrigatorio nome."
+          }
+        ],
+        "options": [],
+        "examples": [
+          "- ravi apps run gmail criar-label --json -- Orcamentos",
+          "- ravi apps run gmail criar-label --json -- \"Clientes/VIP\"",
+          "- sde gmail --conta gouveia criar-label Pessoal",
+          "ON ERROR (codigo -> acao)",
+          "- 409 -> label ja existe. Liste com sde gmail labels e use a existente.",
+          "- 400 -> nome invalido. Corrigir.",
+          "- 401 -> reautenticar.",
+          "- 403 -> sem permissao/quota. Backoff.",
+          "- 429 -> backoff exponencial.",
+          "- 500/503 -> repetir com backoff."
+        ],
+        "sections": [
+          {
+            "title": "ARG POSICIONAL",
+            "content": "- <nome>   string OBRIGATORIA. Nome da label. Para sublabel use barra: Clientes/VIP. Nome deve ser unico.\n\nOPTIONS\n- --conta <alias>   enum REAL: setor | gouveia. default setor."
+          },
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- Rate: labels.create = 5 unidades de quota.\n- Idempotencia: NAO. Tentar criar nome ja existente -> erro 409 (label ja existe).\n- Classe: ESCRITA nao destrutiva. Para apagar uma label nao ha comando neste CLI (faca pelo Gmail web).\n\nUSE quando\n- Precisa de uma nova etiqueta para organizar emails antes de aplicar com aplicar-label/modificar-thread.\n\nNAO USE quando\n- A label ja existe -> liste com sde gmail labels e reutilize o labelId.\n- So quer aplicar label existente -> sde gmail aplicar-label."
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- <nome> obrigatorio e unico.\n- Visibilidades fixadas no codigo (labelShow / show) - nao configuravel via CLI."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "- Recomendado para padronizar taxonomia de labels. Aprovar nome antes de criar (evitar labels duplicadas/mal nomeadas).\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Define labelListVisibility e messageListVisibility automaticamente."
+          },
+          {
+            "title": "LIFECYCLE",
+            "content": "- Sem estados locais. Resposta: success=true + label { id, name, type }. type retornado pela API: user (criadas pelo usuario) vs system (INBOX, SENT, etc - nao criaveis)."
+          },
+          {
+            "title": "HITL TEMPLATE",
+            "content": "- Conta: setor\n- Nome da label proposta: ...\n- Confirmar criacao? (sim/nao)"
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "- sde gmail criar-label Orcamentos\n- sde gmail criar-label \"Clientes/VIP\"\n- sde gmail --conta gouveia criar-label Pessoal\n\nON ERROR (codigo -> acao)\n- 409 -> label ja existe. Liste com sde gmail labels e use a existente.\n- 400 -> nome invalido. Corrigir.\n- 401 -> reautenticar.\n- 403 -> sem permissao/quota. Backoff.\n- 429 -> backoff exponencial.\n- 500/503 -> repetir com backoff."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "- sde gmail criar-label <nome> -> labelId -> sde gmail aplicar-label <messageId> <labelId> ou sde gmail modificar-thread <threadId> --add <labelId>"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "- sde gmail labels, sde gmail label-detalhe, sde gmail aplicar-label, sde gmail modificar-thread"
+          },
+          {
+            "title": "FORMATO",
+            "content": "- Enums reais: --conta = setor | gouveia. label.type = user | system.\n- IDs de label do usuario tem formato Label_<n>; labels de sistema usam nomes maiusculos (INBOX, SENT, UNREAD, TRASH, SPAM, STARRED, IMPORTANT)."
+          }
+        ],
+        "permissions": ["gmail:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": true,
+          "confirmationRequired": true,
+          "dryRunSupported": false,
+          "gates": ["confirmation:required", "hitl:required", "permission:gmail:write"]
+        },
+        "validationCommands": [
+          "ravi gmail criar-label --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail criar-label [options] <nome>\n\nCriar nova label\n\nOptions:\n  -h, --help  display help for command\nUsage: sde gmail criar-label <nome> [--conta <alias>]\n\nCria uma nova label (pasta/etiqueta) na conta. Chama labels.create com labelListVisibility=labelShow e messageListVisibility=show. Operacao de escrita NAO destrutiva (criativa).\n\nARG POSICIONAL\n- <nome>   string OBRIGATORIA. Nome da label. Para sublabel use barra: Clientes/VIP. Nome deve ser unico.\n\nOPTIONS\n- --conta <alias>   enum REAL: setor | gouveia. default setor.\n\nCUSTO / SEGURANCA\n- Rate: labels.create = 5 unidades de quota.\n- Idempotencia: NAO. Tentar criar nome ja existente -> erro 409 (label ja existe).\n- Classe: ESCRITA nao destrutiva. Para apagar uma label nao ha comando neste CLI (faca pelo Gmail web).\n\nUSE quando\n- Precisa de uma nova etiqueta para organizar emails antes de aplicar com aplicar-label/modificar-thread.\n\nNAO USE quando\n- A label ja existe -> liste com sde gmail labels e reutilize o labelId.\n- So quer aplicar label existente -> sde gmail aplicar-label.\n\nREGRAS HARD\n- <nome> obrigatorio e unico.\n- Visibilidades fixadas no codigo (labelShow / show) - nao configuravel via CLI.\n\nHITL OBRIGATORIO\n- Recomendado para padronizar taxonomia de labels. Aprovar nome antes de criar (evitar labels duplicadas/mal nomeadas).\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Define labelListVisibility e messageListVisibility automaticamente.\n\nLIFECYCLE\n- Sem estados locais. Resposta: success=true + label { id, name, type }. type retornado pela API: user (criadas pelo usuario) vs system (INBOX, SENT, etc - nao criaveis).\n\nHITL TEMPLATE\n- Conta: setor\n- Nome da label proposta: ...\n- Confirmar criacao? (sim/nao)\n\nEXAMPLES\n- sde gmail criar-label Orcamentos\n- sde gmail criar-label \"Clientes/VIP\"\n- sde gmail --conta gouveia criar-label Pessoal\n\nON ERROR (codigo -> acao)\n- 409 -> label ja existe. Liste com sde gmail labels e use a existente.\n- 400 -> nome invalido. Corrigir.\n- 401 -> reautenticar.\n- 403 -> sem permissao/quota. Backoff.\n- 429 -> backoff exponencial.\n- 500/503 -> repetir com backoff.\n\nPIPELINE\n- sde gmail criar-label <nome> -> labelId -> sde gmail aplicar-label <messageId> <labelId> ou sde gmail modificar-thread <threadId> --add <labelId>\n\nSEE ALSO\n- sde gmail labels, sde gmail label-detalhe, sde gmail aplicar-label, sde gmail modificar-thread\n\nFORMATO\n- Enums reais: --conta = setor | gouveia. label.type = user | system.\n- IDs de label do usuario tem formato Label_<n>; labels de sistema usam nomes maiusculos (INBOX, SENT, UNREAD, TRASH, SPAM, STARRED, IMPORTANT).",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail criar-label {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "gmail:write"
+    },
+    "gmail.marcar-lido": {
+      "interface": "cli",
+      "command": "sde gmail marcar-lido {args}",
+      "mutating": true,
+      "json": false,
+      "description": "Marcar email como lido",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "marcar-lido",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["messageId"]
+      },
+      "help": {
+        "summary": "Marcar email como lido",
+        "usage": "ravi apps run gmail marcar-lido --json -- <messageId>",
+        "arguments": [
+          {
+            "name": "messageId",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Argumento obrigatorio messageId."
+          }
+        ],
+        "options": [],
+        "examples": [
+          "- ravi apps run gmail marcar-lido --json -- 18f2a3bcd1234567",
+          "- sde gmail --conta gouveia marcar-lido 18f2a3bcd1234567",
+          "ON ERROR (codigo -> acao)",
+          "- 404 -> messageId inexistente. Conferir via sde gmail inbox/buscar.",
+          "- 400 -> request invalido.",
+          "- 401 -> reautenticar.",
+          "- 403/429 -> backoff exponencial.",
+          "- 500/503 -> repetir com backoff."
+        ],
+        "sections": [
+          {
+            "title": "ARG POSICIONAL",
+            "content": "- <messageId>   string OBRIGATORIA. ID Gmail da mensagem.\n\nOPTIONS\n- --conta <alias>   enum REAL: setor | gouveia. default setor."
+          },
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- Rate: messages.modify = 5 unidades de quota.\n- Idempotencia: SIM na pratica (remover UNREAD ja removida nao causa erro).\n- Classe: ESCRITA reversivel.\n\nUSE quando\n- Quer marcar mensagem(ns) processadas como lidas.\n\nNAO USE quando\n- Quer marcar como nao lida -> sde gmail marcar-nao-lido.\n- Quer mover labels arbitrarias -> sde gmail aplicar-label / remover-label."
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- <messageId> obrigatorio."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "- NAO. Operacao de baixo risco e reversivel. Pode rodar automatizada.\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Remove apenas a label de sistema UNREAD."
+          },
+          {
+            "title": "LIFECYCLE",
+            "content": "- Estado da mensagem: UNREAD presente (nao lida) -> ausente (lida). Resposta: success=true."
+          },
+          {
+            "title": "HITL TEMPLATE",
+            "content": "- Nao aplicavel (sem HITL)."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "- sde gmail marcar-lido 18f2a3bcd1234567\n- sde gmail --conta gouveia marcar-lido 18f2a3bcd1234567\n\nON ERROR (codigo -> acao)\n- 404 -> messageId inexistente. Conferir via sde gmail inbox/buscar.\n- 400 -> request invalido.\n- 401 -> reautenticar.\n- 403/429 -> backoff exponencial.\n- 500/503 -> repetir com backoff."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "- sde gmail inbox -> messageId -> sde gmail marcar-lido <messageId>"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "- sde gmail marcar-nao-lido, sde gmail aplicar-label, sde gmail remover-label, sde gmail inbox"
+          },
+          {
+            "title": "FORMATO",
+            "content": "- Enums reais: --conta = setor | gouveia. Label de sistema manipulada: UNREAD."
+          }
+        ],
+        "permissions": ["gmail:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": true,
+          "confirmationRequired": true,
+          "dryRunSupported": false,
+          "gates": ["confirmation:required", "hitl:required", "permission:gmail:write"]
+        },
+        "validationCommands": [
+          "ravi gmail marcar-lido --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail marcar-lido [options] <messageId>\n\nMarcar email como lido\n\nOptions:\n  -h, --help  display help for command\nUsage: sde gmail marcar-lido <messageId> [--conta <alias>]\n\nMarca um email como LIDO removendo a label UNREAD. Chama messages.modify com removeLabelIds=[UNREAD]. Escrita reversivel (use marcar-nao-lido para desfazer).\n\nARG POSICIONAL\n- <messageId>   string OBRIGATORIA. ID Gmail da mensagem.\n\nOPTIONS\n- --conta <alias>   enum REAL: setor | gouveia. default setor.\n\nCUSTO / SEGURANCA\n- Rate: messages.modify = 5 unidades de quota.\n- Idempotencia: SIM na pratica (remover UNREAD ja removida nao causa erro).\n- Classe: ESCRITA reversivel.\n\nUSE quando\n- Quer marcar mensagem(ns) processadas como lidas.\n\nNAO USE quando\n- Quer marcar como nao lida -> sde gmail marcar-nao-lido.\n- Quer mover labels arbitrarias -> sde gmail aplicar-label / remover-label.\n\nREGRAS HARD\n- <messageId> obrigatorio.\n\nHITL OBRIGATORIO\n- NAO. Operacao de baixo risco e reversivel. Pode rodar automatizada.\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Remove apenas a label de sistema UNREAD.\n\nLIFECYCLE\n- Estado da mensagem: UNREAD presente (nao lida) -> ausente (lida). Resposta: success=true.\n\nHITL TEMPLATE\n- Nao aplicavel (sem HITL).\n\nEXAMPLES\n- sde gmail marcar-lido 18f2a3bcd1234567\n- sde gmail --conta gouveia marcar-lido 18f2a3bcd1234567\n\nON ERROR (codigo -> acao)\n- 404 -> messageId inexistente. Conferir via sde gmail inbox/buscar.\n- 400 -> request invalido.\n- 401 -> reautenticar.\n- 403/429 -> backoff exponencial.\n- 500/503 -> repetir com backoff.\n\nPIPELINE\n- sde gmail inbox -> messageId -> sde gmail marcar-lido <messageId>\n\nSEE ALSO\n- sde gmail marcar-nao-lido, sde gmail aplicar-label, sde gmail remover-label, sde gmail inbox\n\nFORMATO\n- Enums reais: --conta = setor | gouveia. Label de sistema manipulada: UNREAD.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail marcar-lido {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "gmail:write"
+    },
+    "gmail.marcar-nao-lido": {
+      "interface": "cli",
+      "command": "sde gmail marcar-nao-lido {args}",
+      "mutating": true,
+      "json": false,
+      "description": "Marcar email como nao lido",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "marcar-nao-lido",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["messageId"]
+      },
+      "help": {
+        "summary": "Marcar email como nao lido",
+        "usage": "ravi apps run gmail marcar-nao-lido --json -- <messageId>",
+        "arguments": [
+          {
+            "name": "messageId",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Argumento obrigatorio messageId."
+          }
+        ],
+        "options": [],
+        "examples": [
+          "- ravi apps run gmail marcar-nao-lido --json -- 18f2a3bcd1234567",
+          "- sde gmail --conta gouveia marcar-nao-lido 18f2a3bcd1234567",
+          "ON ERROR (codigo -> acao)",
+          "- 404 -> messageId inexistente.",
+          "- 401 -> reautenticar.",
+          "- 403/429 -> backoff exponencial.",
+          "- 500/503 -> repetir com backoff."
+        ],
+        "sections": [
+          {
+            "title": "ARG POSICIONAL",
+            "content": "- <messageId>   string OBRIGATORIA. ID Gmail da mensagem.\n\nOPTIONS\n- --conta <alias>   enum REAL: setor | gouveia. default setor."
+          },
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- Rate: messages.modify = 5 unidades de quota.\n- Idempotencia: SIM na pratica (adicionar UNREAD ja presente nao causa erro).\n- Classe: ESCRITA reversivel.\n\nUSE quando\n- Quer reabrir/destacar mensagem como pendente.\n\nNAO USE quando\n- Quer marcar como lida -> sde gmail marcar-lido."
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- <messageId> obrigatorio."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "- NAO. Baixo risco e reversivel.\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Adiciona apenas a label de sistema UNREAD."
+          },
+          {
+            "title": "LIFECYCLE",
+            "content": "- Estado: UNREAD ausente (lida) -> presente (nao lida). Resposta: success=true."
+          },
+          {
+            "title": "HITL TEMPLATE",
+            "content": "- Nao aplicavel."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "- sde gmail marcar-nao-lido 18f2a3bcd1234567\n- sde gmail --conta gouveia marcar-nao-lido 18f2a3bcd1234567\n\nON ERROR (codigo -> acao)\n- 404 -> messageId inexistente.\n- 401 -> reautenticar.\n- 403/429 -> backoff exponencial.\n- 500/503 -> repetir com backoff."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "- sde gmail buscar -> messageId -> sde gmail marcar-nao-lido <messageId>"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "- sde gmail marcar-lido, sde gmail aplicar-label, sde gmail inbox"
+          },
+          {
+            "title": "FORMATO",
+            "content": "- Enums reais: --conta = setor | gouveia. Label de sistema: UNREAD."
+          }
+        ],
+        "permissions": ["gmail:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": true,
+          "confirmationRequired": true,
+          "dryRunSupported": false,
+          "gates": ["confirmation:required", "hitl:required", "permission:gmail:write"]
+        },
+        "validationCommands": [
+          "ravi gmail marcar-nao-lido --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail marcar-nao-lido [options] <messageId>\n\nMarcar email como nao lido\n\nOptions:\n  -h, --help  display help for command\nUsage: sde gmail marcar-nao-lido <messageId> [--conta <alias>]\n\nMarca um email como NAO LIDO adicionando a label UNREAD. Chama messages.modify com addLabelIds=[UNREAD]. Escrita reversivel (use marcar-lido para desfazer).\n\nARG POSICIONAL\n- <messageId>   string OBRIGATORIA. ID Gmail da mensagem.\n\nOPTIONS\n- --conta <alias>   enum REAL: setor | gouveia. default setor.\n\nCUSTO / SEGURANCA\n- Rate: messages.modify = 5 unidades de quota.\n- Idempotencia: SIM na pratica (adicionar UNREAD ja presente nao causa erro).\n- Classe: ESCRITA reversivel.\n\nUSE quando\n- Quer reabrir/destacar mensagem como pendente.\n\nNAO USE quando\n- Quer marcar como lida -> sde gmail marcar-lido.\n\nREGRAS HARD\n- <messageId> obrigatorio.\n\nHITL OBRIGATORIO\n- NAO. Baixo risco e reversivel.\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Adiciona apenas a label de sistema UNREAD.\n\nLIFECYCLE\n- Estado: UNREAD ausente (lida) -> presente (nao lida). Resposta: success=true.\n\nHITL TEMPLATE\n- Nao aplicavel.\n\nEXAMPLES\n- sde gmail marcar-nao-lido 18f2a3bcd1234567\n- sde gmail --conta gouveia marcar-nao-lido 18f2a3bcd1234567\n\nON ERROR (codigo -> acao)\n- 404 -> messageId inexistente.\n- 401 -> reautenticar.\n- 403/429 -> backoff exponencial.\n- 500/503 -> repetir com backoff.\n\nPIPELINE\n- sde gmail buscar -> messageId -> sde gmail marcar-nao-lido <messageId>\n\nSEE ALSO\n- sde gmail marcar-lido, sde gmail aplicar-label, sde gmail inbox\n\nFORMATO\n- Enums reais: --conta = setor | gouveia. Label de sistema: UNREAD.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail marcar-nao-lido {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "gmail:write"
+    },
+    "gmail.lixeira": {
+      "interface": "cli",
+      "command": "sde gmail lixeira {args}",
+      "mutating": true,
+      "json": false,
+      "description": "Mover email para lixeira",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "lixeira",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["messageId"]
+      },
+      "help": {
+        "summary": "Mover email para lixeira",
+        "usage": "ravi apps run gmail lixeira --json -- <messageId>",
+        "arguments": [
+          {
+            "name": "messageId",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Argumento obrigatorio messageId."
+          }
+        ],
+        "options": [],
+        "examples": [
+          "- ravi apps run gmail lixeira --json -- 18f2a3bcd1234567",
+          "- sde gmail --conta gouveia lixeira 18f2a3bcd1234567",
+          "ON ERROR (codigo -> acao)",
+          "- 404 -> messageId inexistente.",
+          "- 401 -> reautenticar.",
+          "- 403/429 -> backoff exponencial.",
+          "- 500/503 -> repetir com backoff."
+        ],
+        "sections": [
+          {
+            "title": "ARG POSICIONAL",
+            "content": "- <messageId>   string OBRIGATORIA. ID Gmail da mensagem.\n\nOPTIONS\n- --conta <alias>   enum REAL: setor | gouveia. default setor."
+          },
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- Rate: messages.trash = 5 unidades de quota.\n- Idempotencia: SIM na pratica (mover para lixeira algo ja na lixeira e no-op).\n- Classe: DESTRUTIVO SUAVE. Reversivel por 30 dias, depois permanente.\n- Nao existe delete permanente neste CLI (intencional).\n\nUSE quando\n- Quer remover um email da caixa mantendo possibilidade de recuperar por 30 dias.\n\nNAO USE quando\n- Quer apenas organizar sem remover -> use labels (remover-label INBOX nao e oferecido; prefira mover via labels no Gmail web).\n- Precisa restaurar algo da lixeira -> sde gmail restaurar-lixeira."
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- <messageId> obrigatorio.\n- Nunca usar para limpeza em massa sem revisao."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "- SIM (recomendado). Confirmar messageId/assunto antes de enviar para a lixeira, pois apos 30 dias e irreversivel.\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Nenhuma alem do envio direto a messages.trash."
+          },
+          {
+            "title": "LIFECYCLE",
+            "content": "- Estado: INBOX/outras -> TRASH (label TRASH adicionada). Apos 30 dias -> exclusao permanente pelo Gmail. Resposta: success=true."
+          },
+          {
+            "title": "HITL TEMPLATE",
+            "content": "- Conta: setor\n- messageId / assunto: ...\n- Confirmar mover para lixeira? (reversivel por 30 dias) (sim/nao)"
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "- sde gmail lixeira 18f2a3bcd1234567\n- sde gmail --conta gouveia lixeira 18f2a3bcd1234567\n\nON ERROR (codigo -> acao)\n- 404 -> messageId inexistente.\n- 401 -> reautenticar.\n- 403/429 -> backoff exponencial.\n- 500/503 -> repetir com backoff."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "- sde gmail buscar / inbox -> messageId -> sde gmail lixeira <messageId> -> (se erro) sde gmail restaurar-lixeira <messageId>"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "- sde gmail restaurar-lixeira, sde gmail buscar, sde gmail inbox"
+          },
+          {
+            "title": "FORMATO",
+            "content": "- Enums reais: --conta = setor | gouveia. Label de sistema: TRASH."
+          }
+        ],
+        "permissions": ["gmail:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": true,
+          "confirmationRequired": true,
+          "dryRunSupported": false,
+          "gates": ["confirmation:required", "hitl:required", "permission:gmail:write"]
+        },
+        "validationCommands": [
+          "ravi gmail lixeira --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail lixeira [options] <messageId>\n\nMover email para lixeira\n\nOptions:\n  -h, --help  display help for command\nUsage: sde gmail lixeira <messageId> [--conta <alias>]\n\nMove um email para a LIXEIRA (TRASH). Chama messages.trash. Reversivel por 30 dias via sde gmail restaurar-lixeira; depois o Gmail apaga definitivamente.\n\nARG POSICIONAL\n- <messageId>   string OBRIGATORIA. ID Gmail da mensagem.\n\nOPTIONS\n- --conta <alias>   enum REAL: setor | gouveia. default setor.\n\nCUSTO / SEGURANCA\n- Rate: messages.trash = 5 unidades de quota.\n- Idempotencia: SIM na pratica (mover para lixeira algo ja na lixeira e no-op).\n- Classe: DESTRUTIVO SUAVE. Reversivel por 30 dias, depois permanente.\n- Nao existe delete permanente neste CLI (intencional).\n\nUSE quando\n- Quer remover um email da caixa mantendo possibilidade de recuperar por 30 dias.\n\nNAO USE quando\n- Quer apenas organizar sem remover -> use labels (remover-label INBOX nao e oferecido; prefira mover via labels no Gmail web).\n- Precisa restaurar algo da lixeira -> sde gmail restaurar-lixeira.\n\nREGRAS HARD\n- <messageId> obrigatorio.\n- Nunca usar para limpeza em massa sem revisao.\n\nHITL OBRIGATORIO\n- SIM (recomendado). Confirmar messageId/assunto antes de enviar para a lixeira, pois apos 30 dias e irreversivel.\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Nenhuma alem do envio direto a messages.trash.\n\nLIFECYCLE\n- Estado: INBOX/outras -> TRASH (label TRASH adicionada). Apos 30 dias -> exclusao permanente pelo Gmail. Resposta: success=true.\n\nHITL TEMPLATE\n- Conta: setor\n- messageId / assunto: ...\n- Confirmar mover para lixeira? (reversivel por 30 dias) (sim/nao)\n\nEXAMPLES\n- sde gmail lixeira 18f2a3bcd1234567\n- sde gmail --conta gouveia lixeira 18f2a3bcd1234567\n\nON ERROR (codigo -> acao)\n- 404 -> messageId inexistente.\n- 401 -> reautenticar.\n- 403/429 -> backoff exponencial.\n- 500/503 -> repetir com backoff.\n\nPIPELINE\n- sde gmail buscar / inbox -> messageId -> sde gmail lixeira <messageId> -> (se erro) sde gmail restaurar-lixeira <messageId>\n\nSEE ALSO\n- sde gmail restaurar-lixeira, sde gmail buscar, sde gmail inbox\n\nFORMATO\n- Enums reais: --conta = setor | gouveia. Label de sistema: TRASH.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail lixeira {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "gmail:write"
+    },
+    "gmail.anexos": {
+      "interface": "cli",
+      "command": "sde gmail anexos {args}",
+      "mutating": false,
+      "json": false,
+      "description": "Listar anexos de um email",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "anexos",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["messageId"]
+      },
+      "help": {
+        "summary": "Listar anexos de um email",
+        "usage": "ravi apps run gmail anexos --json -- <messageId>",
+        "arguments": [
+          {
+            "name": "messageId",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Argumento obrigatorio messageId."
+          }
+        ],
+        "options": [],
+        "examples": ["ravi apps run gmail anexos --json -- <messageId>"],
+        "sections": [],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi gmail anexos --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail anexos [options] <messageId>\n\nListar anexos de um email\n\nOptions:\n  -h, --help  display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail anexos {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "gmail.baixar-anexo": {
+      "interface": "cli",
+      "command": "sde gmail baixar-anexo {args}",
+      "mutating": true,
+      "json": false,
+      "description": "Baixar anexo de um email",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "baixar-anexo",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": "ID da mensagem"
+          },
+          "attachmentId": {
+            "type": "string",
+            "description": "ID do anexo"
+          },
+          "destino": {
+            "type": "string",
+            "description": "Caminho de destino"
+          }
+        },
+        "required": ["messageId", "attachmentId", "destino"]
+      },
+      "help": {
+        "summary": "Baixar anexo de um email",
+        "usage": "ravi apps run gmail baixar-anexo --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--message-id <id>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "ID da mensagem"
+          },
+          {
+            "flags": "--attachment-id <id>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "ID do anexo"
+          },
+          {
+            "flags": "--destino <caminho>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Caminho de destino"
+          }
+        ],
+        "examples": ["ravi apps run gmail baixar-anexo --json -- [options]"],
+        "sections": [],
+        "permissions": ["gmail:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": ["permission:gmail:write"]
+        },
+        "validationCommands": [
+          "ravi gmail baixar-anexo --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail baixar-anexo [options]\n\nBaixar anexo de um email\n\nOptions:\n  --message-id <id>     ID da mensagem\n  --attachment-id <id>  ID do anexo\n  --destino <caminho>   Caminho de destino\n  -h, --help            display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail baixar-anexo {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "gmail:write"
+    },
+    "gmail.aplicar-label": {
+      "interface": "cli",
+      "command": "sde gmail aplicar-label {args}",
+      "mutating": false,
+      "json": false,
+      "description": "Aplicar label a um email",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "aplicar-label",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": ""
+          },
+          "labelId": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["messageId", "labelId"]
+      },
+      "help": {
+        "summary": "Aplicar label a um email",
+        "usage": "ravi apps run gmail aplicar-label --json -- <messageId> <labelId>",
+        "arguments": [
+          {
+            "name": "messageId",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Argumento obrigatorio messageId."
+          },
+          {
+            "name": "labelId",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Argumento obrigatorio labelId."
+          }
+        ],
+        "options": [],
+        "examples": [
+          "- ravi apps run gmail aplicar-label --json -- 18f2a3bcd1234567 Label_42",
+          "- ravi apps run gmail aplicar-label --json -- 18f2a3bcd1234567 STARRED",
+          "- sde gmail --conta gouveia aplicar-label 18f2a3bcd1234567 IMPORTANT",
+          "ON ERROR (codigo -> acao)",
+          "- 400 -> labelId invalido/inexistente. Confira via sde gmail labels.",
+          "- 404 -> messageId inexistente.",
+          "- 401 -> reautenticar.",
+          "- 403/429 -> backoff exponencial.",
+          "- 500/503 -> repetir com backoff."
+        ],
+        "sections": [
+          {
+            "title": "ARGS POSICIONAIS",
+            "content": "- <messageId>   string OBRIGATORIA. ID Gmail da mensagem.\n- <labelId>     string OBRIGATORIA. ID da label (NAO o nome). Obter via sde gmail labels. Aceita labels de sistema (INBOX, UNREAD, STARRED, IMPORTANT, SPAM, TRASH) e de usuario (Label_<n>).\n\nOPTIONS\n- --conta <alias>   enum REAL: setor | gouveia. default setor."
+          },
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- Rate: messages.modify = 5 unidades de quota.\n- Idempotencia: SIM na pratica (aplicar label ja presente e no-op).\n- Classe: ESCRITA reversivel.\n- ATENCAO: aplicar SPAM ou TRASH via este comando tem efeito real (move para spam/lixeira).\n\nUSE quando\n- Categorizar/etiquetar um email com label existente.\n\nNAO USE quando\n- Tem o NOME e nao o ID -> liste com sde gmail labels para obter o labelId.\n- A label nao existe -> crie com sde gmail criar-label.\n- Quer modificar a thread inteira -> sde gmail modificar-thread."
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- <messageId> e <labelId> obrigatorios.\n- labelId deve ser ID, nunca nome."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "- NAO para labels comuns. SIM se a label for SPAM ou TRASH (efeito destrutivo).\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Nenhuma validacao de existencia de labelId -> labelId errado retorna 400."
+          },
+          {
+            "title": "LIFECYCLE",
+            "content": "- Estado: label ausente -> presente na mensagem. Resposta: success=true."
+          },
+          {
+            "title": "HITL TEMPLATE",
+            "content": "- (apenas SPAM/TRASH) Conta: setor / messageId: ... / labelId: SPAM / Confirmar? (sim/nao)"
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "- sde gmail aplicar-label 18f2a3bcd1234567 Label_42\n- sde gmail aplicar-label 18f2a3bcd1234567 STARRED\n- sde gmail --conta gouveia aplicar-label 18f2a3bcd1234567 IMPORTANT\n\nON ERROR (codigo -> acao)\n- 400 -> labelId invalido/inexistente. Confira via sde gmail labels.\n- 404 -> messageId inexistente.\n- 401 -> reautenticar.\n- 403/429 -> backoff exponencial.\n- 500/503 -> repetir com backoff."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "- sde gmail labels -> labelId ; sde gmail inbox -> messageId ; sde gmail aplicar-label <messageId> <labelId>"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "- sde gmail remover-label, sde gmail labels, sde gmail criar-label, sde gmail modificar-thread"
+          },
+          {
+            "title": "FORMATO",
+            "content": "- Enums reais: --conta = setor | gouveia. Labels de sistema: INBOX, SENT, UNREAD, STARRED, IMPORTANT, SPAM, TRASH, DRAFT. Labels de usuario: Label_<n>."
+          }
+        ],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": true,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": ["hitl:required"]
+        },
+        "validationCommands": [
+          "ravi gmail aplicar-label --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail aplicar-label [options] <messageId> <labelId>\n\nAplicar label a um email\n\nOptions:\n  -h, --help  display help for command\nUsage: sde gmail aplicar-label <messageId> <labelId> [--conta <alias>]\n\nAplica uma label a um email. Chama messages.modify com addLabelIds=[labelId]. Escrita reversivel (use remover-label para desfazer).\n\nARGS POSICIONAIS\n- <messageId>   string OBRIGATORIA. ID Gmail da mensagem.\n- <labelId>     string OBRIGATORIA. ID da label (NAO o nome). Obter via sde gmail labels. Aceita labels de sistema (INBOX, UNREAD, STARRED, IMPORTANT, SPAM, TRASH) e de usuario (Label_<n>).\n\nOPTIONS\n- --conta <alias>   enum REAL: setor | gouveia. default setor.\n\nCUSTO / SEGURANCA\n- Rate: messages.modify = 5 unidades de quota.\n- Idempotencia: SIM na pratica (aplicar label ja presente e no-op).\n- Classe: ESCRITA reversivel.\n- ATENCAO: aplicar SPAM ou TRASH via este comando tem efeito real (move para spam/lixeira).\n\nUSE quando\n- Categorizar/etiquetar um email com label existente.\n\nNAO USE quando\n- Tem o NOME e nao o ID -> liste com sde gmail labels para obter o labelId.\n- A label nao existe -> crie com sde gmail criar-label.\n- Quer modificar a thread inteira -> sde gmail modificar-thread.\n\nREGRAS HARD\n- <messageId> e <labelId> obrigatorios.\n- labelId deve ser ID, nunca nome.\n\nHITL OBRIGATORIO\n- NAO para labels comuns. SIM se a label for SPAM ou TRASH (efeito destrutivo).\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Nenhuma validacao de existencia de labelId -> labelId errado retorna 400.\n\nLIFECYCLE\n- Estado: label ausente -> presente na mensagem. Resposta: success=true.\n\nHITL TEMPLATE\n- (apenas SPAM/TRASH) Conta: setor / messageId: ... / labelId: SPAM / Confirmar? (sim/nao)\n\nEXAMPLES\n- sde gmail aplicar-label 18f2a3bcd1234567 Label_42\n- sde gmail aplicar-label 18f2a3bcd1234567 STARRED\n- sde gmail --conta gouveia aplicar-label 18f2a3bcd1234567 IMPORTANT\n\nON ERROR (codigo -> acao)\n- 400 -> labelId invalido/inexistente. Confira via sde gmail labels.\n- 404 -> messageId inexistente.\n- 401 -> reautenticar.\n- 403/429 -> backoff exponencial.\n- 500/503 -> repetir com backoff.\n\nPIPELINE\n- sde gmail labels -> labelId ; sde gmail inbox -> messageId ; sde gmail aplicar-label <messageId> <labelId>\n\nSEE ALSO\n- sde gmail remover-label, sde gmail labels, sde gmail criar-label, sde gmail modificar-thread\n\nFORMATO\n- Enums reais: --conta = setor | gouveia. Labels de sistema: INBOX, SENT, UNREAD, STARRED, IMPORTANT, SPAM, TRASH, DRAFT. Labels de usuario: Label_<n>.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail aplicar-label {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "gmail.remover-label": {
+      "interface": "cli",
+      "command": "sde gmail remover-label {args}",
+      "mutating": true,
+      "json": false,
+      "description": "Remover label de um email",
+      "destructive": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "remover-label",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": ""
+          },
+          "labelId": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["messageId", "labelId"]
+      },
+      "help": {
+        "summary": "Remover label de um email",
+        "usage": "ravi apps run gmail remover-label --json -- <messageId> <labelId>",
+        "arguments": [
+          {
+            "name": "messageId",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Argumento obrigatorio messageId."
+          },
+          {
+            "name": "labelId",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Argumento obrigatorio labelId."
+          }
+        ],
+        "options": [],
+        "examples": [
+          "- ravi apps run gmail remover-label --json -- 18f2a3bcd1234567 Label_42",
+          "- ravi apps run gmail remover-label --json -- 18f2a3bcd1234567 INBOX",
+          "- sde gmail --conta gouveia remover-label 18f2a3bcd1234567 STARRED",
+          "ON ERROR (codigo -> acao)",
+          "- 400 -> labelId invalido. Confira via sde gmail labels.",
+          "- 404 -> messageId inexistente.",
+          "- 401 -> reautenticar.",
+          "- 403/429 -> backoff exponencial.",
+          "- 500/503 -> repetir com backoff."
+        ],
+        "sections": [
+          {
+            "title": "ARGS POSICIONAIS",
+            "content": "- <messageId>   string OBRIGATORIA. ID Gmail da mensagem.\n- <labelId>     string OBRIGATORIA. ID da label (NAO o nome). Obter via sde gmail labels.\n\nOPTIONS\n- --conta <alias>   enum REAL: setor | gouveia. default setor."
+          },
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- Rate: messages.modify = 5 unidades de quota.\n- Idempotencia: SIM na pratica (remover label ausente e no-op).\n- Classe: ESCRITA reversivel.\n- ATENCAO: remover a label INBOX arquiva o email (sai da caixa de entrada).\n\nUSE quando\n- Tirar uma etiqueta de um email; arquivar (removendo INBOX).\n\nNAO USE quando\n- Tem o nome e nao o ID -> sde gmail labels.\n- Quer afetar a thread inteira -> sde gmail modificar-thread --remove."
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- <messageId> e <labelId> obrigatorios.\n- labelId deve ser ID, nunca nome."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "- NAO para labels comuns. Atencao ao remover INBOX (arquiva).\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Nenhuma validacao de existencia de labelId -> errado retorna 400."
+          },
+          {
+            "title": "LIFECYCLE",
+            "content": "- Estado: label presente -> ausente na mensagem. Resposta: success=true."
+          },
+          {
+            "title": "HITL TEMPLATE",
+            "content": "- Nao aplicavel (exceto confirmar arquivamento ao remover INBOX)."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "- sde gmail remover-label 18f2a3bcd1234567 Label_42\n- sde gmail remover-label 18f2a3bcd1234567 INBOX\n- sde gmail --conta gouveia remover-label 18f2a3bcd1234567 STARRED\n\nON ERROR (codigo -> acao)\n- 400 -> labelId invalido. Confira via sde gmail labels.\n- 404 -> messageId inexistente.\n- 401 -> reautenticar.\n- 403/429 -> backoff exponencial.\n- 500/503 -> repetir com backoff."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "- sde gmail labels -> labelId ; sde gmail remover-label <messageId> <labelId>"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "- sde gmail aplicar-label, sde gmail labels, sde gmail modificar-thread"
+          },
+          {
+            "title": "FORMATO",
+            "content": "- Enums reais: --conta = setor | gouveia. Labels de sistema: INBOX, SENT, UNREAD, STARRED, IMPORTANT, SPAM, TRASH, DRAFT."
+          }
+        ],
+        "permissions": ["gmail:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": true,
+          "idempotent": null,
+          "hitlRequired": true,
+          "confirmationRequired": true,
+          "dryRunSupported": false,
+          "gates": ["confirmation:required", "hitl:required", "permission:gmail:write"]
+        },
+        "validationCommands": [
+          "ravi gmail remover-label --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail remover-label [options] <messageId> <labelId>\n\nRemover label de um email\n\nOptions:\n  -h, --help  display help for command\nUsage: sde gmail remover-label <messageId> <labelId> [--conta <alias>]\n\nRemove uma label de um email. Chama messages.modify com removeLabelIds=[labelId]. Escrita reversivel (use aplicar-label para reaplicar).\n\nARGS POSICIONAIS\n- <messageId>   string OBRIGATORIA. ID Gmail da mensagem.\n- <labelId>     string OBRIGATORIA. ID da label (NAO o nome). Obter via sde gmail labels.\n\nOPTIONS\n- --conta <alias>   enum REAL: setor | gouveia. default setor.\n\nCUSTO / SEGURANCA\n- Rate: messages.modify = 5 unidades de quota.\n- Idempotencia: SIM na pratica (remover label ausente e no-op).\n- Classe: ESCRITA reversivel.\n- ATENCAO: remover a label INBOX arquiva o email (sai da caixa de entrada).\n\nUSE quando\n- Tirar uma etiqueta de um email; arquivar (removendo INBOX).\n\nNAO USE quando\n- Tem o nome e nao o ID -> sde gmail labels.\n- Quer afetar a thread inteira -> sde gmail modificar-thread --remove.\n\nREGRAS HARD\n- <messageId> e <labelId> obrigatorios.\n- labelId deve ser ID, nunca nome.\n\nHITL OBRIGATORIO\n- NAO para labels comuns. Atencao ao remover INBOX (arquiva).\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Nenhuma validacao de existencia de labelId -> errado retorna 400.\n\nLIFECYCLE\n- Estado: label presente -> ausente na mensagem. Resposta: success=true.\n\nHITL TEMPLATE\n- Nao aplicavel (exceto confirmar arquivamento ao remover INBOX).\n\nEXAMPLES\n- sde gmail remover-label 18f2a3bcd1234567 Label_42\n- sde gmail remover-label 18f2a3bcd1234567 INBOX\n- sde gmail --conta gouveia remover-label 18f2a3bcd1234567 STARRED\n\nON ERROR (codigo -> acao)\n- 400 -> labelId invalido. Confira via sde gmail labels.\n- 404 -> messageId inexistente.\n- 401 -> reautenticar.\n- 403/429 -> backoff exponencial.\n- 500/503 -> repetir com backoff.\n\nPIPELINE\n- sde gmail labels -> labelId ; sde gmail remover-label <messageId> <labelId>\n\nSEE ALSO\n- sde gmail aplicar-label, sde gmail labels, sde gmail modificar-thread\n\nFORMATO\n- Enums reais: --conta = setor | gouveia. Labels de sistema: INBOX, SENT, UNREAD, STARRED, IMPORTANT, SPAM, TRASH, DRAFT.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail remover-label {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "gmail:write"
+    },
+    "gmail.restaurar-lixeira": {
+      "interface": "cli",
+      "command": "sde gmail restaurar-lixeira {args}",
+      "mutating": false,
+      "json": false,
+      "description": "Restaurar email da lixeira",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "restaurar-lixeira",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["messageId"]
+      },
+      "help": {
+        "summary": "Restaurar email da lixeira",
+        "usage": "ravi apps run gmail restaurar-lixeira --json -- <messageId>",
+        "arguments": [
+          {
+            "name": "messageId",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Argumento obrigatorio messageId."
+          }
+        ],
+        "options": [],
+        "examples": [
+          "- ravi apps run gmail restaurar-lixeira --json -- 18f2a3bcd1234567",
+          "- sde gmail --conta gouveia restaurar-lixeira 18f2a3bcd1234567",
+          "ON ERROR (codigo -> acao)",
+          "- 404 -> messageId inexistente ou ja apagado permanentemente.",
+          "- 401 -> reautenticar.",
+          "- 403/429 -> backoff exponencial.",
+          "- 500/503 -> repetir com backoff."
+        ],
+        "sections": [
+          {
+            "title": "ARG POSICIONAL",
+            "content": "- <messageId>   string OBRIGATORIA. ID Gmail da mensagem que esta na lixeira.\n\nOPTIONS\n- --conta <alias>   enum REAL: setor | gouveia. default setor."
+          },
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- Rate: messages.untrash = 5 unidades de quota.\n- Idempotencia: SIM na pratica (untrash de algo nao na lixeira e no-op).\n- Classe: ESCRITA reversivel (desfaz o lixeira).\n\nUSE quando\n- Recuperar email enviado por engano para a lixeira.\n\nNAO USE quando\n- Email ja foi apagado definitivamente (passou 30 dias) -> nao ha recuperacao.\n- Quer enviar para lixeira -> sde gmail lixeira."
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- <messageId> obrigatorio e a mensagem deve existir na lixeira."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "- NAO. Operacao de recuperacao, baixo risco.\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Nenhuma alem do envio direto a messages.untrash."
+          },
+          {
+            "title": "LIFECYCLE",
+            "content": "- Estado: TRASH -> restaurado (label TRASH removida). Resposta: success=true."
+          },
+          {
+            "title": "HITL TEMPLATE",
+            "content": "- Nao aplicavel."
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "- sde gmail restaurar-lixeira 18f2a3bcd1234567\n- sde gmail --conta gouveia restaurar-lixeira 18f2a3bcd1234567\n\nON ERROR (codigo -> acao)\n- 404 -> messageId inexistente ou ja apagado permanentemente.\n- 401 -> reautenticar.\n- 403/429 -> backoff exponencial.\n- 500/503 -> repetir com backoff."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "- sde gmail buscar in:trash -> messageId -> sde gmail restaurar-lixeira <messageId>"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "- sde gmail lixeira, sde gmail buscar"
+          },
+          {
+            "title": "FORMATO",
+            "content": "- Enums reais: --conta = setor | gouveia. Label de sistema removida: TRASH."
+          }
+        ],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": true,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": ["hitl:required"]
+        },
+        "validationCommands": [
+          "ravi gmail restaurar-lixeira --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail restaurar-lixeira [options] <messageId>\n\nRestaurar email da lixeira\n\nOptions:\n  -h, --help  display help for command\nUsage: sde gmail restaurar-lixeira <messageId> [--conta <alias>]\n\nRestaura um email da LIXEIRA de volta a caixa. Chama messages.untrash (remove a label TRASH). So funciona enquanto o email ainda estiver na lixeira (ate 30 dias apos o descarte).\n\nARG POSICIONAL\n- <messageId>   string OBRIGATORIA. ID Gmail da mensagem que esta na lixeira.\n\nOPTIONS\n- --conta <alias>   enum REAL: setor | gouveia. default setor.\n\nCUSTO / SEGURANCA\n- Rate: messages.untrash = 5 unidades de quota.\n- Idempotencia: SIM na pratica (untrash de algo nao na lixeira e no-op).\n- Classe: ESCRITA reversivel (desfaz o lixeira).\n\nUSE quando\n- Recuperar email enviado por engano para a lixeira.\n\nNAO USE quando\n- Email ja foi apagado definitivamente (passou 30 dias) -> nao ha recuperacao.\n- Quer enviar para lixeira -> sde gmail lixeira.\n\nREGRAS HARD\n- <messageId> obrigatorio e a mensagem deve existir na lixeira.\n\nHITL OBRIGATORIO\n- NAO. Operacao de recuperacao, baixo risco.\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Nenhuma alem do envio direto a messages.untrash.\n\nLIFECYCLE\n- Estado: TRASH -> restaurado (label TRASH removida). Resposta: success=true.\n\nHITL TEMPLATE\n- Nao aplicavel.\n\nEXAMPLES\n- sde gmail restaurar-lixeira 18f2a3bcd1234567\n- sde gmail --conta gouveia restaurar-lixeira 18f2a3bcd1234567\n\nON ERROR (codigo -> acao)\n- 404 -> messageId inexistente ou ja apagado permanentemente.\n- 401 -> reautenticar.\n- 403/429 -> backoff exponencial.\n- 500/503 -> repetir com backoff.\n\nPIPELINE\n- sde gmail buscar in:trash -> messageId -> sde gmail restaurar-lixeira <messageId>\n\nSEE ALSO\n- sde gmail lixeira, sde gmail buscar\n\nFORMATO\n- Enums reais: --conta = setor | gouveia. Label de sistema removida: TRASH.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail restaurar-lixeira {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "gmail.health": {
+      "interface": "cli",
+      "command": "sde gmail health {args}",
+      "mutating": true,
+      "json": false,
+      "description": "Health check: verificar autenticacao de todas as contas",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "health",
+        "properties": {},
+        "required": []
+      },
+      "help": {
+        "summary": "Health check: verificar autenticacao de todas as contas",
+        "usage": "ravi apps run gmail health --json",
+        "arguments": [],
+        "options": [],
+        "examples": ["ravi apps run gmail health --json"],
+        "sections": [],
+        "permissions": ["gmail:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": ["permission:gmail:write"]
+        },
+        "validationCommands": [
+          "ravi gmail health --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail health [options]\n\nHealth check: verificar autenticacao de todas as contas\n\nOptions:\n  -h, --help  display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail health {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "gmail:write"
+    },
+    "gmail.rascunhos": {
+      "interface": "cli",
+      "command": "sde gmail rascunhos {args}",
+      "mutating": false,
+      "json": false,
+      "description": "Listar rascunhos",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "rascunhos",
+        "properties": {
+          "limite": {
+            "type": "string",
+            "description": "Maximo de rascunhos",
+            "default": "20"
+          }
+        },
+        "required": []
+      },
+      "help": {
+        "summary": "Listar rascunhos",
+        "usage": "ravi apps run gmail rascunhos --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--limite <n>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": "20",
+            "values": [],
+            "description": "Maximo de rascunhos"
+          }
+        ],
+        "examples": ["ravi apps run gmail rascunhos --json -- [options]"],
+        "sections": [],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi gmail rascunhos --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail rascunhos [options]\n\nListar rascunhos\n\nOptions:\n  --limite <n>  Maximo de rascunhos (default: \"20\")\n  -h, --help    display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail rascunhos {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "gmail.criar-rascunho": {
+      "interface": "cli",
+      "command": "sde gmail criar-rascunho {args}",
+      "mutating": true,
+      "json": false,
+      "description": "Criar rascunho de email",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "criar-rascunho",
+        "properties": {
+          "para": {
+            "type": "string",
+            "description": "Email do destinatario"
+          },
+          "assunto": {
+            "type": "string",
+            "description": "Assunto do email"
+          },
+          "corpo": {
+            "type": "string",
+            "description": "Corpo do email"
+          },
+          "html": {
+            "type": "boolean",
+            "description": "Corpo em HTML"
+          },
+          "cc": {
+            "type": "string",
+            "description": "Copia"
+          },
+          "bcc": {
+            "type": "string",
+            "description": "Copia oculta"
+          }
+        },
+        "required": ["para", "assunto", "corpo"]
+      },
+      "help": {
+        "summary": "Criar rascunho de email",
+        "usage": "ravi apps run gmail criar-rascunho --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--para <email>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Email do destinatario"
+          },
+          {
+            "flags": "--assunto <texto>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Assunto do email"
+          },
+          {
+            "flags": "--corpo <texto>",
+            "required": true,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Corpo do email"
+          },
+          {
+            "flags": "--html",
+            "required": false,
+            "value": "sem-valor(flag)",
+            "defaultValue": null,
+            "values": [],
+            "description": "Corpo em HTML"
+          },
+          {
+            "flags": "--cc <email>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Copia"
+          },
+          {
+            "flags": "--bcc <email>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Copia oculta"
+          }
+        ],
+        "examples": [
+          "- ravi apps run gmail criar-rascunho --json -- --para cliente@exemplo.com --assunto \"Proposta\" --corpo \"Segue proposta para revisao.\"",
+          "- sde gmail --conta gouveia criar-rascunho --para a@x.com --assunto Teste --corpo \"<p>Ola</p>\" --html",
+          "ON ERROR (codigo -> acao)",
+          "- 400 -> MIME invalido. Revisar parametros.",
+          "- 401 -> reautenticar.",
+          "- 403/429 -> backoff exponencial.",
+          "- 500/503 -> repetir com backoff."
+        ],
+        "sections": [
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- Rate: drafts.create = 10 unidades de quota.\n- Idempotencia: NAO. Chamar 2x cria 2 rascunhos distintos.\n- Classe: ESCRITA nao destrutiva (nada sai para terceiros).\n\nUSE quando\n- Quer preparar um email para revisao humana antes do envio (fluxo HITL recomendado).\n\nNAO USE quando\n- Quer enviar imediatamente -> sde gmail enviar.\n- Rascunho com anexo -> nao suportado aqui (use enviar-anexo direto, com aprovacao)."
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- --para, --assunto, --corpo obrigatorios."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "- Este comando E a etapa de preparo do HITL. O envio (enviar-rascunho) exige aprovacao humana.\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Subject codificado MIME, corpo base64."
+          },
+          {
+            "title": "LIFECYCLE",
+            "content": "- Estado: rascunho criado (label DRAFT). Resposta: success=true + draftId + messageId. Proxima etapa: enviar-rascunho <draftId> ou deletar-rascunho <draftId>."
+          },
+          {
+            "title": "HITL TEMPLATE",
+            "content": "- Conta: setor\n- Para / Cc / Bcc: ...\n- Assunto: ...\n- Corpo (preview): ...\n- draftId gerado: ...\n- Aprovar para enviar com sde gmail enviar-rascunho <draftId>? (sim/nao)"
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "- sde gmail criar-rascunho --para cliente@exemplo.com --assunto \"Proposta\" --corpo \"Segue proposta para revisao.\"\n- sde gmail --conta gouveia criar-rascunho --para a@x.com --assunto Teste --corpo \"<p>Ola</p>\" --html\n\nON ERROR (codigo -> acao)\n- 400 -> MIME invalido. Revisar parametros.\n- 401 -> reautenticar.\n- 403/429 -> backoff exponencial.\n- 500/503 -> repetir com backoff."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "- sde gmail criar-rascunho ... -> draftId -> (revisao humana) -> sde gmail enviar-rascunho <draftId> ou sde gmail deletar-rascunho <draftId>"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "- sde gmail enviar-rascunho, sde gmail deletar-rascunho, sde gmail rascunhos, sde gmail enviar"
+          },
+          {
+            "title": "FORMATO",
+            "content": "- Enums reais: --conta = setor | gouveia. Label de sistema: DRAFT.\n- Booleanos: flag --html (presenca)."
+          }
+        ],
+        "permissions": ["gmail:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": true,
+          "confirmationRequired": true,
+          "dryRunSupported": false,
+          "gates": ["confirmation:required", "hitl:required", "permission:gmail:write"]
+        },
+        "validationCommands": [
+          "ravi gmail criar-rascunho --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail criar-rascunho [options]\n\nCriar rascunho de email\n\nOptions:\n  --para <email>     Email do destinatario\n  --assunto <texto>  Assunto do email\n  --corpo <texto>    Corpo do email\n  --html             Corpo em HTML\n  --cc <email>       Copia\n  --bcc <email>      Copia oculta\n  -h, --help         display help for command\nUsage: sde gmail criar-rascunho --para <email> --assunto <texto> --corpo <texto> [--html] [--cc <email>] [--bcc <email>] [--conta <alias>]\n\nCria um RASCUNHO (nao envia). Monta MIME e chama drafts.create. O rascunho fica salvo na conta e pode ser revisado/enviado depois com sde gmail enviar-rascunho. Escrita nao destrutiva.\n\nOPTIONS (por flag: tipo / formato / default / origem)\n- --para <email>      string OBRIGATORIA. Header To.\n- --assunto <texto>   string OBRIGATORIA. Subject MIME.\n- --corpo <texto>     string OBRIGATORIA. Corpo base64.\n- --html             flag, default false. Corpo em HTML.\n- --cc <email>        string opcional. Cc.\n- --bcc <email>       string opcional. Bcc.\n- --conta <alias>     enum REAL: setor | gouveia. default setor.\n\nCUSTO / SEGURANCA\n- Rate: drafts.create = 10 unidades de quota.\n- Idempotencia: NAO. Chamar 2x cria 2 rascunhos distintos.\n- Classe: ESCRITA nao destrutiva (nada sai para terceiros).\n\nUSE quando\n- Quer preparar um email para revisao humana antes do envio (fluxo HITL recomendado).\n\nNAO USE quando\n- Quer enviar imediatamente -> sde gmail enviar.\n- Rascunho com anexo -> nao suportado aqui (use enviar-anexo direto, com aprovacao).\n\nREGRAS HARD\n- --para, --assunto, --corpo obrigatorios.\n\nHITL OBRIGATORIO\n- Este comando E a etapa de preparo do HITL. O envio (enviar-rascunho) exige aprovacao humana.\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Subject codificado MIME, corpo base64.\n\nLIFECYCLE\n- Estado: rascunho criado (label DRAFT). Resposta: success=true + draftId + messageId. Proxima etapa: enviar-rascunho <draftId> ou deletar-rascunho <draftId>.\n\nHITL TEMPLATE\n- Conta: setor\n- Para / Cc / Bcc: ...\n- Assunto: ...\n- Corpo (preview): ...\n- draftId gerado: ...\n- Aprovar para enviar com sde gmail enviar-rascunho <draftId>? (sim/nao)\n\nEXAMPLES\n- sde gmail criar-rascunho --para cliente@exemplo.com --assunto \"Proposta\" --corpo \"Segue proposta para revisao.\"\n- sde gmail --conta gouveia criar-rascunho --para a@x.com --assunto Teste --corpo \"<p>Ola</p>\" --html\n\nON ERROR (codigo -> acao)\n- 400 -> MIME invalido. Revisar parametros.\n- 401 -> reautenticar.\n- 403/429 -> backoff exponencial.\n- 500/503 -> repetir com backoff.\n\nPIPELINE\n- sde gmail criar-rascunho ... -> draftId -> (revisao humana) -> sde gmail enviar-rascunho <draftId> ou sde gmail deletar-rascunho <draftId>\n\nSEE ALSO\n- sde gmail enviar-rascunho, sde gmail deletar-rascunho, sde gmail rascunhos, sde gmail enviar\n\nFORMATO\n- Enums reais: --conta = setor | gouveia. Label de sistema: DRAFT.\n- Booleanos: flag --html (presenca).",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail criar-rascunho {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "gmail:write"
+    },
+    "gmail.enviar-rascunho": {
+      "interface": "cli",
+      "command": "sde gmail enviar-rascunho {args}",
+      "mutating": true,
+      "json": false,
+      "description": "Enviar rascunho existente",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "enviar-rascunho",
+        "properties": {
+          "draftId": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["draftId"]
+      },
+      "help": {
+        "summary": "Enviar rascunho existente",
+        "usage": "ravi apps run gmail enviar-rascunho --json -- <draftId>",
+        "arguments": [
+          {
+            "name": "draftId",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Argumento obrigatorio draftId."
+          }
+        ],
+        "options": [],
+        "examples": [
+          "- ravi apps run gmail enviar-rascunho --json -- r-123456789",
+          "- sde gmail --conta gouveia enviar-rascunho r-123456789",
+          "ON ERROR (codigo -> acao)",
+          "- 404 -> draftId inexistente (ja enviado/deletado ou conta errada). Liste via sde gmail rascunhos.",
+          "- 400 -> rascunho invalido.",
+          "- 401 -> reautenticar.",
+          "- 403 dailyLimitExceeded -> limite diario atingido.",
+          "- 403 rateLimitExceeded / 429 -> backoff >=1s.",
+          "- 500/503 -> repetir com backoff."
+        ],
+        "sections": [
+          {
+            "title": "ARG POSICIONAL",
+            "content": "- <draftId>   string OBRIGATORIA. ID do rascunho (obter via sde gmail rascunhos ou da resposta de criar-rascunho). NAO e o messageId.\n\nOPTIONS\n- --conta <alias>   enum REAL: setor | gouveia. default setor. Deve ser a MESMA conta onde o rascunho foi criado."
+          },
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- Rate: drafts.send = 100 unidades de quota. Conta no limite diario de envio (~2000/dia Workspace, ~500/dia free).\n- Idempotencia: NAO. Apos enviar, o draftId nao existe mais (segundo envio -> 404).\n- Classe: DESTRUTIVO (envio externo irreversivel).\n\nUSE quando\n- Aprovou um rascunho preparado e quer disparar.\n\nNAO USE quando\n- Quer apenas criar/revisar -> criar-rascunho / rascunhos.\n- Quer descartar -> sde gmail deletar-rascunho."
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- <draftId> obrigatorio.\n- Conta deve coincidir com a do rascunho."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "- SIM. Este e o ponto de aprovacao final: confirmar conta, destinatario e corpo do rascunho antes de disparar.\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Nenhuma alem do envio direto a drafts.send."
+          },
+          {
+            "title": "LIFECYCLE",
+            "content": "- Estado: DRAFT -> SENT. Rascunho consumido. Resposta: success=true + messageId + threadId."
+          },
+          {
+            "title": "HITL TEMPLATE",
+            "content": "- Conta: setor\n- draftId: ...\n- (confira o conteudo via sde gmail rascunhos antes)\n- Confirmar ENVIO definitivo do rascunho? (sim/nao)"
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "- sde gmail enviar-rascunho r-123456789\n- sde gmail --conta gouveia enviar-rascunho r-123456789\n\nON ERROR (codigo -> acao)\n- 404 -> draftId inexistente (ja enviado/deletado ou conta errada). Liste via sde gmail rascunhos.\n- 400 -> rascunho invalido.\n- 401 -> reautenticar.\n- 403 dailyLimitExceeded -> limite diario atingido.\n- 403 rateLimitExceeded / 429 -> backoff >=1s.\n- 500/503 -> repetir com backoff."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "- sde gmail criar-rascunho ... -> draftId -> (aprovacao) -> sde gmail enviar-rascunho <draftId> -> messageId"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "- sde gmail criar-rascunho, sde gmail rascunhos, sde gmail deletar-rascunho, sde gmail enviar"
+          },
+          {
+            "title": "FORMATO",
+            "content": "- Enums reais: --conta = setor | gouveia. Transicao de label: DRAFT -> SENT."
+          }
+        ],
+        "permissions": ["gmail:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": true,
+          "confirmationRequired": true,
+          "dryRunSupported": false,
+          "gates": ["confirmation:required", "hitl:required", "permission:gmail:write"]
+        },
+        "validationCommands": [
+          "ravi gmail enviar-rascunho --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail enviar-rascunho [options] <draftId>\n\nEnviar rascunho existente\n\nOptions:\n  -h, --help  display help for command\nUsage: sde gmail enviar-rascunho <draftId> [--conta <alias>]\n\nEnvia um RASCUNHO existente. Chama drafts.send com o id do rascunho. DESTRUTIVO: o email sai imediatamente e o rascunho deixa de existir (vira mensagem enviada).\n\nARG POSICIONAL\n- <draftId>   string OBRIGATORIA. ID do rascunho (obter via sde gmail rascunhos ou da resposta de criar-rascunho). NAO e o messageId.\n\nOPTIONS\n- --conta <alias>   enum REAL: setor | gouveia. default setor. Deve ser a MESMA conta onde o rascunho foi criado.\n\nCUSTO / SEGURANCA\n- Rate: drafts.send = 100 unidades de quota. Conta no limite diario de envio (~2000/dia Workspace, ~500/dia free).\n- Idempotencia: NAO. Apos enviar, o draftId nao existe mais (segundo envio -> 404).\n- Classe: DESTRUTIVO (envio externo irreversivel).\n\nUSE quando\n- Aprovou um rascunho preparado e quer disparar.\n\nNAO USE quando\n- Quer apenas criar/revisar -> criar-rascunho / rascunhos.\n- Quer descartar -> sde gmail deletar-rascunho.\n\nREGRAS HARD\n- <draftId> obrigatorio.\n- Conta deve coincidir com a do rascunho.\n\nHITL OBRIGATORIO\n- SIM. Este e o ponto de aprovacao final: confirmar conta, destinatario e corpo do rascunho antes de disparar.\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Nenhuma alem do envio direto a drafts.send.\n\nLIFECYCLE\n- Estado: DRAFT -> SENT. Rascunho consumido. Resposta: success=true + messageId + threadId.\n\nHITL TEMPLATE\n- Conta: setor\n- draftId: ...\n- (confira o conteudo via sde gmail rascunhos antes)\n- Confirmar ENVIO definitivo do rascunho? (sim/nao)\n\nEXAMPLES\n- sde gmail enviar-rascunho r-123456789\n- sde gmail --conta gouveia enviar-rascunho r-123456789\n\nON ERROR (codigo -> acao)\n- 404 -> draftId inexistente (ja enviado/deletado ou conta errada). Liste via sde gmail rascunhos.\n- 400 -> rascunho invalido.\n- 401 -> reautenticar.\n- 403 dailyLimitExceeded -> limite diario atingido.\n- 403 rateLimitExceeded / 429 -> backoff >=1s.\n- 500/503 -> repetir com backoff.\n\nPIPELINE\n- sde gmail criar-rascunho ... -> draftId -> (aprovacao) -> sde gmail enviar-rascunho <draftId> -> messageId\n\nSEE ALSO\n- sde gmail criar-rascunho, sde gmail rascunhos, sde gmail deletar-rascunho, sde gmail enviar\n\nFORMATO\n- Enums reais: --conta = setor | gouveia. Transicao de label: DRAFT -> SENT.",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail enviar-rascunho {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "gmail:write"
+    },
+    "gmail.deletar-rascunho": {
+      "interface": "cli",
+      "command": "sde gmail deletar-rascunho {args}",
+      "mutating": true,
+      "json": false,
+      "description": "Deletar rascunho",
+      "destructive": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "deletar-rascunho",
+        "properties": {
+          "draftId": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["draftId"]
+      },
+      "help": {
+        "summary": "Deletar rascunho",
+        "usage": "ravi apps run gmail deletar-rascunho --json -- <draftId>",
+        "arguments": [
+          {
+            "name": "draftId",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Argumento obrigatorio draftId."
+          }
+        ],
+        "options": [],
+        "examples": [
+          "- ravi apps run gmail deletar-rascunho --json -- r-123456789",
+          "- sde gmail --conta gouveia deletar-rascunho r-123456789",
+          "ON ERROR (codigo -> acao)",
+          "- 404 -> draftId inexistente (ja deletado/enviado ou conta errada). Liste via sde gmail rascunhos.",
+          "- 401 -> reautenticar.",
+          "- 403/429 -> backoff exponencial.",
+          "- 500/503 -> repetir com backoff."
+        ],
+        "sections": [
+          {
+            "title": "ARG POSICIONAL",
+            "content": "- <draftId>   string OBRIGATORIA. ID do rascunho. Obter via sde gmail rascunhos.\n\nOPTIONS\n- --conta <alias>   enum REAL: setor | gouveia. default setor. Deve ser a conta do rascunho."
+          },
+          {
+            "title": "CUSTO / SEGURANCA",
+            "content": "- Rate: drafts.delete = 10 unidades de quota.\n- Idempotencia: SIM na pratica (deletar algo ja inexistente retorna 404, mas efeito final e o mesmo: nao existe).\n- Classe: DESTRUTIVO PERMANENTE (rascunho nao vai para lixeira).\n\nUSE quando\n- Quer descartar um rascunho que nao sera enviado.\n\nNAO USE quando\n- Quer enviar -> sde gmail enviar-rascunho.\n- Quer remover um email ja enviado/recebido -> sde gmail lixeira (esse e reversivel 30d)."
+          },
+          {
+            "title": "REGRAS HARD",
+            "content": "- <draftId> obrigatorio.\n- Confirmar que e mesmo um rascunho (drafts) e nao uma mensagem enviada."
+          },
+          {
+            "title": "HITL OBRIGATORIO",
+            "content": "- SIM (recomendado). Como e permanente, confirmar draftId/conteudo antes de deletar.\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Nenhuma alem do envio direto a drafts.delete."
+          },
+          {
+            "title": "LIFECYCLE",
+            "content": "- Estado: DRAFT -> excluido permanentemente. Resposta: success=true."
+          },
+          {
+            "title": "HITL TEMPLATE",
+            "content": "- Conta: setor\n- draftId: ...\n- (conferir conteudo via sde gmail rascunhos)\n- Confirmar EXCLUSAO PERMANENTE do rascunho? (sim/nao)"
+          },
+          {
+            "title": "EXAMPLES",
+            "content": "- sde gmail deletar-rascunho r-123456789\n- sde gmail --conta gouveia deletar-rascunho r-123456789\n\nON ERROR (codigo -> acao)\n- 404 -> draftId inexistente (ja deletado/enviado ou conta errada). Liste via sde gmail rascunhos.\n- 401 -> reautenticar.\n- 403/429 -> backoff exponencial.\n- 500/503 -> repetir com backoff."
+          },
+          {
+            "title": "PIPELINE",
+            "content": "- sde gmail rascunhos -> draftId -> sde gmail deletar-rascunho <draftId>"
+          },
+          {
+            "title": "SEE ALSO",
+            "content": "- sde gmail rascunhos, sde gmail criar-rascunho, sde gmail enviar-rascunho"
+          },
+          {
+            "title": "FORMATO",
+            "content": "- Enums reais: --conta = setor | gouveia. Label afetada: DRAFT (removido)."
+          }
+        ],
+        "permissions": ["gmail:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": true,
+          "idempotent": null,
+          "hitlRequired": true,
+          "confirmationRequired": true,
+          "dryRunSupported": false,
+          "gates": ["confirmation:required", "hitl:required", "permission:gmail:write"]
+        },
+        "validationCommands": [
+          "ravi gmail deletar-rascunho --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail deletar-rascunho [options] <draftId>\n\nDeletar rascunho\n\nOptions:\n  -h, --help  display help for command\nUsage: sde gmail deletar-rascunho <draftId> [--conta <alias>]\n\nDeleta PERMANENTEMENTE um rascunho. Chama drafts.delete. Nao vai para a lixeira: rascunho apagado nao e recuperavel.\n\nARG POSICIONAL\n- <draftId>   string OBRIGATORIA. ID do rascunho. Obter via sde gmail rascunhos.\n\nOPTIONS\n- --conta <alias>   enum REAL: setor | gouveia. default setor. Deve ser a conta do rascunho.\n\nCUSTO / SEGURANCA\n- Rate: drafts.delete = 10 unidades de quota.\n- Idempotencia: SIM na pratica (deletar algo ja inexistente retorna 404, mas efeito final e o mesmo: nao existe).\n- Classe: DESTRUTIVO PERMANENTE (rascunho nao vai para lixeira).\n\nUSE quando\n- Quer descartar um rascunho que nao sera enviado.\n\nNAO USE quando\n- Quer enviar -> sde gmail enviar-rascunho.\n- Quer remover um email ja enviado/recebido -> sde gmail lixeira (esse e reversivel 30d).\n\nREGRAS HARD\n- <draftId> obrigatorio.\n- Confirmar que e mesmo um rascunho (drafts) e nao uma mensagem enviada.\n\nHITL OBRIGATORIO\n- SIM (recomendado). Como e permanente, confirmar draftId/conteudo antes de deletar.\n\nVALIDACOES AUTOMATICAS (no codigo)\n- Nenhuma alem do envio direto a drafts.delete.\n\nLIFECYCLE\n- Estado: DRAFT -> excluido permanentemente. Resposta: success=true.\n\nHITL TEMPLATE\n- Conta: setor\n- draftId: ...\n- (conferir conteudo via sde gmail rascunhos)\n- Confirmar EXCLUSAO PERMANENTE do rascunho? (sim/nao)\n\nEXAMPLES\n- sde gmail deletar-rascunho r-123456789\n- sde gmail --conta gouveia deletar-rascunho r-123456789\n\nON ERROR (codigo -> acao)\n- 404 -> draftId inexistente (ja deletado/enviado ou conta errada). Liste via sde gmail rascunhos.\n- 401 -> reautenticar.\n- 403/429 -> backoff exponencial.\n- 500/503 -> repetir com backoff.\n\nPIPELINE\n- sde gmail rascunhos -> draftId -> sde gmail deletar-rascunho <draftId>\n\nSEE ALSO\n- sde gmail rascunhos, sde gmail criar-rascunho, sde gmail enviar-rascunho\n\nFORMATO\n- Enums reais: --conta = setor | gouveia. Label afetada: DRAFT (removido).",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail deletar-rascunho {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "gmail:write"
+    },
+    "gmail.label-detalhe": {
+      "interface": "cli",
+      "command": "sde gmail label-detalhe {args}",
+      "mutating": false,
+      "json": false,
+      "description": "Detalhe de uma label com contadores (labels.get)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "label-detalhe",
+        "properties": {
+          "labelId": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["labelId"]
+      },
+      "help": {
+        "summary": "Detalhe de uma label com contadores (labels.get)",
+        "usage": "ravi apps run gmail label-detalhe --json -- <labelId>",
+        "arguments": [
+          {
+            "name": "labelId",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Argumento obrigatorio labelId."
+          }
+        ],
+        "options": [],
+        "examples": ["ravi apps run gmail label-detalhe --json -- <labelId>"],
+        "sections": [],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi gmail label-detalhe --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail label-detalhe [options] <labelId>\n\nDetalhe de uma label com contadores (labels.get)\n\nOptions:\n  -h, --help  display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail label-detalhe {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "gmail.threads-listar": {
+      "interface": "cli",
+      "command": "sde gmail threads-listar {args}",
+      "mutating": false,
+      "json": false,
+      "description": "Listar threads (threads.list)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "threads-listar",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Filtro sintaxe Gmail (ex: from:x is:unread)"
+          },
+          "limite": {
+            "type": "string",
+            "description": "Maximo de threads",
+            "default": "20"
+          }
+        },
+        "required": []
+      },
+      "help": {
+        "summary": "Listar threads (threads.list)",
+        "usage": "ravi apps run gmail threads-listar --json -- [options]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--query <q>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Filtro sintaxe Gmail (ex: from:x is:unread)"
+          },
+          {
+            "flags": "--limite <n>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": "20",
+            "values": [],
+            "description": "Maximo de threads"
+          }
+        ],
+        "examples": ["ravi apps run gmail threads-listar --json -- [options]"],
+        "sections": [],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi gmail threads-listar --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail threads-listar [options]\n\nListar threads (threads.list)\n\nOptions:\n  --query <q>   Filtro sintaxe Gmail (ex: from:x is:unread)\n  --limite <n>  Maximo de threads (default: \"20\")\n  -h, --help    display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail threads-listar {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "gmail.thread-detalhe": {
+      "interface": "cli",
+      "command": "sde gmail thread-detalhe {args}",
+      "mutating": false,
+      "json": false,
+      "description": "Detalhe completo de uma thread (threads.get)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "thread-detalhe",
+        "properties": {
+          "threadId": {
+            "type": "string",
+            "description": ""
+          }
+        },
+        "required": ["threadId"]
+      },
+      "help": {
+        "summary": "Detalhe completo de uma thread (threads.get)",
+        "usage": "ravi apps run gmail thread-detalhe --json -- <threadId>",
+        "arguments": [
+          {
+            "name": "threadId",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Argumento obrigatorio threadId."
+          }
+        ],
+        "options": [],
+        "examples": ["ravi apps run gmail thread-detalhe --json -- <threadId>"],
+        "sections": [],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi gmail thread-detalhe --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail thread-detalhe [options] <threadId>\n\nDetalhe completo de uma thread (threads.get)\n\nOptions:\n  -h, --help  display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail thread-detalhe {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "gmail.modificar-thread": {
+      "interface": "cli",
+      "command": "sde gmail modificar-thread {args}",
+      "mutating": true,
+      "json": false,
+      "description": "Adicionar/remover labels de uma thread (threads.modify)",
+      "destructive": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "modificar-thread",
+        "properties": {
+          "threadId": {
+            "type": "string",
+            "description": ""
+          },
+          "add": {
+            "type": "string",
+            "description": "Label IDs a adicionar (separar por virgula)"
+          },
+          "remove": {
+            "type": "string",
+            "description": "Label IDs a remover (separar por virgula)"
+          }
+        },
+        "required": ["threadId"]
+      },
+      "help": {
+        "summary": "Adicionar/remover labels de uma thread (threads.modify)",
+        "usage": "ravi apps run gmail modificar-thread --json -- <threadId> [options]",
+        "arguments": [
+          {
+            "name": "threadId",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Argumento obrigatorio threadId."
+          }
+        ],
+        "options": [
+          {
+            "flags": "--add <ids>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Label IDs a adicionar (separar por virgula)"
+          },
+          {
+            "flags": "--remove <ids>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Label IDs a remover (separar por virgula)"
+          }
+        ],
+        "examples": ["ravi apps run gmail modificar-thread --json -- <threadId> [options]"],
+        "sections": [],
+        "permissions": ["gmail:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": true,
+          "idempotent": null,
+          "hitlRequired": true,
+          "confirmationRequired": true,
+          "dryRunSupported": false,
+          "gates": ["confirmation:required", "hitl:required", "permission:gmail:write"]
+        },
+        "validationCommands": [
+          "ravi gmail modificar-thread --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail modificar-thread [options] <threadId>\n\nAdicionar/remover labels de uma thread (threads.modify)\n\nOptions:\n  --add <ids>     Label IDs a adicionar (separar por virgula)\n  --remove <ids>  Label IDs a remover (separar por virgula)\n  -h, --help      display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail modificar-thread {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "gmail:write"
+    },
+    "gmail.historico": {
+      "interface": "cli",
+      "command": "sde gmail historico {args}",
+      "mutating": false,
+      "json": false,
+      "description": "Listar historico de mudancas (history.list)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "historico",
+        "properties": {
+          "startHistoryId": {
+            "type": "string",
+            "description": ""
+          },
+          "limite": {
+            "type": "string",
+            "description": "Maximo de resultados"
+          },
+          "labelId": {
+            "type": "string",
+            "description": "Filtrar por label"
+          },
+          "tipos": {
+            "type": "string",
+            "description": "historyTypes (messageAdded,messageDeleted,labelAdded,labelRemoved)"
+          }
+        },
+        "required": ["startHistoryId"]
+      },
+      "help": {
+        "summary": "Listar historico de mudancas (history.list)",
+        "usage": "ravi apps run gmail historico --json -- <startHistoryId> [options]",
+        "arguments": [
+          {
+            "name": "startHistoryId",
+            "required": true,
+            "variadic": false,
+            "values": [],
+            "description": "Argumento obrigatorio startHistoryId."
+          }
+        ],
+        "options": [
+          {
+            "flags": "--limite <n>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Maximo de resultados"
+          },
+          {
+            "flags": "--label-id <id>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "Filtrar por label"
+          },
+          {
+            "flags": "--tipos <t>",
+            "required": false,
+            "value": "obrigatorio",
+            "defaultValue": null,
+            "values": [],
+            "description": "historyTypes (messageAdded,messageDeleted,labelAdded,labelRemoved)"
+          }
+        ],
+        "examples": ["ravi apps run gmail historico --json -- <startHistoryId> [options]"],
+        "sections": [],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi gmail historico --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail historico [options] <startHistoryId>\n\nListar historico de mudancas (history.list)\n\nOptions:\n  --limite <n>     Maximo de resultados\n  --label-id <id>  Filtrar por label\n  --tipos <t>      historyTypes (messageAdded,messageDeleted,labelAdded,labelRemoved)\n  -h, --help       display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail historico {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "gmail.aliases": {
+      "interface": "cli",
+      "command": "sde gmail aliases {args}",
+      "mutating": true,
+      "json": false,
+      "description": "Listar enderecos send-as / aliases (settings.sendAs.list)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "aliases",
+        "properties": {},
+        "required": []
+      },
+      "help": {
+        "summary": "Listar enderecos send-as / aliases (settings.sendAs.list)",
+        "usage": "ravi apps run gmail aliases --json",
+        "arguments": [],
+        "options": [],
+        "examples": ["ravi apps run gmail aliases --json"],
+        "sections": [],
+        "permissions": ["gmail:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": ["permission:gmail:write"]
+        },
+        "validationCommands": [
+          "ravi gmail aliases --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail aliases [options]\n\nListar enderecos send-as / aliases (settings.sendAs.list)\n\nOptions:\n  -h, --help  display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail aliases {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "gmail:write"
+    },
+    "gmail.filtros": {
+      "interface": "cli",
+      "command": "sde gmail filtros {args}",
+      "mutating": false,
+      "json": false,
+      "description": "Listar filtros (settings.filters.list)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "filtros",
+        "properties": {},
+        "required": []
+      },
+      "help": {
+        "summary": "Listar filtros (settings.filters.list)",
+        "usage": "ravi apps run gmail filtros --json",
+        "arguments": [],
+        "options": [],
+        "examples": ["ravi apps run gmail filtros --json"],
+        "sections": [],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi gmail filtros --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail filtros [options]\n\nListar filtros (settings.filters.list)\n\nOptions:\n  -h, --help  display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail filtros {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "gmail.vacation": {
+      "interface": "cli",
+      "command": "sde gmail vacation {args}",
+      "mutating": false,
+      "json": false,
+      "description": "Ver resposta automatica de ferias (settings.getVacation)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "vacation",
+        "properties": {},
+        "required": []
+      },
+      "help": {
+        "summary": "Ver resposta automatica de ferias (settings.getVacation)",
+        "usage": "ravi apps run gmail vacation --json",
+        "arguments": [],
+        "options": [],
+        "examples": ["ravi apps run gmail vacation --json"],
+        "sections": [],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi gmail vacation --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail vacation [options]\n\nVer resposta automatica de ferias (settings.getVacation)\n\nOptions:\n  -h, --help  display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail vacation {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "gmail.encaminhamentos": {
+      "interface": "cli",
+      "command": "sde gmail encaminhamentos {args}",
+      "mutating": false,
+      "json": false,
+      "description": "Listar enderecos de encaminhamento (settings.forwardingAddresses.list)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "encaminhamentos",
+        "properties": {},
+        "required": []
+      },
+      "help": {
+        "summary": "Listar enderecos de encaminhamento (settings.forwardingAddresses.list)",
+        "usage": "ravi apps run gmail encaminhamentos --json",
+        "arguments": [],
+        "options": [],
+        "examples": ["ravi apps run gmail encaminhamentos --json"],
+        "sections": [],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi gmail encaminhamentos --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail encaminhamentos [options]\n\nListar enderecos de encaminhamento (settings.forwardingAddresses.list)\n\nOptions:\n  -h, --help  display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail encaminhamentos {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "gmail.delegados": {
+      "interface": "cli",
+      "command": "sde gmail delegados {args}",
+      "mutating": false,
+      "json": false,
+      "description": "Listar delegados (settings.delegates.list - requer Workspace c/ delegacao)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "delegados",
+        "properties": {},
+        "required": []
+      },
+      "help": {
+        "summary": "Listar delegados (settings.delegates.list - requer Workspace c/ delegacao)",
+        "usage": "ravi apps run gmail delegados --json",
+        "arguments": [],
+        "options": [],
+        "examples": ["ravi apps run gmail delegados --json"],
+        "sections": [],
+        "permissions": [],
+        "safety": {
+          "readOnly": true,
+          "mutating": false,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": []
+        },
+        "validationCommands": [
+          "ravi gmail delegados --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail delegados [options]\n\nListar delegados (settings.delegates.list - requer Workspace c/ delegacao)\n\nOptions:\n  -h, --help  display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail delegados {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      }
+    },
+    "gmail.config-conta": {
+      "interface": "cli",
+      "command": "sde gmail config-conta {args}",
+      "mutating": true,
+      "json": false,
+      "description": "Config da conta: imap/pop/language/autoForwarding (settings.get*)",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "title": "config-conta",
+        "properties": {},
+        "required": []
+      },
+      "help": {
+        "summary": "Config da conta: imap/pop/language/autoForwarding (settings.get*)",
+        "usage": "ravi apps run gmail config-conta --json",
+        "arguments": [],
+        "options": [],
+        "examples": ["ravi apps run gmail config-conta --json"],
+        "sections": [],
+        "permissions": ["gmail:write"],
+        "safety": {
+          "readOnly": false,
+          "mutating": true,
+          "destructive": false,
+          "idempotent": null,
+          "hitlRequired": false,
+          "confirmationRequired": false,
+          "dryRunSupported": false,
+          "gates": ["permission:gmail:write"]
+        },
+        "validationCommands": [
+          "ravi gmail config-conta --help --json",
+          "ravi apps show gmail --json",
+          "ravi apps run gmail help --json",
+          "ravi apps check gmail --json"
+        ],
+        "sourceText": "Usage: sde gmail config-conta [options]\n\nConfig da conta: imap/pop/language/autoForwarding (settings.get*)\n\nOptions:\n  -h, --help  display help for command",
+        "provenance": {
+          "source": "manifest",
+          "contract": "sde-cli-manifest+help",
+          "command": "sde gmail config-conta {args}",
+          "confidence": "high"
+        },
+        "complete": true,
+        "missing": []
+      },
+      "permission": "gmail:write"
+    }
+  },
+  "permissions": {
+    "required": [],
+    "optional": [],
+    "mutating": ["gmail:write"]
+  },
+  "storage": {
+    "sqlite": [],
+    "files": []
+  },
+  "artifacts": [],
+  "events": {
+    "emits": [
+      {
+        "topic": "ravi.apps.gmail.changed",
+        "when": "imported CLI app state changes",
+        "durability": "logged",
+        "schema": "events/gmail-changed.v1.json"
+      }
+    ],
+    "consumes": []
+  },
+  "skills": ["ravi-system-gmail"],
+  "health": {
+    "checks": [
+      {
+        "type": "builtin",
+        "handler": "apps.manifest.check"
+      }
+    ]
+  },
+  "versioning": {
+    "compatibility": "semver",
+    "migrations": []
+  }
+}
