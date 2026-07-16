@@ -29,17 +29,22 @@ import {
   type RuntimeUserMessage,
 } from "./host-session.js";
 import { applyDirectRuntimeModelSwitch, resolveRuntimeModelSwitchStrategy } from "./model-switch.js";
-import { resolveAgentModelSelection } from "./model-preset-resolver.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID } from "./provider-registry.js";
 import type { RuntimeProviderId } from "./types.js";
 import { formatUserFacingTurnFailure, type RuntimeSafeEmit } from "./host-event-loop.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
 import {
+  RUNTIME_TARGET_EXHAUSTED_RESTART_REASON,
   startRuntimeSession,
   updateRuntimeSessionMetadata,
   type PendingRuntimeSessionStart,
 } from "./session-launcher.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import {
+  applyRuntimeTargetResolutionToPrompt,
+  tryResolveRuntimeSession,
+  type RuntimeSessionResolutionResult,
+} from "./session-resolver.js";
 import { resolveSessionOutputTarget } from "./session-output-target.js";
 import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-runtime-context.js";
 import {
@@ -53,6 +58,17 @@ import {
 const log = logger.child("runtime:session-dispatcher");
 const RUNTIME_EVENT_LOOP_CLOSED_REASON = "runtime_event_loop_closed";
 const MAX_RUNTIME_EVENT_LOOP_RESTARTS = 2;
+/**
+ * Restart reasons bounded by MAX_RUNTIME_EVENT_LOOP_RESTARTS. A permanently
+ * unrecoverable condition — the runtime event loop closing on every replay, or
+ * every runtime target being exhausted — must converge to
+ * dispatch.restart_suppressed instead of spinning restart -> re-resolve -> fail
+ * forever (which pins CPU and re-reads full session history each cycle).
+ */
+const BOUNDED_RESTART_REASONS = new Set<string>([
+  RUNTIME_EVENT_LOOP_CLOSED_REASON,
+  RUNTIME_TARGET_EXHAUSTED_RESTART_REASON,
+]);
 const RUNTIME_RESTART_EXHAUSTED_ERROR =
   "Runtime provider stream closed repeatedly. Automatic recovery was stopped; send a new message to retry.";
 const NATIVE_STEER_ACTIVE_TURN_MAX_IDLE_MS = 30_000;
@@ -651,22 +667,52 @@ export class RuntimeSessionDispatcher {
       log.error("No agent found for prompt", { sessionName, agentId });
       return;
     }
-    const agentSelection = resolveAgentModelSelection(agent);
-    const sessionRuntimeProviderOverride =
-      prompt._observation && prompt._runtimeProviderId ? undefined : sessionEntry?.runtimeProviderOverride;
+    const runtimeResolution: RuntimeSessionResolutionResult | undefined =
+      existing && !existing.done
+        ? tryResolveRuntimeSession({
+            sessionName,
+            prompt,
+            defaultRuntimeProviderId: DEFAULT_RUNTIME_PROVIDER_ID,
+          })
+        : undefined;
+    if (runtimeResolution?.ok) {
+      applyRuntimeTargetResolutionToPrompt(prompt, runtimeResolution.resolution);
+    }
     const requestedProvider: RuntimeProviderId =
-      prompt._observation && prompt._runtimeProviderId
-        ? prompt._runtimeProviderId
-        : sessionRuntimeProviderOverride
-          ? sessionRuntimeProviderOverride
-          : agentSelection.modelSource === "agent_preset"
-            ? agentSelection.effectiveProvider
-            : (agent.provider ?? DEFAULT_RUNTIME_PROVIDER_ID);
+      runtimeResolution?.ok && runtimeResolution.resolution
+        ? runtimeResolution.resolution.runtimeProviderId
+        : ((existing && !existing.done ? existing.queryHandle.provider : undefined) ??
+          prompt._runtimeProviderId ??
+          agent.provider ??
+          DEFAULT_RUNTIME_PROVIDER_ID);
+    const resolvedRuntimeTargetPolicy = runtimeResolution?.ok
+      ? runtimeResolution.resolution?.runtimeTargetPolicy
+      : undefined;
+    const resolvedRuntimeTarget = runtimeResolution?.ok ? runtimeResolution.resolution?.runtimeTarget : undefined;
+    const runtimeTargetRequiresRestart =
+      !!resolvedRuntimeTargetPolicy &&
+      (!existing?.runtimeTargetPolicy ||
+        existing.runtimeTargetPolicy.id !== resolvedRuntimeTargetPolicy.id ||
+        existing.runtimeTarget?.id !== resolvedRuntimeTarget?.id ||
+        existing.currentModel !== resolvedRuntimeTarget?.model);
+    const runtimeResolutionFailed = runtimeResolution?.ok === false;
     let retainReleasedSlot = false;
 
     if (existing && !existing.done) {
-      if (existing.agentId !== agent.id || existing.queryHandle.provider !== requestedProvider) {
-        const restartReason = existing.agentId !== agent.id ? "agent_change" : "provider_change";
+      if (
+        existing.agentId !== agent.id ||
+        runtimeResolutionFailed ||
+        runtimeTargetRequiresRestart ||
+        existing.queryHandle.provider !== requestedProvider
+      ) {
+        const restartReason =
+          existing.agentId !== agent.id
+            ? "agent_change"
+            : runtimeResolutionFailed
+              ? "runtime_resolution_failed"
+              : runtimeTargetRequiresRestart
+                ? "runtime_target_policy"
+                : "provider_change";
         log.info("Streaming: restarting session after runtime identity change", {
           sessionName,
           reason: restartReason,
@@ -755,7 +801,7 @@ export class RuntimeSessionDispatcher {
           );
           shutdownRuntimeStreamingSession(existing, "runtime_task_settings_change");
           this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
-          await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot: true });
+          await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot: true, runtimeResolution });
           return;
         }
         if (!existing.currentModel) {
@@ -768,7 +814,7 @@ export class RuntimeSessionDispatcher {
             modelPresetVersion: requestedRuntime.modelPresetVersion ?? null,
           });
           if (modelStatus === "restart-next-turn") {
-            await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot: true });
+            await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot: true, runtimeResolution });
             return;
           }
         }
@@ -1162,7 +1208,7 @@ export class RuntimeSessionDispatcher {
         deliveryBarrierSource: prompt.deliveryBarrierSource ?? null,
       },
     });
-    await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot });
+    await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot, runtimeResolution });
   }
 
   private prepareDaemonRestartResumePrompt(
@@ -1206,7 +1252,7 @@ export class RuntimeSessionDispatcher {
   async startStreamingSession(
     sessionName: string,
     prompt: RuntimeLaunchPrompt,
-    options: { retainReleasedSlot?: boolean } = {},
+    options: { retainReleasedSlot?: boolean; runtimeResolution?: RuntimeSessionResolutionResult } = {},
   ): Promise<void> {
     this.pendingStartSessions.add(sessionName);
     let reserved = false;
@@ -1229,6 +1275,7 @@ export class RuntimeSessionDispatcher {
         drainPendingStarts: () => this.drainPendingStarts(),
         restartStashedSession: ({ sessionName: stashedSessionName, reason }) =>
           this.restartStashedSession(stashedSessionName, reason),
+        runtimeResolution: options.runtimeResolution,
       });
     } finally {
       this.inFlightStartPrompts.delete(sessionName);
@@ -1424,10 +1471,9 @@ export class RuntimeSessionDispatcher {
     }
 
     const traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
-    const restartAttempt =
-      reason === RUNTIME_EVENT_LOOP_CLOSED_REASON
-        ? (this.runtimeEventLoopRestartAttempts.get(sessionName) ?? 0) + 1
-        : undefined;
+    const restartAttempt = BOUNDED_RESTART_REASONS.has(reason)
+      ? (this.runtimeEventLoopRestartAttempts.get(sessionName) ?? 0) + 1
+      : undefined;
     if (restartAttempt !== undefined && restartAttempt > MAX_RUNTIME_EVENT_LOOP_RESTARTS) {
       recordRuntimeTraceEvent({
         sessionKey: traceIdentity.sessionKey,

@@ -406,6 +406,7 @@ describe("projects service", () => {
       title: "Ship attempt",
       instructions: "Execute the concrete workflow task",
       priority: "high",
+      profileId: "observed-task",
       createdBy: "test",
     });
     createdTaskIds.push(created.task.id);

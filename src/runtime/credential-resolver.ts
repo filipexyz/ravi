@@ -19,6 +19,10 @@ export interface RuntimeCredentialResolutionResult {
   managedPoolConfigured: boolean;
 }
 
+export type RuntimeCredentialAvailabilityResult = Omit<RuntimeCredentialResolutionResult, "attemptBinding"> & {
+  attemptBinding: RuntimeCredentialAttemptBinding | null;
+};
+
 export interface RuntimeCredentialResolveOptions extends RuntimeCredentialSelectionRequest {
   env?: Record<string, string | undefined>;
   refreshPool?: boolean;
@@ -33,62 +37,74 @@ export async function resolveRuntimeCredentialAttemptBinding(
   return executeWrite(
     getDb(),
     (db) => {
-      const selection = selectRuntimeCredential(options);
-      const rejected = [...selection.rejected];
-      const managedPoolConfigured = selection.candidates.length > 0 || selection.rejected.length > 0;
-
-      for (const candidate of selection.candidates) {
-        const attempt = tryResolveAttemptBinding(candidate, options.env ?? process.env);
-        if (attempt.ok) {
-          const attemptId = `rcatt_${randomUUID()}`;
-          db.prepare(
-            `
-            INSERT INTO runtime_credential_attempts (
-              id, session_key, session_name, run_id, turn_id, runtime_provider, upstream_provider,
-              model, credential_id, status, started_at, metadata_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'reserved', ?, ?)
-          `,
-          ).run(
-            attemptId,
-            options.sessionKey ?? null,
-            options.sessionName ?? null,
-            options.runId ?? null,
-            options.turnId ?? null,
-            options.runtimeProvider,
-            options.upstreamProvider ?? candidate.upstreamProvider ?? null,
-            options.model ?? null,
-            candidate.id,
-            options.now ?? Date.now(),
-            JSON.stringify({ reason: "preselect" }),
-          );
-          return {
-            attemptBinding: {
-              ...attempt.binding,
-              attemptId,
-            },
-            selected: candidate,
-            candidates: selection.candidates,
-            rejected,
-            managedPoolConfigured,
-          };
-        }
-        rejected.push({
-          credentialId: candidate.id,
-          label: candidate.label,
-          reason: attempt.reason,
-        });
-      }
-
+      const availability = inspectRuntimeCredentialAvailability(options);
+      if (!availability.attemptBinding || !availability.selected) return availability;
+      const attemptId = `rcatt_${randomUUID()}`;
+      db.prepare(
+        `
+        INSERT INTO runtime_credential_attempts (
+          id, session_key, session_name, run_id, turn_id, runtime_provider, upstream_provider,
+          model, credential_id, status, started_at, metadata_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'reserved', ?, ?)
+      `,
+      ).run(
+        attemptId,
+        options.sessionKey ?? null,
+        options.sessionName ?? null,
+        options.runId ?? null,
+        options.turnId ?? null,
+        options.runtimeProvider,
+        options.upstreamProvider ?? availability.selected.upstreamProvider ?? null,
+        options.model ?? null,
+        availability.selected.id,
+        options.now ?? Date.now(),
+        JSON.stringify({ reason: "preselect" }),
+      );
       return {
-        attemptBinding: null,
-        selected: null,
-        candidates: selection.candidates,
-        rejected,
-        managedPoolConfigured,
+        ...availability,
+        attemptBinding: { ...availability.attemptBinding, attemptId },
       };
     },
     { label: "runtime-credential-resolve-attempt" },
   );
+}
+
+/**
+ * Resolve credential eligibility and secret bindings without refreshing state,
+ * reserving an attempt, or mutating health. Used by dry-run explain surfaces.
+ */
+export function inspectRuntimeCredentialAvailability(
+  options: RuntimeCredentialResolveOptions,
+): RuntimeCredentialAvailabilityResult {
+  const selection = selectRuntimeCredential(options);
+  const rejected = [...selection.rejected];
+  const managedPoolConfigured = selection.candidates.length > 0 || selection.rejected.length > 0;
+
+  for (const candidate of selection.candidates) {
+    const attempt = tryResolveAttemptBinding(candidate, options.env ?? process.env);
+    if (attempt.ok) {
+      return {
+        attemptBinding: attempt.binding,
+        selected: candidate,
+        candidates: selection.candidates,
+        rejected,
+        managedPoolConfigured,
+      };
+    }
+    rejected.push({
+      credentialId: candidate.id,
+      label: candidate.label,
+      reason: attempt.reason,
+    });
+  }
+
+  return {
+    attemptBinding: null,
+    selected: null,
+    candidates: selection.candidates,
+    rejected,
+    managedPoolConfigured,
+  };
 }
 
 export function buildRuntimeCredentialSessionMetadata(

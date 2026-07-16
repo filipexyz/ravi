@@ -1,8 +1,8 @@
 import { isExplicitConnect, nats } from "../nats.js";
 import { buildCliInvocationMetadata } from "./provenance.js";
+import { redactJson } from "../utils/redaction.js";
 
 const MAX_INPUT_LENGTH = 500;
-const RCTX_TOKEN_PATTERN = /rctx_[A-Za-z0-9_-]+/g;
 
 export interface CliAuditEventOptions {
   group: string;
@@ -32,7 +32,7 @@ export async function emitCliAuditEvent(options: CliAuditEventOptions): Promise<
   await nats
     .emit(`ravi._cli.cli.${options.group}.${options.name}`, {
       tool,
-      input: scrubSecrets(truncate(options.input ?? {})),
+      input: sanitizeCliAuditInput(options.input ?? {}),
       isError: Boolean(options.isError),
       ...(options.status ? { status: options.status } : {}),
       ...(options.durationMs !== undefined ? { durationMs: options.durationMs } : {}),
@@ -97,15 +97,6 @@ function truncate(value: unknown): unknown {
   return value;
 }
 
-function scrubSecrets(value: unknown): unknown {
-  if (typeof value === "string") {
-    return value.replace(RCTX_TOKEN_PATTERN, "[REDACTED:rctx]");
-  }
-  if (Array.isArray(value)) return value.map((item) => scrubSecrets(item));
-  if (value && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [key, nested] of Object.entries(value)) out[key] = scrubSecrets(nested);
-    return out;
-  }
-  return value;
+export function sanitizeCliAuditInput(value: unknown): unknown {
+  return redactJson(truncate(value)).value;
 }

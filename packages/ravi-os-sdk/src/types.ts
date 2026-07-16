@@ -9980,6 +9980,197 @@ export type RuntimePresetsShowReturn = {
   referencingAgentsTotal: number;
 };
 
+/** Input shape for `runtime.targets.clear`. */
+export type RuntimeTargetsClearInput = {
+  agent: string;
+};
+
+/** Return shape for `runtime.targets.clear`. */
+export type RuntimeTargetsClearReturn = {
+  action: "set" | "reorder" | "clear";
+  agentId: string;
+  changed: boolean;
+  inspectCommand: string;
+  policy: ({
+    circuitBreakerThreshold?: number;
+    cooldownMs?: number;
+    id: string;
+    maxAttemptsPerTarget: number;
+    maxCredentialRecoveryAttemptsPerTarget?: number;
+    strategy: "ordered" | "health-aware";
+    targets: Array<{
+      credentialRequirements?: {
+        authMethods?: string[];
+        credentialIds?: string[];
+        requireManaged?: boolean;
+        sessionCompatibilityKey?: string;
+      };
+      effort?: string;
+      id: string;
+      model: string;
+      modelPreset?: {
+        id: string;
+        version: number;
+      };
+      requiredCapabilities?: string[];
+      runtimeProvider: string;
+      thinking?: "off" | "normal" | "verbose";
+    }>;
+  }) | null;
+  preservedDefaultKeys: string[];
+  previousPolicyId: string | null;
+};
+
+/** Input shape for `runtime.targets.explain`. */
+export type RuntimeTargetsExplainInput = {
+  agent: string;
+  sessionPolicyJson?: string;
+  taskProfile?: string;
+};
+
+/** Return shape for `runtime.targets.explain`. */
+export type RuntimeTargetsExplainReturn = {
+  agentId: string;
+  enabled: boolean;
+  evaluation: "stateless_preflight";
+  policyId: string | null;
+  provenance: string | null;
+  rejected: Array<{
+    detail?: string;
+    reason: string;
+    targetId: string;
+  }>;
+  selectedTarget: ({
+    id: string;
+    model: string;
+    runtimeProvider: string;
+  }) | null;
+  source: "session_override" | "task_profile" | "agent_default" | "none";
+};
+
+/** Input shape for `runtime.targets.reorder`. */
+export type RuntimeTargetsReorderInput = {
+  agent: string;
+  order: string;
+};
+
+/** Return shape for `runtime.targets.reorder`. */
+export type RuntimeTargetsReorderReturn = {
+  action: "set" | "reorder" | "clear";
+  agentId: string;
+  changed: boolean;
+  inspectCommand: string;
+  policy: ({
+    circuitBreakerThreshold?: number;
+    cooldownMs?: number;
+    id: string;
+    maxAttemptsPerTarget: number;
+    maxCredentialRecoveryAttemptsPerTarget?: number;
+    strategy: "ordered" | "health-aware";
+    targets: Array<{
+      credentialRequirements?: {
+        authMethods?: string[];
+        credentialIds?: string[];
+        requireManaged?: boolean;
+        sessionCompatibilityKey?: string;
+      };
+      effort?: string;
+      id: string;
+      model: string;
+      modelPreset?: {
+        id: string;
+        version: number;
+      };
+      requiredCapabilities?: string[];
+      runtimeProvider: string;
+      thinking?: "off" | "normal" | "verbose";
+    }>;
+  }) | null;
+  preservedDefaultKeys: string[];
+  previousPolicyId: string | null;
+};
+
+/** Input shape for `runtime.targets.set`. */
+export type RuntimeTargetsSetInput = {
+  agent: string;
+  policyJson: string;
+};
+
+/** Return shape for `runtime.targets.set`. */
+export type RuntimeTargetsSetReturn = {
+  action: "set" | "reorder" | "clear";
+  agentId: string;
+  changed: boolean;
+  inspectCommand: string;
+  policy: ({
+    circuitBreakerThreshold?: number;
+    cooldownMs?: number;
+    id: string;
+    maxAttemptsPerTarget: number;
+    maxCredentialRecoveryAttemptsPerTarget?: number;
+    strategy: "ordered" | "health-aware";
+    targets: Array<{
+      credentialRequirements?: {
+        authMethods?: string[];
+        credentialIds?: string[];
+        requireManaged?: boolean;
+        sessionCompatibilityKey?: string;
+      };
+      effort?: string;
+      id: string;
+      model: string;
+      modelPreset?: {
+        id: string;
+        version: number;
+      };
+      requiredCapabilities?: string[];
+      runtimeProvider: string;
+      thinking?: "off" | "normal" | "verbose";
+    }>;
+  }) | null;
+  preservedDefaultKeys: string[];
+  previousPolicyId: string | null;
+};
+
+/** Input shape for `runtime.targets.show`. */
+export type RuntimeTargetsShowInput = {
+  agent: string;
+};
+
+/** Return shape for `runtime.targets.show`. */
+export type RuntimeTargetsShowReturn = {
+  agentId: string;
+  enabled: boolean;
+  inspectCommand: string;
+  order: string[];
+  policy: ({
+    circuitBreakerThreshold?: number;
+    cooldownMs?: number;
+    id: string;
+    maxAttemptsPerTarget: number;
+    maxCredentialRecoveryAttemptsPerTarget?: number;
+    strategy: "ordered" | "health-aware";
+    targets: Array<{
+      credentialRequirements?: {
+        authMethods?: string[];
+        credentialIds?: string[];
+        requireManaged?: boolean;
+        sessionCompatibilityKey?: string;
+      };
+      effort?: string;
+      id: string;
+      model: string;
+      modelPreset?: {
+        id: string;
+        version: number;
+      };
+      requiredCapabilities?: string[];
+      runtimeProvider: string;
+      thinking?: "off" | "normal" | "verbose";
+    }>;
+  }) | null;
+};
+
 /** Input shape for `sdk.client.check`. */
 export type SdkClientCheckInput = {
   out?: string;
@@ -14854,8 +15045,8 @@ export type WorkflowsSpecsShowReturn = Record<string, unknown>;
 /** Input shape for `yt.analytics-countries`. */
 export type YtAnalyticsCountriesInput = {
   connection?: string;
-  days?: string;
-  limit?: string;
+  days: string;
+  limit: string;
 };
 
 /** Return shape for `yt.analytics-countries`. */
@@ -14873,7 +15064,7 @@ export type YtAnalyticsCountriesReturn = {
 /** Input shape for `yt.analytics-demographics`. */
 export type YtAnalyticsDemographicsInput = {
   connection?: string;
-  days?: string;
+  days: string;
 };
 
 /** Return shape for `yt.analytics-demographics`. */
@@ -14890,7 +15081,7 @@ export type YtAnalyticsDemographicsReturn = {
 /** Input shape for `yt.analytics-devices`. */
 export type YtAnalyticsDevicesInput = {
   connection?: string;
-  days?: string;
+  days: string;
 };
 
 /** Return shape for `yt.analytics-devices`. */
@@ -14907,7 +15098,7 @@ export type YtAnalyticsDevicesReturn = {
 /** Input shape for `yt.analytics-overview`. */
 export type YtAnalyticsOverviewInput = {
   connection?: string;
-  days?: string;
+  days: string;
 };
 
 /** Return shape for `yt.analytics-overview`. */
@@ -14931,8 +15122,8 @@ export type YtAnalyticsOverviewReturn = {
 /** Input shape for `yt.analytics-series`. */
 export type YtAnalyticsSeriesInput = {
   connection?: string;
-  days?: string;
-  metric?: "views" | "estimatedMinutesWatched" | "averageViewDuration" | "subscribersGained" | "likes" | "comments" | "shares";
+  days: string;
+  metric: "views" | "estimatedMinutesWatched" | "averageViewDuration" | "subscribersGained" | "likes" | "comments" | "shares";
 };
 
 /** Return shape for `yt.analytics-series`. */
@@ -14946,8 +15137,8 @@ export type YtAnalyticsSeriesReturn = {
 /** Input shape for `yt.analytics-top`. */
 export type YtAnalyticsTopInput = {
   connection?: string;
-  days?: string;
-  limit?: string;
+  days: string;
+  limit: string;
 };
 
 /** Return shape for `yt.analytics-top`. */
@@ -14968,7 +15159,7 @@ export type YtAnalyticsTopReturn = {
 /** Input shape for `yt.analytics-traffic`. */
 export type YtAnalyticsTrafficInput = {
   connection?: string;
-  days?: string;
+  days: string;
 };
 
 /** Return shape for `yt.analytics-traffic`. */
@@ -14986,7 +15177,7 @@ export type YtAnalyticsTrafficReturn = {
 export type YtCaptionDownloadInput = {
   captionId: string;
   connection?: string;
-  format?: "srt" | "vtt" | "ttml";
+  format: "srt" | "vtt" | "ttml";
   language?: string;
 };
 
@@ -15024,7 +15215,7 @@ export type YtCaptionsReturn = {
 /** Input shape for `yt.comments`. */
 export type YtCommentsInput = {
   connection?: string;
-  limit?: string;
+  limit: string;
   page?: string;
   videoId: string;
 };
@@ -15089,7 +15280,7 @@ export type YtInfoReturn = {
 /** Input shape for `yt.playlist`. */
 export type YtPlaylistInput = {
   connection?: string;
-  limit?: string;
+  limit: string;
   page?: string;
   playlistId: string;
 };
@@ -15138,7 +15329,7 @@ export type YtPlaylistAddReturn = {
 export type YtPlaylistCreateInput = {
   connection?: string;
   description?: string;
-  privacy?: "public" | "private" | "unlisted";
+  privacy: "public" | "private" | "unlisted";
   title: string;
 };
 
@@ -15184,7 +15375,7 @@ export type YtPlaylistRemoveReturn = {
 /** Input shape for `yt.playlists`. */
 export type YtPlaylistsInput = {
   connection?: string;
-  limit?: string;
+  limit: string;
   page?: string;
 };
 
@@ -15221,7 +15412,7 @@ export type YtReplyReturn = {
 /** Input shape for `yt.search`. */
 export type YtSearchInput = {
   connection?: string;
-  limit?: string;
+  limit: string;
   page?: string;
   query: string;
 };
@@ -15272,7 +15463,7 @@ export type YtStatsReturn = {
 /** Input shape for `yt.subscriptions`. */
 export type YtSubscriptionsInput = {
   connection?: string;
-  limit?: string;
+  limit: string;
   page?: string;
 };
 
@@ -15296,7 +15487,7 @@ export type YtSubscriptionsReturn = {
 /** Input shape for `yt.unanswered`. */
 export type YtUnansweredInput = {
   connection?: string;
-  limit?: string;
+  limit: string;
   page?: string;
   videoId: string;
 };
@@ -15347,7 +15538,7 @@ export type YtVideoReturn = {
 /** Input shape for `yt.video-categories`. */
 export type YtVideoCategoriesInput = {
   connection?: string;
-  region?: string;
+  region: string;
 };
 
 /** Return shape for `yt.video-categories`. */
@@ -15380,7 +15571,7 @@ export type YtVideoUpdateInput = {
   connection?: string;
   description?: string;
   id: string;
-  privacy?: "public" | "private" | "unlisted";
+  privacy: "public" | "private" | "unlisted";
   tags?: string;
   title?: string;
 };
@@ -15407,7 +15598,7 @@ export type YtVideoUpdateReturn = {
 /** Input shape for `yt.videos`. */
 export type YtVideosInput = {
   connection?: string;
-  limit?: string;
+  limit: string;
   page?: string;
 };
 

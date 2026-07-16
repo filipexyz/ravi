@@ -24,11 +24,13 @@ class FakePiRpcTransport implements PiRpcTransport {
   readonly commands: PiRpcCommand[] = [];
 
   responseFor?: (command: PiRpcCommand) => PiRpcResponse | Promise<PiRpcResponse> | undefined;
+  startError?: Error;
   closed = false;
   closeCalls = 0;
 
   async start(input: PiRpcStartInput): Promise<void> {
     this.starts.push(input);
+    if (this.startError) throw this.startError;
   }
 
   async send(command: PiRpcCommand): Promise<PiRpcResponse> {
@@ -195,6 +197,45 @@ describe("Pi runtime provider", () => {
     ]);
   });
 
+  it("preserves trusted error identity when the Pi transport throws", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.responseFor = (command) => {
+      if (command.type === "prompt") throw new RangeError("credential unavailable");
+      return defaultResponse(command);
+    };
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(createStartRequest("falha interna")).events,
+    );
+
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "credential unavailable",
+      errorName: "RangeError",
+      caughtException: true,
+      recoverable: true,
+    });
+  });
+
+  it("marks non-Error Pi transport throws as caught exceptions", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.responseFor = (command) => {
+      if (command.type === "prompt") throw "token expired";
+      return defaultResponse(command);
+    };
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(createStartRequest("falha não tipada")).events,
+    );
+
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "token expired",
+      caughtException: true,
+      recoverable: true,
+    });
+  });
+
   it("switches to a valid file-backed session before prompting", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-pi-provider-"));
     const sessionFile = join(cwd, "session.jsonl");
@@ -234,7 +275,7 @@ describe("Pi runtime provider", () => {
     });
   });
 
-  it("maps Pi aborted turns to a single interrupted terminal event", async () => {
+  it("maps locally interrupted Pi turns to a single interrupted terminal event", async () => {
     const transport = new FakePiRpcTransport();
     transport.pushEvent({
       type: "turn_end",
@@ -246,12 +287,299 @@ describe("Pi runtime provider", () => {
       messages: [],
     });
 
-    const events = await collectRuntimeEvents(
-      createPiRuntimeProvider({ transport }).startSession(createStartRequest("aborta")).events,
-    );
+    const handle = createPiRuntimeProvider({ transport }).startSession(createStartRequest("aborta"));
+    await handle.interrupt();
+    const events = await collectRuntimeEvents(handle.events);
 
     expect(events.filter((event) => event.type === "turn.interrupted")).toHaveLength(1);
     expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(0);
+  });
+
+  it("maps a spontaneous Pi aborted turn to a replayable target failure", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.pushEvent({
+      type: "turn_end",
+      message: assistantMessage("", { stopReason: "aborted" }),
+      toolResults: [],
+    });
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(createStartRequest("nao interrompa")).events,
+    );
+
+    expect(events.filter((event) => event.type === "turn.interrupted")).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "Pi turn aborted without a local interrupt request",
+      targetFailure: true,
+      recoverable: true,
+    });
+  });
+
+  it("waits for Pi interrupt control acceptance before trusting an aborted event", async () => {
+    const transport = new FakePiRpcTransport();
+    let resolveAbort!: (response: PiRpcResponse) => void;
+    let markPromptStarted!: () => void;
+    const promptStarted = new Promise<void>((resolve) => {
+      markPromptStarted = resolve;
+    });
+    transport.responseFor = (command) => {
+      if (command.type === "prompt") {
+        markPromptStarted();
+        return defaultResponse(command);
+      }
+      if (command.type === "abort") {
+        return new Promise<PiRpcResponse>((resolve) => {
+          resolveAbort = resolve;
+        });
+      }
+      return defaultResponse(command);
+    };
+    const handle = createPiRuntimeProvider({ transport }).startSession(createStartRequest("controle concorrente"));
+    const eventsPromise = collectRuntimeEvents(handle.events);
+    await promptStarted;
+
+    const controlPromise = handle.control?.({ operation: "turn.interrupt" });
+    transport.pushEvent({
+      type: "turn_end",
+      message: assistantMessage("", { stopReason: "aborted" }),
+      toolResults: [],
+    });
+    resolveAbort({ id: "abort-rejected", type: "response", command: "abort", success: false, error: "rejected" });
+
+    await expect(controlPromise).resolves.toMatchObject({ ok: false });
+    const events = await eventsPromise;
+    expect(events.filter((event) => event.type === "turn.interrupted")).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({ type: "turn.failed", targetFailure: true });
+  });
+
+  it("keeps an accepted Pi interrupt monotonic when a later interrupt is rejected", async () => {
+    const transport = new FakePiRpcTransport();
+    let abortCalls = 0;
+    let markPromptStarted!: () => void;
+    const promptStarted = new Promise<void>((resolve) => {
+      markPromptStarted = resolve;
+    });
+    transport.responseFor = (command) => {
+      if (command.type === "prompt") markPromptStarted();
+      if (command.type === "abort" && ++abortCalls === 2) {
+        return { id: command.id, type: "response", command: "abort", success: false, error: "rejected" };
+      }
+      return defaultResponse(command);
+    };
+    const handle = createPiRuntimeProvider({ transport }).startSession(createStartRequest("controle monotônico"));
+    const eventsPromise = collectRuntimeEvents(handle.events);
+    await promptStarted;
+
+    await expect(handle.control?.({ operation: "turn.interrupt" })).resolves.toMatchObject({ ok: true });
+    await expect(handle.control?.({ operation: "turn.interrupt" })).resolves.toMatchObject({ ok: false });
+    transport.pushEvent({
+      type: "turn_end",
+      message: assistantMessage("", { stopReason: "aborted" }),
+      toolResults: [],
+    });
+    transport.pushEvent({ type: "agent_end", messages: [] });
+
+    const events = await eventsPromise;
+    expect(events.filter((event) => event.type === "turn.interrupted")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "turn.failed")).toHaveLength(0);
+  });
+
+  it("aggregates overlapping Pi interrupt decisions for the active turn", async () => {
+    const transport = new FakePiRpcTransport();
+    const abortResolvers: Array<(response: PiRpcResponse) => void> = [];
+    let markPromptStarted!: () => void;
+    let markBothAbortsStarted!: () => void;
+    const promptStarted = new Promise<void>((resolve) => {
+      markPromptStarted = resolve;
+    });
+    const bothAbortsStarted = new Promise<void>((resolve) => {
+      markBothAbortsStarted = resolve;
+    });
+    transport.responseFor = (command) => {
+      if (command.type === "prompt") markPromptStarted();
+      if (command.type === "abort") {
+        return new Promise<PiRpcResponse>((resolve) => {
+          abortResolvers.push(resolve);
+          if (abortResolvers.length === 2) markBothAbortsStarted();
+        });
+      }
+      return defaultResponse(command);
+    };
+    const handle = createPiRuntimeProvider({ transport }).startSession(createStartRequest("controle sobreposto"));
+    const eventsPromise = collectRuntimeEvents(handle.events);
+    await promptStarted;
+
+    const firstInterrupt = handle.control?.({ operation: "turn.interrupt" });
+    const secondInterrupt = handle.control?.({ operation: "turn.interrupt" });
+    await bothAbortsStarted;
+    transport.pushEvent({
+      type: "turn_end",
+      message: assistantMessage("", { stopReason: "aborted" }),
+      toolResults: [],
+    });
+    transport.pushEvent({ type: "agent_end", messages: [] });
+    abortResolvers[1]?.({
+      id: "abort-rejected",
+      type: "response",
+      command: "abort",
+      success: false,
+      error: "rejected",
+    });
+    abortResolvers[0]?.({ id: "abort-accepted", type: "response", command: "abort", success: true, data: {} });
+
+    await expect(firstInterrupt).resolves.toMatchObject({ ok: true });
+    await expect(secondInterrupt).resolves.toMatchObject({ ok: false });
+    const events = await eventsPromise;
+    expect(events.filter((event) => event.type === "turn.interrupted")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "turn.failed")).toHaveLength(0);
+  });
+
+  it("does not let a late Pi interrupt acceptance contaminate the next turn", async () => {
+    const transport = new FakePiRpcTransport();
+    let resolveAbort!: (response: PiRpcResponse) => void;
+    let promptCount = 0;
+    let markFirstPromptStarted!: () => void;
+    let markSecondPromptStarted!: () => void;
+    const firstPromptStarted = new Promise<void>((resolve) => {
+      markFirstPromptStarted = resolve;
+    });
+    const secondPromptStarted = new Promise<void>((resolve) => {
+      markSecondPromptStarted = resolve;
+    });
+    transport.responseFor = (command) => {
+      if (command.type === "prompt") {
+        promptCount += 1;
+        if (promptCount === 1) markFirstPromptStarted();
+        if (promptCount === 2) markSecondPromptStarted();
+      }
+      if (command.type === "abort") {
+        return new Promise<PiRpcResponse>((resolve) => {
+          resolveAbort = resolve;
+        });
+      }
+      return defaultResponse(command);
+    };
+    const handle = createPiRuntimeProvider({ transport }).startSession(
+      createStartRequest("first", { prompt: multiplePrompts("first", "second") }),
+    );
+    const eventsPromise = collectRuntimeEvents(handle.events);
+    await firstPromptStarted;
+
+    const lateInterrupt = handle.control?.({ operation: "turn.interrupt" });
+    transport.pushEvent({ type: "agent_end", messages: [assistantMessage("first turn completed")] });
+    await secondPromptStarted;
+    resolveAbort({ id: "late-abort", type: "response", command: "abort", success: true, data: {} });
+    transport.pushEvent({
+      type: "turn_end",
+      message: assistantMessage("", { stopReason: "aborted" }),
+      toolResults: [],
+    });
+    transport.pushEvent({ type: "agent_end", messages: [] });
+
+    await expect(lateInterrupt).resolves.toMatchObject({ ok: true });
+    const events = await eventsPromise;
+    expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "turn.interrupted")).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({ type: "turn.failed", targetFailure: true });
+  });
+
+  it("normalizes Pi bootstrap failures into a replayable target failure", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.startError = new Error("Pi bootstrap unavailable");
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(createStartRequest("fail over")).events,
+    );
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "turn.failed",
+      error: "Pi bootstrap unavailable",
+      errorName: "Error",
+      caughtException: true,
+      targetFailure: true,
+      recoverable: true,
+      rawEvent: { type: "transport.start_failed" },
+    });
+  });
+
+  it("fails closed when Pi bootstrap throws after the transport starts", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.responseFor = (command) => {
+      if (command.type === "set_steering_mode") throw new RangeError("synthetic bootstrap invariant");
+      return defaultResponse(command);
+    };
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(createStartRequest("do not fail over")).events,
+    );
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "turn.failed",
+      error: "synthetic bootstrap invariant",
+      errorName: "RangeError",
+      caughtException: true,
+      recoverable: false,
+      rawEvent: { type: "bootstrap.failed" },
+    });
+    expect(events[0]).not.toHaveProperty("targetFailure");
+  });
+
+  it("does not let a trailing Pi agent_end complete the next turn", async () => {
+    const scenarios = [
+      {
+        name: "error",
+        firstTurn: assistantMessage("", { stopReason: "error", errorMessage: "first turn failed" }),
+        expectedTerminal: "turn.failed",
+        interruptLocally: false,
+      },
+      {
+        name: "accepted abort",
+        firstTurn: assistantMessage("", { stopReason: "aborted" }),
+        expectedTerminal: "turn.interrupted",
+        interruptLocally: true,
+      },
+      {
+        name: "spontaneous abort",
+        firstTurn: assistantMessage("", { stopReason: "aborted" }),
+        expectedTerminal: "turn.failed",
+        interruptLocally: false,
+      },
+    ] as const;
+
+    for (const scenario of scenarios) {
+      const transport = new FakePiRpcTransport();
+      transport.pushEvent({
+        type: "turn_end",
+        message: scenario.firstTurn,
+        toolResults: [],
+      });
+      transport.pushEvent({ type: "agent_end", messages: [assistantMessage(`stale ${scenario.name}`)] });
+      transport.pushEvent({ type: "agent_start" });
+      transport.pushEvent({ type: "agent_end", messages: [assistantMessage("second turn completed")] });
+
+      const handle = createPiRuntimeProvider({ transport }).startSession(
+        createStartRequest("first", { prompt: multiplePrompts("first", "second") }),
+      );
+      if (scenario.interruptLocally) await handle.interrupt();
+      const events = await collectRuntimeEvents(handle.events);
+      const completion = events.find((event) => event.type === "turn.complete");
+
+      expect(events.filter((event) => event.type === scenario.expectedTerminal)).toHaveLength(1);
+      expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(1);
+      expect(completion).toMatchObject({
+        type: "turn.complete",
+        rawEvent: {
+          type: "agent_end",
+          messages: [{ content: [{ type: "text", text: "second turn completed" }] }],
+        },
+      });
+      expect(
+        transport.commands.filter((command) => command.type === "prompt").map((command) => command.message),
+      ).toEqual(["first", "second"]);
+    }
   });
 
   it("routes inactive runtime control commands to safe Pi RPC operations", async () => {
@@ -511,6 +839,36 @@ describe("Pi runtime provider", () => {
     );
     expect(liveTransport.commands.find((command) => command.type === "prompt")).not.toHaveProperty("streamingBehavior");
   });
+
+  it("fails closed when Pi post-start bootstrap throws during transport restart", async () => {
+    const deadTransport = new FakePiRpcTransport();
+    deadTransport.responseFor = (command) => {
+      if (command.type === "prompt") throw new Error("Pi RPC process exited");
+      return defaultResponse(command);
+    };
+    const replacementTransport = new FakePiRpcTransport();
+    replacementTransport.responseFor = (command) => {
+      if (command.type === "set_steering_mode") throw new RangeError("synthetic restart invariant");
+      return defaultResponse(command);
+    };
+    const transports = [deadTransport, replacementTransport];
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({
+        transportFactory: () => transports.shift() ?? replacementTransport,
+      }).startSession(createStartRequest("restart safely")).events,
+    );
+
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "synthetic restart invariant",
+      errorName: "RangeError",
+      caughtException: true,
+      recoverable: false,
+      rawEvent: { type: "bootstrap.failed" },
+    });
+    expect(events.at(-1)).not.toHaveProperty("targetFailure");
+  });
 });
 
 function createStartRequest(text: string, overrides: Partial<RuntimeStartRequest> = {}): RuntimeStartRequest {
@@ -535,6 +893,12 @@ async function* onePrompt(text: string): AsyncGenerator<RuntimePromptMessage> {
     session_id: "session",
     parent_tool_use_id: null,
   };
+}
+
+async function* multiplePrompts(...texts: string[]): AsyncGenerator<RuntimePromptMessage> {
+  for (const text of texts) {
+    yield* onePrompt(text);
+  }
 }
 
 async function collectRuntimeEvents(events: AsyncIterable<RuntimeEvent>): Promise<RuntimeEvent[]> {

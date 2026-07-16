@@ -153,7 +153,44 @@ function isCodexSubAgentDirectInputError(error: unknown): boolean {
 
 interface CodexSessionState {
   activeTurn: CodexCliTurnHandle | null;
-  interrupted: boolean;
+  interruptedTurn: CodexCliTurnHandle | null;
+  pendingInterruptDecisions: Map<CodexCliTurnHandle, Set<Promise<boolean>>>;
+}
+
+function trackCodexInterruptDecision(
+  state: CodexSessionState,
+  turn: CodexCliTurnHandle,
+  decision: Promise<boolean>,
+): void {
+  const pending = state.pendingInterruptDecisions.get(turn) ?? new Set<Promise<boolean>>();
+  pending.add(decision);
+  state.pendingInterruptDecisions.set(turn, pending);
+}
+
+function untrackCodexInterruptDecision(
+  state: CodexSessionState,
+  turn: CodexCliTurnHandle,
+  decision: Promise<boolean>,
+): void {
+  const pending = state.pendingInterruptDecisions.get(turn);
+  pending?.delete(decision);
+  if (pending?.size === 0) state.pendingInterruptDecisions.delete(turn);
+}
+
+async function hasAcceptedCodexInterrupt(state: CodexSessionState, turn: CodexCliTurnHandle): Promise<boolean> {
+  if (state.interruptedTurn === turn) return true;
+
+  while (true) {
+    const pending = [...(state.pendingInterruptDecisions.get(turn) ?? [])];
+    if (pending.length === 0) return state.interruptedTurn === turn;
+    const decisions = await Promise.all(pending.map((decision) => decision.catch(() => false)));
+    if (decisions.some(Boolean) || state.interruptedTurn === turn) return true;
+  }
+}
+
+function clearCodexInterruptState(state: CodexSessionState, turn: CodexCliTurnHandle): void {
+  state.pendingInterruptDecisions.delete(turn);
+  if (state.interruptedTurn === turn) state.interruptedTurn = null;
 }
 
 interface AsyncQueue<T> extends AsyncIterable<T> {
@@ -279,7 +316,8 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
       };
       const state: CodexSessionState = {
         activeTurn: null,
-        interrupted: false,
+        interruptedTurn: null,
+        pendingInterruptDecisions: new Map(),
       };
       const skillVisibility = skillVisibilityByCwd.get(input.cwd)?.snapshot ?? buildCodexSkillVisibilitySnapshot([]);
 
@@ -296,30 +334,53 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
           closeTransport,
         ),
         interrupt: async () => {
-          if (!state.activeTurn) {
-            return;
-          }
-          state.interrupted = true;
-          await state.activeTurn.interrupt();
+          const turn = state.activeTurn;
+          if (!turn) return;
+          state.interruptedTurn = turn;
+          await turn.interrupt();
         },
         close: closeTransport,
         control: async (request) => {
-          if (transport.control) {
-            return transport.control(request);
+          const localInterruptTurn = request.operation === "turn.interrupt" ? state.activeTurn : null;
+          let resolveInterruptDecision: ((accepted: boolean) => void) | undefined;
+          const interruptDecision = localInterruptTurn
+            ? new Promise<boolean>((resolve) => {
+                resolveInterruptDecision = resolve;
+              })
+            : null;
+          if (localInterruptTurn && interruptDecision) {
+            trackCodexInterruptDecision(state, localInterruptTurn, interruptDecision);
           }
-          if (state.activeTurn?.control) {
-            return state.activeTurn.control(request);
+          try {
+            const result = transport.control
+              ? await transport.control(request)
+              : state.activeTurn?.control
+                ? await state.activeTurn.control(request)
+                : {
+                    ok: false,
+                    operation: request.operation,
+                    state: {
+                      provider: "codex",
+                      activeTurn: Boolean(state.activeTurn),
+                      supportedOperations: [],
+                    },
+                    error: "Codex runtime control is unavailable for this transport.",
+                  };
+            if (localInterruptTurn) {
+              if (result.ok && state.activeTurn === localInterruptTurn) state.interruptedTurn = localInterruptTurn;
+              resolveInterruptDecision?.(result.ok);
+            }
+            return result;
+          } catch (error) {
+            if (localInterruptTurn) {
+              resolveInterruptDecision?.(false);
+            }
+            throw error;
+          } finally {
+            if (localInterruptTurn && interruptDecision) {
+              untrackCodexInterruptDecision(state, localInterruptTurn, interruptDecision);
+            }
           }
-          return {
-            ok: false,
-            operation: request.operation,
-            state: {
-              provider: "codex",
-              activeTurn: Boolean(state.activeTurn),
-              supportedOperations: [],
-            },
-            error: "Codex runtime control is unavailable for this transport.",
-          };
         },
       };
     },
@@ -569,34 +630,54 @@ async function* normalizeCodexEvents(
         continue;
       }
 
-      const turn = transport.startTurn({
-        cwd: input.cwd,
-        env: input.env ?? process.env,
-        model: resolveCodexModelArg(input.model, defaultModel),
-        effort,
-        prompt: promptText,
-        resume: previousSessionId,
-        forkFrom: forkFromSessionId,
-        systemPromptAppend,
-        approveRuntimeRequest: input.approveRuntimeRequest,
-        dynamicTools: undefined,
-        handleRuntimeToolCall: undefined,
-      });
-      forkFromSessionId = undefined;
-
-      state.activeTurn = turn;
-
-      const interruptOnAbort = () => {
-        void turn.interrupt();
-      };
-      outerAbortSignal.addEventListener("abort", interruptOnAbort, { once: true });
-
       const terminalTracker = createRuntimeTerminalEventTracker();
       let turnSessionId = previousSessionId;
       let activeTurnId: string | undefined;
       let lastErrorMessage: string | undefined;
       const startedToolUseIds = new Set<string>();
       const completedToolUseIds = new Set<string>();
+      let turn: CodexCliTurnHandle;
+      try {
+        turn = transport.startTurn({
+          cwd: input.cwd,
+          env: input.env ?? process.env,
+          model: resolveCodexModelArg(input.model, defaultModel),
+          effort,
+          prompt: promptText,
+          resume: previousSessionId,
+          forkFrom: forkFromSessionId,
+          systemPromptAppend,
+          approveRuntimeRequest: input.approveRuntimeRequest,
+          dynamicTools: undefined,
+          handleRuntimeToolCall: undefined,
+        });
+      } catch (error) {
+        const metadata = buildCodexEventMetadata(
+          { type: "stream.error", thread_id: turnSessionId },
+          { threadId: turnSessionId },
+        );
+        const terminal = terminalTracker.fail({
+          error: error instanceof Error ? error.message : String(error),
+          ...(error instanceof Error ? { errorName: error.name } : {}),
+          caughtException: true,
+          recoverable: true,
+          rawEvent: { type: "stream.error" },
+          metadata,
+        });
+        if (terminal) {
+          yield terminal;
+        }
+        continue;
+      }
+      state.activeTurn = turn;
+      // Observe transport result rejection immediately. The event iterator can fail first,
+      // in which case the normal await below is skipped but the result must not reject unhandled.
+      void turn.result.catch(() => undefined);
+
+      const interruptOnAbort = () => {
+        void turn.interrupt();
+      };
+      outerAbortSignal.addEventListener("abort", interruptOnAbort, { once: true });
 
       try {
         for await (const event of turn.events) {
@@ -605,6 +686,11 @@ async function* normalizeCodexEvents(
             threadId: turnSessionId,
             turnId: activeTurnId,
           });
+          const eventThreadId = metadata.thread?.id;
+          if (forkFromSessionId && eventThreadId && eventThreadId !== forkFromSessionId) {
+            turnSessionId = eventThreadId;
+            forkFromSessionId = undefined;
+          }
           if (event.type !== "agent_message.delta") {
             yield { type: "provider.raw", rawEvent, metadata };
           }
@@ -763,9 +849,27 @@ async function* normalizeCodexEvents(
           }
 
           if (event.type === "turn.interrupted") {
-            const terminal: RuntimeEvent = { type: "turn.interrupted", rawEvent, metadata };
-            if (terminalTracker.accept(terminal)) {
-              yield terminal;
+            const locallyInterrupted = await hasAcceptedCodexInterrupt(state, turn);
+            if (outerAbortSignal.aborted && !locallyInterrupted) {
+              break;
+            }
+            if (locallyInterrupted) {
+              if (state.interruptedTurn === turn) state.interruptedTurn = null;
+              const terminal: RuntimeEvent = { type: "turn.interrupted", rawEvent, metadata };
+              if (terminalTracker.accept(terminal)) {
+                yield terminal;
+              }
+            } else {
+              const terminal = terminalTracker.fail({
+                error: "Codex turn interrupted without a local interrupt request",
+                targetFailure: true,
+                recoverable: true,
+                rawEvent,
+                metadata,
+              });
+              if (terminal) {
+                yield terminal;
+              }
             }
             break;
           }
@@ -813,16 +917,17 @@ async function* normalizeCodexEvents(
 
         const result = await turn.result;
         if (terminalTracker.terminalEmitted) {
-          state.interrupted = false;
+          clearCodexInterruptState(state, turn);
           continue;
         }
 
-        if (outerAbortSignal.aborted && !state.interrupted) {
+        const locallyInterrupted = await hasAcceptedCodexInterrupt(state, turn);
+        if (outerAbortSignal.aborted && !locallyInterrupted) {
           break;
         }
 
-        if (state.interrupted || result.signal === "SIGINT" || result.signal === "SIGTERM") {
-          state.interrupted = false;
+        if (locallyInterrupted) {
+          if (state.interruptedTurn === turn) state.interruptedTurn = null;
           const metadata = buildCodexEventMetadata(
             { type: "turn.interrupted", thread_id: turnSessionId, turn_id: activeTurnId },
             { threadId: turnSessionId, turnId: activeTurnId },
@@ -844,19 +949,26 @@ async function* normalizeCodexEvents(
           error:
             lastErrorMessage ??
             (stderrMessage || `Codex CLI exited without a terminal event (code ${result.exitCode ?? "unknown"})`),
+          targetFailure: true,
           recoverable: true,
+          rawEvent: {
+            type: "transport.exit",
+            exitCode: result.exitCode,
+            signal: result.signal,
+          },
           metadata,
         });
         if (terminal) {
           yield terminal;
         }
       } catch (error) {
-        if (outerAbortSignal.aborted && !state.interrupted) {
+        const locallyInterrupted = await hasAcceptedCodexInterrupt(state, turn);
+        if (outerAbortSignal.aborted && !locallyInterrupted) {
           break;
         }
 
-        if (state.interrupted || isAbortLikeError(error)) {
-          state.interrupted = false;
+        if (locallyInterrupted) {
+          if (state.interruptedTurn === turn) state.interruptedTurn = null;
           const metadata = buildCodexEventMetadata(
             { type: "turn.interrupted", thread_id: turnSessionId, turn_id: activeTurnId },
             { threadId: turnSessionId, turnId: activeTurnId },
@@ -869,9 +981,24 @@ async function* normalizeCodexEvents(
           continue;
         }
 
-        throw error;
+        const metadata = buildCodexEventMetadata(
+          { type: "stream.error", thread_id: turnSessionId, turn_id: activeTurnId },
+          { threadId: turnSessionId, turnId: activeTurnId },
+        );
+        const terminal = terminalTracker.fail({
+          error: error instanceof Error ? error.message : String(error),
+          ...(error instanceof Error ? { errorName: error.name } : {}),
+          caughtException: true,
+          recoverable: true,
+          rawEvent: { type: "stream.error" },
+          metadata,
+        });
+        if (terminal) {
+          yield terminal;
+        }
       } finally {
         outerAbortSignal.removeEventListener("abort", interruptOnAbort);
+        clearCodexInterruptState(state, turn);
         if (state.activeTurn === turn) {
           state.activeTurn = null;
         }
@@ -915,6 +1042,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   let activeSpawnEnvSignature: string | null = null;
   let intentionalChildRestart = false;
   let closePromise: Promise<void> | null = null;
+  let fatalTransportTeardown: { child: CodexTransport["child"]; promise: Promise<void> } | null = null;
 
   const clearForcedKillTimer = () => {
     if (forcedKillTimer) {
@@ -1012,21 +1140,18 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       cwd: input.cwd,
       env: spawnEnv,
       onMessage: (line: string) => {
+        if (fatalTransportTeardown?.child === newTransport.child) {
+          return;
+        }
         try {
           const parsed = JSON.parse(line) as CodexJsonRpcMessage;
           routeAppServerMessage(parsed);
         } catch (error) {
-          if (activeTurn) {
-            settleTurn(activeTurn, { exitCode: 1, stderr: getStderr() }, { failQueue: error });
-          }
-          signalCodexTransportProcess(newTransport.child, "SIGKILL");
+          void beginFatalTransportTeardown(newTransport, error);
         }
       },
       onTransportError: (error) => {
-        if (activeTurn) {
-          settleTurn(activeTurn, { exitCode: 1, stderr: getStderr() }, { failQueue: error });
-        }
-        signalCodexTransportProcess(newTransport.child, "SIGKILL");
+        void beginFatalTransportTeardown(newTransport, error);
       },
     });
 
@@ -1053,7 +1178,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     try {
       await newTransport.ready;
     } catch (error) {
-      handleChildTermination(1, null, error instanceof Error ? error : new Error(String(error)));
+      await beginFatalTransportTeardown(newTransport, error);
       throw error;
     }
   };
@@ -1336,27 +1461,33 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
 
         case "turn.interrupt": {
           const turn = resolveActiveTurnForControl(request);
+          const previousInterruptRequested = turn.interruptRequested;
           turn.interruptRequested = true;
-          const threadId = request.threadId ?? turn.threadId ?? currentThreadId;
-          const turnId = request.turnId ?? turn.turnId;
-          if (!threadId) {
-            throw new Error("turn.interrupt requires an active Codex thread id.");
-          }
-
-          if (turnId) {
-            if (turnId === turn.turnId) {
-              await requestTurnInterrupt(turn);
-            } else {
-              await sendRequest("turn/interrupt", { threadId, turnId });
+          try {
+            const threadId = request.threadId ?? turn.threadId ?? currentThreadId;
+            const turnId = request.turnId ?? turn.turnId;
+            if (!threadId) {
+              throw new Error("turn.interrupt requires an active Codex thread id.");
             }
-          }
 
-          return buildRuntimeControlSuccess(request, {
-            interrupted: Boolean(turnId),
-            pending: !turnId,
-            threadId,
-            turnId: turnId ?? null,
-          });
+            if (turnId) {
+              if (turnId === turn.turnId) {
+                await requestTurnInterrupt(turn);
+              } else {
+                await sendRequest("turn/interrupt", { threadId, turnId });
+              }
+            }
+
+            return buildRuntimeControlSuccess(request, {
+              interrupted: Boolean(turnId),
+              pending: !turnId,
+              threadId,
+              turnId: turnId ?? null,
+            });
+          } catch (error) {
+            turn.interruptRequested = previousInterruptRequested;
+            throw error;
+          }
         }
 
         default:
@@ -1636,7 +1767,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           });
 
     const nextThreadId = firstString(asRecord(threadResponse.thread)?.id);
-    if (forkThreadId && !nextThreadId) {
+    if (forkThreadId && (!nextThreadId || nextThreadId === forkThreadId)) {
       throw new Error("Codex app-server did not return a forked thread id");
     }
     currentThreadId = firstString(
@@ -1735,6 +1866,49 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     return closePromise;
   };
 
+  const settleFailedTurnAfterTeardown = async (turn: AppServerTurnState, error: unknown): Promise<void> => {
+    const stderr = getStderr().slice(turn.stderrOffset);
+    intentionalChildRestart = true;
+    try {
+      await close();
+    } finally {
+      intentionalChildRestart = false;
+    }
+    settleTurn(turn, { exitCode: 1, stderr }, { failQueue: error });
+  };
+
+  const beginFatalTransportTeardown = (sourceTransport: CodexTransport, error: unknown): Promise<void> => {
+    const sourceChild = sourceTransport.child;
+    if (fatalTransportTeardown?.child === sourceChild) {
+      return fatalTransportTeardown.promise;
+    }
+    if (transport !== sourceTransport || child !== sourceChild) {
+      return Promise.resolve();
+    }
+
+    const failedTurn = activeTurn;
+    intentionalChildRestart = true;
+    const promise = Promise.resolve()
+      .then(async () => {
+        if (failedTurn) {
+          await settleFailedTurnAfterTeardown(failedTurn, error);
+          return;
+        }
+        try {
+          await close();
+        } finally {
+          intentionalChildRestart = false;
+        }
+      })
+      .finally(() => {
+        if (fatalTransportTeardown?.child === sourceChild) {
+          fatalTransportTeardown = null;
+        }
+      });
+    fatalTransportTeardown = { child: sourceChild, promise };
+    return promise;
+  };
+
   return {
     control: handleRuntimeControl,
     startTurn(input) {
@@ -1811,10 +1985,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             await requestTurnStart();
           }
         } catch (error) {
-          settleTurn(turn, { exitCode: 1, stderr: getStderr().slice(turn.stderrOffset) }, { failQueue: error });
-          if (child && !closed) {
-            signalCodexTransportProcess(child, "SIGKILL");
-          }
+          await settleFailedTurnAfterTeardown(turn, error);
         }
       })();
 
@@ -3290,14 +3461,4 @@ function stringArray(value: unknown): string[] {
 
 function toNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
-function isAbortLikeError(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-  if (error.name === "AbortError") {
-    return true;
-  }
-  return /abort|terminated/i.test(error.message);
 }

@@ -217,6 +217,24 @@ afterEach(async () => {
 });
 
 describe("task profile catalog", () => {
+  it("does not load ancestor user profiles past the repository boundary", async () => {
+    const parentDir = makeTempDir("ravi-task-profiles-boundary-");
+    const workspaceDir = join(parentDir, "repo");
+    const nestedDir = join(workspaceDir, "src", "feature");
+    mkdirSync(join(workspaceDir, ".git"), { recursive: true });
+    mkdirSync(nestedDir, { recursive: true });
+    writeTaskProfile(join(parentDir, ".ravi", "task-profiles"), "default", {
+      inputs: [{ key: "unexpected", required: true }],
+    });
+    await createIsolatedRaviState("ravi-task-profiles-boundary-state-");
+    process.chdir(nestedDir);
+
+    const profile = listTaskProfiles().find((candidate) => candidate.id === "default");
+
+    expect(profile?.sourceKind).toBe("system");
+    expect(profile?.inputs).toEqual([]);
+  });
+
   it("fails closed for unknown profile ids instead of falling back to default", () => {
     expect(() => resolveTaskProfile("missing-profile")).toThrow(
       "Unknown task profile: missing-profile. Available profiles:",
@@ -669,7 +687,8 @@ describe("task profile catalog", () => {
     expect(validation[0]?.valid).toBeTrue();
   });
 
-  it("keeps the expected built-in task profiles available", () => {
+  it("keeps the expected built-in task profiles available", async () => {
+    await createIsolatedRaviState("ravi-task-profiles-builtins-state-");
     const profiles = listTaskProfiles().filter((profile) => profile.sourceKind === "system");
 
     expect(profiles.map((profile) => profile.id)).toEqual(["default", "observed-task"]);

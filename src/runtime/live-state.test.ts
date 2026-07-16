@@ -44,6 +44,17 @@ describe("runtime live-state", () => {
     clearRuntimeLiveState("dev");
   });
 
+  it("redacts credentials from live summaries", () => {
+    clearRuntimeLiveState("dev");
+    updateRuntimeLiveState("dev", {
+      activity: "blocked",
+      summary: "Incorrect API key provided: sk-proj-SYNTHETICSECRET123456789",
+    });
+
+    expect(getRuntimeLiveStateForSession(makeSession())?.summary).toBe("Incorrect API key provided: [REDACTED]");
+    clearRuntimeLiveState("dev");
+  });
+
   it("falls back to blocked state for aborted persisted sessions", () => {
     const live = getRuntimeLiveStateForSession(
       makeSession({
