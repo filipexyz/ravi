@@ -131,6 +131,21 @@ describe("YouTubeCommands contract", () => {
     expect(getReturnsMetadata(YouTubeCommands).get("reply")?.safeParse(result).success).toBe(true);
   });
 
+  it("rejects --ban-author unless the target status is rejected", async () => {
+    const setCommentModeration = mock(async () => ({ success: true as const, commentId: "c1", status: "rejected" }));
+    const client = { setCommentModeration } as unknown as YouTubeClient;
+    const commands = new YouTubeCommands(() => client);
+    spyOn(console, "log").mockImplementation(() => {});
+
+    await expect(commands.commentModerate("c1", "published", true, "brand", true)).rejects.toThrow(
+      "--ban-author is only valid with --status rejected",
+    );
+    expect(setCommentModeration).not.toHaveBeenCalled();
+
+    await commands.commentModerate("c1", "rejected", true, "brand", true);
+    expect(setCommentModeration).toHaveBeenCalledWith("c1", "rejected", true);
+  });
+
   it("declares safe and bounded defaults in command metadata", () => {
     const instance = new YouTubeCommands();
     const optionsFor = (method: string) => getOptionsMetadata(instance, method);

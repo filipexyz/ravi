@@ -1591,6 +1591,8 @@ export class YouTubeCommands {
   ) {
     return this.execute(asJson, () => {
       if (!status) fail("Provide --status (heldForReview|published|rejected).");
+      if (banAuthor && status !== "rejected")
+        fail("--ban-author is only valid with --status rejected (YouTube bans authors only on rejection).");
       return this.client(connection).setCommentModeration(commentId, status!, banAuthor);
     });
   }
