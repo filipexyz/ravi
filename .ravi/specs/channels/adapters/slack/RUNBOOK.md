@@ -19,3 +19,18 @@
 - No inbound: check Socket Mode logs and Slack app event subscriptions.
 - Wrong thread: check `RAVI_SLACK_SUBSCRIPTION_SCOPE`, `RAVI_SLACK_THREAD_REPLY_MODE`, `RAVI_SLACK_ROOT_REPLY_MODE`.
 - Duplicate response: check duplicate runner processes and Socket Mode lock.
+- Known contact treated as unknown / false permission denial:
+  1. Compare the `instance_id` the runtime addresses (account slug) against the
+     `instanceId` stored on the workspace's platform identities (often the configured UUID)
+     via `ravi instances list` and the `platform_identities` rows.
+  2. Confirm the slug↔UUID mapping exists in configuration (`instances[slug].instanceId`
+     and `instanceToAccount[uuid]`); alias resolution derives the canonical reference only
+     from that mapping.
+  3. Inspect the actor `identityProvenance` on the prompt source/participant: `reason`
+     distinguishes `resolved`, `identity_not_found`, and `ambiguous_instance_alias`, and
+     `canonicalInstance`/`matchedInstance` show which scope resolved.
+  4. `ambiguous_instance_alias` means equivalent aliases point at different owners; this is
+     intentional fail-closed behavior — reconcile the conflicting platform identities rather
+     than expecting a match.
+  5. The empty legacy scope is consulted only after scoped aliases miss and is never a
+     wildcard; another workspace's rows are never selected.

@@ -96,10 +96,26 @@ Expected:
 - prompt text or display name is not used as identity proof
 - ambiguous multi-contact contexts require an explicit target
 
+### Instance Alias Resolution
+
+Given:
+
+- a platform identity stored under one configured instance reference (slug, UUID, or exact empty legacy scope)
+
+Expected:
+
+- the actor resolves when the same instance is addressed by either configured alias
+- the same platform user id in another instance/workspace is never selected
+- the exact empty legacy scope is consulted only after scoped aliases miss and is not a wildcard
+- equivalent aliases resolving to different owners fail closed with `ambiguous_instance_alias`, no actor, and zero capabilities
+- resolution provenance preserves the received alias, canonical instance reference, matched scope, and reason code, keeping `identity_not_found` distinct from `missing_contact`
+- new writes use the canonical instance reference and stay duplicate-free across retries
+
 ## Smoke Commands
 
 ```bash
 bun test src/omni/consumer-context.test.ts src/gateway-session-trace.test.ts
+bun test src/channels/slack/instance-alias.test.ts src/channels/slack/socket-mode.test.ts
 bun run build
 ```
 

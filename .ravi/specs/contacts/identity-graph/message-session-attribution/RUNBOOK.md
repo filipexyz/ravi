@@ -45,6 +45,15 @@ When a message or session is attributed to the wrong identity:
 1. Start with the raw event: channel, account, raw sender id, chat id, message id, and timestamp.
 2. Check normalization: raw sender id to normalized sender id.
 3. Resolve `platform_identity` by `channel + instance_id + normalized_platform_user_id`.
+   - When the channel can address the same instance by multiple references (e.g. a Slack
+     account slug versus the configured instance UUID), confirm the configured slug↔UUID
+     mapping and check the canonical reference and its aliases, then the exact empty legacy
+     scope. The empty scope is exact-equality only, never a wildcard, and another
+     instance/workspace is never searched.
+   - Inspect `identity_provenance` `reason`: `resolved`, `identity_not_found`, or
+     `ambiguous_instance_alias`. An `ambiguous_instance_alias` means equivalent aliases point
+     at different owners and resolution fails closed by design; reconcile the conflicting
+     platform identities rather than expecting a match.
 4. Check owner: contact, agent, or unresolved.
 5. Check whether the chat target was accidentally treated as the speaker.
 6. Check `chat_participants` for canonical membership.

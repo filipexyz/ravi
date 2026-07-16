@@ -1,14 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { ensureContactFromInbound } from "../../contacts.js";
+import {
+  createContact,
+  ensureContactFromInbound,
+  linkContactIdentity,
+  resolvePlatformIdentity,
+} from "../../contacts.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import { canWithCapabilities } from "../../permissions/provider-runtime.js";
 import {
   attachChatToSession,
   getOrCreateSession,
   getSessionByName,
   listSessionSubscriptions,
 } from "../../router/index.js";
-import { dbFindChatMessage, dbGetChat, dbUpsertChat, getDb } from "../../router/router-db.js";
+import type { AgentConfig } from "../../router/index.js";
+import { dbFindChatMessage, dbGetChat, dbListChatParticipants, dbUpsertChat, getDb } from "../../router/router-db.js";
+import type { InstanceConfig } from "../../router/router-db.js";
 import type { RouterConfig } from "../../router/types.js";
+import type { MessageContext, MessageTarget, RuntimeLaunchPrompt } from "../../runtime/message-types.js";
+import { buildRuntimeRequestContext } from "../../runtime/runtime-request-context.js";
+import type { TaskRuntimeResolution } from "../../tasks/types.js";
 import {
   SlackAssistantThreadPresence,
   SlackPresenceStack,
@@ -1174,5 +1185,314 @@ describe("Slack Socket Mode routing", () => {
       contactId: identity.contact!.id,
       platformIdentityId: identity.platformIdentity!.id,
     });
+  });
+});
+
+describe("Slack Socket Mode instance alias canonicalization", () => {
+  const SLUG = "ravi-rbbt-slack";
+  const UUID = "0bc9635c-1ee9-42e3-9112-95be9cdb0334";
+  const OTHER_UUID = "11111111-2222-3333-4444-555555555555";
+
+  let stateDir: string | null = null;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-slack-alias-");
+    seedAgent("ravi-hil", "/tmp/ravi-hil");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  function slackInstance(name: string, instanceId?: string): InstanceConfig {
+    return {
+      name,
+      instanceId,
+      channel: "slack",
+      dmPolicy: "open",
+      groupPolicy: "open",
+      contactIntakeMode: "pending",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+  }
+
+  function aliasConfig(): RouterConfig {
+    return {
+      agents: {
+        "ravi-hil": { id: "ravi-hil", cwd: "/tmp/ravi-hil", dmScope: "per-peer" },
+      },
+      routes: [
+        {
+          pattern: "group:C123",
+          accountId: SLUG,
+          agent: "ravi-hil",
+          session: "ravi-hil",
+          priority: 100,
+          policy: "open",
+          channel: "slack",
+        },
+      ],
+      defaultAgent: "ravi-hil",
+      defaultDmScope: "per-peer",
+      accountAgents: { [SLUG]: "ravi-hil" },
+      instanceToAccount: { [UUID]: SLUG },
+      instances: { [SLUG]: slackInstance(SLUG, UUID) },
+    };
+  }
+
+  function makeService(input: {
+    instanceId: string;
+    config: RouterConfig;
+    published: Array<{ sessionName: string; payload: Record<string, unknown> }>;
+  }): SlackSocketModeService {
+    return new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: SLUG,
+      routeAccountId: SLUG,
+      instanceId: input.instanceId,
+      getRouterConfig: () => input.config,
+      publishPrompt: async (sessionName, payload) => {
+        input.published.push({ sessionName, payload });
+      },
+      webClient: {} as never,
+    });
+  }
+
+  function slackMessageEnvelope(input: {
+    envelopeId: string;
+    eventId: string;
+    user: string;
+    ts: string;
+  }): SlackSocketEnvelope {
+    return {
+      envelope_id: input.envelopeId,
+      payload: {
+        team_id: "T1",
+        event_id: input.eventId,
+        event_time: 1_713_000_000,
+        event: {
+          type: "message",
+          channel: "C123",
+          channel_type: "channel",
+          user: input.user,
+          text: "publica",
+          ts: input.ts,
+        },
+      },
+    };
+  }
+
+  const runtimeResolution: TaskRuntimeResolution = {
+    options: {},
+    sources: { model: null, effort: null, thinking: null },
+    hasTaskRuntimeContext: false,
+  };
+
+  function actorResolutionForSource(source: MessageTarget, context: MessageContext): string {
+    const agent: AgentConfig = { id: "ravi-hil", cwd: "/tmp/ravi-hil" };
+    const session = getSessionByName("ravi-hil");
+    const prompt: RuntimeLaunchPrompt = { prompt: "publica", source, context };
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: session!.sessionKey,
+      sessionName: "ravi-hil",
+      sessionCwd: "/tmp/ravi-hil",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: source,
+    });
+    return String(runtimeContext.metadata?.actorResolution);
+  }
+
+  it("resolves an identity stored under the configured UUID when Slack addresses the slug", async () => {
+    const identity = ensureContactFromInbound({
+      channel: "slack",
+      instanceId: UUID,
+      platformSenderId: "U123",
+      contactIdentity: "U123",
+      displayName: "Luis",
+      intakeMode: "pending",
+      source: "test",
+    });
+    expect(identity.platformIdentity?.instanceId).toBe(UUID);
+
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = makeService({ instanceId: SLUG, config: aliasConfig(), published });
+
+    await service.handleEnvelope(
+      slackMessageEnvelope({ envelopeId: "env-a", eventId: "EvA", user: "U123", ts: "1713000030.000100" }),
+    );
+
+    expect(published).toHaveLength(1);
+    const source = published[0]!.payload.source as MessageTarget;
+    const context = published[0]!.payload.context as MessageContext;
+    expect(source).toMatchObject({
+      actorType: "contact",
+      contactId: identity.contact!.id,
+      platformIdentityId: identity.platformIdentity!.id,
+      instanceId: UUID,
+    });
+    expect(source.identityProvenance).toMatchObject({
+      source: "platform_identities",
+      channel: "slack",
+      receivedInstance: SLUG,
+      canonicalInstance: UUID,
+      matchedInstance: UUID,
+      reason: "resolved",
+    });
+
+    const canonicalChatId = source.canonicalChatId!;
+    const stored = dbFindChatMessage({
+      channel: "slack",
+      instanceId: UUID,
+      chatId: canonicalChatId,
+      providerMessageId: "1713000030.000100",
+    });
+    expect(stored).toMatchObject({ actorType: "contact", contactId: identity.contact!.id });
+    const participants = dbListChatParticipants(canonicalChatId);
+    expect(participants).toHaveLength(1);
+    expect(participants[0]).toMatchObject({ contactId: identity.contact!.id });
+
+    expect(actorResolutionForSource(source, context)).toBe("resolved");
+  });
+
+  it("resolves an identity stored under the configured slug when Slack addresses the UUID", async () => {
+    const identity = ensureContactFromInbound({
+      channel: "slack",
+      instanceId: SLUG,
+      platformSenderId: "U123",
+      contactIdentity: "U123",
+      displayName: "Luis",
+      intakeMode: "pending",
+      source: "test",
+    });
+    expect(identity.platformIdentity?.instanceId).toBe(SLUG);
+
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = makeService({ instanceId: UUID, config: aliasConfig(), published });
+
+    await service.handleEnvelope(
+      slackMessageEnvelope({ envelopeId: "env-b", eventId: "EvB", user: "U123", ts: "1713000031.000100" }),
+    );
+
+    expect(published).toHaveLength(1);
+    const source = published[0]!.payload.source as MessageTarget;
+    expect(source).toMatchObject({ actorType: "contact", contactId: identity.contact!.id, instanceId: UUID });
+    expect(source.identityProvenance).toMatchObject({
+      receivedInstance: UUID,
+      canonicalInstance: UUID,
+      matchedInstance: SLUG,
+      reason: "resolved",
+    });
+  });
+
+  it("never selects the same Slack user id from another workspace", async () => {
+    const contact = createContact({ phone: "5511999990001", name: "Other", status: "allowed" });
+    linkContactIdentity(contact.id, { channel: "slack", platformUserId: "U123", instanceId: OTHER_UUID });
+
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = makeService({ instanceId: SLUG, config: aliasConfig(), published });
+
+    await service.handleEnvelope(
+      slackMessageEnvelope({ envelopeId: "env-c", eventId: "EvC", user: "U123", ts: "1713000032.000100" }),
+    );
+
+    expect(published).toHaveLength(1);
+    const source = published[0]!.payload.source as MessageTarget;
+    const context = published[0]!.payload.context as MessageContext;
+    expect(source.actorType).toBe("unknown");
+    expect(source.contactId).toBeUndefined();
+    expect(source.identityProvenance).toMatchObject({
+      canonicalInstance: UUID,
+      matchedInstance: null,
+      reason: "identity_not_found",
+    });
+    expect(actorResolutionForSource(source, context)).toBe("missing_contact");
+  });
+
+  it("fails closed with ambiguous_instance_alias when equivalent aliases resolve to different owners", async () => {
+    const first = createContact({ phone: "5511999990002", name: "Owner UUID", status: "allowed" });
+    const second = createContact({ phone: "5511999990003", name: "Owner Slug", status: "allowed" });
+    linkContactIdentity(first.id, { channel: "slack", platformUserId: "U123", instanceId: UUID });
+    linkContactIdentity(second.id, { channel: "slack", platformUserId: "U123", instanceId: SLUG });
+
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = makeService({ instanceId: SLUG, config: aliasConfig(), published });
+
+    await service.handleEnvelope(
+      slackMessageEnvelope({ envelopeId: "env-d", eventId: "EvD", user: "U123", ts: "1713000033.000100" }),
+    );
+
+    expect(published).toHaveLength(1);
+    const source = published[0]!.payload.source as MessageTarget;
+    const context = published[0]!.payload.context as MessageContext;
+    expect(source.actorType).toBe("unknown");
+    expect(source.contactId).toBeUndefined();
+    expect(source.platformIdentityId).toBeUndefined();
+    expect(source.identityProvenance).toMatchObject({
+      canonicalInstance: UUID,
+      matchedInstance: null,
+      reason: "ambiguous_instance_alias",
+    });
+
+    expect(actorResolutionForSource(source, context)).toBe("missing_contact");
+    const { runtimeContext } = (() => {
+      const agent: AgentConfig = { id: "ravi-hil", cwd: "/tmp/ravi-hil" };
+      const session = getSessionByName("ravi-hil");
+      return buildRuntimeRequestContext({
+        dbSessionKey: session!.sessionKey,
+        sessionName: "ravi-hil",
+        sessionCwd: "/tmp/ravi-hil",
+        agent,
+        prompt: { prompt: "publica", source, context },
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+        resolvedSource: source,
+      });
+    })();
+    expect(canWithCapabilities(runtimeContext.capabilities, "read_contact", "contact", first.id)).toBe(false);
+    expect(canWithCapabilities(runtimeContext.capabilities, "read_contact", "contact", second.id)).toBe(false);
+  });
+
+  it("writes canonically and stays duplicate-free across retries of the same message", async () => {
+    const identity = ensureContactFromInbound({
+      channel: "slack",
+      instanceId: UUID,
+      platformSenderId: "U123",
+      contactIdentity: "U123",
+      displayName: "Luis",
+      intakeMode: "pending",
+      source: "test",
+    });
+
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = makeService({ instanceId: SLUG, config: aliasConfig(), published });
+
+    const envelope = slackMessageEnvelope({
+      envelopeId: "env-e",
+      eventId: "EvE",
+      user: "U123",
+      ts: "1713000034.000100",
+    });
+    await service.handleEnvelope(envelope);
+    await service.handleEnvelope(envelope);
+
+    const source = published[0]!.payload.source as MessageTarget;
+    const canonicalChatId = source.canonicalChatId!;
+    const participants = dbListChatParticipants(canonicalChatId);
+    expect(participants).toHaveLength(1);
+    expect(participants[0]).toMatchObject({ contactId: identity.contact!.id });
+
+    expect(dbGetChat(canonicalChatId)).toMatchObject({ channel: "slack", instanceId: UUID, platformChatId: "C123" });
+    expect(resolvePlatformIdentity({ channel: "slack", instanceId: UUID, platformUserId: "U123" })?.id).toBe(
+      identity.platformIdentity!.id,
+    );
+    expect(resolvePlatformIdentity({ channel: "slack", instanceId: SLUG, platformUserId: "U123" })).toBeNull();
   });
 });

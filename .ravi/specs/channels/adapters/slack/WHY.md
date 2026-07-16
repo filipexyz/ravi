@@ -19,6 +19,27 @@ The safer default is thread-first routing:
 
 This keeps the first Slack adapter useful for real work while preserving the Ravi principle that channels transport context and Ravi owns routing/session semantics.
 
+## Why Canonicalize Instance Identity
+
+A Slack workspace can be referenced by more than one instance value over its lifetime: the
+runtime may address it by a logical account slug, while platform identities for the same
+workspace were persisted earlier under the configured legacy instance UUID or an empty
+legacy scope. Exact-only identity lookup against whatever value the runtime happens to send
+then reports a known actor as unresolved, and authorization correctly grants that
+unresolved actor zero capabilities — a false permission denial.
+
+The fix is to make the slug↔UUID relationship explicit and canonical instead of guessing.
+Aliases are derived only from configuration for the same instance, so resolution can read
+existing rows under either alias (and the exact empty legacy scope) without ever crossing
+into another workspace and without treating empty as a wildcard. Canonical writes converge
+new rows onto one reference so the ambiguity does not keep growing, while old rows stay
+readable and no destructive migration is required.
+
+Ambiguity is treated as a security boundary, not a convenience: if two equivalent aliases
+map to different owners, silently picking one could attribute a turn to the wrong principal.
+The adapter therefore fails closed with an explicit reason rather than choosing the first
+row, keeping unresolved and ambiguous actors at zero capabilities.
+
 ## Why Borrow From Hermes
 
 Hermes' Slack gateway shows the operational details that matter before real workspace usage:
