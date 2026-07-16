@@ -2,6 +2,8 @@ import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { buildPm2Env, CHANNELS_PM2_PROCESS_NAME, getPm2Processes, PM2_PROCESS_NAME } from "../../pm2.js";
 import { getRaviStateDir } from "../../utils/paths.js";
 
 export type UpdateChannel = "latest" | "next";
@@ -15,6 +17,11 @@ type RaviUpdateConfig = {
 type RunResult = {
   success: boolean;
   output: string;
+};
+
+export type ManagedRuntimeRestartStep = {
+  action: "stop" | "restart";
+  processName: typeof PM2_PROCESS_NAME | typeof CHANNELS_PM2_PROCESS_NAME;
 };
 
 const PACKAGE_NAME = "ravi.bot";
@@ -60,13 +67,18 @@ function safeRealpath(path: string): string {
   }
 }
 
-function runCommand(command: string, args: string[], cwd?: string): Promise<RunResult> {
+function runCommand(
+  command: string,
+  args: string[],
+  cwd?: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<RunResult> {
   return new Promise((resolve) => {
     const output: string[] = [];
     const child = spawn(command, args, {
       cwd,
       stdio: ["inherit", "pipe", "pipe"],
-      env: { ...process.env, FORCE_COLOR: "1" },
+      env: { ...env, FORCE_COLOR: "1" },
     });
 
     child.stdout?.on("data", (data) => {
@@ -195,6 +207,113 @@ export function packageTagForChannel(channel: UpdateChannel): string {
   return `${PACKAGE_NAME}@${channel}`;
 }
 
+export function planManagedRuntimeRestart(
+  processes: Array<{ name: string; status: string }>,
+): ManagedRuntimeRestartStep[] {
+  const online = new Set(processes.filter((process) => process.status === "online").map((process) => process.name));
+  const daemonWasRunning = online.has(PM2_PROCESS_NAME);
+  const channelsWereRunning = online.has(CHANNELS_PM2_PROCESS_NAME);
+  const plan: ManagedRuntimeRestartStep[] = [];
+
+  // Stop channel intake before changing the daemon bundle. This prevents an
+  // old channel runner from reading a schema migrated by a newer process.
+  if (channelsWereRunning) {
+    plan.push({ action: "stop", processName: CHANNELS_PM2_PROCESS_NAME });
+  }
+  if (daemonWasRunning) {
+    plan.push({ action: "restart", processName: PM2_PROCESS_NAME });
+  }
+  if (channelsWereRunning) {
+    plan.push({ action: "restart", processName: CHANNELS_PM2_PROCESS_NAME });
+  }
+
+  return plan;
+}
+
+export function managedRuntimeMatchesSnapshot(
+  previousProcesses: Array<{ name: string; status: string }>,
+  currentProcesses: Array<{ name: string; status: string }>,
+): boolean {
+  const expectedOnline = previousProcesses
+    .filter(
+      (process) =>
+        process.status === "online" &&
+        (process.name === PM2_PROCESS_NAME || process.name === CHANNELS_PM2_PROCESS_NAME),
+    )
+    .map((process) => process.name);
+  const currentOnline = new Set(
+    currentProcesses.filter((process) => process.status === "online").map((process) => process.name),
+  );
+  return expectedOnline.every((processName) => currentOnline.has(processName));
+}
+
+async function waitForManagedRuntime(
+  previousProcesses: Array<{ name: string; status: string }>,
+  timeoutMs = 10_000,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (managedRuntimeMatchesSnapshot(previousProcesses, getPm2Processes())) return true;
+    await delay(250);
+  }
+  return managedRuntimeMatchesSnapshot(previousProcesses, getPm2Processes());
+}
+
+async function restartManagedRuntimeProcesses(processes: Array<{ name: string; status: string }>): Promise<boolean> {
+  const plan = planManagedRuntimeRestart(processes);
+  if (plan.length === 0) return true;
+
+  log("Restarting managed Ravi runtime with the updated bundle");
+  let channelsStopped = false;
+  for (const step of plan) {
+    const result = await runCommand("pm2", [step.action, step.processName], undefined, buildPm2Env());
+    if (result.success) {
+      if (step.action === "stop" && step.processName === CHANNELS_PM2_PROCESS_NAME) {
+        channelsStopped = true;
+      }
+      if (step.action === "restart" && step.processName === CHANNELS_PM2_PROCESS_NAME) {
+        channelsStopped = false;
+      }
+      continue;
+    }
+
+    // Do not leave channel intake stopped if a later daemon transition fails.
+    if (channelsStopped && step.processName !== CHANNELS_PM2_PROCESS_NAME) {
+      await runCommand("pm2", ["restart", CHANNELS_PM2_PROCESS_NAME], undefined, buildPm2Env());
+    }
+    return false;
+  }
+
+  if (!(await waitForManagedRuntime(processes))) return false;
+  ok("Managed Ravi runtime restarted");
+  return true;
+}
+
+async function finishUpdate(
+  restart: boolean,
+  previousProcesses: Array<{ name: string; status: string }>,
+): Promise<void> {
+  console.log();
+  ok("Ravi CLI updated");
+
+  if (!restart) {
+    console.log("Managed runtime restart skipped by request.");
+    console.log("Before handling new channel traffic, run:");
+    const online = new Set(
+      previousProcesses.filter((process) => process.status === "online").map((process) => process.name),
+    );
+    if (online.has(CHANNELS_PM2_PROCESS_NAME)) console.log("  ravi channels stop");
+    if (online.has(PM2_PROCESS_NAME)) console.log('  ravi daemon restart -m "load Ravi update"');
+    if (online.has(CHANNELS_PM2_PROCESS_NAME)) console.log("  ravi channels start");
+    return;
+  }
+
+  const restarted = await restartManagedRuntimeProcesses(previousProcesses);
+  if (!restarted) {
+    fail("Ravi updated, but the managed runtime restart failed. Restart daemon and channels before resuming traffic.");
+  }
+}
+
 async function updateViaBun(channel: UpdateChannel): Promise<boolean> {
   try {
     unlinkSync(join(homedir(), ".bun", "install", "global", "bun.lock"));
@@ -258,9 +377,10 @@ async function updateSource(channel: UpdateChannel): Promise<void> {
   ok(`Source checkout updated from ${targetBranch}`);
 }
 
-export async function runUpdate(options: { next?: boolean; stable?: boolean } = {}): Promise<void> {
+export async function runUpdate(options: { next?: boolean; stable?: boolean; restart?: boolean } = {}): Promise<void> {
   const channel = resolveUpdateChannel(options);
   if (options.next || options.stable) persistUpdateChannel(channel);
+  const previousProcesses = getPm2Processes();
 
   console.log("\nRavi update");
   console.log("-----------");
@@ -275,6 +395,7 @@ export async function runUpdate(options: { next?: boolean; stable?: boolean } = 
 
   if (installType === "source") {
     await updateSource(channel);
+    await finishUpdate(options.restart !== false, previousProcesses);
     return;
   }
 
@@ -290,7 +411,5 @@ export async function runUpdate(options: { next?: boolean; stable?: boolean } = 
     if (!secondaryUpdated) console.warn(`Warning: secondary ${secondary} update failed`);
   }
 
-  console.log();
-  ok("Ravi CLI updated");
-  console.log("Restart the daemon when you want the live runtime to use the new bundle.");
+  await finishUpdate(options.restart !== false, previousProcesses);
 }

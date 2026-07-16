@@ -38,6 +38,7 @@ import {
   createCrmPipelineStageTopic,
   createCrmTask,
   getCrmAccount,
+  getAllContactAccessRecords,
   getContactDetails,
   getCrmContactProfile,
   getCrmOpportunity,
@@ -413,16 +414,20 @@ function renderNextAction(action: {
 
 let cachedRoutes: ReturnType<typeof dbListRoutes> | null = null;
 
-function routeAgentForCrmContact(contactRef: string): string | null {
-  const details = getContactDetails(contactRef);
-  if (!details) return null;
+function routeAgentForIdentityValues(identityValues: string[]): string | null {
   if (!cachedRoutes) cachedRoutes = dbListRoutes();
-  for (const identity of details.platformIdentities) {
-    const value = identity.normalizedPlatformUserId.toLowerCase();
+  for (const identityValue of identityValues) {
+    const value = identityValue.toLowerCase();
     const match = cachedRoutes.find((route) => route.pattern === value);
     if (match) return match.agent;
   }
   return null;
+}
+
+function routeAgentForCrmContact(contactRef: string): string | null {
+  const details = getContactDetails(contactRef);
+  if (!details) return null;
+  return routeAgentForIdentityValues(details.platformIdentities.map((identity) => identity.normalizedPlatformUserId));
 }
 
 function canReadCrmContact(contactRef: string): boolean {
@@ -443,6 +448,23 @@ function canReadCrmContact(contactRef: string): boolean {
 function assertCanReadCrmContact(contactRef: string): void {
   if (canReadCrmContact(contactRef)) return;
   fail(`Contact not found: ${contactRef}`);
+}
+
+function canReadCrmContactRecord(
+  scopeCtx: ReturnType<typeof getScopeContext>,
+  contact: { id: string; tags: string[]; identityValues: string[] },
+): boolean {
+  const contactAgent = routeAgentForIdentityValues(contact.identityValues);
+  const contactSessions = contactAgent ? [{ agentId: contactAgent }] : [];
+  return canAccessContact(scopeCtx, contact, null, contactSessions);
+}
+
+function listReadableCrmContactIds(): string[] | undefined {
+  const scopeCtx = getScopeContext();
+  if (!isScopeEnforced(scopeCtx)) return undefined;
+  return getAllContactAccessRecords()
+    .filter((contact) => canReadCrmContactRecord(scopeCtx, contact))
+    .map((contact) => contact.id);
 }
 
 function contactIdsFromCrmRecord(record: object): string[] {
@@ -477,16 +499,6 @@ function filterCrmRecordsByContact<T extends object>(records: T[]): T[] {
     if (contactIds.length === 0) return true;
     return contactIds.some((contactId) => canReadCrmContact(contactId));
   });
-}
-
-function visiblePage<T extends object>(page: { total: number; limit: number; offset: number; items: T[] }) {
-  if (!isScopeEnforced(getScopeContext())) return page;
-  const items = filterCrmRecordsByContact(page.items);
-  return {
-    ...page,
-    total: items.length,
-    items,
-  };
 }
 
 function showCrmContactProfile(contactRef: string, asJson?: boolean) {
@@ -818,20 +830,19 @@ export class ACrmCommands {
   ) {
     const ownerFilter = parseOwner(owner);
     if (contact) assertCanReadCrmContact(contact);
-    const page = visiblePage(
-      listCrmNextActions({
-        ...ownerFilter,
-        contactRef: contact,
-        accountId: account,
-        opportunityId: opportunity,
-        taskType,
-        dueToday: Boolean(dueToday),
-        dueBefore,
-        dueAfter,
-        limit,
-        offset,
-      }),
-    );
+    const page = listCrmNextActions({
+      ...ownerFilter,
+      contactRef: contact,
+      accountId: account,
+      opportunityId: opportunity,
+      taskType,
+      dueToday: Boolean(dueToday),
+      dueBefore,
+      dueAfter,
+      limit,
+      offset,
+      readableContactIds: listReadableCrmContactIds(),
+    });
     const pagination = buildCliOffsetPagination({
       baseCommand: ["ravi", "crm", "next"],
       limit: page.limit,
@@ -916,7 +927,13 @@ export class ACrmCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const ownerFilter = parseOwner(owner);
-    const page = visiblePage(listCrmContactCards({ ...ownerFilter, lifecycle, limit, offset }));
+    const page = listCrmContactCards({
+      ...ownerFilter,
+      lifecycle,
+      limit,
+      offset,
+      readableContactIds: listReadableCrmContactIds(),
+    });
     const pagination = buildCliOffsetPagination({
       baseCommand: ["ravi", "crm", "contacts"],
       limit: page.limit,
@@ -2224,19 +2241,18 @@ export class CrmFactCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (contactRef) assertCanReadCrmContact(contactRef);
-    const page = visiblePage(
-      listCrmFacts({
-        entityType,
-        entityId,
-        contactRef,
-        accountId,
-        opportunityId,
-        status,
-        key,
-        limit,
-        offset,
-      }),
-    );
+    const page = listCrmFacts({
+      entityType,
+      entityId,
+      contactRef,
+      accountId,
+      opportunityId,
+      status,
+      key,
+      limit,
+      offset,
+      readableContactIds: listReadableCrmContactIds(),
+    });
     const pagination = buildCliOffsetPagination({
       baseCommand: ["ravi", "crm", "fact", "list"],
       limit: page.limit,
@@ -2521,21 +2537,20 @@ export class CrmTaskCommands {
   ) {
     const ownerFilter = parseOwner(owner);
     if (contact) assertCanReadCrmContact(contact);
-    const page = visiblePage(
-      listCrmTasks({
-        ...ownerFilter,
-        contactRef: contact,
-        accountId: account,
-        opportunityId: opportunity,
-        taskType,
-        status,
-        dueToday: Boolean(dueToday),
-        dueBefore,
-        dueAfter,
-        limit,
-        offset,
-      }),
-    );
+    const page = listCrmTasks({
+      ...ownerFilter,
+      contactRef: contact,
+      accountId: account,
+      opportunityId: opportunity,
+      taskType,
+      status,
+      dueToday: Boolean(dueToday),
+      dueBefore,
+      dueAfter,
+      limit,
+      offset,
+      readableContactIds: listReadableCrmContactIds(),
+    });
     const pagination = buildCliOffsetPagination({
       baseCommand: ["ravi", "crm", "task", "list"],
       limit: page.limit,

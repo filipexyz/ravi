@@ -84,6 +84,13 @@ Required capability materializers:
   provider-runtime visibility capabilities.
 - Provider errors, timeouts, malformed output, and required provider denials
   MUST fail closed.
+- Ordinary database initialization MUST NOT destructively drop retired
+  permission-provider storage. Destructive cleanup requires an explicit
+  offline migration after every managed Ravi process is on a compatible
+  bundle.
+- Updates that replace runtime code MUST stop channel intake before
+  transitioning the daemon, restore only the managed processes that were
+  running before the update, and verify that they return online.
 
 ## Operator Control Boundary
 

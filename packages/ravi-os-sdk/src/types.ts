@@ -2616,9 +2616,77 @@ export type ChatsListsMembersInput = {
 /** Return shape for `chats.lists.members`. */
 export type ChatsListsMembersReturn = Record<string, unknown>;
 
+/** Input shape for `chats.lists.preview`. */
+export type ChatsListsPreviewInput = {
+  listId: string;
+  owner?: string;
+};
+
+/** Return shape for `chats.lists.preview`. */
+export type ChatsListsPreviewReturn = {
+  list: {
+    archivedAt?: number;
+    createdAt: number;
+    description?: string;
+    id: string;
+    mode: string;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    updatedAt: number;
+    visibility: string;
+  };
+  preview: {
+    current: {
+      preserved: number;
+      selector: number;
+      total: number;
+    };
+    diff: ({
+      added: number;
+      eligible: number;
+      kept: number;
+      preserved: number;
+      removed: number;
+    }) | null;
+    dryRun: true;
+    list: {
+      archivedAt?: number;
+      createdAt: number;
+      description?: string;
+      id: string;
+      mode: string;
+      name: string;
+      ownerId: string;
+      ownerType: string;
+      updatedAt: number;
+      visibility: string;
+    };
+    validation: {
+      canApply: boolean;
+      conditions: {
+        negative: number;
+        positive: number;
+        supported: number;
+        total: number;
+      };
+      issues: Array<{
+        code: string;
+        message: string;
+        path?: string;
+        severity: "error" | "warning";
+      }>;
+      match: "all" | "any";
+      riskLevel: "low" | "high";
+      scope: "contact" | "chat";
+      valid: boolean;
+    };
+  };
+};
+
 /** Input shape for `chats.lists.recompute`. */
 export type ChatsListsRecomputeInput = {
-  list: string;
+  listId: string;
   owner?: string;
 };
 
@@ -2629,41 +2697,31 @@ export type ChatsListsRecomputeReturn = {
     createdAt: number;
     description?: string;
     id: string;
-    metadata?: Record<string, unknown>;
     mode: string;
     name: string;
     ownerId: string;
     ownerType: string;
-    selector?: Record<string, unknown>;
     updatedAt: number;
     visibility: string;
   };
   recompute: {
     added: number;
-    addedChatIds: string[];
     eligible: number;
-    eligibleChatIds: string[];
     kept: number;
-    keptChatIds: string[];
     list: {
       archivedAt?: number;
       createdAt: number;
       description?: string;
       id: string;
-      metadata?: Record<string, unknown>;
       mode: string;
       name: string;
       ownerId: string;
       ownerType: string;
-      selector?: Record<string, unknown>;
       updatedAt: number;
       visibility: string;
     };
     preserved: number;
-    preservedChatIds: string[];
     removed: number;
-    removedChatIds: string[];
-    selector: Record<string, unknown>;
   };
 };
 
@@ -2678,6 +2736,52 @@ export type ChatsListsRemoveInput = {
 
 /** Return shape for `chats.lists.remove`. */
 export type ChatsListsRemoveReturn = Record<string, unknown>;
+
+/** Input shape for `chats.lists.show`. */
+export type ChatsListsShowInput = {
+  listId: string;
+  owner?: string;
+};
+
+/** Return shape for `chats.lists.show`. */
+export type ChatsListsShowReturn = {
+  current: {
+    preserved: number;
+    selector: number;
+    total: number;
+  };
+  list: {
+    archivedAt?: number;
+    createdAt: number;
+    description?: string;
+    id: string;
+    mode: string;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    updatedAt: number;
+    visibility: string;
+  };
+  validation: {
+    canApply: boolean;
+    conditions: {
+      negative: number;
+      positive: number;
+      supported: number;
+      total: number;
+    };
+    issues: Array<{
+      code: string;
+      message: string;
+      path?: string;
+      severity: "error" | "warning";
+    }>;
+    match: "all" | "any";
+    riskLevel: "low" | "high";
+    scope: "contact" | "chat";
+    valid: boolean;
+  };
+};
 
 /** Input shape for `chats.read`. */
 export type ChatsReadInput = {
@@ -14937,3 +15041,584 @@ export type WorkflowsSpecsShowInput = {
 
 /** Return shape for `workflows.specs.show`. */
 export type WorkflowsSpecsShowReturn = Record<string, unknown>;
+
+/** Input shape for `yt.analytics-countries`. */
+export type YtAnalyticsCountriesInput = {
+  connection?: string;
+  days: string;
+  limit: string;
+};
+
+/** Return shape for `yt.analytics-countries`. */
+export type YtAnalyticsCountriesReturn = {
+  countries: Array<{
+    country: string;
+    subscribersGained: number;
+    views: number;
+    watchTimeMinutes: number;
+  }>;
+  period: string;
+  success: true;
+};
+
+/** Input shape for `yt.analytics-demographics`. */
+export type YtAnalyticsDemographicsInput = {
+  connection?: string;
+  days: string;
+};
+
+/** Return shape for `yt.analytics-demographics`. */
+export type YtAnalyticsDemographicsReturn = {
+  demographics: Array<{
+    ageGroup: string;
+    gender: string;
+    viewerPercentage: number;
+  }>;
+  period: string;
+  success: true;
+};
+
+/** Input shape for `yt.analytics-devices`. */
+export type YtAnalyticsDevicesInput = {
+  connection?: string;
+  days: string;
+};
+
+/** Return shape for `yt.analytics-devices`. */
+export type YtAnalyticsDevicesReturn = {
+  devices: Array<{
+    device: string;
+    views: number;
+    watchTimeMinutes: number;
+  }>;
+  period: string;
+  success: true;
+};
+
+/** Input shape for `yt.analytics-overview`. */
+export type YtAnalyticsOverviewInput = {
+  connection?: string;
+  days: string;
+};
+
+/** Return shape for `yt.analytics-overview`. */
+export type YtAnalyticsOverviewReturn = {
+  overview: {
+    avgViewDurationSec: number;
+    comments: number;
+    dislikes: number;
+    likes: number;
+    netSubscribers: number;
+    shares: number;
+    subscribersGained: number;
+    subscribersLost: number;
+    views: number;
+    watchTimeMinutes: number;
+  };
+  period: string;
+  success: true;
+};
+
+/** Input shape for `yt.analytics-series`. */
+export type YtAnalyticsSeriesInput = {
+  connection?: string;
+  days: string;
+  metric: "views" | "estimatedMinutesWatched" | "averageViewDuration" | "subscribersGained" | "likes" | "comments" | "shares";
+};
+
+/** Return shape for `yt.analytics-series`. */
+export type YtAnalyticsSeriesReturn = {
+  data: Array<Record<string, string | number | boolean | null>>;
+  metric: string;
+  period: string;
+  success: true;
+};
+
+/** Input shape for `yt.analytics-top`. */
+export type YtAnalyticsTopInput = {
+  connection?: string;
+  days: string;
+  limit: string;
+};
+
+/** Return shape for `yt.analytics-top`. */
+export type YtAnalyticsTopReturn = {
+  period: string;
+  success: true;
+  videos: Array<{
+    avgViewDurationSec: number;
+    comments: number;
+    likes: number;
+    title: string;
+    videoId: string;
+    views: number;
+    watchTimeMinutes: number;
+  }>;
+};
+
+/** Input shape for `yt.analytics-traffic`. */
+export type YtAnalyticsTrafficInput = {
+  connection?: string;
+  days: string;
+};
+
+/** Return shape for `yt.analytics-traffic`. */
+export type YtAnalyticsTrafficReturn = {
+  period: string;
+  sources: Array<{
+    source: string;
+    views: number;
+    watchTimeMinutes: number;
+  }>;
+  success: true;
+};
+
+/** Input shape for `yt.caption-download`. */
+export type YtCaptionDownloadInput = {
+  captionId: string;
+  connection?: string;
+  format: "srt" | "vtt" | "ttml";
+  language?: string;
+};
+
+/** Return shape for `yt.caption-download`. */
+export type YtCaptionDownloadReturn = {
+  captionId: string;
+  content: string;
+  format: string;
+  success: true;
+};
+
+/** Input shape for `yt.captions`. */
+export type YtCaptionsInput = {
+  connection?: string;
+  videoId: string;
+};
+
+/** Return shape for `yt.captions`. */
+export type YtCaptionsReturn = {
+  captions: Array<{
+    captionId: string;
+    isAutoSynced: boolean;
+    isDraft: boolean;
+    language: string;
+    lastUpdated: string;
+    name: string;
+    status: string;
+    trackKind: string;
+  }>;
+  success: true;
+  totalResults: number;
+  videoId: string;
+};
+
+/** Input shape for `yt.comments`. */
+export type YtCommentsInput = {
+  connection?: string;
+  limit: string;
+  page?: string;
+  videoId: string;
+};
+
+/** Return shape for `yt.comments`. */
+export type YtCommentsReturn = {
+  comments: Array<{
+    author: string;
+    authorChannelUrl: string;
+    commentId: string;
+    likeCount: number;
+    publishedAt: string;
+    replyCount: number;
+    text: string;
+    threadId: string;
+  }>;
+  nextPageToken?: string;
+  success: true;
+  totalResults: number;
+  videoId: string;
+};
+
+/** Input shape for `yt.health`. */
+export type YtHealthInput = {
+  connection?: string;
+};
+
+/** Return shape for `yt.health`. */
+export type YtHealthReturn = {
+  app: "youtube";
+  authenticated: false;
+  connection: string;
+  credentialConfigured: boolean;
+  credentialStatus: string;
+  externalCheckPerformed: false;
+  message: string;
+  ready: boolean;
+  success: true;
+};
+
+/** Input shape for `yt.info`. */
+export type YtInfoInput = {
+  connection?: string;
+};
+
+/** Return shape for `yt.info`. */
+export type YtInfoReturn = {
+  channel: {
+    channelId: string;
+    description: string;
+    subscriberCount: number;
+    thumbnail: string;
+    title: string;
+    uploadsPlaylistId: string;
+    url: string;
+    videoCount: number;
+    viewCount: number;
+  };
+  success: true;
+};
+
+/** Input shape for `yt.playlist`. */
+export type YtPlaylistInput = {
+  connection?: string;
+  limit: string;
+  page?: string;
+  playlistId: string;
+};
+
+/** Return shape for `yt.playlist`. */
+export type YtPlaylistReturn = {
+  nextPageToken?: string;
+  playlistId: string;
+  success: true;
+  totalResults: number;
+  videos: Array<{
+    commentCount: number;
+    description: string;
+    duration: string;
+    likeCount: number;
+    playlistItemId?: string;
+    privacyStatus: string;
+    publishedAt: string;
+    thumbnail: string;
+    title: string;
+    url: string;
+    videoId: string;
+    viewCount: number;
+  }>;
+};
+
+/** Input shape for `yt.playlist-add`. */
+export type YtPlaylistAddInput = {
+  connection?: string;
+  playlistId: string;
+  videoId: string;
+};
+
+/** Return shape for `yt.playlist-add`. */
+export type YtPlaylistAddReturn = {
+  item: {
+    playlistId: string;
+    playlistItemId: string;
+    title: string;
+    videoId: string;
+  };
+  success: true;
+};
+
+/** Input shape for `yt.playlist-create`. */
+export type YtPlaylistCreateInput = {
+  connection?: string;
+  description?: string;
+  privacy: "public" | "private" | "unlisted";
+  title: string;
+};
+
+/** Return shape for `yt.playlist-create`. */
+export type YtPlaylistCreateReturn = {
+  playlist: {
+    description: string;
+    itemCount: number;
+    playlistId: string;
+    privacyStatus: string;
+    publishedAt: string;
+    thumbnail: string;
+    title: string;
+    url: string;
+  };
+  success: true;
+};
+
+/** Input shape for `yt.playlist-delete`. */
+export type YtPlaylistDeleteInput = {
+  connection?: string;
+  playlistId: string;
+};
+
+/** Return shape for `yt.playlist-delete`. */
+export type YtPlaylistDeleteReturn = {
+  deleted: string;
+  success: true;
+};
+
+/** Input shape for `yt.playlist-remove`. */
+export type YtPlaylistRemoveInput = {
+  connection?: string;
+  playlistItemId: string;
+};
+
+/** Return shape for `yt.playlist-remove`. */
+export type YtPlaylistRemoveReturn = {
+  removed: string;
+  success: true;
+};
+
+/** Input shape for `yt.playlists`. */
+export type YtPlaylistsInput = {
+  connection?: string;
+  limit: string;
+  page?: string;
+};
+
+/** Return shape for `yt.playlists`. */
+export type YtPlaylistsReturn = {
+  nextPageToken?: string;
+  playlists: Array<{
+    description: string;
+    itemCount: number;
+    playlistId: string;
+    privacyStatus: string;
+    publishedAt: string;
+    thumbnail: string;
+    title: string;
+    url: string;
+  }>;
+  success: true;
+  totalResults: number;
+};
+
+/** Input shape for `yt.reply`. */
+export type YtReplyInput = {
+  commentId: string;
+  connection?: string;
+  text: string;
+};
+
+/** Return shape for `yt.reply`. */
+export type YtReplyReturn = {
+  replyId: string;
+  success: true;
+};
+
+/** Input shape for `yt.search`. */
+export type YtSearchInput = {
+  connection?: string;
+  limit: string;
+  page?: string;
+  query: string;
+};
+
+/** Return shape for `yt.search`. */
+export type YtSearchReturn = {
+  nextPageToken?: string;
+  query: string;
+  success: true;
+  totalResults: number;
+  videos: Array<{
+    commentCount: number;
+    description: string;
+    duration: string;
+    likeCount: number;
+    playlistItemId?: string;
+    privacyStatus: string;
+    publishedAt: string;
+    thumbnail: string;
+    title: string;
+    url: string;
+    videoId: string;
+    viewCount: number;
+  }>;
+};
+
+/** Input shape for `yt.stats`. */
+export type YtStatsInput = {
+  connection?: string;
+  id: string;
+};
+
+/** Return shape for `yt.stats`. */
+export type YtStatsReturn = {
+  stats: {
+    commentCount: number;
+    daysSincePublish: number;
+    likeCount: number;
+    publishedAt: string;
+    title: string;
+    videoId: string;
+    viewCount: number;
+    viewsPerDay: number;
+  };
+  success: true;
+};
+
+/** Input shape for `yt.subscriptions`. */
+export type YtSubscriptionsInput = {
+  connection?: string;
+  limit: string;
+  page?: string;
+};
+
+/** Return shape for `yt.subscriptions`. */
+export type YtSubscriptionsReturn = {
+  nextPageToken?: string;
+  subscriptions: Array<{
+    channelId: string;
+    description: string;
+    publishedAt: string;
+    subscriptionId: string;
+    thumbnail: string;
+    title: string;
+    totalItemCount: number;
+    url: string;
+  }>;
+  success: true;
+  totalResults: number;
+};
+
+/** Input shape for `yt.unanswered`. */
+export type YtUnansweredInput = {
+  connection?: string;
+  limit: string;
+  page?: string;
+  videoId: string;
+};
+
+/** Return shape for `yt.unanswered`. */
+export type YtUnansweredReturn = {
+  comments: Array<{
+    author: string;
+    authorChannelUrl: string;
+    commentId: string;
+    likeCount: number;
+    publishedAt: string;
+    replyCount: number;
+    text: string;
+    threadId: string;
+  }>;
+  nextPageToken?: string;
+  success: true;
+  totalUnanswered: number;
+  videoId: string;
+};
+
+/** Input shape for `yt.video`. */
+export type YtVideoInput = {
+  connection?: string;
+  id: string;
+};
+
+/** Return shape for `yt.video`. */
+export type YtVideoReturn = {
+  success: true;
+  video: {
+    commentCount: number;
+    description: string;
+    duration: string;
+    likeCount: number;
+    playlistItemId?: string;
+    privacyStatus: string;
+    publishedAt: string;
+    thumbnail: string;
+    title: string;
+    url: string;
+    videoId: string;
+    viewCount: number;
+  };
+};
+
+/** Input shape for `yt.video-categories`. */
+export type YtVideoCategoriesInput = {
+  connection?: string;
+  region: string;
+};
+
+/** Return shape for `yt.video-categories`. */
+export type YtVideoCategoriesReturn = {
+  categories: Array<{
+    assignable: boolean;
+    categoryId: string;
+    title: string;
+  }>;
+  region: string;
+  success: true;
+  totalResults: number;
+};
+
+/** Input shape for `yt.video-delete`. */
+export type YtVideoDeleteInput = {
+  connection?: string;
+  id: string;
+};
+
+/** Return shape for `yt.video-delete`. */
+export type YtVideoDeleteReturn = {
+  deleted: string;
+  success: true;
+};
+
+/** Input shape for `yt.video-update`. */
+export type YtVideoUpdateInput = {
+  category?: string;
+  connection?: string;
+  description?: string;
+  id: string;
+  privacy: "public" | "private" | "unlisted";
+  tags?: string;
+  title?: string;
+};
+
+/** Return shape for `yt.video-update`. */
+export type YtVideoUpdateReturn = {
+  success: true;
+  video: {
+    commentCount: number;
+    description: string;
+    duration: string;
+    likeCount: number;
+    playlistItemId?: string;
+    privacyStatus: string;
+    publishedAt: string;
+    thumbnail: string;
+    title: string;
+    url: string;
+    videoId: string;
+    viewCount: number;
+  };
+};
+
+/** Input shape for `yt.videos`. */
+export type YtVideosInput = {
+  connection?: string;
+  limit: string;
+  page?: string;
+};
+
+/** Return shape for `yt.videos`. */
+export type YtVideosReturn = {
+  nextPageToken?: string;
+  success: true;
+  totalResults: number;
+  videos: Array<{
+    commentCount: number;
+    description: string;
+    duration: string;
+    likeCount: number;
+    playlistItemId?: string;
+    privacyStatus: string;
+    publishedAt: string;
+    thumbnail: string;
+    title: string;
+    url: string;
+    videoId: string;
+    viewCount: number;
+  }>;
+};
