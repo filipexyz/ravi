@@ -290,6 +290,44 @@ describe("RuntimeSessionDispatcher runtime recovery", () => {
       },
     });
   });
+
+  it("does not bound restarts for reasons outside the bounded set (start-failure stays policy-budgeted)", async () => {
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async (topic, data) => {
+        emitted.push({ topic, data });
+      },
+      getConfigModel: () => "test-model",
+    });
+    dispatcher.stashedMessages.set("unbounded-reason", [
+      createQueuedRuntimeUserMessage({
+        prompt: "retry me",
+        _agentId: "main",
+      }),
+    ]);
+
+    let starts = 0;
+    dispatcher.startStreamingSession = mock(async () => {
+      starts++;
+    });
+    const recovery = dispatcher as unknown as {
+      restartStashedSession(sessionName: string, reason: string): Promise<void>;
+    };
+
+    // runtime_target_start_failure is intentionally NOT in BOUNDED_RESTART_REASONS: it is
+    // capped upstream by the policy's maxAttemptsPerTarget budget and converges into
+    // runtime_target_exhausted (which IS bounded). So the dispatcher must keep replaying
+    // here without ever emitting dispatch.restart_suppressed.
+    await recovery.restartStashedSession("unbounded-reason", "runtime_target_start_failure");
+    await recovery.restartStashedSession("unbounded-reason", "runtime_target_start_failure");
+    await recovery.restartStashedSession("unbounded-reason", "runtime_target_start_failure");
+
+    expect(starts).toBe(3);
+    expect(emitted).toHaveLength(0);
+  });
 });
 
 describe("RuntimeSessionDispatcher native runtime steer", () => {
