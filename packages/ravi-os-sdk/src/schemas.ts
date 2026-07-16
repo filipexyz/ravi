@@ -15135,60 +15135,28 @@ export const ChatsListsMembersReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `chats.lists.recompute`. */
-export const ChatsListsRecomputeInputSchema = {
+/** JSON Schema for the input body of `chats.lists.preview`. */
+export const ChatsListsPreviewInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "list": {
-      "description": "List id or name",
+    "listId": {
+      "description": "Canonical reading-list id (crl_<24 hex>)",
+      "pattern": "^crl_[0-9a-f]{24}$",
       "type": "string"
     },
     "owner": {
-      "description": "Owner scope when resolving list by name",
+      "description": "Optional owner assertion for the canonical list id",
       "type": "string"
     }
   },
   "required": [
-    "list"
+    "listId"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `chats.lists.recompute`. */
-export const ChatsListsRecomputeReturnSchema = {
-  "$defs": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "number"
-        },
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "null"
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
+/** JSON Schema for the return shape of `chats.lists.preview`. */
+export const ChatsListsPreviewReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "list": {
@@ -15206,15 +15174,6 @@ export const ChatsListsRecomputeReturnSchema = {
         "id": {
           "type": "string"
         },
-        "metadata": {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        },
         "mode": {
           "type": "string"
         },
@@ -15227,14 +15186,297 @@ export const ChatsListsRecomputeReturnSchema = {
         "ownerType": {
           "type": "string"
         },
-        "selector": {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
+        "updatedAt": {
+          "type": "number"
+        },
+        "visibility": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "ownerType",
+        "ownerId",
+        "visibility",
+        "mode",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "preview": {
+      "additionalProperties": false,
+      "properties": {
+        "current": {
+          "additionalProperties": false,
+          "properties": {
+            "preserved": {
+              "type": "number"
+            },
+            "selector": {
+              "type": "number"
+            },
+            "total": {
+              "type": "number"
+            }
           },
-          "propertyNames": {
-            "type": "string"
-          },
+          "required": [
+            "total",
+            "selector",
+            "preserved"
+          ],
           "type": "object"
+        },
+        "diff": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "added": {
+                  "type": "number"
+                },
+                "eligible": {
+                  "type": "number"
+                },
+                "kept": {
+                  "type": "number"
+                },
+                "preserved": {
+                  "type": "number"
+                },
+                "removed": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "added",
+                "removed",
+                "kept",
+                "preserved",
+                "eligible"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dryRun": {
+          "const": true,
+          "type": "boolean"
+        },
+        "list": {
+          "additionalProperties": false,
+          "properties": {
+            "archivedAt": {
+              "type": "number"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "description": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "mode": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "ownerId": {
+              "type": "string"
+            },
+            "ownerType": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            },
+            "visibility": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "ownerType",
+            "ownerId",
+            "visibility",
+            "mode",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "validation": {
+          "additionalProperties": false,
+          "properties": {
+            "canApply": {
+              "type": "boolean"
+            },
+            "conditions": {
+              "additionalProperties": false,
+              "properties": {
+                "negative": {
+                  "type": "number"
+                },
+                "positive": {
+                  "type": "number"
+                },
+                "supported": {
+                  "type": "number"
+                },
+                "total": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "total",
+                "supported",
+                "positive",
+                "negative"
+              ],
+              "type": "object"
+            },
+            "issues": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "severity": {
+                    "enum": [
+                      "error",
+                      "warning"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code",
+                  "severity",
+                  "message"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "match": {
+              "enum": [
+                "all",
+                "any"
+              ],
+              "type": "string"
+            },
+            "riskLevel": {
+              "enum": [
+                "low",
+                "high"
+              ],
+              "type": "string"
+            },
+            "scope": {
+              "enum": [
+                "contact",
+                "chat"
+              ],
+              "type": "string"
+            },
+            "valid": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "valid",
+            "canApply",
+            "riskLevel",
+            "scope",
+            "match",
+            "conditions",
+            "issues"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "list",
+        "dryRun",
+        "validation",
+        "current",
+        "diff"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "list",
+    "preview"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.lists.recompute`. */
+export const ChatsListsRecomputeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "listId": {
+      "description": "Canonical reading-list id (crl_<24 hex>)",
+      "pattern": "^crl_[0-9a-f]{24}$",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Optional owner assertion for the canonical list id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "listId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `chats.lists.recompute`. */
+export const ChatsListsRecomputeReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "list": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "type": "string"
         },
         "updatedAt": {
           "type": "number"
@@ -15261,29 +15503,11 @@ export const ChatsListsRecomputeReturnSchema = {
         "added": {
           "type": "number"
         },
-        "addedChatIds": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "eligible": {
           "type": "number"
         },
-        "eligibleChatIds": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "kept": {
           "type": "number"
-        },
-        "keptChatIds": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
         },
         "list": {
           "additionalProperties": false,
@@ -15300,15 +15524,6 @@ export const ChatsListsRecomputeReturnSchema = {
             "id": {
               "type": "string"
             },
-            "metadata": {
-              "additionalProperties": {
-                "$ref": "#/$defs/__schema0"
-              },
-              "propertyNames": {
-                "type": "string"
-              },
-              "type": "object"
-            },
             "mode": {
               "type": "string"
             },
@@ -15320,15 +15535,6 @@ export const ChatsListsRecomputeReturnSchema = {
             },
             "ownerType": {
               "type": "string"
-            },
-            "selector": {
-              "additionalProperties": {
-                "$ref": "#/$defs/__schema0"
-              },
-              "propertyNames": {
-                "type": "string"
-              },
-              "type": "object"
             },
             "updatedAt": {
               "type": "number"
@@ -15352,39 +15558,12 @@ export const ChatsListsRecomputeReturnSchema = {
         "preserved": {
           "type": "number"
         },
-        "preservedChatIds": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "removed": {
           "type": "number"
-        },
-        "removedChatIds": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "selector": {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
         }
       },
       "required": [
         "list",
-        "selector",
-        "eligibleChatIds",
-        "addedChatIds",
-        "removedChatIds",
-        "keptChatIds",
-        "preservedChatIds",
         "added",
         "removed",
         "kept",
@@ -15437,6 +15616,201 @@ export const ChatsListsRemoveInputSchema = {
 export const ChatsListsRemoveReturnSchema = {
   "additionalProperties": {},
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.lists.show`. */
+export const ChatsListsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "listId": {
+      "description": "Canonical reading-list id (crl_<24 hex>)",
+      "pattern": "^crl_[0-9a-f]{24}$",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Optional owner assertion for the canonical list id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "listId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `chats.lists.show`. */
+export const ChatsListsShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "current": {
+      "additionalProperties": false,
+      "properties": {
+        "preserved": {
+          "type": "number"
+        },
+        "selector": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "total",
+        "selector",
+        "preserved"
+      ],
+      "type": "object"
+    },
+    "list": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "visibility": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "ownerType",
+        "ownerId",
+        "visibility",
+        "mode",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "validation": {
+      "additionalProperties": false,
+      "properties": {
+        "canApply": {
+          "type": "boolean"
+        },
+        "conditions": {
+          "additionalProperties": false,
+          "properties": {
+            "negative": {
+              "type": "number"
+            },
+            "positive": {
+              "type": "number"
+            },
+            "supported": {
+              "type": "number"
+            },
+            "total": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "total",
+            "supported",
+            "positive",
+            "negative"
+          ],
+          "type": "object"
+        },
+        "issues": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "severity": {
+                "enum": [
+                  "error",
+                  "warning"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "severity",
+              "message"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "match": {
+          "enum": [
+            "all",
+            "any"
+          ],
+          "type": "string"
+        },
+        "riskLevel": {
+          "enum": [
+            "low",
+            "high"
+          ],
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "contact",
+            "chat"
+          ],
+          "type": "string"
+        },
+        "valid": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "valid",
+        "canApply",
+        "riskLevel",
+        "scope",
+        "match",
+        "conditions",
+        "issues"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "list",
+    "validation",
+    "current"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -30121,6 +30495,240 @@ export const FeedbackSendReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `frete.quote`. */
+export const FreteQuoteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "allDeliveryOptions": {
+      "description": "Return every option instead of grouping by delivery type (default: false)",
+      "type": "boolean"
+    },
+    "connection": {
+      "default": "default",
+      "description": "Ravi credential connection (default: default)",
+      "minLength": 1,
+      "type": "string"
+    },
+    "destinationCep": {
+      "description": "Destination CEP, with or without punctuation",
+      "minLength": 1,
+      "type": "string"
+    },
+    "grouped": {
+      "description": "Quote all items as one grouped shipment (default: false)",
+      "type": "boolean"
+    },
+    "height": {
+      "description": "Optional package height in centimeters",
+      "pattern": "^\\d+(?:\\.\\d+)?$",
+      "type": "string"
+    },
+    "ignorePreparationDays": {
+      "description": "Do not add product preparation days to the deadline (default: false)",
+      "type": "boolean"
+    },
+    "integrationId": {
+      "description": "Positive Olist integration id",
+      "pattern": "^[1-9]\\d*$",
+      "type": "string"
+    },
+    "length": {
+      "description": "Optional package length in centimeters",
+      "pattern": "^\\d+(?:\\.\\d+)?$",
+      "type": "string"
+    },
+    "originCep": {
+      "description": "Optional origin CEP; account CEP is used when omitted",
+      "type": "string"
+    },
+    "quantity": {
+      "default": "1",
+      "description": "Positive package quantity (default: 1)",
+      "pattern": "^[1-9]\\d*$",
+      "type": "string"
+    },
+    "sku": {
+      "description": "Olist product/advertisement SKU",
+      "minLength": 1,
+      "type": "string"
+    },
+    "weight": {
+      "description": "Optional package weight in kilograms",
+      "pattern": "^\\d+(?:\\.\\d+)?$",
+      "type": "string"
+    },
+    "width": {
+      "description": "Optional package width in centimeters",
+      "pattern": "^\\d+(?:\\.\\d+)?$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "destinationCep",
+    "integrationId",
+    "sku"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `frete.quote`. */
+export const FreteQuoteReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contract": {
+      "additionalProperties": false,
+      "properties": {
+        "documentation": {
+          "const": "https://tiny.com.br/api-docs/api2-cotacao-fretes",
+          "type": "string"
+        },
+        "endpointTemplate": {
+          "const": "https://api.tiny.com.br/webhook/api/v1/parceiro/{idEcommerce}/cotar",
+          "type": "string"
+        },
+        "verifiedAt": {
+          "const": "2026-07-13",
+          "type": "string"
+        }
+      },
+      "required": [
+        "documentation",
+        "endpointTemplate",
+        "verifiedAt"
+      ],
+      "type": "object"
+    },
+    "destinationCep": {
+      "pattern": "^\\d{8}$",
+      "type": "string"
+    },
+    "integrationId": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
+    "originCep": {
+      "anyOf": [
+        {
+          "pattern": "^\\d{8}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "provider": {
+      "const": "olist-tiny",
+      "type": "string"
+    },
+    "quotes": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "options": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "deadlineDays": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "deliveryType": {
+                  "enum": [
+                    "normal",
+                    "expressa",
+                    "economica",
+                    "super_expressa",
+                    "agendada",
+                    "retirada",
+                    "nao_definida"
+                  ],
+                  "type": "string"
+                },
+                "freightMethodId": {
+                  "type": "string"
+                },
+                "freightMethodName": {
+                  "type": "string"
+                },
+                "price": {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "shippingMethodId": {
+                  "type": "string"
+                },
+                "shippingMethodName": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "deliveryType",
+                "price",
+                "deadlineDays",
+                "shippingMethodId",
+                "shippingMethodName",
+                "freightMethodId",
+                "freightMethodName"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "sku": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "sku",
+          "options"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "settings": {
+      "additionalProperties": false,
+      "properties": {
+        "groupDeliveryTypes": {
+          "type": "boolean"
+        },
+        "grouped": {
+          "type": "boolean"
+        },
+        "includePreparationDays": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "grouped",
+        "includePreparationDays",
+        "groupDeliveryTypes"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "provider",
+    "contract",
+    "integrationId",
+    "originCep",
+    "destinationCep",
+    "settings",
+    "quotes"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `gbp.account-get`. */
 export const GbpAccountGetInputSchema = {
   "additionalProperties": false,
@@ -31449,7 +32057,9 @@ export const GbpPerformanceInputSchema = {
     }
   },
   "required": [
-    "location"
+    "end",
+    "location",
+    "start"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -32265,7 +32875,9 @@ export const GbpSearchKeywordsInputSchema = {
     }
   },
   "required": [
-    "location"
+    "endMonth",
+    "location",
+    "startMonth"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -76071,6 +76683,10 @@ export const YtAnalyticsCountriesInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "days",
+    "limit"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -76135,6 +76751,9 @@ export const YtAnalyticsDemographicsInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "days"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -76195,6 +76814,9 @@ export const YtAnalyticsDevicesInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "days"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -76255,6 +76877,9 @@ export const YtAnalyticsOverviewInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "days"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -76353,6 +76978,10 @@ export const YtAnalyticsSeriesInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "days",
+    "metric"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -76424,6 +77053,10 @@ export const YtAnalyticsTopInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "days",
+    "limit"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -76500,6 +77133,9 @@ export const YtAnalyticsTrafficInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "days"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -76574,7 +77210,8 @@ export const YtCaptionDownloadInputSchema = {
     }
   },
   "required": [
-    "captionId"
+    "captionId",
+    "format"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -76717,6 +77354,7 @@ export const YtCommentsInputSchema = {
     }
   },
   "required": [
+    "limit",
     "videoId"
   ],
   "type": "object"
@@ -76950,6 +77588,7 @@ export const YtPlaylistInputSchema = {
     }
   },
   "required": [
+    "limit",
     "playlistId"
   ],
   "type": "object"
@@ -77134,6 +77773,7 @@ export const YtPlaylistCreateInputSchema = {
     }
   },
   "required": [
+    "privacy",
     "title"
   ],
   "type": "object"
@@ -77291,6 +77931,9 @@ export const YtPlaylistsInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "limit"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -77429,6 +78072,7 @@ export const YtSearchInputSchema = {
     }
   },
   "required": [
+    "limit",
     "query"
   ],
   "type": "object"
@@ -77613,6 +78257,9 @@ export const YtSubscriptionsInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "limit"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -77706,6 +78353,7 @@ export const YtUnansweredInputSchema = {
     }
   },
   "required": [
+    "limit",
     "videoId"
   ],
   "type": "object"
@@ -77886,6 +78534,9 @@ export const YtVideoCategoriesInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "region"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -78015,7 +78666,8 @@ export const YtVideoUpdateInputSchema = {
     }
   },
   "required": [
-    "id"
+    "id",
+    "privacy"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -78109,6 +78761,9 @@ export const YtVideosInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "limit"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 

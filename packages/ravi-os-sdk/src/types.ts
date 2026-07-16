@@ -2754,9 +2754,77 @@ export type ChatsListsMembersInput = {
 /** Return shape for `chats.lists.members`. */
 export type ChatsListsMembersReturn = Record<string, unknown>;
 
+/** Input shape for `chats.lists.preview`. */
+export type ChatsListsPreviewInput = {
+  listId: string;
+  owner?: string;
+};
+
+/** Return shape for `chats.lists.preview`. */
+export type ChatsListsPreviewReturn = {
+  list: {
+    archivedAt?: number;
+    createdAt: number;
+    description?: string;
+    id: string;
+    mode: string;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    updatedAt: number;
+    visibility: string;
+  };
+  preview: {
+    current: {
+      preserved: number;
+      selector: number;
+      total: number;
+    };
+    diff: ({
+      added: number;
+      eligible: number;
+      kept: number;
+      preserved: number;
+      removed: number;
+    }) | null;
+    dryRun: true;
+    list: {
+      archivedAt?: number;
+      createdAt: number;
+      description?: string;
+      id: string;
+      mode: string;
+      name: string;
+      ownerId: string;
+      ownerType: string;
+      updatedAt: number;
+      visibility: string;
+    };
+    validation: {
+      canApply: boolean;
+      conditions: {
+        negative: number;
+        positive: number;
+        supported: number;
+        total: number;
+      };
+      issues: Array<{
+        code: string;
+        message: string;
+        path?: string;
+        severity: "error" | "warning";
+      }>;
+      match: "all" | "any";
+      riskLevel: "low" | "high";
+      scope: "contact" | "chat";
+      valid: boolean;
+    };
+  };
+};
+
 /** Input shape for `chats.lists.recompute`. */
 export type ChatsListsRecomputeInput = {
-  list: string;
+  listId: string;
   owner?: string;
 };
 
@@ -2767,41 +2835,31 @@ export type ChatsListsRecomputeReturn = {
     createdAt: number;
     description?: string;
     id: string;
-    metadata?: Record<string, unknown>;
     mode: string;
     name: string;
     ownerId: string;
     ownerType: string;
-    selector?: Record<string, unknown>;
     updatedAt: number;
     visibility: string;
   };
   recompute: {
     added: number;
-    addedChatIds: string[];
     eligible: number;
-    eligibleChatIds: string[];
     kept: number;
-    keptChatIds: string[];
     list: {
       archivedAt?: number;
       createdAt: number;
       description?: string;
       id: string;
-      metadata?: Record<string, unknown>;
       mode: string;
       name: string;
       ownerId: string;
       ownerType: string;
-      selector?: Record<string, unknown>;
       updatedAt: number;
       visibility: string;
     };
     preserved: number;
-    preservedChatIds: string[];
     removed: number;
-    removedChatIds: string[];
-    selector: Record<string, unknown>;
   };
 };
 
@@ -2816,6 +2874,52 @@ export type ChatsListsRemoveInput = {
 
 /** Return shape for `chats.lists.remove`. */
 export type ChatsListsRemoveReturn = Record<string, unknown>;
+
+/** Input shape for `chats.lists.show`. */
+export type ChatsListsShowInput = {
+  listId: string;
+  owner?: string;
+};
+
+/** Return shape for `chats.lists.show`. */
+export type ChatsListsShowReturn = {
+  current: {
+    preserved: number;
+    selector: number;
+    total: number;
+  };
+  list: {
+    archivedAt?: number;
+    createdAt: number;
+    description?: string;
+    id: string;
+    mode: string;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    updatedAt: number;
+    visibility: string;
+  };
+  validation: {
+    canApply: boolean;
+    conditions: {
+      negative: number;
+      positive: number;
+      supported: number;
+      total: number;
+    };
+    issues: Array<{
+      code: string;
+      message: string;
+      path?: string;
+      severity: "error" | "warning";
+    }>;
+    match: "all" | "any";
+    riskLevel: "low" | "high";
+    scope: "contact" | "chat";
+    valid: boolean;
+  };
+};
 
 /** Input shape for `chats.read`. */
 export type ChatsReadInput = {
@@ -5978,6 +6082,53 @@ export type FeedbackSendReturn = {
   url: string;
 };
 
+/** Input shape for `frete.quote`. */
+export type FreteQuoteInput = {
+  allDeliveryOptions?: boolean;
+  connection?: string;
+  destinationCep: string;
+  grouped?: boolean;
+  height?: string;
+  ignorePreparationDays?: boolean;
+  integrationId: string;
+  length?: string;
+  originCep?: string;
+  quantity?: string;
+  sku: string;
+  weight?: string;
+  width?: string;
+};
+
+/** Return shape for `frete.quote`. */
+export type FreteQuoteReturn = {
+  contract: {
+    documentation: "https://tiny.com.br/api-docs/api2-cotacao-fretes";
+    endpointTemplate: "https://api.tiny.com.br/webhook/api/v1/parceiro/{idEcommerce}/cotar";
+    verifiedAt: "2026-07-13";
+  };
+  destinationCep: string;
+  integrationId: number;
+  originCep: string | null;
+  provider: "olist-tiny";
+  quotes: Array<{
+    options: Array<{
+      deadlineDays: number;
+      deliveryType: "normal" | "expressa" | "economica" | "super_expressa" | "agendada" | "retirada" | "nao_definida";
+      freightMethodId: string;
+      freightMethodName: string;
+      price: number;
+      shippingMethodId: string;
+      shippingMethodName: string;
+    }>;
+    sku: string | null;
+  }>;
+  settings: {
+    groupDeliveryTypes: boolean;
+    grouped: boolean;
+    includePreparationDays: boolean;
+  };
+};
+
 /** Input shape for `gbp.account-get`. */
 export type GbpAccountGetInput = {
   account: string;
@@ -6195,10 +6346,10 @@ export type GbpMediaUpdateReturn = {
 /** Input shape for `gbp.performance`. */
 export type GbpPerformanceInput = {
   connection?: string;
-  end?: string;
+  end: string;
   location: string;
   metrics?: string;
-  start?: string;
+  start: string;
 };
 
 /** Return shape for `gbp.performance`. */
@@ -6332,10 +6483,10 @@ export type GbpReviewsReturn = {
 export type GbpSearchKeywordsInput = {
   connection?: string;
   cursor?: string;
-  endMonth?: string;
+  endMonth: string;
   limit?: string;
   location: string;
-  startMonth?: string;
+  startMonth: string;
 };
 
 /** Return shape for `gbp.search-keywords`. */
@@ -15949,8 +16100,8 @@ export type WorkflowsSpecsShowReturn = Record<string, unknown>;
 /** Input shape for `yt.analytics-countries`. */
 export type YtAnalyticsCountriesInput = {
   connection?: string;
-  days?: string;
-  limit?: string;
+  days: string;
+  limit: string;
 };
 
 /** Return shape for `yt.analytics-countries`. */
@@ -15968,7 +16119,7 @@ export type YtAnalyticsCountriesReturn = {
 /** Input shape for `yt.analytics-demographics`. */
 export type YtAnalyticsDemographicsInput = {
   connection?: string;
-  days?: string;
+  days: string;
 };
 
 /** Return shape for `yt.analytics-demographics`. */
@@ -15985,7 +16136,7 @@ export type YtAnalyticsDemographicsReturn = {
 /** Input shape for `yt.analytics-devices`. */
 export type YtAnalyticsDevicesInput = {
   connection?: string;
-  days?: string;
+  days: string;
 };
 
 /** Return shape for `yt.analytics-devices`. */
@@ -16002,7 +16153,7 @@ export type YtAnalyticsDevicesReturn = {
 /** Input shape for `yt.analytics-overview`. */
 export type YtAnalyticsOverviewInput = {
   connection?: string;
-  days?: string;
+  days: string;
 };
 
 /** Return shape for `yt.analytics-overview`. */
@@ -16026,8 +16177,8 @@ export type YtAnalyticsOverviewReturn = {
 /** Input shape for `yt.analytics-series`. */
 export type YtAnalyticsSeriesInput = {
   connection?: string;
-  days?: string;
-  metric?: "views" | "estimatedMinutesWatched" | "averageViewDuration" | "subscribersGained" | "likes" | "comments" | "shares";
+  days: string;
+  metric: "views" | "estimatedMinutesWatched" | "averageViewDuration" | "subscribersGained" | "likes" | "comments" | "shares";
 };
 
 /** Return shape for `yt.analytics-series`. */
@@ -16041,8 +16192,8 @@ export type YtAnalyticsSeriesReturn = {
 /** Input shape for `yt.analytics-top`. */
 export type YtAnalyticsTopInput = {
   connection?: string;
-  days?: string;
-  limit?: string;
+  days: string;
+  limit: string;
 };
 
 /** Return shape for `yt.analytics-top`. */
@@ -16063,7 +16214,7 @@ export type YtAnalyticsTopReturn = {
 /** Input shape for `yt.analytics-traffic`. */
 export type YtAnalyticsTrafficInput = {
   connection?: string;
-  days?: string;
+  days: string;
 };
 
 /** Return shape for `yt.analytics-traffic`. */
@@ -16081,7 +16232,7 @@ export type YtAnalyticsTrafficReturn = {
 export type YtCaptionDownloadInput = {
   captionId: string;
   connection?: string;
-  format?: "srt" | "vtt" | "ttml";
+  format: "srt" | "vtt" | "ttml";
   language?: string;
 };
 
@@ -16119,7 +16270,7 @@ export type YtCaptionsReturn = {
 /** Input shape for `yt.comments`. */
 export type YtCommentsInput = {
   connection?: string;
-  limit?: string;
+  limit: string;
   page?: string;
   videoId: string;
 };
@@ -16184,7 +16335,7 @@ export type YtInfoReturn = {
 /** Input shape for `yt.playlist`. */
 export type YtPlaylistInput = {
   connection?: string;
-  limit?: string;
+  limit: string;
   page?: string;
   playlistId: string;
 };
@@ -16233,7 +16384,7 @@ export type YtPlaylistAddReturn = {
 export type YtPlaylistCreateInput = {
   connection?: string;
   description?: string;
-  privacy?: "public" | "private" | "unlisted";
+  privacy: "public" | "private" | "unlisted";
   title: string;
 };
 
@@ -16279,7 +16430,7 @@ export type YtPlaylistRemoveReturn = {
 /** Input shape for `yt.playlists`. */
 export type YtPlaylistsInput = {
   connection?: string;
-  limit?: string;
+  limit: string;
   page?: string;
 };
 
@@ -16316,7 +16467,7 @@ export type YtReplyReturn = {
 /** Input shape for `yt.search`. */
 export type YtSearchInput = {
   connection?: string;
-  limit?: string;
+  limit: string;
   page?: string;
   query: string;
 };
@@ -16367,7 +16518,7 @@ export type YtStatsReturn = {
 /** Input shape for `yt.subscriptions`. */
 export type YtSubscriptionsInput = {
   connection?: string;
-  limit?: string;
+  limit: string;
   page?: string;
 };
 
@@ -16391,7 +16542,7 @@ export type YtSubscriptionsReturn = {
 /** Input shape for `yt.unanswered`. */
 export type YtUnansweredInput = {
   connection?: string;
-  limit?: string;
+  limit: string;
   page?: string;
   videoId: string;
 };
@@ -16442,7 +16593,7 @@ export type YtVideoReturn = {
 /** Input shape for `yt.video-categories`. */
 export type YtVideoCategoriesInput = {
   connection?: string;
-  region?: string;
+  region: string;
 };
 
 /** Return shape for `yt.video-categories`. */
@@ -16475,7 +16626,7 @@ export type YtVideoUpdateInput = {
   connection?: string;
   description?: string;
   id: string;
-  privacy?: "public" | "private" | "unlisted";
+  privacy: "public" | "private" | "unlisted";
   tags?: string;
   title?: string;
 };
@@ -16502,7 +16653,7 @@ export type YtVideoUpdateReturn = {
 /** Input shape for `yt.videos`. */
 export type YtVideosInput = {
   connection?: string;
-  limit?: string;
+  limit: string;
   page?: string;
 };
 
