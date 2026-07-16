@@ -150,7 +150,7 @@ export function generateManifest(tools: ExportedTool[]): ToolManifestEntry[] {
       ...tool.metadata.options.map((opt) => ({
         name: extractOptionName(opt.flags),
         type: inferOptionType(opt.flags),
-        required: false,
+        required: Boolean(opt.schema && !opt.schema.safeParse(undefined).success),
         description: opt.description,
         defaultValue: opt.defaultValue,
       })),

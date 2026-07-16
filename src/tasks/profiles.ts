@@ -135,6 +135,7 @@ const TaskProfileManifestSchema = z.object({
   description: z.string().trim().min(1),
   sessionNameTemplate: z.string().trim().min(1),
   runtimeDefaults: TaskRuntimeDefaultsSchema.optional(),
+  runtimeTargetPolicy: z.record(z.string(), z.unknown()).optional(),
   workspaceBootstrap: z.object({
     mode: z.enum(["inherit", "task_dir", "path"]),
     path: z.string().trim().min(1).optional(),
@@ -449,6 +450,7 @@ function resolveManifestToProfile(manifest: TaskProfileManifest, source: Profile
     description: manifest.description,
     sessionNameTemplate: manifest.sessionNameTemplate,
     ...(manifest.runtimeDefaults ? { runtimeDefaults: normalizeTaskRuntimeOptions(manifest.runtimeDefaults) } : {}),
+    ...(manifest.runtimeTargetPolicy ? { runtimeTargetPolicy: structuredClone(manifest.runtimeTargetPolicy) } : {}),
     workspaceBootstrap: manifest.workspaceBootstrap,
     sync: normalizeTaskProfileSyncPolicy(manifest.sync),
     rendererHints: manifest.rendererHints,
@@ -589,6 +591,12 @@ function listWorkspaceProfileRoots(cwd = process.cwd()): string[] {
     const candidate = joinPath(current, ...WORKSPACE_PROFILE_SEGMENTS);
     if (existsSync(candidate)) {
       roots.push(candidate);
+    }
+    // A repository boundary is also the workspace boundary. Continuing above it
+    // can accidentally reinterpret ~/.ravi/task-profiles as workspace profiles
+    // when a checkout lives below the operator's home directory.
+    if (existsSync(joinPath(current, ".git"))) {
+      break;
     }
     const parent = dirname(current);
     if (parent === current) {

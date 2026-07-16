@@ -3,6 +3,7 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import { getDb } from "../router/router-db.js";
 import { createRuntimeCredential } from "./credential-store.js";
 import {
+  inspectRuntimeCredentialAvailability,
   isRuntimeCredentialSessionCompatible,
   resolveRuntimeCredentialAttemptBinding,
   serializeRuntimeCredentialAttemptBinding,
@@ -82,6 +83,38 @@ describe("runtime credential resolver", () => {
     expect(JSON.stringify(serialized)).not.toContain("RAVI_TEST_READY_KEY");
     expect(serialized.attemptId?.startsWith("rcatt_")).toBe(true);
     expect(serialized.envKeys).toEqual(["OPENAI_API_[redacted]"]);
+  });
+
+  it("inspects secret availability without reserving a credential attempt", () => {
+    createRuntimeCredential({
+      id: "rcred_explain_ready",
+      label: "Explain ready",
+      runtimeProvider: "codex",
+      upstreamProvider: "openai",
+      bindings: [
+        {
+          sourceKind: "env",
+          targetKind: "env",
+          targetName: "OPENAI_API_KEY",
+          secretRef: "env:RAVI_TEST_EXPLAIN_KEY",
+          sourceHint: "RAVI_TEST_EXPLAIN_KEY",
+          sensitive: true,
+          remoteForward: false,
+        },
+      ],
+    });
+
+    const result = inspectRuntimeCredentialAvailability({
+      runtimeProvider: "codex",
+      upstreamProvider: "openai",
+      env: { RAVI_TEST_EXPLAIN_KEY: "sk-test_explain_secret" },
+    });
+
+    expect(result.selected?.id).toBe("rcred_explain_ready");
+    expect(result.attemptBinding?.attemptId).toBeUndefined();
+    expect(
+      getDb().prepare("SELECT COUNT(*) AS count FROM runtime_credential_attempts").get() as { count: number },
+    ).toEqual({ count: 0 });
   });
 
   it("stores credential session metadata and rejects unsafe resume across credential boundaries", () => {

@@ -4,6 +4,8 @@ import { getAgent } from "../router/config.js";
 import { expandHome } from "../router/resolver.js";
 import { findSessionByChatId, getOrCreateSession, getSessionByName, resolveSession } from "../router/sessions.js";
 import { getProjectSurfaceByWorkflowRunId, type ProjectTaskSurface } from "../projects/index.js";
+import { advanceWatermarkForCompletedCuratorTask } from "../memory/index.js";
+import { advanceSkillWatermarkForCompletedCuratorTask } from "../skills/skill-watermark-commit.js";
 import { logger } from "../utils/logger.js";
 import { loadConfig } from "../utils/config.js";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
@@ -2924,6 +2926,21 @@ export function updateTask(
   const documentedTask = result.wasNoop
     ? result.task
     : syncRequiredTaskDocumentAfterRuntimeEvent(result.task, profile, result.event);
+  // When a skill curador task completes, the runtime advances that session's
+  // incremental-read cursor to the delta it was dispatched with — regardless of
+  // whether the curador wrote anything (a "read and judged nothing" cycle still
+  // moves the cursor). Best-effort, never blocks completion; done-only, so a
+  // failed curador leaves the cursor put and the next cycle re-reads.
+  if (!result.wasNoop) {
+    try {
+      advanceSkillWatermarkForCompletedCuratorTask(result.task);
+    } catch (err) {
+      log.warn("Failed to advance skill curation cursor on task completion (best-effort)", {
+        taskId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
   syncWorkflowNodeRunForTask(taskId);
   return { ...result, task: documentedTask };
 }
@@ -3062,6 +3079,22 @@ export async function completeTask(
   const documentedTask = result.wasNoop
     ? result.task
     : syncRequiredTaskDocumentAfterRuntimeEvent(result.task, profile, result.event);
+  // R27/P1: when a memory curator task completes, the runtime advances the
+  // originator session's incremental-read watermark to the delta it was
+  // dispatched with — regardless of whether the curator saved anything. This
+  // is the authoritative advance (proposto=0 still moves the cursor);
+  // best-effort, never blocks task completion. Done-only: a failed curator
+  // leaves the watermark put so the next cycle re-reads (at-least-once safe).
+  if (!result.wasNoop) {
+    try {
+      advanceWatermarkForCompletedCuratorTask(result.task);
+    } catch (err) {
+      log.warn("Failed to advance curation watermark on task completion (best-effort)", {
+        taskId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
   syncWorkflowNodeRunForTask(taskId);
   const dependencyRelatedEvents = result.wasNoop
     ? []

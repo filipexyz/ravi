@@ -107,6 +107,13 @@ describe("runtime request context authority", () => {
 
   it("keeps actor and surface as audit-only branches in agent identity turns", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    dbUpdateAgent(agent.id, {
+      defaults: {
+        runtimePermissions: {
+          capabilities: ["execute:group:context_codex-bash-hook", "execute:group:sessions_info", "use:tool:Bash"],
+        },
+      },
+    });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
 
     const prompt = promptForContact("luis", "audit");
@@ -143,6 +150,9 @@ describe("runtime request context authority", () => {
 
   it("does not materialize role authority without a provider-owned runtime config", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    dbUpdateAgent(agent.id, {
+      defaults: { runtimePermissions: { capabilities: ["execute:group:sessions_info"] } },
+    });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
 
     const prompt = promptForContact("luis", "audit");
@@ -171,6 +181,9 @@ describe("runtime request context authority", () => {
 
   it("stores observation permission grants as turn capabilities for live agent-identity rechecks", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    dbUpdateAgent(agent.id, {
+      defaults: { runtimePermissions: { capabilities: ["execute:group:observer_report"] } },
+    });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
 
     const prompt = promptForContact("luis", "observe");
@@ -214,6 +227,11 @@ describe("runtime request context authority", () => {
 
   it("expands observation CLI shortcuts to both tool and command-gate capabilities", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    dbUpdateAgent(agent.id, {
+      defaults: {
+        runtimePermissions: { capabilities: ["use:tool:tasks_report", "execute:group:tasks_report"] },
+      },
+    });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
 
     const prompt = promptForContact("luis", "observe");
@@ -384,6 +402,9 @@ describe("runtime request context authority", () => {
 
   it("does not block an agent identity turn just because the surface has no capability policy", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    dbUpdateAgent(agent.id, {
+      defaults: { runtimePermissions: { capabilities: ["execute:group:sessions_info"] } },
+    });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
 
     const prompt = promptForContact("luis", "audit");
@@ -506,6 +527,11 @@ describe("runtime request context authority", () => {
 
   it("does not require admin-tagged contact authority for agent identity group turns", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    dbUpdateAgent(agent.id, {
+      defaults: {
+        runtimePermissions: { capabilities: ["execute:group:pages", "execute:group:sessions_trace"] },
+      },
+    });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
     const owner = createContact({
       phone: "5511988887777",

@@ -101,6 +101,39 @@ describe("channel outbound consumer", () => {
       }),
     );
   });
+
+  it("redelivers at least once after provider success when the JetStream ack is lost", async () => {
+    const deliveries: string[] = [];
+    const delivery: NativeTextDelivery = {
+      channelId: "slack",
+      supports: () => true,
+      deliverText: mock(async (request) => {
+        deliveries.push(request.emitId ?? "missing");
+        return {
+          provider: "slack",
+          messageId: `slack:${deliveries.length}`,
+        };
+      }),
+    };
+    const job = makeJob();
+
+    const first = await processChannelOutboundJob(job, {
+      deliveries: [delivery],
+      emitEvent: mock(async () => {}),
+      persistDelivery: false,
+    });
+    // The outer consumer would ACK JetStream here. Simulate a process crash
+    // before that ACK reaches the broker by processing the same job again.
+    const replayAfterCrash = await processChannelOutboundJob(job, {
+      deliveries: [delivery],
+      emitEvent: mock(async () => {}),
+      persistDelivery: false,
+    });
+
+    expect(first.disposition).toBe("ack");
+    expect(replayAfterCrash.disposition).toBe("ack");
+    expect(deliveries).toEqual(["emit_1", "emit_1"]);
+  });
 });
 
 function makeJob(): ChannelOutboundJob {

@@ -17,11 +17,13 @@ import {
   dbListEligibleDaemonRestartSessionSnapshots,
   dbMarkDaemonRestartResumeDelivered,
   dbRecordDaemonRestartSessionSnapshot,
+  dbUpdateAgent,
   dbUpsertDaemonRestartEpoch,
 } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { querySessionTrace } from "../session-trace/query.js";
 import { dbCompleteTask, dbCreateTask, dbDispatchTask } from "../tasks/task-db.js";
+import { configStore } from "../config-store.js";
 
 function createDispatcher(maxConcurrentSessions = 10, interactiveReservedSessions = 0) {
   return new RuntimeSessionDispatcher({
@@ -429,6 +431,243 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
 
     dispatcher.pendingStartSessions.add("queued");
     expect(dispatcher.canAcceptRuntimePrompt("queued")).toBe(true);
+  });
+
+  it("restarts an active session for a general prompt provider override", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-prompt-provider-");
+    try {
+      getOrCreateSession("agent:main:test:prompt-provider", "main", stateDir, { name: "prompt-provider" });
+      const dispatcher = createDispatcher(2);
+      dispatcher.streamingSessions.set(
+        "prompt-provider",
+        createActiveSession({
+          agentId: "main",
+          queryHandle: {
+            provider: "claude",
+            events: (async function* () {})(),
+            interrupt: async () => {},
+          },
+        }),
+      );
+      const starts: Parameters<typeof dispatcher.startStreamingSession>[2][] = [];
+      dispatcher.startStreamingSession = mock(async (_sessionName, _prompt, options) => {
+        starts.push(options);
+      });
+
+      await dispatcher.handlePromptImmediate("prompt-provider", {
+        prompt: "use codex for this turn",
+        _agentId: "main",
+        _runtimeProviderId: "codex",
+      });
+
+      expect(dispatcher.streamingSessions.has("prompt-provider")).toBe(false);
+      expect(starts).toHaveLength(1);
+      expect(starts[0]?.runtimeResolution).toMatchObject({
+        ok: true,
+        resolution: { runtimeProviderId: "codex" },
+      });
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("lets a prompt target policy outrank a prompt provider override in an active session", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-prompt-target-");
+    let restoreAgentDefaults: (() => void) | undefined;
+    try {
+      configStore.refresh();
+      const agent = configStore.getConfig().agents.main;
+      if (!agent) throw new Error("default test agent missing");
+      const previousDefaults = structuredClone(agent.defaults);
+      restoreAgentDefaults = () => {
+        agent.defaults = previousDefaults;
+        dbUpdateAgent(agent.id, { defaults: agent.defaults });
+      };
+      agent.defaults = {
+        ...(agent.defaults ?? {}),
+        runtimePermissions: {
+          profile: "full-access",
+          capabilities: [{ permission: "use", objectType: "runtime.target", objectId: "*" }],
+        },
+      };
+      dbUpdateAgent(agent.id, { defaults: agent.defaults });
+      getOrCreateSession("agent:main:test:prompt-target", "main", stateDir, { name: "prompt-target" });
+      const dispatcher = createDispatcher(2);
+      dispatcher.streamingSessions.set(
+        "prompt-target",
+        createActiveSession({
+          agentId: "main",
+          queryHandle: {
+            provider: "claude",
+            events: (async function* () {})(),
+            interrupt: async () => {},
+          },
+        }),
+      );
+      const starts: Parameters<typeof dispatcher.startStreamingSession>[2][] = [];
+      dispatcher.startStreamingSession = mock(async (_sessionName, _prompt, options) => {
+        starts.push(options);
+      });
+
+      await dispatcher.handlePromptImmediate("prompt-target", {
+        prompt: "target policy wins",
+        _agentId: "main",
+        _runtimeProviderId: "codex",
+        _runtimeTargetPolicy: {
+          id: "prompt-target-policy",
+          strategy: "ordered",
+          maxAttemptsPerTarget: 1,
+          targets: [{ id: "pi-target", runtimeProvider: "pi", model: "pi-model" }],
+        },
+      });
+
+      expect(dispatcher.streamingSessions.has("prompt-target")).toBe(false);
+      expect(starts).toHaveLength(1);
+      expect(starts[0]?.runtimeResolution).toMatchObject({
+        ok: true,
+        resolution: {
+          runtimeProviderId: "pi",
+          runtimeTarget: { id: "pi-target" },
+          runtimeTargetState: { attempts: [{ targetId: "pi-target" }] },
+        },
+      });
+    } finally {
+      restoreAgentDefaults?.();
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("queues the next logical turn when the active target process already matches", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-matching-target-");
+    let restoreAgentDefaults: (() => void) | undefined;
+    try {
+      configStore.refresh();
+      const agent = configStore.getConfig().agents.main;
+      if (!agent) throw new Error("default test agent missing");
+      const previousDefaults = structuredClone(agent.defaults);
+      restoreAgentDefaults = () => {
+        agent.defaults = previousDefaults;
+        dbUpdateAgent(agent.id, { defaults: agent.defaults });
+      };
+      agent.defaults = {
+        ...(agent.defaults ?? {}),
+        runtimePermissions: {
+          profile: "full-access",
+          capabilities: [{ permission: "use", objectType: "runtime.target", objectId: "*" }],
+        },
+      };
+      dbUpdateAgent(agent.id, { defaults: agent.defaults });
+      getOrCreateSession("agent:main:test:matching-target", "main", stateDir, { name: "matching-target" });
+      const policy = {
+        id: "matching-target-policy",
+        strategy: "ordered" as const,
+        maxAttemptsPerTarget: 1,
+        targets: [{ id: "pi-target", runtimeProvider: "pi" as const, model: "pi-model" }],
+      };
+      const dispatcher = createDispatcher(2);
+      const activeSession = createActiveSession({
+        agentId: "main",
+        turnActive: true,
+        currentModel: "pi-model",
+        currentEffort: "xhigh",
+        runtimeTargetPolicy: policy,
+        runtimeTarget: policy.targets[0],
+        queryHandle: {
+          provider: "pi",
+          events: (async function* () {})(),
+          interrupt: async () => {},
+        },
+      });
+      dispatcher.streamingSessions.set("matching-target", activeSession);
+      const starts: Parameters<typeof dispatcher.startStreamingSession>[2][] = [];
+      dispatcher.startStreamingSession = mock(async (_sessionName, _prompt, options) => {
+        starts.push(options);
+      });
+
+      await dispatcher.handlePromptImmediate("matching-target", {
+        prompt: "queue on the matching target",
+        _agentId: "main",
+        deliveryBarrier: "after_response",
+        _runtimeTargetPolicy: policy,
+      });
+
+      expect(dispatcher.streamingSessions.get("matching-target")).toBe(activeSession);
+      expect(starts).toHaveLength(0);
+      expect(activeSession.pendingMessages).toHaveLength(1);
+      expect(activeSession.pendingMessages[0]?.launchPrompt).toMatchObject({
+        _runtimeProviderId: "pi",
+        _runtimeModel: "pi-model",
+        _runtimeTargetState: { attempts: [{ targetId: "pi-target" }] },
+      });
+    } finally {
+      restoreAgentDefaults?.();
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("applies an agent default target policy before reusing an active provider", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-default-target-");
+    let restoreAgentDefaults: (() => void) | undefined;
+    try {
+      configStore.refresh();
+      const agent = configStore.getConfig().agents.main;
+      if (!agent) throw new Error("default test agent missing");
+      const previousDefaults = structuredClone(agent.defaults);
+      restoreAgentDefaults = () => {
+        agent.defaults = previousDefaults;
+        dbUpdateAgent(agent.id, { defaults: agent.defaults });
+      };
+      agent.defaults = {
+        ...(agent.defaults ?? {}),
+        runtimeTargetPolicy: {
+          id: "agent-default-target-policy",
+          strategy: "ordered",
+          maxAttemptsPerTarget: 1,
+          targets: [{ id: "pi-default", runtimeProvider: "pi", model: "pi-default-model" }],
+        },
+        runtimePermissions: {
+          profile: "full-access",
+          capabilities: [{ permission: "use", objectType: "runtime.target", objectId: "*" }],
+        },
+      };
+      dbUpdateAgent(agent.id, { defaults: agent.defaults });
+      getOrCreateSession("agent:main:test:default-target", "main", stateDir, { name: "default-target" });
+      const dispatcher = createDispatcher(2);
+      dispatcher.streamingSessions.set(
+        "default-target",
+        createActiveSession({
+          agentId: "main",
+          queryHandle: {
+            provider: "claude",
+            events: (async function* () {})(),
+            interrupt: async () => {},
+          },
+        }),
+      );
+      const starts: Parameters<typeof dispatcher.startStreamingSession>[2][] = [];
+      dispatcher.startStreamingSession = mock(async (_sessionName, _prompt, options) => {
+        starts.push(options);
+      });
+
+      await dispatcher.handlePromptImmediate("default-target", {
+        prompt: "use configured failover policy",
+        _agentId: "main",
+      });
+
+      expect(dispatcher.streamingSessions.has("default-target")).toBe(false);
+      expect(starts).toHaveLength(1);
+      expect(starts[0]?.runtimeResolution).toMatchObject({
+        ok: true,
+        resolution: {
+          runtimeProviderId: "pi",
+          runtimeTarget: { id: "pi-default" },
+          runtimeTargetPolicySource: "agent_default",
+        },
+      });
+    } finally {
+      restoreAgentDefaults?.();
+      await cleanupIsolatedRaviState(stateDir);
+    }
   });
 
   it("records daemon restart snapshots for non-idle runtime sessions with pending work", async () => {

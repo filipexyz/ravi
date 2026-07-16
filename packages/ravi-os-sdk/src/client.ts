@@ -3,7 +3,7 @@
 // Drift is detected by `ravi sdk client check` (CI).
 
 import type { Transport } from "./transport/types.js";
-import type { AdaptersListReturn, AdaptersShowReturn, AgentsCreateReturn, AgentsDebounceReturn, AgentsDebugReturn, AgentsDeleteReturn, AgentsListReturn, AgentsPermissionsReturn, AgentsResetReturn, AgentsSessionReturn, AgentsSetReturn, AgentsShowReturn, AgentsSpecModeReturn, AgentsSyncInstructionsReturn, AppsCheckReturn, AppsDeleteReturn, AppsGuideReturn, AppsImportCliReturn, AppsListReturn, AppsPromptsReturn, AppsRunReturn, AppsScaffoldReturn, AppsShowReturn, ArtifactsArchiveReturn, ArtifactsAttachReturn, ArtifactsBlobReturn, ArtifactsCreateReturn, ArtifactsEventReturn, ArtifactsEventsReturn, ArtifactsListReturn, ArtifactsPublishReturn, ArtifactsReleaseActivateReturn, ArtifactsRestoreReturn, ArtifactsShowReturn, ArtifactsSnapshotReturn, ArtifactsUpdateReturn, ArtifactsVersionReturn, ArtifactsVersionsReturn, AudioBlobReturn, AudioGenerateReturn, AudioPendingReturn, AudioTtsReturn, AudioVoicesReturn, BridgesCreateReturn, BridgesListReturn, BridgesRevokeReturn, CalendarsAvailabilityReturn, CalendarsCreateReturn, CalendarsDisableReturn, CalendarsEventsCancelReturn, CalendarsEventsCreateReturn, CalendarsEventsListReturn, CalendarsEventsReadReturn, CalendarsEventsRespondReturn, CalendarsEventsUpdateReturn, CalendarsListReturn, CalendarsShareReturn, CalendarsShowReturn, ChannelsCreateReturn, ChannelsListReturn, ChannelsProbeReturn, ChannelsRestartReturn, ChannelsSetReturn, ChannelsShowReturn, ChannelsStartReturn, ChannelsStatusReturn, ChannelsStopReturn, ChatsBackfillProviderTimestampsReturn, ChatsListReturn, ChatsListsAddReturn, ChatsListsCreateReturn, ChatsListsDeltaReturn, ChatsListsListReturn, ChatsListsMarkReadReturn, ChatsListsMembersReturn, ChatsListsRecomputeReturn, ChatsListsRemoveReturn, ChatsReadReturn, CloudProjectsCreateReturn, CloudProjectsListReturn, CloudScopeClearReturn, CloudScopeExplainReturn, CloudScopeSetReturn, CloudScopeShowReturn, CommandsListReturn, CommandsRunReturn, CommandsShowReturn, CommandsValidateReturn, ConnectorsListReturn, ConnectorsRevokeReturn, ConnectorsShowReturn, ContactsActivityReturn, ContactsAddReturn, ContactsAllowReturn, ContactsApproveReturn, ContactsBackfillReturn, ContactsBlockReturn, ContactsCheckReturn, ContactsDuplicatesReturn, ContactsFindReturn, ContactsGetReturn, ContactsInfoReturn, ContactsLinkReturn, ContactsListReturn, ContactsMergeReturn, ContactsMessagesReturn, ContactsMetadataListReturn, ContactsMetadataRemoveReturn, ContactsMetadataSetReturn, ContactsNoteReturn, ContactsPendingReturn, ContactsProfileReturn, ContactsRemoveReturn, ContactsSessionsReturn, ContactsSetReturn, ContactsTagReturn, ContactsTimelineReturn, ContactsUnlinkReturn, ContactsUntagReturn, ContextAuthorizeReturn, ContextCapabilitiesReturn, ContextCheckReturn, ContextCleanupAgentRuntimeReturn, ContextCodexBashHookReturn, ContextCredentialsAddReturn, ContextCredentialsListReturn, ContextCredentialsRemoveReturn, ContextCredentialsSetDefaultReturn, ContextInfoReturn, ContextIssueReturn, ContextLineageReturn, ContextListReturn, ContextPruneReturn, ContextRevokeReturn, ContextVisibilityReturn, ContextWhoamiReturn, CostsAgentReturn, CostsAgentsReturn, CostsPricingReturn, CostsSessionReturn, CostsSummaryReturn, CostsTopSessionsReturn, CredentialsConnectionsDisableReturn, CredentialsConnectionsEnableReturn, CredentialsConnectionsListReturn, CredentialsConnectionsShowReturn, CredentialsPoliciesExplainReturn, CrmAccountCreateReturn, CrmAccountLinkContactReturn, CrmAccountReturn, CrmAccountShowReturn, CrmBoardReturn, CrmContactReturn, CrmContactSetReturn, CrmContactShowReturn, CrmContactsReturn, CrmFactConfirmReturn, CrmFactListReturn, CrmFactProposeReturn, CrmFactRejectReturn, CrmNextReturn, CrmOpportunityContactsReturn, CrmOpportunityCreateReturn, CrmOpportunityLinkContactReturn, CrmOpportunityMoveReturn, CrmOpportunityReturn, CrmOpportunityShowReturn, CrmPipelineCreateReturn, CrmPipelineListReturn, CrmPipelinePolicyHitlCheckReturn, CrmPipelinePolicySendWindowCheckReturn, CrmPipelineReviewReturn, CrmPipelineSetReturn, CrmPipelineShowReturn, CrmPipelineStageAddReturn, CrmPipelineStageArchiveReturn, CrmPipelineStageListReturn, CrmPipelineStageSetReturn, CrmPipelineStageShowReturn, CrmPipelineStageTopicAddReturn, CrmPipelineStageTopicArchiveReturn, CrmPipelineStageTopicSetReturn, CrmPipelineStageTopicsReturn, CrmPipelineValidateReturn, CrmTaskCancelReturn, CrmTaskCreateReturn, CrmTaskDoneReturn, CrmTaskListReturn, CrmTaskShowReturn, CrmTaskSnoozeReturn, CronAddReturn, CronDisableReturn, CronEnableReturn, CronListReturn, CronRmReturn, CronRunReturn, CronSetReturn, CronShowReturn, DaemonEnvReturn, DaemonInitAdminKeyReturn, DaemonInstallReturn, DaemonLogsReturn, DaemonRestartReturn, DaemonStartReturn, DaemonStatusReturn, DaemonStopReturn, DaemonUninstallReturn, DevinAuthCheckReturn, DevinSessionsArchiveReturn, DevinSessionsAttachmentsReturn, DevinSessionsCreateReturn, DevinSessionsInsightsReturn, DevinSessionsListReturn, DevinSessionsMessagesReturn, DevinSessionsSendReturn, DevinSessionsShowReturn, DevinSessionsSyncReturn, DevinSessionsTerminateReturn, EvalRunReturn, FeedbackSendReturn, GmailListReturn, GmailReadReturn, GscCountriesReturn, GscDateSeriesReturn, GscDevicesReturn, GscFallingReturn, GscInspectReturn, GscQueryReturn, GscRisingReturn, GscSiteAddReturn, GscSiteDeleteReturn, GscSiteGetReturn, GscSitemapDeleteReturn, GscSitemapGetReturn, GscSitemapSubmitReturn, GscSitemapsReturn, GscSitesReturn, GscTopPagesReturn, GscTopQueriesReturn, GscTrendsReturn, GscVerificationTokenReturn, GscVerifySiteReturn, HeartbeatDisableReturn, HeartbeatEnableReturn, HeartbeatSetReturn, HeartbeatShowReturn, HeartbeatStatusReturn, HeartbeatTriggerReturn, HooksCreateReturn, HooksDisableReturn, HooksEnableReturn, HooksListReturn, HooksRmReturn, HooksShowReturn, HooksTestReturn, ImageAtlasSplitReturn, ImageGenerateReturn, InboxArchiveReturn, InboxDisableReturn, InboxDoneReturn, InboxEnableReturn, InboxItemsReturn, InboxListReturn, InboxPollReturn, InboxReadReturn, InboxReplayReturn, InboxSnoozeReturn, InboxSourcesReturn, InboxStatusReturn, InsightsCreateReturn, InsightsListReturn, InsightsSearchReturn, InsightsShowReturn, InstancesCreateReturn, InstancesDeleteReturn, InstancesDeletedReturn, InstancesDisableReturn, InstancesDisconnectReturn, InstancesEnableReturn, InstancesGetReturn, InstancesListReturn, InstancesPendingApproveReturn, InstancesPendingListReturn, InstancesPendingRejectReturn, InstancesRestoreReturn, InstancesRoutesAddReturn, InstancesRoutesDeletedReturn, InstancesRoutesListReturn, InstancesRoutesRemoveReturn, InstancesRoutesRestoreReturn, InstancesRoutesSetReturn, InstancesRoutesShowReturn, InstancesSetReturn, InstancesShowReturn, InstancesStatusReturn, InstancesTargetReturn, MailAccountsCreateReturn, MailAccountsListReturn, MailAccountsSyncReturn, MailDomainsCreateReturn, MailDomainsListReturn, MailMailboxesCreateReturn, MailMailboxesDisableReturn, MailMailboxesListReturn, MailMailboxesShowReturn, MailMessagesImportReturn, MailMessagesListReturn, MailMessagesReadReturn, MailMessagesSearchReturn, MailOutboxInspectReturn, MailOutboxListReturn, MailOutboxRetryReturn, MailOutboxStatusReturn, MailProvidersListReturn, MailProvidersRaviMailMailboxesCreateReturn, MailProvidersRaviMailMailboxesDisableReturn, MailProvidersRaviMailMailboxesListReturn, MailProvidersRaviMailMailboxesShowReturn, MailProvidersRaviMailMessagesListReturn, MailProvidersRaviMailMessagesReadReturn, MailProvidersRaviMailMessagesShowReturn, MailProvidersRaviMailSendReturn, MailReplyReturn, MailSendReturn, MailThreadsReadReturn, MediaSendReturn, MeetingsFinalizeReturn, MeetingsProfilesInitReturn, MeetingsProfilesListReturn, MeetingsProfilesShowReturn, MeetingsProfilesValidateReturn, MeetingsVoiceRuntimesReturn, MetricsDatesReturn, MetricsRollupReturn, MetricsShowReturn, ObserversListReturn, ObserversProfilesInitReturn, ObserversProfilesListReturn, ObserversProfilesPreviewReturn, ObserversProfilesShowReturn, ObserversProfilesValidateReturn, ObserversRefreshReturn, ObserversRulesDisableReturn, ObserversRulesEnableReturn, ObserversRulesExplainReturn, ObserversRulesListReturn, ObserversRulesRmReturn, ObserversRulesSetReturn, ObserversRulesShowReturn, ObserversRulesValidateReturn, ObserversShowReturn, PagesCreateReturn, PagesDomainsReturn, PagesListReturn, PagesPublishReturn, PagesPublishedReturn, PagesUpdateReturn, PagesVisibilityReturn, PermissionsAllowReturn, PermissionsCheckReturn, PermissionsMaterializeReturn, PermissionsResolveReturn, PermissionsStatusReturn, ProjectsCreateReturn, ProjectsFixturesSeedReturn, ProjectsInitReturn, ProjectsLinkReturn, ProjectsListReturn, ProjectsNextReturn, ProjectsResourcesAddReturn, ProjectsResourcesImportReturn, ProjectsResourcesListReturn, ProjectsResourcesShowReturn, ProjectsShowReturn, ProjectsStatusReturn, ProjectsTasksAttachReturn, ProjectsTasksCreateReturn, ProjectsTasksDispatchReturn, ProjectsUpdateReturn, ProjectsWorkflowsAttachReturn, ProjectsWorkflowsStartReturn, ProxCallsCancelReturn, ProxCallsEventsReturn, ProxCallsProfilesConfigureReturn, ProxCallsProfilesListReturn, ProxCallsProfilesShowReturn, ProxCallsRequestReturn, ProxCallsRulesReturn, ProxCallsShowReturn, ProxCallsToolsBindReturn, ProxCallsToolsConfigureReturn, ProxCallsToolsCreateReturn, ProxCallsToolsListReturn, ProxCallsToolsRunReturn, ProxCallsToolsRunsReturn, ProxCallsToolsShowReturn, ProxCallsToolsUnbindReturn, ProxCallsTranscriptReturn, ProxCallsVoiceAgentsBindToolReturn, ProxCallsVoiceAgentsConfigureReturn, ProxCallsVoiceAgentsCreateReturn, ProxCallsVoiceAgentsListReturn, ProxCallsVoiceAgentsShowReturn, ProxCallsVoiceAgentsSyncReturn, ProxCallsVoiceAgentsUnbindToolReturn, ReactSendReturn, RoutesExplainReturn, RoutesListReturn, RoutesShowReturn, RulesImportReturn, RulesSourcesReturn, RuntimeCredentialsAddReturn, RuntimeCredentialsClassifyReturn, RuntimeCredentialsDisableReturn, RuntimeCredentialsEnableReturn, RuntimeCredentialsImportReturn, RuntimeCredentialsListReturn, RuntimeCredentialsRefreshReturn, RuntimeCredentialsResetHealthReturn, RuntimeCredentialsSelectReturn, RuntimeCredentialsStatusReturn, RuntimePresetsCreateReturn, RuntimePresetsDeleteReturn, RuntimePresetsDisableReturn, RuntimePresetsEnableReturn, RuntimePresetsImpactReturn, RuntimePresetsListReturn, RuntimePresetsSetReturn, RuntimePresetsShowReturn, SdkClientCheckReturn, SdkClientGenerateReturn, SdkOpenapiCheckReturn, SdkOpenapiEmitReturn, SdkSwiftCheckReturn, SdkSwiftGenerateReturn, SelfChatReturn, SelfContextReturn, SelfExplainReturn, SelfKnowledgeReturn, SelfPermissionsReturn, SelfRecentReturn, SelfRouteReturn, SelfWhoamiReturn, SessionsActionsReturn, SessionsAnswerReturn, SessionsAskReturn, SessionsAttachReturn, SessionsDeleteMessageReturn, SessionsDeleteReturn, SessionsDetachReturn, SessionsEditMessageReturn, SessionsExecuteReturn, SessionsExtendReturn, SessionsFollowupsAddReturn, SessionsFollowupsInspectReturn, SessionsFollowupsListReturn, SessionsFollowupsPauseReturn, SessionsFollowupsResumeReturn, SessionsFollowupsRetryReturn, SessionsFollowupsRunReturn, SessionsFollowupsRunsReturn, SessionsFollowupsSnoozeReturn, SessionsFollowupsUpdateReturn, SessionsGoalReturn, SessionsInfoReturn, SessionsInformReturn, SessionsKeepReturn, SessionsListReturn, SessionsMuteReturn, SessionsPruneReturn, SessionsReadReturn, SessionsRenameReturn, SessionsResetReturn, SessionsRuntimeFollowUpReturn, SessionsRuntimeForkReturn, SessionsRuntimeInterruptReturn, SessionsRuntimeListReturn, SessionsRuntimeReadReturn, SessionsRuntimeRollbackReturn, SessionsRuntimeSteerReturn, SessionsSendReturn, SessionsSetDisplayReturn, SessionsSetEffortReturn, SessionsSetModelReturn, SessionsSetProviderReturn, SessionsSetThinkingReturn, SessionsSetTtlReturn, SessionsSubscriptionsReturn, SessionsTraceReturn, SessionsUnmuteReturn, SessionsVisibilityReturn, SettingsDeleteReturn, SettingsGetReturn, SettingsListReturn, SettingsSetReturn, SkillGatesDisableReturn, SkillGatesEnableReturn, SkillGatesListReturn, SkillGatesResetReturn, SkillGatesRmReturn, SkillGatesSetReturn, SkillGatesShowReturn, SkillsGrantBatchReturn, SkillsGrantReturn, SkillsInspectReturn, SkillsInstallReturn, SkillsListReturn, SkillsRevokeBatchReturn, SkillsRevokeReturn, SkillsShowReturn, SkillsSyncReturn, SkillsWhoReturn, SlackBlocksSendReturn, SlackBlocksShowcaseReturn, SlackBlocksUpdateReturn, SlackBlocksValidateReturn, SlackCanvasAccessDeleteReturn, SlackCanvasAccessSetReturn, SlackCanvasArtifactPublishReturn, SlackCanvasArtifactStatusReturn, SlackCanvasChannelCreateReturn, SlackCanvasChannelShowcaseReturn, SlackCanvasCreateReturn, SlackCanvasDeleteReturn, SlackCanvasEditReturn, SlackCanvasSectionsLookupReturn, SlackCanvasShowcaseReturn, SlackChannelsCreateReturn, SlackChannelsHistoryReturn, SlackChannelsInfoReturn, SlackChannelsInviteReturn, SlackChannelsListReturn, SlackChannelsRenameReturn, SlackFilesListReturn, SlackInteractionsRespondReturn, SlackMembersListReturn, SlackMessagesInspectReturn, SlackMessagesReplayReturn, SlackMessagesSendReturn, SlackModalsOpenReturn, SlackModalsPushReturn, SlackModalsUpdateReturn, SlackPermissionsListReturn, SlackTopologyReturn, SlackWorkObjectsPresentDetailsReturn, SlackWorkObjectsSendReturn, SlackWorkObjectsUnfurlReturn, SlackWorkObjectsValidateReturn, SpecsGetReturn, SpecsListReturn, SpecsNewReturn, SpecsSyncReturn, StickersAddReturn, StickersListReturn, StickersRemoveReturn, StickersSendReturn, StickersShowReturn, SyncInspectReturn, SyncPullReturn, SyncPushReturn, SyncRetryReturn, SyncStatusReturn, TagRulesEvaluateReturn, TagRulesExplainReturn, TagRulesListReturn, TagRulesShowReturn, TagRulesTickReturn, TagRulesValidateReturn, TagsAttachReturn, TagsCreateReturn, TagsDetachReturn, TagsListReturn, TagsSearchReturn, TagsSetReturn, TagsShowReturn, TasksArchiveReturn, TasksAutomationsAddReturn, TasksAutomationsDisableReturn, TasksAutomationsEnableReturn, TasksAutomationsListReturn, TasksAutomationsRmReturn, TasksAutomationsShowReturn, TasksBlockReturn, TasksCommentReturn, TasksCreateReturn, TasksDepsAddReturn, TasksDepsLsReturn, TasksDepsRmReturn, TasksDispatchReturn, TasksDoneReturn, TasksFailReturn, TasksListReturn, TasksProfilesInitReturn, TasksProfilesListReturn, TasksProfilesPreviewReturn, TasksProfilesShowReturn, TasksProfilesValidateReturn, TasksReportReturn, TasksShowReturn, TasksUnarchiveReturn, ThreadsBriefReturn, ThreadsCloseReturn, ThreadsCommentReturn, ThreadsCreateReturn, ThreadsEntriesReturn, ThreadsLinkReturn, ThreadsListReturn, ThreadsNoteReturn, ThreadsShowReturn, ToolsInvokeReturn, ToolsListReturn, ToolsManifestReturn, ToolsSchemaReturn, ToolsSearchReturn, ToolsShowReturn, ToolsTestReturn, TranscribeFileReturn, TriggersAddReturn, TriggersDisableReturn, TriggersEnableReturn, TriggersListReturn, TriggersRmReturn, TriggersSetReturn, TriggersShowReturn, TriggersTestReturn, TriggersTopicsReturn, VideoAnalyzeReturn, WatchConnectorsReturn, WatchCreateReturn, WatchDisableReturn, WatchEnableReturn, WatchEventsReturn, WatchListReturn, WatchRmReturn, WatchShowReturn, WatchTriggerReturn, WhatsappDmAckReturn, WhatsappDmReadReturn, WhatsappDmSendReturn, WhatsappGroupAddReturn, WhatsappGroupCreateReturn, WhatsappGroupDemoteReturn, WhatsappGroupDescriptionReturn, WhatsappGroupInfoReturn, WhatsappGroupInviteReturn, WhatsappGroupJoinReturn, WhatsappGroupLeaveReturn, WhatsappGroupListReturn, WhatsappGroupPromoteReturn, WhatsappGroupRemoveReturn, WhatsappGroupRenameReturn, WhatsappGroupRevokeInviteReturn, WhatsappGroupSendReturn, WhatsappGroupSettingsReturn, WorkObjectsActionReturn, WorkObjectsResolveReturn, WorkObjectsSuggestReturn, WorkObjectsUpdateReturn, WorkflowsRunsArchiveNodeReturn, WorkflowsRunsCancelReturn, WorkflowsRunsListReturn, WorkflowsRunsReleaseReturn, WorkflowsRunsShowReturn, WorkflowsRunsSkipReturn, WorkflowsRunsStartReturn, WorkflowsRunsTaskAttachReturn, WorkflowsRunsTaskCreateReturn, WorkflowsSpecsCreateReturn, WorkflowsSpecsListReturn, WorkflowsSpecsShowReturn, YtAnalyticsCountriesReturn, YtAnalyticsDemographicsReturn, YtAnalyticsDevicesReturn, YtAnalyticsOverviewReturn, YtAnalyticsSeriesReturn, YtAnalyticsTopReturn, YtAnalyticsTrafficReturn, YtCaptionDownloadReturn, YtCaptionsReturn, YtCommentsReturn, YtHealthReturn, YtInfoReturn, YtPlaylistAddReturn, YtPlaylistCreateReturn, YtPlaylistDeleteReturn, YtPlaylistRemoveReturn, YtPlaylistReturn, YtPlaylistsReturn, YtReplyReturn, YtSearchReturn, YtStatsReturn, YtSubscriptionsReturn, YtUnansweredReturn, YtVideoCategoriesReturn, YtVideoDeleteReturn, YtVideoReturn, YtVideoUpdateReturn, YtVideosReturn } from "./types.js";
+import type { AdaptersListReturn, AdaptersShowReturn, AgentsCreateReturn, AgentsDebounceReturn, AgentsDebugReturn, AgentsDeleteReturn, AgentsListReturn, AgentsPermissionsReturn, AgentsResetReturn, AgentsSessionReturn, AgentsSetReturn, AgentsShowReturn, AgentsSpecModeReturn, AgentsSyncInstructionsReturn, AppsCheckReturn, AppsDeleteReturn, AppsGuideReturn, AppsImportCliReturn, AppsListReturn, AppsPromptsReturn, AppsRunReturn, AppsScaffoldReturn, AppsShowReturn, ArtifactsArchiveReturn, ArtifactsAttachReturn, ArtifactsBlobReturn, ArtifactsCreateReturn, ArtifactsEventReturn, ArtifactsEventsReturn, ArtifactsListReturn, ArtifactsPublishReturn, ArtifactsReleaseActivateReturn, ArtifactsRestoreReturn, ArtifactsShowReturn, ArtifactsSnapshotReturn, ArtifactsUpdateReturn, ArtifactsVersionReturn, ArtifactsVersionsReturn, AudioBlobReturn, AudioGenerateReturn, AudioPendingReturn, AudioTtsReturn, AudioVoicesReturn, BridgesCreateReturn, BridgesListReturn, BridgesRevokeReturn, CalendarsAvailabilityReturn, CalendarsCreateReturn, CalendarsDisableReturn, CalendarsEventsCancelReturn, CalendarsEventsCreateReturn, CalendarsEventsListReturn, CalendarsEventsReadReturn, CalendarsEventsRespondReturn, CalendarsEventsUpdateReturn, CalendarsListReturn, CalendarsShareReturn, CalendarsShowReturn, ChannelsCreateReturn, ChannelsListReturn, ChannelsProbeReturn, ChannelsRestartReturn, ChannelsSetReturn, ChannelsShowReturn, ChannelsStartReturn, ChannelsStatusReturn, ChannelsStopReturn, ChatsBackfillProviderTimestampsReturn, ChatsListReturn, ChatsListsAddReturn, ChatsListsCreateReturn, ChatsListsDeltaReturn, ChatsListsListReturn, ChatsListsMarkReadReturn, ChatsListsMembersReturn, ChatsListsPreviewReturn, ChatsListsRecomputeReturn, ChatsListsRemoveReturn, ChatsListsShowReturn, ChatsReadReturn, CloudProjectsCreateReturn, CloudProjectsListReturn, CloudScopeClearReturn, CloudScopeExplainReturn, CloudScopeSetReturn, CloudScopeShowReturn, CommandsListReturn, CommandsRunReturn, CommandsShowReturn, CommandsValidateReturn, ConnectorsListReturn, ConnectorsRevokeReturn, ConnectorsShowReturn, ContactsActivityReturn, ContactsAddReturn, ContactsAllowReturn, ContactsApproveReturn, ContactsBackfillReturn, ContactsBlockReturn, ContactsCheckReturn, ContactsDuplicatesReturn, ContactsFindReturn, ContactsGetReturn, ContactsInfoReturn, ContactsLinkReturn, ContactsListReturn, ContactsMergeReturn, ContactsMessagesReturn, ContactsMetadataListReturn, ContactsMetadataRemoveReturn, ContactsMetadataSetReturn, ContactsNoteReturn, ContactsPendingReturn, ContactsProfileReturn, ContactsRemoveReturn, ContactsSessionsReturn, ContactsSetReturn, ContactsTagReturn, ContactsTimelineReturn, ContactsUnlinkReturn, ContactsUntagReturn, ContextAuthorizeReturn, ContextCapabilitiesReturn, ContextCheckReturn, ContextCleanupAgentRuntimeReturn, ContextCodexBashHookReturn, ContextCredentialsAddReturn, ContextCredentialsListReturn, ContextCredentialsRemoveReturn, ContextCredentialsSetDefaultReturn, ContextInfoReturn, ContextIssueReturn, ContextLineageReturn, ContextListReturn, ContextPruneReturn, ContextRevokeReturn, ContextVisibilityReturn, ContextWhoamiReturn, CostsAgentReturn, CostsAgentsReturn, CostsPricingReturn, CostsSessionReturn, CostsSummaryReturn, CostsTopSessionsReturn, CredentialsConnectionsDisableReturn, CredentialsConnectionsEnableReturn, CredentialsConnectionsListReturn, CredentialsConnectionsShowReturn, CredentialsPoliciesExplainReturn, CrmAccountCreateReturn, CrmAccountLinkContactReturn, CrmAccountReturn, CrmAccountShowReturn, CrmBoardReturn, CrmContactReturn, CrmContactSetReturn, CrmContactShowReturn, CrmContactsReturn, CrmFactConfirmReturn, CrmFactListReturn, CrmFactProposeReturn, CrmFactRejectReturn, CrmNextReturn, CrmOpportunityContactsReturn, CrmOpportunityCreateReturn, CrmOpportunityLinkContactReturn, CrmOpportunityMoveReturn, CrmOpportunityReturn, CrmOpportunityShowReturn, CrmPipelineCreateReturn, CrmPipelineListReturn, CrmPipelinePolicyHitlCheckReturn, CrmPipelinePolicySendWindowCheckReturn, CrmPipelineReviewReturn, CrmPipelineSetReturn, CrmPipelineShowReturn, CrmPipelineStageAddReturn, CrmPipelineStageArchiveReturn, CrmPipelineStageListReturn, CrmPipelineStageSetReturn, CrmPipelineStageShowReturn, CrmPipelineStageTopicAddReturn, CrmPipelineStageTopicArchiveReturn, CrmPipelineStageTopicSetReturn, CrmPipelineStageTopicsReturn, CrmPipelineValidateReturn, CrmTaskCancelReturn, CrmTaskCreateReturn, CrmTaskDoneReturn, CrmTaskListReturn, CrmTaskShowReturn, CrmTaskSnoozeReturn, CronAddReturn, CronDisableReturn, CronEnableReturn, CronListReturn, CronRmReturn, CronRunReturn, CronSetReturn, CronShowReturn, DaemonEnvReturn, DaemonInitAdminKeyReturn, DaemonInstallReturn, DaemonLogsReturn, DaemonRestartReturn, DaemonStartReturn, DaemonStatusReturn, DaemonStopReturn, DaemonUninstallReturn, DevinAuthCheckReturn, DevinSessionsArchiveReturn, DevinSessionsAttachmentsReturn, DevinSessionsCreateReturn, DevinSessionsInsightsReturn, DevinSessionsListReturn, DevinSessionsMessagesReturn, DevinSessionsSendReturn, DevinSessionsShowReturn, DevinSessionsSyncReturn, DevinSessionsTerminateReturn, EvalRunReturn, FeedbackSendReturn, GmailListReturn, GmailReadReturn, HeartbeatDisableReturn, HeartbeatEnableReturn, HeartbeatSetReturn, HeartbeatShowReturn, HeartbeatStatusReturn, HeartbeatTriggerReturn, HooksCreateReturn, HooksDisableReturn, HooksEnableReturn, HooksListReturn, HooksRmReturn, HooksShowReturn, HooksTestReturn, ImageAtlasSplitReturn, ImageGenerateReturn, InboxArchiveReturn, InboxDisableReturn, InboxDoneReturn, InboxEnableReturn, InboxItemsReturn, InboxListReturn, InboxPollReturn, InboxReadReturn, InboxReplayReturn, InboxSnoozeReturn, InboxSourcesReturn, InboxStatusReturn, InsightsCreateReturn, InsightsListReturn, InsightsSearchReturn, InsightsShowReturn, InstancesCreateReturn, InstancesDeleteReturn, InstancesDeletedReturn, InstancesDisableReturn, InstancesDisconnectReturn, InstancesEnableReturn, InstancesGetReturn, InstancesListReturn, InstancesPendingApproveReturn, InstancesPendingListReturn, InstancesPendingRejectReturn, InstancesRestoreReturn, InstancesRoutesAddReturn, InstancesRoutesDeletedReturn, InstancesRoutesListReturn, InstancesRoutesRemoveReturn, InstancesRoutesRestoreReturn, InstancesRoutesSetReturn, InstancesRoutesShowReturn, InstancesSetReturn, InstancesShowReturn, InstancesStatusReturn, InstancesTargetReturn, MailAccountsCreateReturn, MailAccountsListReturn, MailAccountsSyncReturn, MailDomainsCreateReturn, MailDomainsListReturn, MailMailboxesCreateReturn, MailMailboxesDisableReturn, MailMailboxesListReturn, MailMailboxesShowReturn, MailMessagesImportReturn, MailMessagesListReturn, MailMessagesReadReturn, MailMessagesSearchReturn, MailOutboxInspectReturn, MailOutboxListReturn, MailOutboxRetryReturn, MailOutboxStatusReturn, MailProvidersListReturn, MailProvidersRaviMailMailboxesCreateReturn, MailProvidersRaviMailMailboxesDisableReturn, MailProvidersRaviMailMailboxesListReturn, MailProvidersRaviMailMailboxesShowReturn, MailProvidersRaviMailMessagesListReturn, MailProvidersRaviMailMessagesReadReturn, MailProvidersRaviMailMessagesShowReturn, MailProvidersRaviMailSendReturn, MailReplyReturn, MailSendReturn, MailThreadsReadReturn, MediaSendReturn, MeetingsFinalizeReturn, MeetingsProfilesInitReturn, MeetingsProfilesListReturn, MeetingsProfilesShowReturn, MeetingsProfilesValidateReturn, MeetingsVoiceRuntimesReturn, MemoryCurateReturn, MemoryEnrollReturn, MemoryGuardReturn, MemoryListReturn, MemoryShowReturn, MetricsDatesReturn, MetricsRollupReturn, MetricsShowReturn, ObserversListReturn, ObserversProfilesInitReturn, ObserversProfilesListReturn, ObserversProfilesPreviewReturn, ObserversProfilesShowReturn, ObserversProfilesValidateReturn, ObserversRefreshReturn, ObserversRulesDisableReturn, ObserversRulesEnableReturn, ObserversRulesExplainReturn, ObserversRulesListReturn, ObserversRulesRmReturn, ObserversRulesSetReturn, ObserversRulesShowReturn, ObserversRulesValidateReturn, ObserversShowReturn, PagesCreateReturn, PagesDomainsReturn, PagesListReturn, PagesPublishReturn, PagesPublishedReturn, PagesUpdateReturn, PagesVisibilityReturn, PermissionsAllowReturn, PermissionsCheckReturn, PermissionsMaterializeReturn, PermissionsResolveReturn, PermissionsStatusReturn, ProjectsCreateReturn, ProjectsFixturesSeedReturn, ProjectsInitReturn, ProjectsLinkReturn, ProjectsListReturn, ProjectsNextReturn, ProjectsResourcesAddReturn, ProjectsResourcesImportReturn, ProjectsResourcesListReturn, ProjectsResourcesShowReturn, ProjectsShowReturn, ProjectsStatusReturn, ProjectsTasksAttachReturn, ProjectsTasksCreateReturn, ProjectsTasksDispatchReturn, ProjectsUpdateReturn, ProjectsWorkflowsAttachReturn, ProjectsWorkflowsStartReturn, ProxCallsCancelReturn, ProxCallsEventsReturn, ProxCallsProfilesConfigureReturn, ProxCallsProfilesListReturn, ProxCallsProfilesShowReturn, ProxCallsRequestReturn, ProxCallsRulesReturn, ProxCallsShowReturn, ProxCallsToolsBindReturn, ProxCallsToolsConfigureReturn, ProxCallsToolsCreateReturn, ProxCallsToolsListReturn, ProxCallsToolsRunReturn, ProxCallsToolsRunsReturn, ProxCallsToolsShowReturn, ProxCallsToolsUnbindReturn, ProxCallsTranscriptReturn, ProxCallsVoiceAgentsBindToolReturn, ProxCallsVoiceAgentsConfigureReturn, ProxCallsVoiceAgentsCreateReturn, ProxCallsVoiceAgentsListReturn, ProxCallsVoiceAgentsShowReturn, ProxCallsVoiceAgentsSyncReturn, ProxCallsVoiceAgentsUnbindToolReturn, ReactSendReturn, RoutesExplainReturn, RoutesListReturn, RoutesShowReturn, RulesImportReturn, RulesSourcesReturn, RuntimeCredentialsAddReturn, RuntimeCredentialsClassifyReturn, RuntimeCredentialsDisableReturn, RuntimeCredentialsEnableReturn, RuntimeCredentialsImportReturn, RuntimeCredentialsListReturn, RuntimeCredentialsRefreshReturn, RuntimeCredentialsResetHealthReturn, RuntimeCredentialsSelectReturn, RuntimeCredentialsStatusReturn, RuntimePresetsCreateReturn, RuntimePresetsDeleteReturn, RuntimePresetsDisableReturn, RuntimePresetsEnableReturn, RuntimePresetsImpactReturn, RuntimePresetsListReturn, RuntimePresetsSetReturn, RuntimePresetsShowReturn, RuntimeTargetsClearReturn, RuntimeTargetsExplainReturn, RuntimeTargetsReorderReturn, RuntimeTargetsSetReturn, RuntimeTargetsShowReturn, SdkClientCheckReturn, SdkClientGenerateReturn, SdkOpenapiCheckReturn, SdkOpenapiEmitReturn, SdkSwiftCheckReturn, SdkSwiftGenerateReturn, SelfChatReturn, SelfContextReturn, SelfExplainReturn, SelfKnowledgeReturn, SelfPermissionsReturn, SelfRecentReturn, SelfRouteReturn, SelfWhoamiReturn, SessionsActionsReturn, SessionsAnswerReturn, SessionsAskReturn, SessionsAttachReturn, SessionsDeleteMessageReturn, SessionsDeleteReturn, SessionsDetachReturn, SessionsEditMessageReturn, SessionsExecuteReturn, SessionsExtendReturn, SessionsFollowupsAddReturn, SessionsFollowupsInspectReturn, SessionsFollowupsListReturn, SessionsFollowupsPauseReturn, SessionsFollowupsResumeReturn, SessionsFollowupsRetryReturn, SessionsFollowupsRunReturn, SessionsFollowupsRunsReturn, SessionsFollowupsSnoozeReturn, SessionsFollowupsUpdateReturn, SessionsGoalReturn, SessionsInfoReturn, SessionsInformReturn, SessionsKeepReturn, SessionsListReturn, SessionsMuteReturn, SessionsPruneReturn, SessionsReadReturn, SessionsRenameReturn, SessionsResetReturn, SessionsRuntimeFollowUpReturn, SessionsRuntimeForkReturn, SessionsRuntimeInterruptReturn, SessionsRuntimeListReturn, SessionsRuntimeReadReturn, SessionsRuntimeRollbackReturn, SessionsRuntimeSteerReturn, SessionsSendReturn, SessionsSetDisplayReturn, SessionsSetEffortReturn, SessionsSetModelReturn, SessionsSetProviderReturn, SessionsSetThinkingReturn, SessionsSetTtlReturn, SessionsSubscriptionsReturn, SessionsTraceReturn, SessionsUnmuteReturn, SessionsVisibilityReturn, SettingsDeleteReturn, SettingsGetReturn, SettingsListReturn, SettingsSetReturn, SkillGatesDisableReturn, SkillGatesEnableReturn, SkillGatesListReturn, SkillGatesResetReturn, SkillGatesRmReturn, SkillGatesSetReturn, SkillGatesShowReturn, SkillsArchiveReturn, SkillsGrantBatchReturn, SkillsGrantReturn, SkillsGuardReturn, SkillsInspectReturn, SkillsInstallReturn, SkillsListReturn, SkillsRevokeBatchReturn, SkillsRevokeReturn, SkillsShowReturn, SkillsSyncReturn, SkillsWhoReturn, SlackBlocksSendReturn, SlackBlocksShowcaseReturn, SlackBlocksUpdateReturn, SlackBlocksValidateReturn, SlackCanvasAccessDeleteReturn, SlackCanvasAccessSetReturn, SlackCanvasArtifactPublishReturn, SlackCanvasArtifactStatusReturn, SlackCanvasChannelCreateReturn, SlackCanvasChannelShowcaseReturn, SlackCanvasCreateReturn, SlackCanvasDeleteReturn, SlackCanvasEditReturn, SlackCanvasSectionsLookupReturn, SlackCanvasShowcaseReturn, SlackChannelsCreateReturn, SlackChannelsHistoryReturn, SlackChannelsInfoReturn, SlackChannelsInviteReturn, SlackChannelsListReturn, SlackChannelsRenameReturn, SlackFilesListReturn, SlackInteractionsRespondReturn, SlackMembersListReturn, SlackMessagesInspectReturn, SlackMessagesReplayReturn, SlackMessagesSendReturn, SlackModalsOpenReturn, SlackModalsPushReturn, SlackModalsUpdateReturn, SlackPermissionsListReturn, SlackTopologyReturn, SlackWorkObjectsPresentDetailsReturn, SlackWorkObjectsSendReturn, SlackWorkObjectsUnfurlReturn, SlackWorkObjectsValidateReturn, SpecsGetReturn, SpecsListReturn, SpecsNewReturn, SpecsSyncReturn, StickersAddReturn, StickersListReturn, StickersRemoveReturn, StickersSendReturn, StickersShowReturn, SyncInspectReturn, SyncPullReturn, SyncPushReturn, SyncRetryReturn, SyncStatusReturn, TagRulesEvaluateReturn, TagRulesExplainReturn, TagRulesListReturn, TagRulesShowReturn, TagRulesTickReturn, TagRulesValidateReturn, TagsAttachReturn, TagsCreateReturn, TagsDetachReturn, TagsListReturn, TagsSearchReturn, TagsSetReturn, TagsShowReturn, TasksArchiveReturn, TasksAutomationsAddReturn, TasksAutomationsDisableReturn, TasksAutomationsEnableReturn, TasksAutomationsListReturn, TasksAutomationsRmReturn, TasksAutomationsShowReturn, TasksBlockReturn, TasksCommentReturn, TasksCreateReturn, TasksDepsAddReturn, TasksDepsLsReturn, TasksDepsRmReturn, TasksDispatchReturn, TasksDoneReturn, TasksFailReturn, TasksListReturn, TasksProfilesInitReturn, TasksProfilesListReturn, TasksProfilesPreviewReturn, TasksProfilesShowReturn, TasksProfilesValidateReturn, TasksReportReturn, TasksShowReturn, TasksUnarchiveReturn, ThreadsBriefReturn, ThreadsCloseReturn, ThreadsCommentReturn, ThreadsCreateReturn, ThreadsEntriesReturn, ThreadsLinkReturn, ThreadsListReturn, ThreadsNoteReturn, ThreadsShowReturn, ToolsInvokeReturn, ToolsListReturn, ToolsManifestReturn, ToolsSchemaReturn, ToolsSearchReturn, ToolsShowReturn, ToolsTestReturn, TranscribeFileReturn, TriggersAddReturn, TriggersDisableReturn, TriggersEnableReturn, TriggersListReturn, TriggersRmReturn, TriggersSetReturn, TriggersShowReturn, TriggersTestReturn, TriggersTopicsReturn, VideoAnalyzeReturn, WatchConnectorsReturn, WatchCreateReturn, WatchDisableReturn, WatchEnableReturn, WatchEventsReturn, WatchListReturn, WatchRmReturn, WatchShowReturn, WatchTriggerReturn, WhatsappDmAckReturn, WhatsappDmReadReturn, WhatsappDmSendReturn, WhatsappGroupAddReturn, WhatsappGroupCreateReturn, WhatsappGroupDemoteReturn, WhatsappGroupDescriptionReturn, WhatsappGroupInfoReturn, WhatsappGroupInviteReturn, WhatsappGroupJoinReturn, WhatsappGroupLeaveReturn, WhatsappGroupListReturn, WhatsappGroupPromoteReturn, WhatsappGroupRemoveReturn, WhatsappGroupRenameReturn, WhatsappGroupRevokeInviteReturn, WhatsappGroupSendReturn, WhatsappGroupSettingsReturn, WorkObjectsActionReturn, WorkObjectsResolveReturn, WorkObjectsSuggestReturn, WorkObjectsUpdateReturn, WorkflowsRunsArchiveNodeReturn, WorkflowsRunsCancelReturn, WorkflowsRunsListReturn, WorkflowsRunsReleaseReturn, WorkflowsRunsShowReturn, WorkflowsRunsSkipReturn, WorkflowsRunsStartReturn, WorkflowsRunsTaskAttachReturn, WorkflowsRunsTaskCreateReturn, WorkflowsSpecsCreateReturn, WorkflowsSpecsListReturn, WorkflowsSpecsShowReturn } from "./types.js";
 
 /**
  * `RaviClient` exposes every registry command as a typed method.
@@ -73,11 +73,13 @@ export class RaviClient {
       });
     },
     /** Delete an agent */
-    delete: async (id: string): Promise<AgentsDeleteReturn> => {
+    delete: async (id: string, options?: {
+      purgeMemory?: boolean;
+    }): Promise<AgentsDeleteReturn> => {
       return this.transport.call({
         groupSegments: ["agents"],
         command: "delete",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     },
     /** List all agents */
@@ -988,14 +990,24 @@ export class RaviClient {
           body: { list, ...(options ?? {}) },
         });
       },
+      /** Validate a dynamic selector and preview membership diff without writes */
+      preview: async (listId: string, options?: {
+        owner?: string;
+      }): Promise<ChatsListsPreviewReturn> => {
+        return this.transport.call({
+          groupSegments: ["chats","lists"],
+          command: "preview",
+          body: { listId, ...(options ?? {}) },
+        });
+      },
       /** Materialize dynamic reading-list selector membership */
-      recompute: async (list: string, options?: {
+      recompute: async (listId: string, options?: {
         owner?: string;
       }): Promise<ChatsListsRecomputeReturn> => {
         return this.transport.call({
           groupSegments: ["chats","lists"],
           command: "recompute",
-          body: { list, ...(options ?? {}) },
+          body: { listId, ...(options ?? {}) },
         });
       },
       /** Remove a chat from a reading list without deleting cursor history */
@@ -1008,6 +1020,16 @@ export class RaviClient {
           groupSegments: ["chats","lists"],
           command: "remove",
           body: { list, chat, ...(options ?? {}) },
+        });
+      },
+      /** Show one reading list and explain whether its selector is safe */
+      show: async (listId: string, options?: {
+        owner?: string;
+      }): Promise<ChatsListsShowReturn> => {
+        return this.transport.call({
+          groupSegments: ["chats","lists"],
+          command: "show",
+          body: { listId, ...(options ?? {}) },
         });
       }
     },
@@ -2707,234 +2729,6 @@ export class RaviClient {
     }
   };
 
-  readonly gsc = {
-    /** Break down Search Analytics performance by country */
-    countries: async (site: string, options?: {
-      connection?: string;
-      days?: string;
-      limit?: string;
-    }): Promise<GscCountriesReturn> => {
-      return this.transport.call({
-        groupSegments: ["gsc"],
-        command: "countries",
-        body: { site, ...(options ?? {}) },
-      });
-    },
-    /** Return daily Search Analytics performance */
-    dateSeries: async (site: string, options?: {
-      connection?: string;
-      days?: string;
-      query?: string;
-    }): Promise<GscDateSeriesReturn> => {
-      return this.transport.call({
-        groupSegments: ["gsc"],
-        command: "date-series",
-        body: { site, ...(options ?? {}) },
-      });
-    },
-    /** Break down Search Analytics performance by device */
-    devices: async (site: string, options?: {
-      connection?: string;
-      days?: string;
-    }): Promise<GscDevicesReturn> => {
-      return this.transport.call({
-        groupSegments: ["gsc"],
-        command: "devices",
-        body: { site, ...(options ?? {}) },
-      });
-    },
-    /** List queries with the largest negative click change */
-    falling: async (site: string, options?: {
-      connection?: string;
-      days?: string;
-      limit?: string;
-    }): Promise<GscFallingReturn> => {
-      return this.transport.call({
-        groupSegments: ["gsc"],
-        command: "falling",
-        body: { site, ...(options ?? {}) },
-      });
-    },
-    /** Inspect a URL index status in Google */
-    inspect: async (site: string, url: string, options?: {
-      connection?: string;
-      language?: string;
-    }): Promise<GscInspectReturn> => {
-      return this.transport.call({
-        groupSegments: ["gsc"],
-        command: "inspect",
-        body: { site, url, ...(options ?? {}) },
-      });
-    },
-    /** Run a Search Analytics query with explicit dates and dimensions */
-    query: async (site: string, options?: {
-      connection?: string;
-      dataState?: string;
-      dimensions?: string;
-      end?: string;
-      limit?: string;
-      start?: string;
-      startRow?: string;
-      type?: string;
-    }): Promise<GscQueryReturn> => {
-      return this.transport.call({
-        groupSegments: ["gsc"],
-        command: "query",
-        body: { site, ...(options ?? {}) },
-      });
-    },
-    /** List queries with the largest positive click change */
-    rising: async (site: string, options?: {
-      connection?: string;
-      days?: string;
-      limit?: string;
-    }): Promise<GscRisingReturn> => {
-      return this.transport.call({
-        groupSegments: ["gsc"],
-        command: "rising",
-        body: { site, ...(options ?? {}) },
-      });
-    },
-    /** Add a Search Console property */
-    siteAdd: async (site: string, options?: {
-      connection?: string;
-    }): Promise<GscSiteAddReturn> => {
-      return this.transport.call({
-        groupSegments: ["gsc"],
-        command: "site-add",
-        body: { site, ...(options ?? {}) },
-      });
-    },
-    /** Remove a Search Console property from this account */
-    siteDelete: async (site: string, options?: {
-      connection?: string;
-    }): Promise<GscSiteDeleteReturn> => {
-      return this.transport.call({
-        groupSegments: ["gsc"],
-        command: "site-delete",
-        body: { site, ...(options ?? {}) },
-      });
-    },
-    /** Get one Search Console property and its permission level */
-    siteGet: async (site: string, options?: {
-      connection?: string;
-    }): Promise<GscSiteGetReturn> => {
-      return this.transport.call({
-        groupSegments: ["gsc"],
-        command: "site-get",
-        body: { site, ...(options ?? {}) },
-      });
-    },
-    /** Delete a submitted sitemap */
-    sitemapDelete: async (site: string, url: string, options?: {
-      connection?: string;
-    }): Promise<GscSitemapDeleteReturn> => {
-      return this.transport.call({
-        groupSegments: ["gsc"],
-        command: "sitemap-delete",
-        body: { site, url, ...(options ?? {}) },
-      });
-    },
-    /** Get one submitted sitemap */
-    sitemapGet: async (site: string, url: string, options?: {
-      connection?: string;
-    }): Promise<GscSitemapGetReturn> => {
-      return this.transport.call({
-        groupSegments: ["gsc"],
-        command: "sitemap-get",
-        body: { site, url, ...(options ?? {}) },
-      });
-    },
-    /** Submit a sitemap to Google */
-    sitemapSubmit: async (site: string, url: string, options?: {
-      connection?: string;
-    }): Promise<GscSitemapSubmitReturn> => {
-      return this.transport.call({
-        groupSegments: ["gsc"],
-        command: "sitemap-submit",
-        body: { site, url, ...(options ?? {}) },
-      });
-    },
-    /** List submitted sitemaps for a property */
-    sitemaps: async (site: string, options?: {
-      connection?: string;
-    }): Promise<GscSitemapsReturn> => {
-      return this.transport.call({
-        groupSegments: ["gsc"],
-        command: "sitemaps",
-        body: { site, ...(options ?? {}) },
-      });
-    },
-    /** List Search Console properties available to the credential */
-    sites: async (options?: {
-      connection?: string;
-    }): Promise<GscSitesReturn> => {
-      return this.transport.call({
-        groupSegments: ["gsc"],
-        command: "sites",
-        body: { ...(options ?? {}) },
-      });
-    },
-    /** Rank pages by clicks for a recent period */
-    topPages: async (site: string, options?: {
-      connection?: string;
-      days?: string;
-      limit?: string;
-    }): Promise<GscTopPagesReturn> => {
-      return this.transport.call({
-        groupSegments: ["gsc"],
-        command: "top-pages",
-        body: { site, ...(options ?? {}) },
-      });
-    },
-    /** Rank search queries by clicks for a recent period */
-    topQueries: async (site: string, options?: {
-      connection?: string;
-      days?: string;
-      limit?: string;
-    }): Promise<GscTopQueriesReturn> => {
-      return this.transport.call({
-        groupSegments: ["gsc"],
-        command: "top-queries",
-        body: { site, ...(options ?? {}) },
-      });
-    },
-    /** Compare query performance with the preceding period */
-    trends: async (site: string, options?: {
-      connection?: string;
-      days?: string;
-      limit?: string;
-    }): Promise<GscTrendsReturn> => {
-      return this.transport.call({
-        groupSegments: ["gsc"],
-        command: "trends",
-        body: { site, ...(options ?? {}) },
-      });
-    },
-    /** Request a Google site-verification token */
-    verificationToken: async (identifier: string, options?: {
-      connection?: string;
-      method?: string;
-    }): Promise<GscVerificationTokenReturn> => {
-      return this.transport.call({
-        groupSegments: ["gsc"],
-        command: "verification-token",
-        body: { identifier, ...(options ?? {}) },
-      });
-    },
-    /** Ask Google to verify ownership of a site */
-    verifySite: async (identifier: string, options?: {
-      connection?: string;
-      method?: string;
-    }): Promise<GscVerifySiteReturn> => {
-      return this.transport.call({
-        groupSegments: ["gsc"],
-        command: "verify-site",
-        body: { identifier, ...(options ?? {}) },
-      });
-    }
-  };
-
   readonly heartbeat = {
     /** Disable heartbeat for an agent */
     disable: async (id: string): Promise<HeartbeatDisableReturn> => {
@@ -2996,6 +2790,12 @@ export class RaviClient {
       cooldown?: string;
       dedupeKey?: string;
       disabled?: boolean;
+      dispatchCadenceTurns?: string;
+      dispatchInstructions?: string;
+      dispatchProfile?: string;
+      dispatchProfileInput?: string;
+      dispatchTargetAgent?: string;
+      dispatchTitle?: string;
       event?: string;
       matcher?: string;
       message?: string;
@@ -3963,6 +3763,82 @@ export class RaviClient {
         groupSegments: ["meetings"],
         command: "voice-runtimes",
         body: {},
+      });
+    }
+  };
+
+  readonly memory = {
+    /** Force one curator cycle NOW for an agent, without waiting for cadence. Creates a task with profile curador-memoria and dispatches it. Useful for first-run seeding, debugging, and manual audits. */
+    curate: async (options?: {
+      agent?: string;
+      dryRun?: boolean;
+      transcript?: string;
+    }): Promise<MemoryCurateReturn> => {
+      return this.transport.call({
+        groupSegments: ["memory"],
+        command: "curate",
+        body: { ...(options ?? {}) },
+      });
+    },
+    /** Provision automatic memory curation for an agent (or all agents): create MEMORY.md cold-start file + register the global `memory-curator` Stop hook that dispatches curador-memoria on cadence. Idempotent — safe to re-run after every deploy. */
+    enroll: async (options?: {
+      agent?: string;
+      all?: boolean;
+      cadenceTurns?: string;
+      skipHook?: boolean;
+    }): Promise<MemoryEnrollReturn> => {
+      return this.transport.call({
+        groupSegments: ["memory"],
+        command: "enroll",
+        body: { ...(options ?? {}) },
+      });
+    },
+    /** Route a curator write through the deterministic guard (R9/R9b scan + R3 cap + R10 atomic + R22 telemetry). The curator LLM MUST call this instead of Write for every proposed entry — it is the enforcement layer that keeps the LLM honest. */
+    guard: async (options?: {
+      agent?: string;
+      cadenceTurn?: string;
+      candidate?: string;
+      candidateFile?: string;
+      capChars?: string;
+      consolidationAttempt?: string;
+      consolidationMaxAttempts?: string;
+      dryRun?: boolean;
+      expectedPrior?: string;
+      hadUserCorrection?: boolean;
+      hookId?: string;
+      processedThroughMessageId?: string;
+      sessionKey?: string;
+      sessionName?: string;
+      store?: string;
+      target?: string;
+      taskId?: string;
+    }): Promise<MemoryGuardReturn> => {
+      return this.transport.call({
+        groupSegments: ["memory"],
+        command: "guard",
+        body: { ...(options ?? {}) },
+      });
+    },
+    /** List every agent's memory footprint (index size, topic count, last modified). Useful for the operator: 'quem tem memória, quanto, quando foi última curadoria?' */
+    list: async (options?: {
+      limit?: string;
+      offset?: string;
+    }): Promise<MemoryListReturn> => {
+      return this.transport.call({
+        groupSegments: ["memory"],
+        command: "list",
+        body: { ...(options ?? {}) },
+      });
+    },
+    /** Print an agent's MEMORY.md to stdout (raw file). Fails if the agent is unknown or unenrolled. */
+    show: async (options?: {
+      agent?: string;
+      topic?: string;
+    }): Promise<MemoryShowReturn> => {
+      return this.transport.call({
+        groupSegments: ["memory"],
+        command: "show",
+        body: { ...(options ?? {}) },
       });
     }
   };
@@ -5143,6 +5019,62 @@ export class RaviClient {
           body: { id },
         });
       }
+    },
+    targets: {
+      /** Disable an agent runtime target policy while preserving unrelated defaults */
+      clear: async (options: {
+        agent: string;
+      }): Promise<RuntimeTargetsClearReturn> => {
+        return this.transport.call({
+          groupSegments: ["runtime","targets"],
+          command: "clear",
+          body: { ...(options ?? {}) },
+        });
+      },
+      /** Explain which runtime target an agent would select without executing it */
+      explain: async (options: {
+        agent: string;
+        sessionPolicyJson?: string;
+        taskProfile?: string;
+      }): Promise<RuntimeTargetsExplainReturn> => {
+        return this.transport.call({
+          groupSegments: ["runtime","targets"],
+          command: "explain",
+          body: { ...(options ?? {}) },
+        });
+      },
+      /** Atomically reorder an existing runtime target policy by stable target ids */
+      reorder: async (options: {
+        agent: string;
+        order: string;
+      }): Promise<RuntimeTargetsReorderReturn> => {
+        return this.transport.call({
+          groupSegments: ["runtime","targets"],
+          command: "reorder",
+          body: { ...(options ?? {}) },
+        });
+      },
+      /** Validate and set an agent runtime target policy while preserving unrelated defaults */
+      set: async (options: {
+        agent: string;
+        policyJson: string;
+      }): Promise<RuntimeTargetsSetReturn> => {
+        return this.transport.call({
+          groupSegments: ["runtime","targets"],
+          command: "set",
+          body: { ...(options ?? {}) },
+        });
+      },
+      /** Show the complete configured runtime target policy and order for one agent */
+      show: async (options: {
+        agent: string;
+      }): Promise<RuntimeTargetsShowReturn> => {
+        return this.transport.call({
+          groupSegments: ["runtime","targets"],
+          command: "show",
+          body: { ...(options ?? {}) },
+        });
+      }
     }
   };
 
@@ -5947,6 +5879,17 @@ export class RaviClient {
   };
 
   readonly skills = {
+    /** Archive an agent-created skill — move it to `<plugin>/.archive/` (RECOVERABLE; the loop archives, never hard-deletes, per I14). Retirement counterpart of `guard` — same I10 allowlist: only skills carrying `origin: agent-created` in frontmatter can be archived; catalog/hub/hand-authored skills are protected. Pass --force to actually archive (default is a dry-run preview). */
+    archive: async (name: string, options?: {
+      force?: boolean;
+      skill?: string;
+    }): Promise<SkillsArchiveReturn> => {
+      return this.transport.call({
+        groupSegments: ["skills"],
+        command: "archive",
+        body: { name, ...(options ?? {}) },
+      });
+    },
     /** Grant a custom skill to an agent (per-agent visibility). System skills follow permissions. */
     grant: async (agent: string, skill: string, options?: {
       note?: string;
@@ -5969,6 +5912,26 @@ export class RaviClient {
       return this.transport.call({
         groupSegments: ["skills"],
         command: "grant-batch",
+        body: { ...(options ?? {}) },
+      });
+    },
+    /** Route a skill write (patch/create) through the enforcement layer — the curador-skills agent MUST call this instead of editing SKILL.md directly. Enforces protected-skill (I10), provenance, and atomic write. Writes only under the agent-editable user skills plugin dir. */
+    guard: async (options?: {
+      agent?: string;
+      cadenceTurn?: string;
+      content?: string;
+      contentFile?: string;
+      date?: string;
+      description?: string;
+      dryRun?: boolean;
+      op?: string;
+      sessionKey?: string;
+      skill?: string;
+      taskId?: string;
+    }): Promise<SkillsGuardReturn> => {
+      return this.transport.call({
+        groupSegments: ["skills"],
+        command: "guard",
         body: { ...(options ?? {}) },
       });
     },
@@ -7969,323 +7932,6 @@ export class RaviClient {
           body: { specId },
         });
       }
-    }
-  };
-
-  readonly yt = {
-    /** Break down recent views and watch time by country */
-    analyticsCountries: async (options?: {
-      connection?: string;
-      days?: string;
-      limit?: string;
-    }): Promise<YtAnalyticsCountriesReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "analytics-countries",
-        body: { ...(options ?? {}) },
-      });
-    },
-    /** Break down viewer percentage by age group and gender */
-    analyticsDemographics: async (options?: {
-      connection?: string;
-      days?: string;
-    }): Promise<YtAnalyticsDemographicsReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "analytics-demographics",
-        body: { ...(options ?? {}) },
-      });
-    },
-    /** Break down recent views and watch time by device type */
-    analyticsDevices: async (options?: {
-      connection?: string;
-      days?: string;
-    }): Promise<YtAnalyticsDevicesReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "analytics-devices",
-        body: { ...(options ?? {}) },
-      });
-    },
-    /** Return aggregate channel engagement metrics for a recent period */
-    analyticsOverview: async (options?: {
-      connection?: string;
-      days?: string;
-    }): Promise<YtAnalyticsOverviewReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "analytics-overview",
-        body: { ...(options ?? {}) },
-      });
-    },
-    /** Return a daily time series for one approved YouTube Analytics metric */
-    analyticsSeries: async (options?: {
-      connection?: string;
-      days?: string;
-      metric?: "views" | "estimatedMinutesWatched" | "averageViewDuration" | "subscribersGained" | "likes" | "comments" | "shares";
-    }): Promise<YtAnalyticsSeriesReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "analytics-series",
-        body: { ...(options ?? {}) },
-      });
-    },
-    /** Rank channel videos by views for a recent period */
-    analyticsTop: async (options?: {
-      connection?: string;
-      days?: string;
-      limit?: string;
-    }): Promise<YtAnalyticsTopReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "analytics-top",
-        body: { ...(options ?? {}) },
-      });
-    },
-    /** Break down recent views and watch time by traffic-source type */
-    analyticsTraffic: async (options?: {
-      connection?: string;
-      days?: string;
-    }): Promise<YtAnalyticsTrafficReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "analytics-traffic",
-        body: { ...(options ?? {}) },
-      });
-    },
-    /** Download one caption track as text */
-    captionDownload: async (captionId: string, options?: {
-      connection?: string;
-      format?: "srt" | "vtt" | "ttml";
-      language?: string;
-    }): Promise<YtCaptionDownloadReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "caption-download",
-        body: { captionId, ...(options ?? {}) },
-      });
-    },
-    /** List caption tracks for one video */
-    captions: async (videoId: string, options?: {
-      connection?: string;
-    }): Promise<YtCaptionsReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "captions",
-        body: { videoId, ...(options ?? {}) },
-      });
-    },
-    /** List top-level comment threads for a video */
-    comments: async (videoId: string, options?: {
-      connection?: string;
-      limit?: string;
-      page?: string;
-    }): Promise<YtCommentsReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "comments",
-        body: { videoId, ...(options ?? {}) },
-      });
-    },
-    /** Inspect YouTube credential metadata without resolving a secret or calling Google */
-    health: async (options?: {
-      connection?: string;
-    }): Promise<YtHealthReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "health",
-        body: { ...(options ?? {}) },
-      });
-    },
-    /** Return metadata and lifetime counters for the authenticated channel */
-    info: async (options?: {
-      connection?: string;
-    }): Promise<YtInfoReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "info",
-        body: { ...(options ?? {}) },
-      });
-    },
-    /** List videos and playlist-item IDs from one playlist */
-    playlist: async (playlistId: string, options?: {
-      connection?: string;
-      limit?: string;
-      page?: string;
-    }): Promise<YtPlaylistReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "playlist",
-        body: { playlistId, ...(options ?? {}) },
-      });
-    },
-    /** Add one video to a YouTube playlist */
-    playlistAdd: async (playlistId: string, videoId: string, options?: {
-      connection?: string;
-    }): Promise<YtPlaylistAddReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "playlist-add",
-        body: { playlistId, videoId, ...(options ?? {}) },
-      });
-    },
-    /** Create a YouTube playlist */
-    playlistCreate: async (title: string, options?: {
-      connection?: string;
-      description?: string;
-      privacy?: "public" | "private" | "unlisted";
-    }): Promise<YtPlaylistCreateReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "playlist-create",
-        body: { title, ...(options ?? {}) },
-      });
-    },
-    /** Permanently delete a YouTube playlist without deleting its videos */
-    playlistDelete: async (playlistId: string, options?: {
-      connection?: string;
-    }): Promise<YtPlaylistDeleteReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "playlist-delete",
-        body: { playlistId, ...(options ?? {}) },
-      });
-    },
-    /** Remove one playlist item without deleting the video */
-    playlistRemove: async (playlistItemId: string, options?: {
-      connection?: string;
-    }): Promise<YtPlaylistRemoveReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "playlist-remove",
-        body: { playlistItemId, ...(options ?? {}) },
-      });
-    },
-    /** List playlists owned by the authenticated channel */
-    playlists: async (options?: {
-      connection?: string;
-      limit?: string;
-      page?: string;
-    }): Promise<YtPlaylistsReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "playlists",
-        body: { ...(options ?? {}) },
-      });
-    },
-    /** Publish a reply to a top-level YouTube comment */
-    reply: async (commentId: string, text: string, options?: {
-      connection?: string;
-    }): Promise<YtReplyReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "reply",
-        body: { commentId, text, ...(options ?? {}) },
-      });
-    },
-    /** Search videos in the authenticated channel */
-    search: async (query: string, options?: {
-      connection?: string;
-      limit?: string;
-      page?: string;
-    }): Promise<YtSearchReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "search",
-        body: { query, ...(options ?? {}) },
-      });
-    },
-    /** Calculate lifetime video counters, age and average views per day */
-    stats: async (id: string, options?: {
-      connection?: string;
-    }): Promise<YtStatsReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "stats",
-        body: { id, ...(options ?? {}) },
-      });
-    },
-    /** List channels followed by the authenticated channel */
-    subscriptions: async (options?: {
-      connection?: string;
-      limit?: string;
-      page?: string;
-    }): Promise<YtSubscriptionsReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "subscriptions",
-        body: { ...(options ?? {}) },
-      });
-    },
-    /** List recent comment threads with zero replies */
-    unanswered: async (videoId: string, options?: {
-      connection?: string;
-      limit?: string;
-      page?: string;
-    }): Promise<YtUnansweredReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "unanswered",
-        body: { videoId, ...(options ?? {}) },
-      });
-    },
-    /** Get one video by YouTube video ID */
-    video: async (id: string, options?: {
-      connection?: string;
-    }): Promise<YtVideoReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "video",
-        body: { id, ...(options ?? {}) },
-      });
-    },
-    /** List assignable YouTube video categories for a region */
-    videoCategories: async (options?: {
-      connection?: string;
-      region?: string;
-    }): Promise<YtVideoCategoriesReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "video-categories",
-        body: { ...(options ?? {}) },
-      });
-    },
-    /** Permanently delete an owned YouTube video */
-    videoDelete: async (id: string, options?: {
-      connection?: string;
-    }): Promise<YtVideoDeleteReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "video-delete",
-        body: { id, ...(options ?? {}) },
-      });
-    },
-    /** Update selected metadata on an owned YouTube video */
-    videoUpdate: async (id: string, options?: {
-      category?: string;
-      connection?: string;
-      description?: string;
-      privacy?: "public" | "private" | "unlisted";
-      tags?: string;
-      title?: string;
-    }): Promise<YtVideoUpdateReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "video-update",
-        body: { id, ...(options ?? {}) },
-      });
-    },
-    /** List videos from the authenticated channel uploads playlist */
-    videos: async (options?: {
-      connection?: string;
-      limit?: string;
-      page?: string;
-    }): Promise<YtVideosReturn> => {
-      return this.transport.call({
-        groupSegments: ["yt"],
-        command: "videos",
-        body: { ...(options ?? {}) },
-      });
     }
   };
 }

@@ -42,6 +42,7 @@ export function buildInputSchema(cmd: CommandRegistryEntry): JsonSchema {
   for (const opt of cmd.options) {
     if (properties[opt.name] !== undefined) continue; // arg wins on collision
     properties[opt.name] = zodToJson(opt.schema, opt.description);
+    if (!opt.schema.safeParse(undefined).success) required.push(opt.name);
   }
 
   const sortedKeys = Object.keys(properties).sort();

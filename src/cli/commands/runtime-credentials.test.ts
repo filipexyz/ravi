@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import { REDACTION_TEXT_CORPUS } from "../../test/redaction-corpus.js";
 import { RuntimeCredentialsCommands } from "./runtime-credentials.js";
 
 let stateDir: string | null = null;
@@ -144,11 +145,57 @@ describe("RuntimeCredentialsCommands", () => {
     };
 
     expect(payload.signal.kind).toBe("rate_limited");
-    expect(payload.signal.rawHeaders.authorization).toBe("[redacted]");
+    expect(payload.signal.rawHeaders.authorization).toBe("[REDACTED]");
     expect(payload.pressure).toMatchObject({ nearLimit: true, exhausted: true });
     expect(payload.transition.credential).toMatchObject({ id: credentialId, status: "cooldown" });
     expect(payload.transition.health.lastFailureKind).toBe("rate_limited");
     expect(classified.output).not.toContain("sk-test_secret_that_must_not_leak");
+  });
+
+  it("never serializes adversarial classifier scalars through CLI health surfaces", () => {
+    const commands = new RuntimeCredentialsCommands();
+    const added = captureConsole(() =>
+      commands.add(
+        "codex",
+        "OpenAI scalar sink",
+        "openai",
+        "api-key",
+        "RAVI_TEST_OPENAI_KEY",
+        "OPENAI_API_KEY",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "0",
+        false,
+        undefined,
+        false,
+        true,
+      ),
+    );
+    const credentialId = (JSON.parse(added.output) as { credential: { id: string } }).credential.id;
+
+    for (const entry of REDACTION_TEXT_CORPUS) {
+      const classified = captureConsole(() =>
+        commands.classify(
+          "codex",
+          "503",
+          entry.input,
+          credentialId,
+          entry.input,
+          entry.input,
+          entry.input,
+          JSON.stringify({ "x-request-id": entry.input }),
+          true,
+          true,
+        ),
+      );
+      const status = captureConsole(() => commands.status(undefined, true));
+      expect(classified.output).not.toContain(entry.secret);
+      expect(status.output).not.toContain(entry.secret);
+      expect(classified.output).toContain("[REDACTED]");
+      expect(status.output).toContain("[REDACTED]");
+    }
   });
 
   it("refreshes a pool and reports redacted JSON", async () => {

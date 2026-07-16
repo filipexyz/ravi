@@ -9,6 +9,7 @@ import type {
 } from "../runtime/types.js";
 import { logger } from "../utils/logger.js";
 import { recordSessionBlob, recordSessionEvent, sha256Text, upsertSessionTurn } from "./session-trace-db.js";
+import type { SessionEventRecord } from "./types.js";
 
 const log = logger.child("session-trace:runtime");
 const PREVIEW_CHARS = 240;
@@ -152,25 +153,34 @@ function sourceTraceFields(source: RuntimeMessageTarget | null | undefined) {
 
 export function recordRuntimeTraceEvent(input: RuntimeTraceEventInput): void {
   safeTrace("record runtime trace event", () => {
-    recordSessionEvent({
-      sessionKey: input.sessionKey,
-      sessionName: input.sessionName,
-      agentId: input.agentId,
-      runId: input.runId,
-      turnId: input.turnId,
-      eventType: input.eventType,
-      eventGroup: input.eventGroup,
-      status: input.status,
-      ...sourceTraceFields(input.source),
-      messageId: input.messageId ?? input.source?.sourceMessageId,
-      provider: input.provider,
-      model: input.model,
-      payloadJson: input.payloadJson,
-      preview: input.preview,
-      error: input.error,
-      durationMs: input.durationMs,
-      timestamp: input.timestamp,
-    });
+    recordRuntimeSafetyTraceEvent(input);
+  });
+}
+
+/**
+ * Authoritative journal write for state that controls replay or outbound delivery.
+ * Unlike general observability, this deliberately propagates storage failures so a
+ * caller cannot advance a safety transition without a durable commit.
+ */
+export function recordRuntimeSafetyTraceEvent(input: RuntimeTraceEventInput): SessionEventRecord {
+  return recordSessionEvent({
+    sessionKey: input.sessionKey,
+    sessionName: input.sessionName,
+    agentId: input.agentId,
+    runId: input.runId,
+    turnId: input.turnId,
+    eventType: input.eventType,
+    eventGroup: input.eventGroup,
+    status: input.status,
+    ...sourceTraceFields(input.source),
+    messageId: input.messageId ?? input.source?.sourceMessageId,
+    provider: input.provider,
+    model: input.model,
+    payloadJson: input.payloadJson,
+    preview: input.preview,
+    error: input.error,
+    durationMs: input.durationMs,
+    timestamp: input.timestamp,
   });
 }
 
