@@ -120,11 +120,13 @@ export function resolveAppAliasInvocation(
     if (!appIds.has(candidate)) continue;
     const rest = argv.slice(segmentCount);
     const { json, help, args } = stripRouterFlags(rest);
-    const operation = help ? "help" : args[0];
+    // Root help is owned by the app router. Operation help belongs to the
+    // underlying interface so imported CLIs keep command-specific help.
+    const operation = help && args.length === 0 ? "help" : args[0];
     return {
       appId: candidate,
       operation,
-      args: operation ? args.slice(1) : args,
+      args: operation ? [...args.slice(1), ...(help ? ["--help"] : [])] : args,
       json,
     };
   }
@@ -665,6 +667,19 @@ function parseJsonOutput(stdout: string): unknown {
   try {
     return JSON.parse(trimmed);
   } catch {
+    // Some established CLIs print benign progress before their JSON payload
+    // (for example, an OAuth token refresh notice). Preserve stdout for audit,
+    // but still expose the final machine-readable payload to app callers.
+    const lines = trimmed.split("\n");
+    for (let index = 1; index < lines.length; index++) {
+      const candidate = lines.slice(index).join("\n").trim();
+      if (!candidate.startsWith("{") && !candidate.startsWith("[")) continue;
+      try {
+        return JSON.parse(candidate);
+      } catch {
+        // Keep looking for the first valid trailing JSON document.
+      }
+    }
     return undefined;
   }
 }
