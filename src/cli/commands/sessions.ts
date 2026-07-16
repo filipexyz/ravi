@@ -237,9 +237,82 @@ const sessionSetProviderReturnSchema = z.object({
   effectiveProvider: z.string(),
   appliesOn: z.literal("next-turn-runtime-restart"),
 });
+const sessionCommandTargetReturnSchema = z
+  .object({
+    sessionKey: z.string(),
+    name: z.string().optional(),
+    label: z.string(),
+    agentId: z.string(),
+  })
+  .passthrough();
+const sessionSendReturnSchema = z
+  .object({
+    action: z.literal("send"),
+    mode: z.enum(["fire-and-forget", "wait"]),
+    published: z.boolean(),
+    createdSession: z.boolean(),
+    session: sessionCommandTargetReturnSchema,
+    promptLength: z.number().int().nonnegative(),
+    delivery: z.object({}).passthrough(),
+    thread: z.object({}).passthrough().nullable(),
+    response: z
+      .object({
+        length: z.number().int().nonnegative(),
+        text: z.string(),
+      })
+      .optional(),
+  })
+  .passthrough();
+const normalizedSessionMessageReturnSchema = z
+  .object({
+    role: z.enum(["user", "assistant"]),
+    text: z.string(),
+    time: z.string(),
+  })
+  .passthrough();
+const workspaceSessionMessageReturnSchema = z
+  .object({
+    id: z.string(),
+    role: z.string(),
+    content: z.string(),
+    createdAt: z.number(),
+    source: z.string(),
+  })
+  .passthrough();
+const sessionReadHistoryReturnSchema = z
+  .object({
+    session: sessionCommandTargetReturnSchema,
+    transcript: z
+      .object({
+        available: z.boolean(),
+      })
+      .passthrough(),
+    messages: z.array(z.union([normalizedSessionMessageReturnSchema, workspaceSessionMessageReturnSchema])),
+    totalMessages: z.number().int().nonnegative().optional(),
+    count: z.number().int().nonnegative().optional(),
+  })
+  .passthrough();
+const sessionReadMessageReturnSchema = z
+  .object({
+    ok: z.boolean(),
+    messageId: z.string().optional(),
+    error: z.string().optional(),
+    meta: z.unknown().optional(),
+  })
+  .passthrough();
+const sessionReadReturnSchema = z.union([sessionReadHistoryReturnSchema, sessionReadMessageReturnSchema]);
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+function shouldReturnStructuredResult(asJson?: boolean): boolean {
+  return asJson === true || getContext()?.suppressCliOutput === true;
+}
+
+function returnStructuredResult<T>(payload: T, asJson?: boolean): T {
+  if (asJson) printJson(payload);
+  return payload;
 }
 
 function printJsonl(payload: unknown): void {
@@ -3632,9 +3705,10 @@ export class SessionCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
+    const structuredResult = shouldReturnStructuredResult(asJson);
     let createdSession = false;
     const session = this.resolveTarget(nameOrKey, agentId, {
-      silent: Boolean(asJson),
+      silent: structuredResult,
       onCreated: () => {
         createdSession = true;
       },
@@ -3656,8 +3730,12 @@ export class SessionCommands {
     });
     const deliveryBarrier = delivery.barrier;
 
-    if (asJson && (interactive || !prompt)) {
-      fail("sessions send --json requires a prompt and cannot be combined with --interactive.");
+    if (structuredResult && (interactive || !prompt)) {
+      fail(
+        asJson
+          ? "sessions send --json requires a prompt and cannot be combined with --interactive."
+          : "sessions.send through the SDK requires a prompt and cannot use interactive mode.",
+      );
       return;
     }
 
@@ -3713,7 +3791,7 @@ export class SessionCommands {
     }
 
     if (wait) {
-      if (asJson) {
+      if (structuredResult) {
         let responseText = "";
         let chars = 0;
         try {
@@ -3757,8 +3835,7 @@ export class SessionCommands {
             text: responseText,
           },
         };
-        printJson(payload);
-        return payload;
+        return returnStructuredResult(payload, asJson);
       }
 
       console.log(`\n📤 Sending to ${sessionName}\n`);
@@ -3812,7 +3889,7 @@ export class SessionCommands {
         if (preparedThread) markThreadHandoffFailed(preparedThread.handoff.id, errorToMessage(error));
         throw error;
       }
-      if (asJson) {
+      if (structuredResult) {
         const payload = {
           action: "send",
           mode: "fire-and-forget",
@@ -3823,8 +3900,7 @@ export class SessionCommands {
           delivery: deliveryJson,
           thread: preparedThread ? buildSendThreadJson(preparedThread) : null,
         };
-        printJson(payload);
-        return payload;
+        return returnStructuredResult(payload, asJson);
       }
       console.log(`📤 Sent to ${sessionName}`);
     }
@@ -4137,6 +4213,7 @@ export class SessionCommands {
     })
     messageId?: string,
   ) {
+    const structuredResult = shouldReturnStructuredResult(asJson);
     const target = nameOrKey?.trim() || resolveCurrentSessionRef();
     if (!target) {
       fail(
@@ -4162,7 +4239,7 @@ export class SessionCommands {
     if (chatHistory.length > 0) {
       const messages = chatHistory.map(normalizeChatDbMessage);
       const totalMessages = countHistory(sessionLabel);
-      if (asJson) {
+      if (structuredResult) {
         const payload = {
           session: buildSessionJson(session),
           transcript: {
@@ -4174,8 +4251,7 @@ export class SessionCommands {
           totalMessages,
           count: messages.length,
         };
-        printJson(payload);
-        return payload;
+        return returnStructuredResult(payload, asJson);
       }
 
       console.log(`\n💬 ${sessionLabel} — last ${messages.length} of ${totalMessages} messages\n`);
@@ -4188,7 +4264,7 @@ export class SessionCommands {
     if (chatDbByChat.length > 0) {
       const messages = chatDbByChat.map(normalizeChatDbMessage);
       const totalMessages = countHistoryByChatIds(chatIdVariants, session.agentId);
-      if (asJson) {
+      if (structuredResult) {
         const payload = {
           session: buildSessionJson(session),
           transcript: {
@@ -4202,8 +4278,7 @@ export class SessionCommands {
           totalMessages,
           count: messages.length,
         };
-        printJson(payload);
-        return payload;
+        return returnStructuredResult(payload, asJson);
       }
 
       console.log(`\n💬 ${sessionLabel} — last ${messages.length} of ${totalMessages} same-chat messages\n`);
@@ -4213,7 +4288,7 @@ export class SessionCommands {
 
     const messageMetadata = readMessageMetadataFallback(session, maxMessages);
     if (messageMetadata.length > 0) {
-      if (asJson) {
+      if (structuredResult) {
         const payload = {
           session: buildSessionJson(session),
           transcript: {
@@ -4226,8 +4301,7 @@ export class SessionCommands {
           totalMessages: messageMetadata.length,
           count: messageMetadata.length,
         };
-        printJson(payload);
-        return payload;
+        return returnStructuredResult(payload, asJson);
       }
 
       console.log(`\n💬 ${sessionLabel} — last ${messageMetadata.length} message metadata entries\n`);
@@ -4237,7 +4311,7 @@ export class SessionCommands {
 
     const providerSessionId = session.providerSessionId ?? session.sdkSessionId;
     if (!providerSessionId) {
-      if (asJson) {
+      if (structuredResult) {
         const payload = {
           session: buildSessionJson(session),
           transcript: {
@@ -4248,8 +4322,7 @@ export class SessionCommands {
           totalMessages: 0,
           count: 0,
         };
-        printJson(payload);
-        return payload;
+        return returnStructuredResult(payload, asJson);
       }
       console.log("⚠️  No runtime session — no history available");
       return;
@@ -4265,7 +4338,7 @@ export class SessionCommands {
     });
 
     if (!transcript.path) {
-      if (asJson) {
+      if (structuredResult) {
         const payload = {
           session: buildSessionJson(session),
           transcript: {
@@ -4277,8 +4350,7 @@ export class SessionCommands {
           totalMessages: 0,
           count: 0,
         };
-        printJson(payload);
-        return payload;
+        return returnStructuredResult(payload, asJson);
       }
       console.log(`⚠️  ${transcript.reason ?? "Transcript not found"}`);
       return;
@@ -4290,7 +4362,7 @@ export class SessionCommands {
     const messages = extractNormalizedTranscriptMessages(raw, session.runtimeProvider);
 
     const recent = messages.slice(-maxMessages);
-    if (asJson) {
+    if (structuredResult) {
       const payload = {
         session: buildSessionJson(session),
         transcript: {
@@ -4304,8 +4376,7 @@ export class SessionCommands {
         totalMessages: messages.length,
         count: recent.length,
       };
-      printJson(payload);
-      return payload;
+      return returnStructuredResult(payload, asJson);
     }
 
     console.log(`\n💬 ${sessionLabel} — last ${recent.length} of ${messages.length} provider transcript messages\n`);
@@ -5727,10 +5798,10 @@ declareCommandReturns(SessionCommands, {
   list: pagedItemsReturnSchema,
   mute: commandEnvelopeReturnSchema,
   prune: commandEnvelopeReturnSchema,
-  read: commandEnvelopeReturnSchema,
+  read: sessionReadReturnSchema,
   rename: commandEnvelopeReturnSchema,
   reset: commandEnvelopeReturnSchema,
-  send: commandEnvelopeReturnSchema,
+  send: sessionSendReturnSchema,
   setDisplay: commandEnvelopeReturnSchema,
   setProvider: sessionSetProviderReturnSchema,
   setModel: commandEnvelopeReturnSchema,

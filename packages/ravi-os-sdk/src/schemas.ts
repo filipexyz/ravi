@@ -51532,9 +51532,142 @@ export const SessionsReadInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.read`. */
 export const SessionsReadReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
-  "type": "object"
+  "anyOf": [
+    {
+      "additionalProperties": {},
+      "properties": {
+        "count": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "messages": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "role": {
+                    "enum": [
+                      "user",
+                      "assistant"
+                    ],
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "time": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "role",
+                  "text",
+                  "time"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "type": "number"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "role",
+                  "content",
+                  "createdAt",
+                  "source"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "session": {
+          "additionalProperties": {},
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "sessionKey": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionKey",
+            "label",
+            "agentId"
+          ],
+          "type": "object"
+        },
+        "totalMessages": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "transcript": {
+          "additionalProperties": {},
+          "properties": {
+            "available": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "available"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "session",
+        "transcript",
+        "messages"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": {},
+      "properties": {
+        "error": {
+          "type": "string"
+        },
+        "messageId": {
+          "type": "string"
+        },
+        "meta": {},
+        "ok": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    }
+  ]
 } as const satisfies SdkJsonSchema;
 
 /** JSON Schema for the input body of `sessions.rename`. */
@@ -52002,7 +52135,98 @@ export const SessionsSendInputSchema = {
 /** JSON Schema for the return shape of `sessions.send`. */
 export const SessionsSendReturnSchema = {
   "additionalProperties": {},
-  "properties": {},
+  "properties": {
+    "action": {
+      "const": "send",
+      "type": "string"
+    },
+    "createdSession": {
+      "type": "boolean"
+    },
+    "delivery": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "mode": {
+      "enum": [
+        "fire-and-forget",
+        "wait"
+      ],
+      "type": "string"
+    },
+    "promptLength": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "published": {
+      "type": "boolean"
+    },
+    "response": {
+      "additionalProperties": false,
+      "properties": {
+        "length": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "length",
+        "text"
+      ],
+      "type": "object"
+    },
+    "session": {
+      "additionalProperties": {},
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "sessionKey": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionKey",
+        "label",
+        "agentId"
+      ],
+      "type": "object"
+    },
+    "thread": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "action",
+    "mode",
+    "published",
+    "createdSession",
+    "session",
+    "promptLength",
+    "delivery",
+    "thread"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
