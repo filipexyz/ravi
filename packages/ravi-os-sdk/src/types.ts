@@ -10651,7 +10651,41 @@ export type SessionsReadInput = {
 };
 
 /** Return shape for `sessions.read`. */
-export type SessionsReadReturn = Record<string, unknown>;
+export type SessionsReadReturn = ({
+  count?: number;
+  messages: Array<({
+    role: "user" | "assistant";
+    text: string;
+    time: string;
+    [k: string]: unknown;
+  }) | ({
+    content: string;
+    createdAt: number;
+    id: string;
+    role: string;
+    source: string;
+    [k: string]: unknown;
+  })>;
+  session: {
+    agentId: string;
+    label: string;
+    name?: string;
+    sessionKey: string;
+    [k: string]: unknown;
+  };
+  totalMessages?: number;
+  transcript: {
+    available: boolean;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+}) | ({
+  error?: string;
+  messageId?: string;
+  meta?: unknown;
+  ok: boolean;
+  [k: string]: unknown;
+});
 
 /** Input shape for `sessions.rename`. */
 export type SessionsRenameInput = {
@@ -10810,7 +10844,27 @@ export type SessionsSendInput = {
 };
 
 /** Return shape for `sessions.send`. */
-export type SessionsSendReturn = Record<string, unknown>;
+export type SessionsSendReturn = {
+  action: "send";
+  createdSession: boolean;
+  delivery: Record<string, unknown>;
+  mode: "fire-and-forget" | "wait";
+  promptLength: number;
+  published: boolean;
+  response?: {
+    length: number;
+    text: string;
+  };
+  session: {
+    agentId: string;
+    label: string;
+    name?: string;
+    sessionKey: string;
+    [k: string]: unknown;
+  };
+  thread: (Record<string, unknown>) | null;
+  [k: string]: unknown;
+};
 
 /** Input shape for `sessions.set-display`. */
 export type SessionsSetDisplayInput = {
