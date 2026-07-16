@@ -70267,6 +70267,89 @@ export const WorkflowsSpecsShowReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `yt.activities`. */
+export const YtActivitiesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size, 1-50 (default: 25)",
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "page": {
+      "description": "Provider page token from nextPageToken",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.activities`. */
+export const YtActivitiesReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "activities": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "activityId": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "type": "string"
+          },
+          "thumbnail": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "videoId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "activityId",
+          "type",
+          "title",
+          "description",
+          "publishedAt",
+          "thumbnail",
+          "videoId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "nextPageToken": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "totalResults": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "success",
+    "activities",
+    "totalResults"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `yt.analytics-countries`. */
 export const YtAnalyticsCountriesInputSchema = {
   "additionalProperties": false,
@@ -70761,6 +70844,45 @@ export const YtAnalyticsTrafficReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `yt.caption-delete`. */
+export const YtCaptionDeleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "captionId": {
+      "description": "YouTube caption track ID",
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "captionId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.caption-delete`. */
+export const YtCaptionDeleteReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "deleted": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "deleted"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `yt.caption-download`. */
 export const YtCaptionDownloadInputSchema = {
   "additionalProperties": false,
@@ -70904,6 +71026,285 @@ export const YtCaptionsReturnSchema = {
     "videoId",
     "captions",
     "totalResults"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.channel-update`. */
+export const YtChannelUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "country": {
+      "description": "ISO 3166-1 alpha-2 channel country",
+      "type": "string"
+    },
+    "description": {
+      "description": "Replacement channel description",
+      "type": "string"
+    },
+    "keywords": {
+      "description": "Replacement space-separated channel keywords",
+      "type": "string"
+    },
+    "language": {
+      "description": "Default channel language (e.g. pt-BR)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.channel-update`. */
+export const YtChannelUpdateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "additionalProperties": false,
+      "properties": {
+        "channelId": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "subscriberCount": {
+          "type": "number"
+        },
+        "thumbnail": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "uploadsPlaylistId": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "videoCount": {
+          "type": "number"
+        },
+        "viewCount": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "channelId",
+        "title",
+        "description",
+        "subscriberCount",
+        "videoCount",
+        "viewCount",
+        "thumbnail",
+        "uploadsPlaylistId",
+        "url"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "channel"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.comment`. */
+export const YtCommentInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "text": {
+      "description": "Comment text",
+      "minLength": 1,
+      "type": "string"
+    },
+    "videoId": {
+      "description": "YouTube video ID",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "videoId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.comment`. */
+export const YtCommentReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "commentId": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "threadId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "success",
+    "threadId",
+    "commentId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.comment-delete`. */
+export const YtCommentDeleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "commentId": {
+      "description": "YouTube comment ID",
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "commentId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.comment-delete`. */
+export const YtCommentDeleteReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "deleted": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "deleted"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.comment-moderate`. */
+export const YtCommentModerateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "banAuthor": {
+      "description": "Also ban the comment author (only with rejected)",
+      "type": "boolean"
+    },
+    "commentId": {
+      "description": "YouTube comment ID",
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "status": {
+      "description": "heldForReview|published|rejected",
+      "enum": [
+        "heldForReview",
+        "published",
+        "rejected"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "commentId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.comment-moderate`. */
+export const YtCommentModerateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "commentId": {
+      "type": "string"
+    },
+    "moderationStatus": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "commentId",
+    "moderationStatus"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.comment-update`. */
+export const YtCommentUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "commentId": {
+      "description": "YouTube comment ID",
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "text": {
+      "description": "Replacement comment text",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "commentId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.comment-update`. */
+export const YtCommentUpdateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "commentId": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "text": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "success",
+    "commentId",
+    "text"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -71065,6 +71466,118 @@ export const YtHealthReturnSchema = {
     "authenticated",
     "externalCheckPerformed",
     "message"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.i18n-languages`. */
+export const YtI18nLanguagesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "hl": {
+      "default": "pt-BR",
+      "description": "Language for the returned names (default: pt-BR)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.i18n-languages`. */
+export const YtI18nLanguagesReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "languages": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "totalResults": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "success",
+    "languages",
+    "totalResults"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.i18n-regions`. */
+export const YtI18nRegionsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "hl": {
+      "default": "pt-BR",
+      "description": "Language for the returned names (default: pt-BR)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.i18n-regions`. */
+export const YtI18nRegionsReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "regions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "totalResults": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "success",
+    "regions",
+    "totalResults"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -71449,6 +71962,71 @@ export const YtPlaylistDeleteReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `yt.playlist-move`. */
+export const YtPlaylistMoveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "playlistItemId": {
+      "description": "Playlist item ID, not video ID",
+      "minLength": 1,
+      "type": "string"
+    },
+    "position": {
+      "description": "Zero-based target position (0-5000)",
+      "pattern": "^\\d+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "playlistItemId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.playlist-move`. */
+export const YtPlaylistMoveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "item": {
+      "additionalProperties": false,
+      "properties": {
+        "playlistId": {
+          "type": "string"
+        },
+        "playlistItemId": {
+          "type": "string"
+        },
+        "position": {
+          "type": "number"
+        },
+        "videoId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "playlistItemId",
+        "playlistId",
+        "videoId",
+        "position"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "item"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `yt.playlist-remove`. */
 export const YtPlaylistRemoveInputSchema = {
   "additionalProperties": false,
@@ -71484,6 +72062,99 @@ export const YtPlaylistRemoveReturnSchema = {
   "required": [
     "success",
     "removed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.playlist-update`. */
+export const YtPlaylistUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "description": {
+      "description": "Replacement description",
+      "type": "string"
+    },
+    "playlistId": {
+      "description": "Owned YouTube playlist ID",
+      "minLength": 1,
+      "type": "string"
+    },
+    "privacy": {
+      "description": "public|private|unlisted",
+      "enum": [
+        "public",
+        "private",
+        "unlisted"
+      ],
+      "type": "string"
+    },
+    "title": {
+      "description": "Replacement title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "playlistId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.playlist-update`. */
+export const YtPlaylistUpdateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "playlist": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "itemCount": {
+          "type": "number"
+        },
+        "playlistId": {
+          "type": "string"
+        },
+        "privacyStatus": {
+          "type": "string"
+        },
+        "publishedAt": {
+          "type": "string"
+        },
+        "thumbnail": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "playlistId",
+        "title",
+        "description",
+        "thumbnail",
+        "itemCount",
+        "publishedAt",
+        "privacyStatus",
+        "url"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "playlist"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -71810,6 +72481,49 @@ export const YtStatsReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `yt.subscribe`. */
+export const YtSubscribeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channelId": {
+      "description": "Target YouTube channel ID",
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channelId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.subscribe`. */
+export const YtSubscribeReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channelId": {
+      "type": "string"
+    },
+    "subscriptionId": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "subscriptionId",
+    "channelId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `yt.subscriptions`. */
 export const YtSubscriptionsInputSchema = {
   "additionalProperties": false,
@@ -71893,6 +72607,54 @@ export const YtSubscriptionsReturnSchema = {
     "success",
     "subscriptions",
     "totalResults"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.thumbnail-set`. */
+export const YtThumbnailSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "file": {
+      "description": "Local JPEG/PNG image path",
+      "minLength": 1,
+      "type": "string"
+    },
+    "videoId": {
+      "description": "Owned YouTube video ID",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "videoId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.thumbnail-set`. */
+export const YtThumbnailSetReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "thumbnail": {
+      "type": "string"
+    },
+    "videoId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "success",
+    "videoId",
+    "thumbnail"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -71992,6 +72754,45 @@ export const YtUnansweredReturnSchema = {
     "videoId",
     "comments",
     "totalUnanswered"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.unsubscribe`. */
+export const YtUnsubscribeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "subscriptionId": {
+      "description": "Subscription ID, not channel ID",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "subscriptionId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.unsubscribe`. */
+export const YtUnsubscribeReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "deleted": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "deleted"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -72186,6 +72987,65 @@ export const YtVideoDeleteReturnSchema = {
   "required": [
     "success",
     "deleted"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.video-rating`. */
+export const YtVideoRatingInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "ids": {
+      "description": "One video ID or a comma-separated list",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "ids"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.video-rating`. */
+export const YtVideoRatingReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "ratings": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "rating": {
+            "type": "string"
+          },
+          "videoId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "videoId",
+          "rating"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "totalResults": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "success",
+    "ratings",
+    "totalResults"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

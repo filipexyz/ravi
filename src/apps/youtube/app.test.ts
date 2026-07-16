@@ -23,10 +23,15 @@ describe("YouTube Ravi App manifest", () => {
     expect(app.permissions.optional).toEqual(["youtube:read", "youtube:analytics:read", "youtube:captions:read"]);
     expect(app.permissions.mutating).toEqual([
       "youtube:comments:write",
+      "youtube:comments:delete",
       "youtube:videos:write",
       "youtube:videos:delete",
       "youtube:playlists:write",
       "youtube:playlists:delete",
+      "youtube:channels:write",
+      "youtube:subscriptions:write",
+      "youtube:subscriptions:delete",
+      "youtube:captions:delete",
     ]);
   });
 

@@ -8,6 +8,7 @@ import {
   getOptionsMetadata,
   getReturnsMetadata,
 } from "../decorators.js";
+import { runWithContext } from "../context.js";
 import { YouTubeCommands } from "./youtube.js";
 
 afterEach(() => mock.restore());
@@ -20,7 +21,7 @@ describe("YouTubeCommands contract", () => {
     const access = getCommandAccessMetadata(YouTubeCommands);
 
     expect(getGroupMetadata(YouTubeCommands)).toMatchObject({ name: "yt", scope: "open" });
-    expect(commands).toHaveLength(28);
+    expect(commands).toHaveLength(43);
     expect(returns.size).toBe(commands.length);
     expect(access.size).toBe(commands.length);
 
@@ -40,21 +41,52 @@ describe("YouTubeCommands contract", () => {
   it("classifies writes and destructive commands with confirmation", () => {
     const byMethod = getCommandAccessMetadata(YouTubeCommands);
 
-    for (const method of ["reply", "videoUpdate", "playlistCreate", "playlistAdd"]) {
+    for (const method of [
+      "reply",
+      "videoUpdate",
+      "playlistCreate",
+      "playlistAdd",
+      "channelUpdate",
+      "playlistUpdate",
+      "playlistMove",
+      "comment",
+      "commentModerate",
+      "commentUpdate",
+      "subscribe",
+      "thumbnailSet",
+    ]) {
       expect(byMethod.get(method)).toMatchObject({
         kind: "mutate",
         risk: "high",
         requiresConfirmation: true,
       });
     }
-    for (const method of ["videoDelete", "playlistDelete", "playlistRemove"]) {
+    for (const method of [
+      "videoDelete",
+      "playlistDelete",
+      "playlistRemove",
+      "commentDelete",
+      "unsubscribe",
+      "captionDelete",
+    ]) {
       expect(byMethod.get(method)).toMatchObject({
         kind: "mutate",
         risk: "destructive",
         requiresConfirmation: true,
       });
     }
-    for (const method of ["health", "info", "videos", "comments", "captions", "analyticsOverview"]) {
+    for (const method of [
+      "health",
+      "info",
+      "videos",
+      "comments",
+      "captions",
+      "analyticsOverview",
+      "activities",
+      "i18nLanguages",
+      "i18nRegions",
+      "videoRating",
+    ]) {
       expect(byMethod.get(method)?.kind).toBe("read");
     }
   });
@@ -98,6 +130,22 @@ describe("YouTubeCommands contract", () => {
     expect(replyToComment).toHaveBeenCalledWith("comment-1", "Texto aprovado");
     expect(result).toEqual({ success: true, replyId: "comment-1:14" });
     expect(getReturnsMetadata(YouTubeCommands).get("reply")?.safeParse(result).success).toBe(true);
+  });
+
+  it("rejects --ban-author unless the target status is rejected", async () => {
+    const setCommentModeration = mock(async () => ({ success: true as const, commentId: "c1", status: "rejected" }));
+    const client = { setCommentModeration } as unknown as YouTubeClient;
+    const commands = new YouTubeCommands(() => client);
+    spyOn(console, "log").mockImplementation(() => {});
+
+    const ctx = { sessionKey: "yt-test", sessionName: "yt-test", agentId: "ravi-dev" };
+    await expect(
+      runWithContext(ctx, () => commands.commentModerate("c1", "published", true, "brand", true)),
+    ).rejects.toThrow("--ban-author is only valid with --status rejected");
+    expect(setCommentModeration).not.toHaveBeenCalled();
+
+    await runWithContext(ctx, () => commands.commentModerate("c1", "rejected", true, "brand", true));
+    expect(setCommentModeration).toHaveBeenCalledWith("c1", "rejected", true);
   });
 
   it("declares safe and bounded defaults in command metadata", () => {
