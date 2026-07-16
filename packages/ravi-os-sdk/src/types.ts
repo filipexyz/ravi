@@ -5944,6 +5944,53 @@ export type FeedbackSendReturn = {
   url: string;
 };
 
+/** Input shape for `frete.quote`. */
+export type FreteQuoteInput = {
+  allDeliveryOptions?: boolean;
+  connection?: string;
+  destinationCep: string;
+  grouped?: boolean;
+  height?: string;
+  ignorePreparationDays?: boolean;
+  integrationId: string;
+  length?: string;
+  originCep?: string;
+  quantity?: string;
+  sku: string;
+  weight?: string;
+  width?: string;
+};
+
+/** Return shape for `frete.quote`. */
+export type FreteQuoteReturn = {
+  contract: {
+    documentation: "https://tiny.com.br/api-docs/api2-cotacao-fretes";
+    endpointTemplate: "https://api.tiny.com.br/webhook/api/v1/parceiro/{idEcommerce}/cotar";
+    verifiedAt: "2026-07-13";
+  };
+  destinationCep: string;
+  integrationId: number;
+  originCep: string | null;
+  provider: "olist-tiny";
+  quotes: Array<{
+    options: Array<{
+      deadlineDays: number;
+      deliveryType: "normal" | "expressa" | "economica" | "super_expressa" | "agendada" | "retirada" | "nao_definida";
+      freightMethodId: string;
+      freightMethodName: string;
+      price: number;
+      shippingMethodId: string;
+      shippingMethodName: string;
+    }>;
+    sku: string | null;
+  }>;
+  settings: {
+    groupDeliveryTypes: boolean;
+    grouped: boolean;
+    includePreparationDays: boolean;
+  };
+};
+
 /** Input shape for `gmail.list`. */
 export type GmailListInput = {
   connector?: string;

@@ -29734,6 +29734,240 @@ export const FeedbackSendReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `frete.quote`. */
+export const FreteQuoteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "allDeliveryOptions": {
+      "description": "Return every option instead of grouping by delivery type (default: false)",
+      "type": "boolean"
+    },
+    "connection": {
+      "default": "default",
+      "description": "Ravi credential connection (default: default)",
+      "minLength": 1,
+      "type": "string"
+    },
+    "destinationCep": {
+      "description": "Destination CEP, with or without punctuation",
+      "minLength": 1,
+      "type": "string"
+    },
+    "grouped": {
+      "description": "Quote all items as one grouped shipment (default: false)",
+      "type": "boolean"
+    },
+    "height": {
+      "description": "Optional package height in centimeters",
+      "pattern": "^\\d+(?:\\.\\d+)?$",
+      "type": "string"
+    },
+    "ignorePreparationDays": {
+      "description": "Do not add product preparation days to the deadline (default: false)",
+      "type": "boolean"
+    },
+    "integrationId": {
+      "description": "Positive Olist integration id",
+      "pattern": "^[1-9]\\d*$",
+      "type": "string"
+    },
+    "length": {
+      "description": "Optional package length in centimeters",
+      "pattern": "^\\d+(?:\\.\\d+)?$",
+      "type": "string"
+    },
+    "originCep": {
+      "description": "Optional origin CEP; account CEP is used when omitted",
+      "type": "string"
+    },
+    "quantity": {
+      "default": "1",
+      "description": "Positive package quantity (default: 1)",
+      "pattern": "^[1-9]\\d*$",
+      "type": "string"
+    },
+    "sku": {
+      "description": "Olist product/advertisement SKU",
+      "minLength": 1,
+      "type": "string"
+    },
+    "weight": {
+      "description": "Optional package weight in kilograms",
+      "pattern": "^\\d+(?:\\.\\d+)?$",
+      "type": "string"
+    },
+    "width": {
+      "description": "Optional package width in centimeters",
+      "pattern": "^\\d+(?:\\.\\d+)?$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "destinationCep",
+    "integrationId",
+    "sku"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `frete.quote`. */
+export const FreteQuoteReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contract": {
+      "additionalProperties": false,
+      "properties": {
+        "documentation": {
+          "const": "https://tiny.com.br/api-docs/api2-cotacao-fretes",
+          "type": "string"
+        },
+        "endpointTemplate": {
+          "const": "https://api.tiny.com.br/webhook/api/v1/parceiro/{idEcommerce}/cotar",
+          "type": "string"
+        },
+        "verifiedAt": {
+          "const": "2026-07-13",
+          "type": "string"
+        }
+      },
+      "required": [
+        "documentation",
+        "endpointTemplate",
+        "verifiedAt"
+      ],
+      "type": "object"
+    },
+    "destinationCep": {
+      "pattern": "^\\d{8}$",
+      "type": "string"
+    },
+    "integrationId": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
+    "originCep": {
+      "anyOf": [
+        {
+          "pattern": "^\\d{8}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "provider": {
+      "const": "olist-tiny",
+      "type": "string"
+    },
+    "quotes": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "options": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "deadlineDays": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "deliveryType": {
+                  "enum": [
+                    "normal",
+                    "expressa",
+                    "economica",
+                    "super_expressa",
+                    "agendada",
+                    "retirada",
+                    "nao_definida"
+                  ],
+                  "type": "string"
+                },
+                "freightMethodId": {
+                  "type": "string"
+                },
+                "freightMethodName": {
+                  "type": "string"
+                },
+                "price": {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "shippingMethodId": {
+                  "type": "string"
+                },
+                "shippingMethodName": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "deliveryType",
+                "price",
+                "deadlineDays",
+                "shippingMethodId",
+                "shippingMethodName",
+                "freightMethodId",
+                "freightMethodName"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "sku": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "sku",
+          "options"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "settings": {
+      "additionalProperties": false,
+      "properties": {
+        "groupDeliveryTypes": {
+          "type": "boolean"
+        },
+        "grouped": {
+          "type": "boolean"
+        },
+        "includePreparationDays": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "grouped",
+        "includePreparationDays",
+        "groupDeliveryTypes"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "provider",
+    "contract",
+    "integrationId",
+    "originCep",
+    "destinationCep",
+    "settings",
+    "quotes"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `gmail.list`. */
 export const GmailListInputSchema = {
   "additionalProperties": false,
