@@ -14905,6 +14905,29 @@ export type WorkflowsSpecsShowInput = {
 /** Return shape for `workflows.specs.show`. */
 export type WorkflowsSpecsShowReturn = Record<string, unknown>;
 
+/** Input shape for `yt.activities`. */
+export type YtActivitiesInput = {
+  connection?: string;
+  limit?: string;
+  page?: string;
+};
+
+/** Return shape for `yt.activities`. */
+export type YtActivitiesReturn = {
+  activities: Array<{
+    activityId: string;
+    description: string;
+    publishedAt: string;
+    thumbnail: string;
+    title: string;
+    type: string;
+    videoId: string;
+  }>;
+  nextPageToken?: string;
+  success: true;
+  totalResults: number;
+};
+
 /** Input shape for `yt.analytics-countries`. */
 export type YtAnalyticsCountriesInput = {
   connection?: string;
@@ -15036,6 +15059,18 @@ export type YtAnalyticsTrafficReturn = {
   success: true;
 };
 
+/** Input shape for `yt.caption-delete`. */
+export type YtCaptionDeleteInput = {
+  captionId: string;
+  connection?: string;
+};
+
+/** Return shape for `yt.caption-delete`. */
+export type YtCaptionDeleteReturn = {
+  deleted: string;
+  success: true;
+};
+
 /** Input shape for `yt.caption-download`. */
 export type YtCaptionDownloadInput = {
   captionId: string;
@@ -15073,6 +15108,86 @@ export type YtCaptionsReturn = {
   success: true;
   totalResults: number;
   videoId: string;
+};
+
+/** Input shape for `yt.channel-update`. */
+export type YtChannelUpdateInput = {
+  connection?: string;
+  country?: string;
+  description?: string;
+  keywords?: string;
+  language?: string;
+};
+
+/** Return shape for `yt.channel-update`. */
+export type YtChannelUpdateReturn = {
+  channel: {
+    channelId: string;
+    description: string;
+    subscriberCount: number;
+    thumbnail: string;
+    title: string;
+    uploadsPlaylistId: string;
+    url: string;
+    videoCount: number;
+    viewCount: number;
+  };
+  success: true;
+};
+
+/** Input shape for `yt.comment`. */
+export type YtCommentInput = {
+  connection?: string;
+  text?: string;
+  videoId: string;
+};
+
+/** Return shape for `yt.comment`. */
+export type YtCommentReturn = {
+  commentId: string;
+  success: true;
+  threadId: string;
+};
+
+/** Input shape for `yt.comment-delete`. */
+export type YtCommentDeleteInput = {
+  commentId: string;
+  connection?: string;
+};
+
+/** Return shape for `yt.comment-delete`. */
+export type YtCommentDeleteReturn = {
+  deleted: string;
+  success: true;
+};
+
+/** Input shape for `yt.comment-moderate`. */
+export type YtCommentModerateInput = {
+  banAuthor?: boolean;
+  commentId: string;
+  connection?: string;
+  status?: "heldForReview" | "published" | "rejected";
+};
+
+/** Return shape for `yt.comment-moderate`. */
+export type YtCommentModerateReturn = {
+  commentId: string;
+  moderationStatus: string;
+  success: true;
+};
+
+/** Input shape for `yt.comment-update`. */
+export type YtCommentUpdateInput = {
+  commentId: string;
+  connection?: string;
+  text?: string;
+};
+
+/** Return shape for `yt.comment-update`. */
+export type YtCommentUpdateReturn = {
+  commentId: string;
+  success: true;
+  text: string;
 };
 
 /** Input shape for `yt.comments`. */
@@ -15117,6 +15232,38 @@ export type YtHealthReturn = {
   message: string;
   ready: boolean;
   success: true;
+};
+
+/** Input shape for `yt.i18n-languages`. */
+export type YtI18nLanguagesInput = {
+  connection?: string;
+  hl?: string;
+};
+
+/** Return shape for `yt.i18n-languages`. */
+export type YtI18nLanguagesReturn = {
+  languages: Array<{
+    code: string;
+    name: string;
+  }>;
+  success: true;
+  totalResults: number;
+};
+
+/** Input shape for `yt.i18n-regions`. */
+export type YtI18nRegionsInput = {
+  connection?: string;
+  hl?: string;
+};
+
+/** Return shape for `yt.i18n-regions`. */
+export type YtI18nRegionsReturn = {
+  regions: Array<{
+    code: string;
+    name: string;
+  }>;
+  success: true;
+  totalResults: number;
 };
 
 /** Input shape for `yt.info`. */
@@ -15223,6 +15370,24 @@ export type YtPlaylistDeleteReturn = {
   success: true;
 };
 
+/** Input shape for `yt.playlist-move`. */
+export type YtPlaylistMoveInput = {
+  connection?: string;
+  playlistItemId: string;
+  position?: string;
+};
+
+/** Return shape for `yt.playlist-move`. */
+export type YtPlaylistMoveReturn = {
+  item: {
+    playlistId: string;
+    playlistItemId: string;
+    position: number;
+    videoId: string;
+  };
+  success: true;
+};
+
 /** Input shape for `yt.playlist-remove`. */
 export type YtPlaylistRemoveInput = {
   connection?: string;
@@ -15232,6 +15397,30 @@ export type YtPlaylistRemoveInput = {
 /** Return shape for `yt.playlist-remove`. */
 export type YtPlaylistRemoveReturn = {
   removed: string;
+  success: true;
+};
+
+/** Input shape for `yt.playlist-update`. */
+export type YtPlaylistUpdateInput = {
+  connection?: string;
+  description?: string;
+  playlistId: string;
+  privacy?: "public" | "private" | "unlisted";
+  title?: string;
+};
+
+/** Return shape for `yt.playlist-update`. */
+export type YtPlaylistUpdateReturn = {
+  playlist: {
+    description: string;
+    itemCount: number;
+    playlistId: string;
+    privacyStatus: string;
+    publishedAt: string;
+    thumbnail: string;
+    title: string;
+    url: string;
+  };
   success: true;
 };
 
@@ -15323,6 +15512,19 @@ export type YtStatsReturn = {
   success: true;
 };
 
+/** Input shape for `yt.subscribe`. */
+export type YtSubscribeInput = {
+  channelId: string;
+  connection?: string;
+};
+
+/** Return shape for `yt.subscribe`. */
+export type YtSubscribeReturn = {
+  channelId: string;
+  subscriptionId: string;
+  success: true;
+};
+
 /** Input shape for `yt.subscriptions`. */
 export type YtSubscriptionsInput = {
   connection?: string;
@@ -15345,6 +15547,20 @@ export type YtSubscriptionsReturn = {
   }>;
   success: true;
   totalResults: number;
+};
+
+/** Input shape for `yt.thumbnail-set`. */
+export type YtThumbnailSetInput = {
+  connection?: string;
+  file?: string;
+  videoId: string;
+};
+
+/** Return shape for `yt.thumbnail-set`. */
+export type YtThumbnailSetReturn = {
+  success: true;
+  thumbnail: string;
+  videoId: string;
 };
 
 /** Input shape for `yt.unanswered`. */
@@ -15371,6 +15587,18 @@ export type YtUnansweredReturn = {
   success: true;
   totalUnanswered: number;
   videoId: string;
+};
+
+/** Input shape for `yt.unsubscribe`. */
+export type YtUnsubscribeInput = {
+  connection?: string;
+  subscriptionId: string;
+};
+
+/** Return shape for `yt.unsubscribe`. */
+export type YtUnsubscribeReturn = {
+  deleted: string;
+  success: true;
 };
 
 /** Input shape for `yt.video`. */
@@ -15426,6 +15654,22 @@ export type YtVideoDeleteInput = {
 export type YtVideoDeleteReturn = {
   deleted: string;
   success: true;
+};
+
+/** Input shape for `yt.video-rating`. */
+export type YtVideoRatingInput = {
+  connection?: string;
+  ids: string;
+};
+
+/** Return shape for `yt.video-rating`. */
+export type YtVideoRatingReturn = {
+  ratings: Array<{
+    rating: string;
+    videoId: string;
+  }>;
+  success: true;
+  totalResults: number;
 };
 
 /** Input shape for `yt.video-update`. */

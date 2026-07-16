@@ -615,6 +615,252 @@ export class YouTubeClient {
     return { success: true, removed: playlistItemId };
   }
 
+  async listActivities(options: { maxResults?: number; pageToken?: string } = {}) {
+    const response = await this.dataRequest<ListResponse<ActivityResource>>(
+      "/activities",
+      {
+        part: "snippet,contentDetails",
+        mine: true,
+        maxResults: options.maxResults ?? 25,
+        pageToken: options.pageToken,
+      },
+      "activities.list",
+    );
+    const activities = (response.items ?? []).map(normalizeActivity);
+    return {
+      activities,
+      totalResults: response.pageInfo?.totalResults ?? activities.length,
+      nextPageToken: response.nextPageToken,
+    };
+  }
+
+  async listI18nLanguages(options: { hl?: string } = {}) {
+    const response = await this.dataRequest<ListResponse<I18nLanguageResource>>(
+      "/i18nLanguages",
+      { part: "snippet", hl: options.hl ?? "pt-BR" },
+      "i18nLanguages.list",
+    );
+    const languages = (response.items ?? []).map((item) => ({
+      code: item.snippet?.hl ?? item.id ?? "",
+      name: item.snippet?.name ?? "",
+    }));
+    return { languages, totalResults: languages.length };
+  }
+
+  async listI18nRegions(options: { hl?: string } = {}) {
+    const response = await this.dataRequest<ListResponse<I18nRegionResource>>(
+      "/i18nRegions",
+      { part: "snippet", hl: options.hl ?? "pt-BR" },
+      "i18nRegions.list",
+    );
+    const regions = (response.items ?? []).map((item) => ({
+      code: item.snippet?.gl ?? "",
+      name: item.snippet?.name ?? "",
+    }));
+    return { regions, totalResults: regions.length };
+  }
+
+  async getVideoRating(videoIds: string[]) {
+    const response = await this.dataRequest<ListResponse<VideoRatingResource>>(
+      "/videos/getRating",
+      { id: videoIds.join(",") },
+      "videos.getRating",
+    );
+    const ratings = (response.items ?? []).map((item) => ({
+      videoId: item.videoId ?? "",
+      rating: item.rating ?? "none",
+    }));
+    return { ratings, totalResults: ratings.length };
+  }
+
+  async updateChannel(changes: {
+    description?: string;
+    keywords?: string;
+    country?: string;
+    defaultLanguage?: string;
+  }) {
+    if (
+      changes.description === undefined &&
+      changes.keywords === undefined &&
+      changes.country === undefined &&
+      changes.defaultLanguage === undefined
+    ) {
+      throw new Error("Provide at least one channel branding field to update.");
+    }
+    const current = await this.dataRequest<ListResponse<ChannelResource>>(
+      "/channels",
+      { part: "brandingSettings", mine: true },
+      "channels.get-for-update",
+    );
+    const channel = current.items?.[0];
+    if (!channel?.id) throw new Error("No YouTube channel is available to this credential.");
+    const branding = channel.brandingSettings?.channel ?? {};
+    const body = {
+      id: channel.id,
+      brandingSettings: {
+        channel: {
+          ...branding,
+          description: changes.description ?? branding.description,
+          keywords: changes.keywords ?? branding.keywords,
+          country: changes.country ?? branding.country,
+          defaultLanguage: changes.defaultLanguage ?? branding.defaultLanguage,
+        },
+      },
+    };
+    await this.dataRequest("/channels", { part: "brandingSettings" }, "channels.update", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+    return { success: true, channel: await this.channelInfo() };
+  }
+
+  async updatePlaylist(
+    playlistId: string,
+    changes: { title?: string; description?: string; privacyStatus?: "public" | "private" | "unlisted" },
+  ) {
+    if (changes.title === undefined && changes.description === undefined && changes.privacyStatus === undefined) {
+      throw new Error("Provide at least one playlist field to update.");
+    }
+    const current = await this.dataRequest<ListResponse<PlaylistResource>>(
+      "/playlists",
+      { part: "snippet,status", id: playlistId },
+      "playlists.get-for-update",
+    );
+    const playlist = current.items?.[0];
+    if (!playlist) throw new Error(`YouTube playlist not found: ${playlistId}`);
+    const body = {
+      id: playlistId,
+      snippet: {
+        title: changes.title ?? playlist.snippet?.title ?? "",
+        description: changes.description ?? playlist.snippet?.description ?? "",
+      },
+      status: { privacyStatus: changes.privacyStatus ?? playlist.status?.privacyStatus ?? "private" },
+    };
+    const updated = await this.dataRequest<PlaylistResource>(
+      "/playlists",
+      { part: "snippet,status" },
+      "playlists.update",
+      {
+        method: "PUT",
+        body: JSON.stringify(body),
+      },
+    );
+    return { success: true, playlist: normalizePlaylist(updated) };
+  }
+
+  async movePlaylistItem(playlistItemId: string, position: number) {
+    const current = await this.dataRequest<ListResponse<PlaylistItemResource>>(
+      "/playlistItems",
+      { part: "snippet", id: playlistItemId },
+      "playlistItems.get-for-move",
+    );
+    const item = current.items?.[0];
+    if (!item?.snippet?.playlistId || !item.snippet.resourceId) {
+      throw new Error(`YouTube playlist item not found: ${playlistItemId}`);
+    }
+    const body = {
+      id: playlistItemId,
+      snippet: { playlistId: item.snippet.playlistId, resourceId: item.snippet.resourceId, position },
+    };
+    const updated = await this.dataRequest<PlaylistItemResource>(
+      "/playlistItems",
+      { part: "snippet" },
+      "playlistItems.update",
+      {
+        method: "PUT",
+        body: JSON.stringify(body),
+      },
+    );
+    return {
+      success: true,
+      item: {
+        playlistItemId: updated.id ?? playlistItemId,
+        playlistId: updated.snippet?.playlistId ?? item.snippet.playlistId,
+        videoId: updated.snippet?.resourceId?.videoId ?? item.snippet.resourceId.videoId ?? "",
+        position: updated.snippet?.position ?? position,
+      },
+    };
+  }
+
+  async insertComment(videoId: string, text: string) {
+    const thread = await this.dataRequest<CommentThreadResource>(
+      "/commentThreads",
+      { part: "snippet" },
+      "commentThreads.insert",
+      {
+        method: "POST",
+        body: JSON.stringify({ snippet: { videoId, topLevelComment: { snippet: { textOriginal: text } } } }),
+      },
+    );
+    return { success: true, threadId: thread.id ?? "", commentId: thread.snippet?.topLevelComment?.id ?? "" };
+  }
+
+  async setCommentModeration(
+    commentId: string,
+    moderationStatus: "heldForReview" | "published" | "rejected",
+    banAuthor?: boolean,
+  ) {
+    await this.dataRequest(
+      "/comments/setModerationStatus",
+      { id: commentId, moderationStatus, banAuthor: banAuthor ? "true" : undefined },
+      "comments.setModerationStatus",
+      { method: "POST" },
+    );
+    return { success: true, commentId, moderationStatus };
+  }
+
+  async deleteComment(commentId: string) {
+    await this.dataRequest("/comments", { id: commentId }, "comments.delete", { method: "DELETE" });
+    return { success: true, deleted: commentId };
+  }
+
+  async updateComment(commentId: string, text: string) {
+    const updated = await this.dataRequest<CommentResource>("/comments", { part: "snippet" }, "comments.update", {
+      method: "PUT",
+      body: JSON.stringify({ id: commentId, snippet: { textOriginal: text } }),
+    });
+    return { success: true, commentId: updated.id ?? commentId, text: updated.snippet?.textDisplay ?? text };
+  }
+
+  async subscribe(channelId: string) {
+    const subscription = await this.dataRequest<SubscriptionResource>(
+      "/subscriptions",
+      { part: "snippet" },
+      "subscriptions.insert",
+      {
+        method: "POST",
+        body: JSON.stringify({ snippet: { resourceId: { kind: "youtube#channel", channelId } } }),
+      },
+    );
+    return { success: true, subscriptionId: subscription.id ?? "", channelId };
+  }
+
+  async unsubscribe(subscriptionId: string) {
+    await this.dataRequest("/subscriptions", { id: subscriptionId }, "subscriptions.delete", { method: "DELETE" });
+    return { success: true, deleted: subscriptionId };
+  }
+
+  async deleteCaption(captionId: string) {
+    await this.dataRequest("/captions", { id: captionId }, "captions.delete", { method: "DELETE" });
+    return { success: true, deleted: captionId };
+  }
+
+  async setThumbnail(videoId: string, image: { data: Uint8Array; contentType: string }) {
+    const result = await this.uploadRequest<ListResponse<ThumbnailSetResource>>(
+      "https://www.googleapis.com/upload/youtube/v3/thumbnails/set",
+      { videoId, uploadType: "media" },
+      "thumbnails.set",
+      image.data,
+      image.contentType,
+    );
+    const item = result.items?.[0];
+    return {
+      success: true,
+      videoId,
+      thumbnail: item?.high?.url ?? item?.medium?.url ?? item?.default?.url ?? "",
+    };
+  }
+
   private async currentChannel(): Promise<ChannelResource> {
     const response = await this.dataRequest<ListResponse<ChannelResource>>(
       "/channels",
@@ -661,6 +907,33 @@ export class YouTubeClient {
     init: RequestInit = {},
   ): Promise<T> {
     const response = await this.request(baseUrl, query, action, init);
+    const text = await response.text();
+    if (!response.ok) throw requestError(response.status, text);
+    if (!text) return {} as T;
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      throw new Error(`YouTube API returned invalid JSON (${response.status}).`);
+    }
+  }
+
+  private async uploadRequest<T>(
+    uploadUrl: string,
+    query: Record<string, QueryValue>,
+    action: string,
+    body: Uint8Array,
+    contentType: string,
+  ): Promise<T> {
+    const credential = await this.resolveCredential(action);
+    const url = new URL(uploadUrl);
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined) url.searchParams.set(key, String(value));
+    }
+    const response = await this.#fetch(url, {
+      method: "POST",
+      headers: { authorization: `Bearer ${credential.accessToken}`, "content-type": contentType },
+      body: body as unknown as RequestInit["body"],
+    });
     const text = await response.text();
     if (!response.ok) throw requestError(response.status, text);
     if (!text) return {} as T;
@@ -746,6 +1019,30 @@ interface ChannelResource {
   snippet?: { title?: string; description?: string; thumbnails?: ThumbnailSet };
   statistics?: { subscriberCount?: string; videoCount?: string; viewCount?: string };
   contentDetails?: { relatedPlaylists?: { uploads?: string } };
+  brandingSettings?: {
+    channel?: {
+      title?: string;
+      description?: string;
+      keywords?: string;
+      country?: string;
+      defaultLanguage?: string;
+      [key: string]: unknown;
+    };
+    [key: string]: unknown;
+  };
+}
+
+interface PlaylistItemSnippet {
+  title?: string;
+  playlistId?: string;
+  position?: number;
+  resourceId?: { kind?: string; videoId?: string };
+}
+
+interface ThumbnailSetResource {
+  default?: { url?: string };
+  medium?: { url?: string };
+  high?: { url?: string };
 }
 
 interface VideoResource {
@@ -801,7 +1098,7 @@ interface PlaylistResource {
 
 interface PlaylistItemResource {
   id?: string;
-  snippet?: { title?: string };
+  snippet?: PlaylistItemSnippet;
   contentDetails?: { videoId?: string };
 }
 
@@ -827,6 +1124,49 @@ interface CaptionResource {
     isDraft?: boolean;
     status?: string;
     lastUpdated?: string;
+  };
+}
+
+interface ActivityResource {
+  id?: string;
+  snippet?: { type?: string; title?: string; description?: string; publishedAt?: string; thumbnails?: ThumbnailSet };
+  contentDetails?: {
+    upload?: { videoId?: string };
+    playlistItem?: { resourceId?: { videoId?: string } };
+    like?: { resourceId?: { videoId?: string } };
+  };
+}
+
+interface I18nLanguageResource {
+  id?: string;
+  snippet?: { hl?: string; name?: string };
+}
+
+interface I18nRegionResource {
+  id?: string;
+  snippet?: { gl?: string; name?: string };
+}
+
+interface VideoRatingResource {
+  videoId?: string;
+  rating?: string;
+}
+
+function normalizeActivity(item: ActivityResource) {
+  const snippet = item.snippet;
+  const details = item.contentDetails;
+  return {
+    activityId: item.id ?? "",
+    type: snippet?.type ?? "",
+    title: snippet?.title ?? "",
+    description: snippet?.description ?? "",
+    publishedAt: snippet?.publishedAt ?? "",
+    thumbnail: snippet?.thumbnails?.medium?.url ?? snippet?.thumbnails?.default?.url ?? "",
+    videoId:
+      details?.upload?.videoId ??
+      details?.playlistItem?.resourceId?.videoId ??
+      details?.like?.resourceId?.videoId ??
+      "",
   };
 }
 

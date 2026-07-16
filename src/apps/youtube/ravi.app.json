@@ -229,6 +229,96 @@
       "command": "ravi yt playlist-remove --json {args}",
       "mutating": true,
       "permission": "youtube:playlists:delete"
+    },
+    "youtube.activities": {
+      "interface": "cli",
+      "command": "ravi yt activities --json {args}",
+      "mutating": false,
+      "permission": "youtube:read"
+    },
+    "youtube.i18n-languages": {
+      "interface": "cli",
+      "command": "ravi yt i18n-languages --json {args}",
+      "mutating": false,
+      "permission": "youtube:read"
+    },
+    "youtube.i18n-regions": {
+      "interface": "cli",
+      "command": "ravi yt i18n-regions --json {args}",
+      "mutating": false,
+      "permission": "youtube:read"
+    },
+    "youtube.video-rating": {
+      "interface": "cli",
+      "command": "ravi yt video-rating --json {args}",
+      "mutating": false,
+      "permission": "youtube:read"
+    },
+    "youtube.channel-update": {
+      "interface": "cli",
+      "command": "ravi yt channel-update --json {args}",
+      "mutating": true,
+      "permission": "youtube:channels:write"
+    },
+    "youtube.playlist-update": {
+      "interface": "cli",
+      "command": "ravi yt playlist-update --json {args}",
+      "mutating": true,
+      "permission": "youtube:playlists:write"
+    },
+    "youtube.playlist-move": {
+      "interface": "cli",
+      "command": "ravi yt playlist-move --json {args}",
+      "mutating": true,
+      "permission": "youtube:playlists:write"
+    },
+    "youtube.comment": {
+      "interface": "cli",
+      "command": "ravi yt comment --json {args}",
+      "mutating": true,
+      "permission": "youtube:comments:write"
+    },
+    "youtube.comment-moderate": {
+      "interface": "cli",
+      "command": "ravi yt comment-moderate --json {args}",
+      "mutating": true,
+      "permission": "youtube:comments:write"
+    },
+    "youtube.comment-update": {
+      "interface": "cli",
+      "command": "ravi yt comment-update --json {args}",
+      "mutating": true,
+      "permission": "youtube:comments:write"
+    },
+    "youtube.comment-delete": {
+      "interface": "cli",
+      "command": "ravi yt comment-delete --json {args}",
+      "mutating": true,
+      "permission": "youtube:comments:delete"
+    },
+    "youtube.subscribe": {
+      "interface": "cli",
+      "command": "ravi yt subscribe --json {args}",
+      "mutating": true,
+      "permission": "youtube:subscriptions:write"
+    },
+    "youtube.unsubscribe": {
+      "interface": "cli",
+      "command": "ravi yt unsubscribe --json {args}",
+      "mutating": true,
+      "permission": "youtube:subscriptions:delete"
+    },
+    "youtube.caption-delete": {
+      "interface": "cli",
+      "command": "ravi yt caption-delete --json {args}",
+      "mutating": true,
+      "permission": "youtube:captions:delete"
+    },
+    "youtube.thumbnail-set": {
+      "interface": "cli",
+      "command": "ravi yt thumbnail-set --json {args}",
+      "mutating": true,
+      "permission": "youtube:videos:write"
     }
   },
   "permissions": {
@@ -236,10 +326,15 @@
     "optional": ["youtube:read", "youtube:analytics:read", "youtube:captions:read"],
     "mutating": [
       "youtube:comments:write",
+      "youtube:comments:delete",
       "youtube:videos:write",
       "youtube:videos:delete",
       "youtube:playlists:write",
-      "youtube:playlists:delete"
+      "youtube:playlists:delete",
+      "youtube:channels:write",
+      "youtube:subscriptions:write",
+      "youtube:subscriptions:delete",
+      "youtube:captions:delete"
     ]
   },
   "operationClasses": {
@@ -257,7 +352,11 @@
       "youtube.subscriptions",
       "youtube.captions",
       "youtube.caption-download",
-      "youtube.video-categories"
+      "youtube.video-categories",
+      "youtube.activities",
+      "youtube.i18n-languages",
+      "youtube.i18n-regions",
+      "youtube.video-rating"
     ],
     "analyticsRead": [
       "youtube.analytics-overview",
@@ -268,8 +367,28 @@
       "youtube.analytics-countries",
       "youtube.analytics-devices"
     ],
-    "write": ["youtube.reply", "youtube.video-update", "youtube.playlist-create", "youtube.playlist-add"],
-    "destructive": ["youtube.video-delete", "youtube.playlist-delete", "youtube.playlist-remove"],
+    "write": [
+      "youtube.reply",
+      "youtube.video-update",
+      "youtube.playlist-create",
+      "youtube.playlist-add",
+      "youtube.channel-update",
+      "youtube.playlist-update",
+      "youtube.playlist-move",
+      "youtube.comment",
+      "youtube.comment-moderate",
+      "youtube.comment-update",
+      "youtube.subscribe",
+      "youtube.thumbnail-set"
+    ],
+    "destructive": [
+      "youtube.video-delete",
+      "youtube.playlist-delete",
+      "youtube.playlist-remove",
+      "youtube.comment-delete",
+      "youtube.unsubscribe",
+      "youtube.caption-delete"
+    ],
     "financial": []
   },
   "storage": {

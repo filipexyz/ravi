@@ -379,4 +379,278 @@ describe("YouTubeClient", () => {
       accessToken: "trimmed-token",
     });
   });
+
+  it("normalizes the channel activity feed and extracts the related video id", async () => {
+    const requests: RequestRecord[] = [];
+    const fetch = fakeFetch((request) => {
+      requests.push(request);
+      return json({
+        items: [
+          {
+            id: "act-1",
+            snippet: {
+              type: "upload",
+              title: "Novo vídeo",
+              description: "desc",
+              publishedAt: "2026-07-14T15:00:00Z",
+              thumbnails: { medium: { url: "https://example.test/m.jpg" } },
+            },
+            contentDetails: { upload: { videoId: "vid-1" } },
+          },
+        ],
+        pageInfo: { totalResults: 16 },
+        nextPageToken: "NEXT",
+      });
+    });
+    const client = new YouTubeClient({ fetch, credential: { accessToken: "unit-test-token" } });
+
+    const result = await client.listActivities({ maxResults: 3 });
+    expect(result).toEqual({
+      activities: [
+        {
+          activityId: "act-1",
+          type: "upload",
+          title: "Novo vídeo",
+          description: "desc",
+          publishedAt: "2026-07-14T15:00:00Z",
+          thumbnail: "https://example.test/m.jpg",
+          videoId: "vid-1",
+        },
+      ],
+      totalResults: 16,
+      nextPageToken: "NEXT",
+    });
+    expect(requests[0]?.url.href).toContain("/activities?");
+    expect(requests[0]?.url.searchParams.get("mine")).toBe("true");
+    expect(requests[0]?.url.searchParams.get("maxResults")).toBe("3");
+  });
+
+  it("maps i18n languages and regions to code/name pairs", async () => {
+    const fetch = fakeFetch((request) =>
+      request.url.href.includes("i18nLanguages")
+        ? json({ items: [{ id: "pt", snippet: { hl: "pt", name: "Português" } }] })
+        : json({ items: [{ id: "BR", snippet: { gl: "BR", name: "Brasil" } }] }),
+    );
+    const client = new YouTubeClient({ fetch, credential: { accessToken: "unit-test-token" } });
+
+    expect(await client.listI18nLanguages({})).toEqual({
+      languages: [{ code: "pt", name: "Português" }],
+      totalResults: 1,
+    });
+    expect(await client.listI18nRegions({})).toEqual({
+      regions: [{ code: "BR", name: "Brasil" }],
+      totalResults: 1,
+    });
+  });
+
+  it("returns the caller's own like/dislike rating for videos", async () => {
+    const requests: RequestRecord[] = [];
+    const fetch = fakeFetch((request) => {
+      requests.push(request);
+      return json({
+        items: [
+          { videoId: "vid-1", rating: "like" },
+          { videoId: "vid-2", rating: "none" },
+        ],
+      });
+    });
+    const client = new YouTubeClient({ fetch, credential: { accessToken: "unit-test-token" } });
+
+    expect(await client.getVideoRating(["vid-1", "vid-2"])).toEqual({
+      ratings: [
+        { videoId: "vid-1", rating: "like" },
+        { videoId: "vid-2", rating: "none" },
+      ],
+      totalResults: 2,
+    });
+    expect(requests[0]?.url.href).toContain("/videos/getRating?");
+    expect(requests[0]?.url.searchParams.get("id")).toBe("vid-1,vid-2");
+  });
+
+  it("merges channel branding before updating and refetches channel info", async () => {
+    const requests: RequestRecord[] = [];
+    const fetch = fakeFetch((request) => {
+      requests.push(request);
+      if (requests.length === 1) {
+        return json({ items: [{ id: "UC1", brandingSettings: { channel: { description: "old", keywords: "a b" } } }] });
+      }
+      if (request.init.method === "PUT") return json({});
+      return json({ items: [{ id: "UC1", snippet: { title: "Canal" }, statistics: {}, contentDetails: {} }] });
+    });
+    const client = new YouTubeClient({ fetch, credential: { accessToken: "unit-test-token" } });
+
+    const result = await client.updateChannel({ description: "new" });
+    expect(result.success).toBe(true);
+    expect(requests[1]?.init.method).toBe("PUT");
+    expect(requests[1]?.url.searchParams.get("part")).toBe("brandingSettings");
+    expect(JSON.parse(String(requests[1]?.init.body))).toEqual({
+      id: "UC1",
+      brandingSettings: {
+        channel: { description: "new", keywords: "a b", country: undefined, defaultLanguage: undefined },
+      },
+    });
+  });
+
+  it("rejects a channel update with no fields", async () => {
+    const fetch = fakeFetch(() => json({}));
+    const client = new YouTubeClient({ fetch, credential: { accessToken: "unit-test-token" } });
+    await expect(client.updateChannel({})).rejects.toThrow("at least one channel branding field");
+  });
+
+  it("updates playlist metadata after reading current values", async () => {
+    const requests: RequestRecord[] = [];
+    const fetch = fakeFetch((request) => {
+      requests.push(request);
+      if (requests.length === 1) {
+        return json({
+          items: [{ id: "PL1", snippet: { title: "old", description: "d" }, status: { privacyStatus: "public" } }],
+        });
+      }
+      return json({
+        id: "PL1",
+        snippet: { title: "new", description: "d", publishedAt: "2026-01-01T00:00:00Z" },
+        status: { privacyStatus: "public" },
+        contentDetails: { itemCount: 3 },
+      });
+    });
+    const client = new YouTubeClient({ fetch, credential: { accessToken: "unit-test-token" } });
+
+    const result = await client.updatePlaylist("PL1", { title: "new" });
+    expect(result.playlist.title).toBe("new");
+    expect(requests[1]?.init.method).toBe("PUT");
+    expect(JSON.parse(String(requests[1]?.init.body))).toEqual({
+      id: "PL1",
+      snippet: { title: "new", description: "d" },
+      status: { privacyStatus: "public" },
+    });
+  });
+
+  it("moves a playlist item preserving playlistId and resourceId", async () => {
+    const requests: RequestRecord[] = [];
+    const fetch = fakeFetch((request) => {
+      requests.push(request);
+      if (requests.length === 1) {
+        return json({
+          items: [
+            { id: "PI1", snippet: { playlistId: "PL1", resourceId: { kind: "youtube#video", videoId: "vid-1" } } },
+          ],
+        });
+      }
+      return json({ id: "PI1", snippet: { playlistId: "PL1", resourceId: { videoId: "vid-1" }, position: 0 } });
+    });
+    const client = new YouTubeClient({ fetch, credential: { accessToken: "unit-test-token" } });
+
+    const result = await client.movePlaylistItem("PI1", 0);
+    expect(result.item).toEqual({ playlistItemId: "PI1", playlistId: "PL1", videoId: "vid-1", position: 0 });
+    expect(JSON.parse(String(requests[1]?.init.body))).toEqual({
+      id: "PI1",
+      snippet: { playlistId: "PL1", resourceId: { kind: "youtube#video", videoId: "vid-1" }, position: 0 },
+    });
+  });
+
+  it("publishes a top-level comment thread and returns thread and comment ids", async () => {
+    const requests: RequestRecord[] = [];
+    const fetch = fakeFetch((request) => {
+      requests.push(request);
+      return json({ id: "thread-1", snippet: { topLevelComment: { id: "comment-1" } } });
+    });
+    const client = new YouTubeClient({ fetch, credential: { accessToken: "unit-test-token" } });
+
+    expect(await client.insertComment("vid-1", "Olá")).toEqual({
+      success: true,
+      threadId: "thread-1",
+      commentId: "comment-1",
+    });
+    expect(requests[0]?.url.href).toBe("https://www.googleapis.com/youtube/v3/commentThreads?part=snippet");
+    expect(JSON.parse(String(requests[0]?.init.body))).toEqual({
+      snippet: { videoId: "vid-1", topLevelComment: { snippet: { textOriginal: "Olá" } } },
+    });
+  });
+
+  it("sets comment moderation status via query params without a body", async () => {
+    const requests: RequestRecord[] = [];
+    const fetch = fakeFetch((request) => {
+      requests.push(request);
+      return new Response("", { status: 204 });
+    });
+    const client = new YouTubeClient({ fetch, credential: { accessToken: "unit-test-token" } });
+
+    expect(await client.setCommentModeration("comment-1", "rejected", true)).toEqual({
+      success: true,
+      commentId: "comment-1",
+      moderationStatus: "rejected",
+    });
+    expect(requests[0]?.url.href).toContain("/comments/setModerationStatus?");
+    expect(requests[0]?.init.method).toBe("POST");
+    expect(requests[0]?.url.searchParams.get("moderationStatus")).toBe("rejected");
+    expect(requests[0]?.url.searchParams.get("banAuthor")).toBe("true");
+    expect(requests[0]?.init.body).toBeUndefined();
+  });
+
+  it("deletes and edits comments through the official endpoints", async () => {
+    const requests: RequestRecord[] = [];
+    const fetch = fakeFetch((request) => {
+      requests.push(request);
+      if (request.init.method === "DELETE") return new Response("", { status: 204 });
+      return json({ id: "comment-1", snippet: { textDisplay: "novo" } });
+    });
+    const client = new YouTubeClient({ fetch, credential: { accessToken: "unit-test-token" } });
+
+    expect(await client.deleteComment("comment-1")).toEqual({ success: true, deleted: "comment-1" });
+    expect(requests[0]?.init.method).toBe("DELETE");
+    expect(await client.updateComment("comment-1", "novo")).toEqual({
+      success: true,
+      commentId: "comment-1",
+      text: "novo",
+    });
+    expect(requests[1]?.init.method).toBe("PUT");
+  });
+
+  it("subscribes and unsubscribes through the subscriptions endpoints", async () => {
+    const requests: RequestRecord[] = [];
+    const fetch = fakeFetch((request) => {
+      requests.push(request);
+      if (request.init.method === "DELETE") return new Response("", { status: 204 });
+      return json({ id: "sub-1" });
+    });
+    const client = new YouTubeClient({ fetch, credential: { accessToken: "unit-test-token" } });
+
+    expect(await client.subscribe("UC2")).toEqual({ success: true, subscriptionId: "sub-1", channelId: "UC2" });
+    expect(JSON.parse(String(requests[0]?.init.body))).toEqual({
+      snippet: { resourceId: { kind: "youtube#channel", channelId: "UC2" } },
+    });
+    expect(await client.unsubscribe("sub-1")).toEqual({ success: true, deleted: "sub-1" });
+    expect(requests[1]?.init.method).toBe("DELETE");
+    expect(requests[1]?.url.searchParams.get("id")).toBe("sub-1");
+  });
+
+  it("deletes a caption track", async () => {
+    const requests: RequestRecord[] = [];
+    const fetch = fakeFetch((request) => {
+      requests.push(request);
+      return new Response("", { status: 204 });
+    });
+    const client = new YouTubeClient({ fetch, credential: { accessToken: "unit-test-token" } });
+
+    expect(await client.deleteCaption("caption-1")).toEqual({ success: true, deleted: "caption-1" });
+    expect(requests[0]?.url.href).toContain("/captions?");
+    expect(requests[0]?.init.method).toBe("DELETE");
+  });
+
+  it("uploads a thumbnail to the media endpoint with the image content type", async () => {
+    const requests: RequestRecord[] = [];
+    const fetch = fakeFetch((request) => {
+      requests.push(request);
+      return json({ items: [{ high: { url: "https://example.test/hq.jpg" } }] });
+    });
+    const client = new YouTubeClient({ fetch, credential: { accessToken: "unit-test-token" } });
+
+    const result = await client.setThumbnail("vid-1", { data: new Uint8Array([1, 2, 3]), contentType: "image/jpeg" });
+    expect(result).toEqual({ success: true, videoId: "vid-1", thumbnail: "https://example.test/hq.jpg" });
+    expect(requests[0]?.url.href).toContain("https://www.googleapis.com/upload/youtube/v3/thumbnails/set");
+    expect(requests[0]?.url.searchParams.get("videoId")).toBe("vid-1");
+    expect(requests[0]?.url.searchParams.get("uploadType")).toBe("media");
+    expect(requests[0]?.init.method).toBe("POST");
+    expect((requests[0]?.init.headers as Record<string, string>)["content-type"]).toBe("image/jpeg");
+  });
 });

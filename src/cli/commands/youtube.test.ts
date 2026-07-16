@@ -20,7 +20,7 @@ describe("YouTubeCommands contract", () => {
     const access = getCommandAccessMetadata(YouTubeCommands);
 
     expect(getGroupMetadata(YouTubeCommands)).toMatchObject({ name: "yt", scope: "open" });
-    expect(commands).toHaveLength(28);
+    expect(commands).toHaveLength(43);
     expect(returns.size).toBe(commands.length);
     expect(access.size).toBe(commands.length);
 
@@ -40,21 +40,52 @@ describe("YouTubeCommands contract", () => {
   it("classifies writes and destructive commands with confirmation", () => {
     const byMethod = getCommandAccessMetadata(YouTubeCommands);
 
-    for (const method of ["reply", "videoUpdate", "playlistCreate", "playlistAdd"]) {
+    for (const method of [
+      "reply",
+      "videoUpdate",
+      "playlistCreate",
+      "playlistAdd",
+      "channelUpdate",
+      "playlistUpdate",
+      "playlistMove",
+      "comment",
+      "commentModerate",
+      "commentUpdate",
+      "subscribe",
+      "thumbnailSet",
+    ]) {
       expect(byMethod.get(method)).toMatchObject({
         kind: "mutate",
         risk: "high",
         requiresConfirmation: true,
       });
     }
-    for (const method of ["videoDelete", "playlistDelete", "playlistRemove"]) {
+    for (const method of [
+      "videoDelete",
+      "playlistDelete",
+      "playlistRemove",
+      "commentDelete",
+      "unsubscribe",
+      "captionDelete",
+    ]) {
       expect(byMethod.get(method)).toMatchObject({
         kind: "mutate",
         risk: "destructive",
         requiresConfirmation: true,
       });
     }
-    for (const method of ["health", "info", "videos", "comments", "captions", "analyticsOverview"]) {
+    for (const method of [
+      "health",
+      "info",
+      "videos",
+      "comments",
+      "captions",
+      "analyticsOverview",
+      "activities",
+      "i18nLanguages",
+      "i18nRegions",
+      "videoRating",
+    ]) {
       expect(byMethod.get(method)?.kind).toBe("read");
     }
   });
