@@ -391,6 +391,22 @@ describe("Ravi app router", () => {
     ).toBe(`/opt/bun/bin/bun ${join(process.cwd(), "dist/bundle/index.js")} yt info --json`);
   });
 
+  it("routes the first-party Gmail app through its existing static CLI root", () => {
+    // Gmail is a Padrão B app: its CLI operations wrap the native `ravi gmail`
+    // group. runAppOperation rewrites the leading `ravi` token to a
+    // self-invocation of the current installation (execPath + entrypoint) so
+    // the operation lands on the same binary's static `gmail` root rather than
+    // resolving an unrelated `ravi` from PATH.
+    expect(
+      resolveRaviCliCommand("ravi gmail list --native --json --connection missing-test-connection", {
+        execPath: "/opt/bun/bin/bun",
+        entrypoint: "/opt/ravi/dist/bundle/index.js",
+      }),
+    ).toBe(
+      "/opt/bun/bin/bun /opt/ravi/dist/bundle/index.js gmail list --native --json --connection missing-test-connection",
+    );
+  });
+
   it("resolves dotted operation ids from whitespace-separated CLI tokens", async () => {
     const root = makeRepo();
     writeManifest(root, "khal-tasks", manifest("khal-tasks"));

@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { z } from "zod";
+import { GmailClient, encodeGmailMimeMessage, type GmailMessage } from "../../apps/gmail/client.js";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
 import { LinkStepUpRequiredError } from "../../link/client.js";
@@ -12,7 +13,7 @@ import { declareCommandReturns } from "./operational-return-schemas.js";
 
 @Group({
   name: "gmail",
-  description: "Operate Gmail through a connected Google connector",
+  description: "Operate Gmail through its native Ravi App or the existing Google connector fallback",
   scope: "open",
 })
 export class GmailCommands {
@@ -24,12 +25,15 @@ export class GmailCommands {
     @Option({ flags: "--max <n>", description: "Max messages to return (1-100, default 25)" }) maxOpt?: string,
     @Option({ flags: "--cursor <token>", description: "Page token for the next page (Gmail nextPageToken)" })
     cursor?: string,
+    @Option({ flags: "--native", description: "Use the native Gmail REST client registered by the Ravi App" })
+    native?: boolean,
+    @Option({ flags: "--connection <id>", description: "Native Gmail credential connection (default: default)" })
+    connection?: string,
     @Option({ flags: "--connector <id>", description: "Connector id (defaults to first active Google)" })
     connector?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     return runGmailCommand(asJson, async () => {
-      const connectorId = connector ?? (await resolveDefaultGoogleConnector());
       const max = Math.min(Math.max(Number.parseInt(maxOpt ?? "25", 10) || 25, 1), 100);
       const labelIds = label
         ? label
@@ -37,11 +41,23 @@ export class GmailCommands {
             .map((s) => s.trim())
             .filter(Boolean)
         : undefined;
-      const exec = await execCapability({
-        connectorId,
-        capability: "gmail.message.list",
-        parameters: { q: query, labelIds, maxResults: max, pageToken: cursor },
-      });
+      const useNative = native === true || connection !== undefined;
+      assertTransportSelection(useNative, connector);
+      const exec = useNative
+        ? nativeExec(
+            "gmail.message.list",
+            await new GmailClient({ connection }).listMessages({
+              q: query,
+              labelIds,
+              maxResults: max,
+              pageToken: cursor,
+            }),
+          )
+        : await execCapability({
+            connectorId: connector ?? (await resolveDefaultGoogleConnector()),
+            capability: "gmail.message.list",
+            parameters: { q: query, labelIds, maxResults: max, pageToken: cursor },
+          });
       const result = (exec.result ?? {}) as {
         messages?: Array<{ id: string; threadId: string }>;
         nextPageToken?: string;
@@ -69,30 +85,35 @@ export class GmailCommands {
   @CommandAccess({ kind: "read", resource: "gmail", action: "read", risk: "low" })
   async read(
     @Arg("id", { description: "Gmail message id (from `ravi gmail list`)" }) id: string,
-    @Option({ flags: "--format <format>", description: "full | metadata | raw (default full)" }) format?: string,
+    @Option({ flags: "--format <format>", description: "minimal | full | metadata | raw (default full)" })
+    format?: string,
+    @Option({ flags: "--native", description: "Use the native Gmail REST client registered by the Ravi App" })
+    native?: boolean,
+    @Option({ flags: "--connection <id>", description: "Native Gmail credential connection (default: default)" })
+    connection?: string,
     @Option({ flags: "--connector <id>", description: "Connector id (defaults to first active Google)" })
     connector?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     return runGmailCommand(asJson, async () => {
-      const connectorId = connector ?? (await resolveDefaultGoogleConnector());
-      const exec = await execCapability({
-        connectorId,
-        capability: "gmail.message.read",
-        parameters: { id, format: (format ?? "full") as "full" | "metadata" | "raw" },
-      });
+      const useNative = native === true || connection !== undefined;
+      assertTransportSelection(useNative, connector);
+      const messageFormat = parseMessageFormat(format, useNative);
+      const exec = useNative
+        ? nativeExec("gmail.message.read", await new GmailClient({ connection }).getMessage(id, messageFormat))
+        : await execCapability({
+            connectorId: connector ?? (await resolveDefaultGoogleConnector()),
+            capability: "gmail.message.read",
+            parameters: { id, format: messageFormat },
+          });
       if (asJson) {
         console.log(JSON.stringify(exec, null, 2));
       } else {
-        const message = (exec.result ?? {}) as {
-          id: string;
-          threadId: string;
-          snippet?: string;
-          internalDate?: string;
+        const message = (exec.result ?? {}) as GmailMessage & {
           headers?: Record<string, string | undefined>;
           body?: { text?: string; html?: string };
         };
-        const headers = message.headers ?? {};
+        const headers = message.headers ?? gmailHeaders(message);
         console.log(`From:    ${headers.from ?? "(unknown)"}`);
         if (headers.to) console.log(`To:      ${headers.to}`);
         if (headers.cc) console.log(`Cc:      ${headers.cc}`);
@@ -122,7 +143,8 @@ export class GmailCommands {
     resource: "gmail",
     action: "send",
     risk: "high",
-    input: ["to", "cc", "bcc", "subject", "body", "html", "connector"],
+    requiresConfirmation: true,
+    input: ["to", "cc", "bcc", "subject", "body", "html", "native", "connection", "connector"],
     redactions: ["body", "html"],
   })
   @CliOnly()
@@ -136,6 +158,10 @@ export class GmailCommands {
     @Option({ flags: "--html <body>", description: "Optional HTML body" }) html?: string,
     @Option({ flags: "--in-reply-to <messageId>", description: "Message-Id this email replies to" })
     inReplyTo?: string,
+    @Option({ flags: "--native", description: "Use the native Gmail REST client registered by the Ravi App" })
+    native?: boolean,
+    @Option({ flags: "--connection <id>", description: "Native Gmail credential connection (default: default)" })
+    connection?: string,
     @Option({ flags: "--connector <id>", description: "Connector id (defaults to first active Google)" })
     connector?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -152,7 +178,8 @@ export class GmailCommands {
         throw new Error("Provide --body or --html");
       }
 
-      const connectorId = connector ?? (await resolveDefaultGoogleConnector());
+      const useNative = native === true || connection !== undefined;
+      assertTransportSelection(useNative, connector);
       const parameters = {
         to: recipients,
         cc: parseAddressList(cc) || undefined,
@@ -163,12 +190,29 @@ export class GmailCommands {
         inReplyTo,
       };
 
-      const exec = await execWithStepUp({
-        connectorId,
-        capability: "gmail.message.send",
-        parameters,
-        asJson,
-      });
+      const exec = useNative
+        ? nativeExec(
+            "gmail.message.send",
+            await new GmailClient({ connection })
+              .sendMessage({
+                raw: encodeGmailMimeMessage({
+                  to: recipients,
+                  cc: parameters.cc,
+                  bcc: parameters.bcc,
+                  subject,
+                  body: html ?? body!,
+                  html: Boolean(html),
+                  inReplyTo,
+                }),
+              })
+              .then((message) => ({ messageId: message.id, threadId: message.threadId })),
+          )
+        : await execWithStepUp({
+            connectorId: connector ?? (await resolveDefaultGoogleConnector()),
+            capability: "gmail.message.send",
+            parameters,
+            asJson,
+          });
 
       if (asJson) {
         console.log(JSON.stringify(exec, null, 2));
@@ -293,6 +337,31 @@ function parseAddressList(value: string | undefined): string[] {
     .split(/[,\s]+/)
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+function nativeExec(capability: string, result: unknown) {
+  return { result, capability, refreshed: false };
+}
+
+function assertTransportSelection(useNative: boolean, connector: string | undefined): void {
+  if (useNative && connector) {
+    throw new Error("Choose the native --connection path or the legacy --connector fallback, not both");
+  }
+}
+
+function parseMessageFormat(value: string | undefined, native: boolean): "minimal" | "full" | "raw" | "metadata" {
+  const format = value ?? "full";
+  if (format === "full" || format === "raw" || format === "metadata" || (native && format === "minimal")) return format;
+  throw new Error(`--format must be ${native ? "minimal, " : ""}full, raw, or metadata`);
+}
+
+function gmailHeaders(message: GmailMessage): Record<string, string | undefined> {
+  const headers: Record<string, string | undefined> = {};
+  for (const header of message.payload?.headers ?? []) {
+    if (!header.name) continue;
+    headers[header.name.toLowerCase()] = header.value;
+  }
+  return headers;
 }
 
 async function runGmailCommand<T>(asJson: boolean | undefined, fn: () => Promise<T>): Promise<T | undefined> {

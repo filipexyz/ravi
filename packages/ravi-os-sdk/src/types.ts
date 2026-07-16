@@ -5946,10 +5946,12 @@ export type FeedbackSendReturn = {
 
 /** Input shape for `gmail.list`. */
 export type GmailListInput = {
+  connection?: string;
   connector?: string;
   cursor?: string;
   label?: string;
   max?: string;
+  native?: boolean;
   q?: string;
 };
 
@@ -5962,9 +5964,11 @@ export type GmailListReturn = {
 
 /** Input shape for `gmail.read`. */
 export type GmailReadInput = {
+  connection?: string;
   connector?: string;
   format?: string;
   id: string;
+  native?: boolean;
 };
 
 /** Return shape for `gmail.read`. */

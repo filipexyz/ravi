@@ -29738,6 +29738,10 @@ export const FeedbackSendReturnSchema = {
 export const GmailListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "connection": {
+      "description": "Native Gmail credential connection (default: default)",
+      "type": "string"
+    },
     "connector": {
       "description": "Connector id (defaults to first active Google)",
       "type": "string"
@@ -29753,6 +29757,10 @@ export const GmailListInputSchema = {
     "max": {
       "description": "Max messages to return (1-100, default 25)",
       "type": "string"
+    },
+    "native": {
+      "description": "Use the native Gmail REST client registered by the Ravi App",
+      "type": "boolean"
     },
     "q": {
       "description": "Gmail search query (same as the web search bar)",
@@ -29824,17 +29832,25 @@ export const GmailListReturnSchema = {
 export const GmailReadInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "connection": {
+      "description": "Native Gmail credential connection (default: default)",
+      "type": "string"
+    },
     "connector": {
       "description": "Connector id (defaults to first active Google)",
       "type": "string"
     },
     "format": {
-      "description": "full | metadata | raw (default full)",
+      "description": "minimal | full | metadata | raw (default full)",
       "type": "string"
     },
     "id": {
       "description": "Gmail message id (from `ravi gmail list`)",
       "type": "string"
+    },
+    "native": {
+      "description": "Use the native Gmail REST client registered by the Ravi App",
+      "type": "boolean"
     }
   },
   "required": [
