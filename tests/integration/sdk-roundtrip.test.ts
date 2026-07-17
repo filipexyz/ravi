@@ -16,8 +16,11 @@ import "reflect-metadata";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import { ArtifactsCommands } from "../../src/cli/commands/artifacts.js";
+import { SessionCommands } from "../../src/cli/commands/sessions.js";
 import { buildRegistry } from "../../src/cli/registry-snapshot.js";
 import { createArtifact } from "../../src/artifacts/store.js";
+import { saveMessage } from "../../src/db.js";
+import { getOrCreateSession } from "../../src/router/sessions.js";
 import {
   cleanupIsolatedRaviState,
   createIsolatedRaviState,
@@ -30,13 +33,17 @@ import { RaviClient } from "../../packages/ravi-os-sdk/src/index.js";
 import { createHttpTransport } from "../../packages/ravi-os-sdk/src/transport/http.js";
 import { RaviValidationError } from "../../packages/ravi-os-sdk/src/errors.js";
 
-const registry = buildRegistry([ArtifactsCommands]);
+const registry = buildRegistry([ArtifactsCommands, SessionCommands]);
 const allowedContext: ContextRecord = {
   contextId: "ctx_sdk_roundtrip",
   contextKey: "rctx_sdk_roundtrip",
   kind: "test-runtime",
   agentId: "sdk-roundtrip-agent",
-  capabilities: [{ permission: "execute", objectType: "group", objectId: "artifacts", source: "test" }],
+  capabilities: [
+    { permission: "execute", objectType: "group", objectId: "artifacts", source: "test" },
+    { permission: "execute", objectType: "group", objectId: "sessions", source: "test" },
+    { permission: "access", objectType: "session", objectId: "managed-sdk-roundtrip", source: "test" },
+  ],
   metadata: { authorityMode: "delegated" },
   createdAt: Date.now(),
 };
@@ -102,6 +109,22 @@ describe("SDK round-trip — RaviClient over http transport", () => {
     expect(result.artifact.kind).toBe("report");
     expect(Array.isArray(result.links)).toBe(true);
     expect(Array.isArray(result.events)).toBe(true);
+  });
+
+  it("sessions.read returns normalized history instead of an empty gateway envelope", async () => {
+    const sessionName = "managed-sdk-roundtrip";
+    getOrCreateSession("agent:sdk-roundtrip-agent:managed", allowedContext.agentId!, stateDir!, {
+      name: sessionName,
+    });
+    saveMessage(sessionName, "user", "pergunta remota");
+    saveMessage(sessionName, "assistant", "resposta remota");
+
+    const result = await buildClient().sessions.read(sessionName, { count: "10" });
+
+    expect("messages" in result).toBe(true);
+    if (!("messages" in result)) throw new Error("sessions.read did not return history");
+    expect(result.transcript.source).toBe("chat-db");
+    expect(result.messages.map((message) => message.text)).toEqual(["pergunta remota", "resposta remota"]);
   });
 
   it("maps 4xx validation errors to RaviValidationError", async () => {

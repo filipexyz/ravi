@@ -2,9 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { dbCreateAgent, dbUpdateAgent } from "../router/router-db.js";
+import { runWithContext } from "../cli/context.js";
+import { dbCreateAgent, type ContextRecord } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { getRuntimeToolAccessMode, resolveScopedTurnToolAccessMode } from "./host-services.js";
+import { getRuntimeToolAccessMode } from "./host-services.js";
 import {
   assertRuntimeCompatibility,
   createRuntimeProvider,
@@ -211,14 +212,30 @@ describe("skill nudge cadence — session guard (runtime wiring)", () => {
 describe("scoped tool access on providers without permission hooks", () => {
   let stateDir: string | null = null;
   const agentId = "runtime-access-agent";
+  const fullAccessCapabilities: ContextRecord["capabilities"] = [
+    { permission: "admin", objectType: "system", objectId: "*", source: "test" },
+  ];
   const piCapabilities = {
     tools: { permissionMode: "provider-native", accessRequirement: "tool_and_executable" },
     supportsToolHooks: false,
   } as unknown as Parameters<typeof getRuntimeToolAccessMode>[0];
-  const raviHostCapabilities = {
-    tools: { permissionMode: "ravi-host", accessRequirement: "tool_and_executable" },
-    supportsToolHooks: true,
-  } as unknown as Parameters<typeof getRuntimeToolAccessMode>[0];
+
+  function withRuntimeContext<T>(kind: string, capabilities: ContextRecord["capabilities"], fn: () => T): T {
+    return runWithContext(
+      {
+        agentId,
+        context: {
+          contextId: `ctx-${kind}`,
+          contextKey: `key-${kind}`,
+          kind,
+          agentId,
+          capabilities,
+          createdAt: Date.now(),
+        },
+      },
+      fn,
+    );
+  }
 
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-runtime-access-test-");
@@ -231,21 +248,26 @@ describe("scoped tool access on providers without permission hooks", () => {
   });
 
   it("allows a full-authority agent to use a hookless provider for a scoped turn", () => {
-    dbUpdateAgent(agentId, { defaults: { runtimePermissions: { profile: "full-access" } } });
-
-    expect(resolveScopedTurnToolAccessMode(piCapabilities, agentId)).toBe("unrestricted");
-    expect(getRuntimeToolAccessMode(piCapabilities, agentId, { kind: "turn-runtime", metadata: {} })).toBe(
-      "unrestricted",
-    );
+    expect(
+      withRuntimeContext("agent-runtime", fullAccessCapabilities, () =>
+        getRuntimeToolAccessMode(piCapabilities, agentId, { kind: "agent-runtime", metadata: {} }),
+      ),
+    ).toBe("unrestricted");
   });
 
   it("keeps an agent without full authority restricted on a hookless provider", () => {
-    expect(resolveScopedTurnToolAccessMode(piCapabilities, agentId)).toBe("restricted");
+    expect(
+      withRuntimeContext("agent-runtime", [], () =>
+        getRuntimeToolAccessMode(piCapabilities, agentId, { kind: "agent-runtime", metadata: {} }),
+      ),
+    ).toBe("restricted");
   });
 
-  it("keeps a full-authority agent restricted when Ravi host hooks can enforce the turn scope", () => {
-    dbUpdateAgent(agentId, { defaults: { runtimePermissions: { profile: "full-access" } } });
-
-    expect(resolveScopedTurnToolAccessMode(raviHostCapabilities, agentId)).toBe("restricted");
+  it("keeps delegated runtime contexts restricted even for a full-authority agent", () => {
+    expect(
+      withRuntimeContext("turn-runtime", fullAccessCapabilities, () =>
+        getRuntimeToolAccessMode(piCapabilities, agentId, { kind: "turn-runtime", metadata: {} }),
+      ),
+    ).toBe("restricted");
   });
 });

@@ -47,6 +47,7 @@ let renameSessionNameError: Error | null = null;
 let renameRouteReferencesUpdated = 0;
 let effortUpdates: Array<{ sessionKey: string; effort: string | null }> = [];
 const runtimeLiveStates = new Map<string, Record<string, unknown>>();
+let toolContext: Record<string, unknown> | undefined;
 
 function defaultTurnUsageSummary(): Record<string, unknown> {
   return {
@@ -88,7 +89,7 @@ mock.module("../decorators.js", () => ({
 }));
 
 mock.module("../context.js", () => ({
-  getContext: () => undefined,
+  getContext: () => toolContext,
   fail: (message: string) => {
     throw new Error(message);
   },
@@ -333,6 +334,7 @@ async function captureLogsAsync(run: () => Promise<void>): Promise<string> {
 }
 
 beforeEach(() => {
+  toolContext = undefined;
   chatHistory = [];
   chatHistoryByChat = [];
   messageMetadataRows = [];
@@ -467,6 +469,44 @@ describe("SessionCommands delivery barriers", () => {
     expect(publishedPrompts).toHaveLength(1);
     expect(publishedPrompts[0]?.payload.deliveryBarrier).toBe("after_response");
     expect(publishedPrompts[0]?.payload.deliveryBarrierSource).toBe("default");
+  });
+
+  it("returns a structured receipt when invoked through the SDK gateway context", async () => {
+    toolContext = { suppressCliOutput: true, sessionKey: "agent:main:origin" };
+    const commands = new SessionCommands();
+    let payload: Record<string, unknown> | undefined;
+
+    const output = await captureLogsAsync(async () => {
+      payload = (await commands.send("dev", "hello")) as Record<string, unknown>;
+    });
+
+    expect(payload!).toMatchObject({
+      action: "send",
+      mode: "fire-and-forget",
+      published: true,
+      promptLength: 5,
+      session: { sessionKey: "agent:dev:main", name: "dev" },
+    });
+    expect(output).toBe("");
+  });
+
+  it("returns the waited response when invoked through the SDK gateway context", async () => {
+    toolContext = { suppressCliOutput: true, sessionKey: "agent:main:origin" };
+    const commands = new SessionCommands();
+    (commands as any).streamToSession = async (...args: unknown[]) => {
+      const options = args[7] as { onResponse?: (chunk: string) => void };
+      options.onResponse?.("pong");
+      return 4;
+    };
+
+    const payload = await commands.send("dev", "hello", undefined, true);
+
+    expect(payload).toMatchObject({
+      action: "send",
+      mode: "wait",
+      published: true,
+      response: { length: 4, text: "pong" },
+    });
   });
 
   it("keeps explicit immediate delivery for cross-session prompts", async () => {
@@ -1318,6 +1358,29 @@ describe("SessionCommands read", () => {
       chatId: "63295117615153@lid",
       sourceMessageId: "wamid-1",
     });
+  });
+
+  it("returns normalized history when invoked through the SDK gateway context", () => {
+    toolContext = { suppressCliOutput: true, sessionKey: "agent:main:origin" };
+    chatHistory = [
+      {
+        id: 1,
+        session_id: "main-dm-615153",
+        role: "assistant",
+        content: "resposta remota",
+        sdk_session_id: "provider-current",
+        created_at: "2026-04-20 04:29:35",
+      },
+    ];
+
+    let payload: { transcript: { source: string }; messages: Array<{ text: string }> } | undefined;
+    const output = captureLogs(() => {
+      payload = new SessionCommands().read("main-dm-615153", "10") as typeof payload;
+    });
+
+    expect(payload!.transcript.source).toBe("chat-db");
+    expect(payload!.messages).toEqual([expect.objectContaining({ text: "resposta remota" })]);
+    expect(output).toBe("");
   });
 
   it("defaults to a safe read count when --count is invalid", () => {

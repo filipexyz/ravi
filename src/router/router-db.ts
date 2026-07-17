@@ -2600,7 +2600,6 @@ function getDb(): Database {
 
   ensureCostEventMigrations(db);
   ensureIdentityChatMigrations(db);
-  removePermissionLegacyTables(db);
   ensureAgentVisibilityMigration(db);
   backfillChatModelOnce(db);
   ensureSessionGoalBlockedMigration(db);
@@ -2781,14 +2780,6 @@ function ensureCostEventMigrations(database: Database): void {
 
 function ensureSessionGoalBlockedMigration(database: Database): void {
   ensureColumn(database, "session_goals", "blocked_reason", "TEXT");
-}
-
-function removePermissionLegacyTables(database: Database): void {
-  database.exec(`
-    DROP TABLE IF EXISTS relations;
-    DROP TABLE IF EXISTS permission_policy_rules;
-    DROP TABLE IF EXISTS permission_policy_materializations;
-  `);
 }
 
 function ensureAgentVisibilityMigration(database: Database): void {

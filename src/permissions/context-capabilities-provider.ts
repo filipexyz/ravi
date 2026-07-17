@@ -15,14 +15,29 @@ export const contextCapabilitiesProvider: PermissionProvider = {
 
 export function authorizeContextCapabilities(request: PermissionProviderRequest): PermissionProviderDecision {
   const capabilities = request.context?.capabilities ?? request.capabilities ?? [];
-  const allowed = canWithCapabilities(capabilities, request.permission, request.objectType, request.objectId);
+  const requiresExactResource =
+    request.operation?.kind === "cli-command" && request.operation.access.requireConcreteResource === true;
+  const allowed = requiresExactResource
+    ? capabilities.some(
+        (capability) =>
+          capability.permission === request.permission &&
+          capability.objectType === request.objectType &&
+          capability.objectId === request.objectId,
+      )
+    : canWithCapabilities(capabilities, request.permission, request.objectType, request.objectId);
 
   return {
     decision: allowed ? "allow" : "deny",
     allowed,
     providerId: contextCapabilitiesProvider.id,
     providerVersion: contextCapabilitiesProvider.version,
-    reasonCode: allowed ? "context_capabilities_allow" : "context_capabilities_deny",
+    reasonCode: allowed
+      ? requiresExactResource
+        ? "context_capabilities_exact_resource_allow"
+        : "context_capabilities_allow"
+      : requiresExactResource
+        ? "context_capabilities_exact_resource_deny"
+        : "context_capabilities_deny",
     permission: request.permission,
     objectType: request.objectType,
     objectId: request.objectId,

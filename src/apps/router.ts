@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { discoverAppManifests, getAppManifest, RAVI_APP_BUILTIN_OPERATION_HANDLERS } from "./service.js";
 import type {
   RaviAppAliasInvocation,
@@ -377,8 +377,9 @@ async function runCliOperation(
     operationId: resolved.id,
     args: options.args,
   });
+  const runtimeCommand = resolveRaviCliCommand(command);
   const appRoot = dirname(app.path);
-  const run = await spawnShellCommand(command, {
+  const run = await spawnShellCommand(runtimeCommand, {
     cwd: appRoot,
     env: {
       ...options.env,
@@ -564,6 +565,18 @@ function renderCliCommand(template: string, input: { appId: string; operationId:
   });
   if (usedArgsPlaceholder || input.args.length === 0) return rendered;
   return `${rendered} ${input.args.map(quoteShellArg).join(" ")}`;
+}
+
+export function resolveRaviCliCommand(
+  command: string,
+  runtime: { execPath?: string; entrypoint?: string } = {},
+): string {
+  if (!/^\s*ravi(?=\s|$)/.test(command)) return command;
+  const execPath = runtime.execPath ?? process.execPath;
+  const entrypoint = runtime.entrypoint ?? process.argv[1];
+  if (!execPath?.trim() || !entrypoint?.trim()) return command;
+  const selfInvocation = `${quoteShellArg(execPath)} ${quoteShellArg(resolve(entrypoint))}`;
+  return command.replace(/^\s*ravi(?=\s|$)/, selfInvocation);
 }
 
 function spawnShellCommand(
