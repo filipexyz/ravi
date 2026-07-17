@@ -5,12 +5,15 @@ import { nats } from "../../nats.js";
 import { createRuntimeProvider, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
 import { canWithCapabilities, materializeSubjectCapabilities } from "../../permissions/provider-runtime.js";
 import { getAgent, mutateAgentDefaults } from "../../router/config.js";
+import type { AgentConfig } from "../../router/types.js";
 import { resolveTaskProfile } from "../../tasks/profiles.js";
+import { resolveEffectiveAgentModel } from "../../runtime/model-preset-resolver.js";
 import { resolveRuntimeTargetCredentialEligibility } from "../../runtime/target-credential-eligibility.js";
 import { parseRuntimeTargetPolicy, resolveRuntimeTargetPolicy } from "../../runtime/target-policy-config.js";
 import {
   collectRuntimeCapabilityNames,
   selectRuntimeTarget,
+  type RuntimeTarget,
   type RuntimeTargetPolicy,
 } from "../../runtime/target-policy.js";
 import { fail } from "../context.js";
@@ -73,8 +76,34 @@ const RuntimeTargetsMutationSchema = z.object({
   inspectCommand: z.string(),
 });
 
+const RuntimeTargetsReconcileItemSchema = z.object({
+  agentId: z.string(),
+  action: z.enum(["set", "skip"]),
+  reason: z.string().nullable(),
+  currentProvider: z.string().nullable(),
+  currentModel: z.string().nullable(),
+  previousPolicyId: z.string().nullable(),
+  proposedPolicy: RuntimeTargetPolicySchema.nullable(),
+  riskFlags: z.array(z.string()),
+  changed: z.boolean(),
+});
+
+const RuntimeTargetsReconcileSchema = z.object({
+  action: z.literal("reconcile"),
+  mode: z.enum(["dry-run", "apply"]),
+  changed: z.boolean(),
+  totalAgents: z.number(),
+  plannedAgents: z.number(),
+  changedAgents: z.number(),
+  skippedAgents: z.number(),
+  fallbackTargets: z.array(RuntimeTargetSchema),
+  items: z.array(RuntimeTargetsReconcileItemSchema),
+  inspectCommand: z.string(),
+});
+
 const RequiredAgentIdSchema = z.string().trim().min(1, "agent is required");
 const RequiredPolicyJsonSchema = z.string().trim().min(1, "policyJson is required");
+const RequiredFallbackJsonSchema = z.string().trim().min(1, "fallbackJson is required");
 const RequiredOrderSchema = z.string().trim().min(1, "order is required");
 
 const SHOW_HELP = `
@@ -181,6 +210,27 @@ SOURCES
   .ravi/specs/runtime/target-failover/operator-cli/SPEC.md
 `;
 
+const RECONCILE_HELP = `
+USE
+  Build a dry-run plan, or apply it, to materialize explicit runtime target policies for agents.
+DO NOT USE
+  Do not use this as hidden provider discovery. Fallback targets must be supplied explicitly.
+RULES HARD
+  Dry-run is the default. Use --apply to mutate agent defaults.
+  Existing policies are skipped unless --force is set.
+  The primary target is derived from each agent's effective provider/model. Fallbacks come from --fallback-json.
+EXAMPLES
+  ravi runtime targets reconcile --provider claude --fallback-json '[{"runtimeProvider":"codex","model":"gpt-5.5"},{"runtimeProvider":"pi","model":"google-antigravity/gemini-2.5-flash"}]' --json
+  ravi runtime targets reconcile --agent main --fallback-json '[{"id":"codex-live","runtimeProvider":"codex","model":"gpt-5.5"}]' --apply --json
+ON ERROR
+  Fix invalid fallback JSON or missing agent model/provider first. No configuration changes during dry-run.
+OUTPUT
+  JSON returns mode, affected agents, skipped agents, proposed policies, risk flags, and an inspect command.
+SEE ALSO
+  ravi runtime targets explain --agent main --json
+  .ravi/specs/runtime/provider-controller/PRD.md
+`;
+
 export function parseRuntimeTargetPolicyJson(policyJson: string): RuntimeTargetPolicy {
   let raw: unknown;
   try {
@@ -280,6 +330,159 @@ function listPreservedDefaultKeys(defaults: Record<string, unknown> | null): str
   return Object.keys(defaults ?? {})
     .filter((key) => key !== "runtimeTargetPolicy")
     .sort();
+}
+
+type ReconcileItem = z.infer<typeof RuntimeTargetsReconcileItemSchema>;
+
+function parseFallbackTargetsJson(fallbackJson: string): RuntimeTarget[] {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(fallbackJson);
+  } catch (error) {
+    throw new Error(`Fallback targets must be valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw new Error("Fallback targets must be a non-empty JSON array.");
+  }
+  const targets = raw.map((target, index) => {
+    if (!target || typeof target !== "object" || Array.isArray(target)) {
+      throw new Error(`Fallback target ${index} must be an object.`);
+    }
+    return {
+      id: `${readFallbackProvider(target, index)}-${index + 1}`,
+      ...structuredClone(target as Record<string, unknown>),
+    };
+  });
+  return parseRuntimeTargetPolicy({
+    id: "fallback-preview",
+    strategy: "ordered",
+    targets,
+    maxAttemptsPerTarget: 1,
+  }).targets;
+}
+
+function readFallbackProvider(value: unknown, index: number): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return `fallback-${index + 1}`;
+  const provider = (value as Record<string, unknown>).runtimeProvider;
+  return typeof provider === "string" && provider.trim() ? slugTargetId(provider) : `fallback-${index + 1}`;
+}
+
+function slugTargetId(value: string): string {
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "target"
+  );
+}
+
+function uniqueTargetId(base: string, used: Set<string>): string {
+  let id = slugTargetId(base);
+  let suffix = 2;
+  while (used.has(id)) {
+    id = `${slugTargetId(base)}-${suffix}`;
+    suffix += 1;
+  }
+  used.add(id);
+  return id;
+}
+
+function buildReconcilePolicy(input: {
+  agentId: string;
+  agent: AgentConfig;
+  fallbackTargets: RuntimeTarget[];
+  policyPrefix: string;
+}): {
+  policy: RuntimeTargetPolicy | null;
+  currentProvider: string | null;
+  currentModel: string | null;
+  reason: string | null;
+} {
+  const effective = resolveEffectiveAgentModel(input.agent);
+  if (effective.error) {
+    return {
+      policy: null,
+      currentProvider: effective.effectiveProvider || null,
+      currentModel: effective.effectiveModel,
+      reason: `model_selection_error:${effective.error}`,
+    };
+  }
+  if (!effective.effectiveModel) {
+    return {
+      policy: null,
+      currentProvider: effective.effectiveProvider || null,
+      currentModel: null,
+      reason: "missing_effective_model",
+    };
+  }
+  const usedIds = new Set<string>();
+  const primary: RuntimeTarget = {
+    id: uniqueTargetId(`${effective.effectiveProvider}-primary`, usedIds),
+    runtimeProvider: effective.effectiveProvider,
+    model: effective.effectiveModel,
+    ...(effective.modelPresetId && effective.modelPresetVersion
+      ? { modelPreset: { id: effective.modelPresetId, version: effective.modelPresetVersion } }
+      : {}),
+  };
+  const targets = [primary];
+  for (const fallback of input.fallbackTargets) {
+    if (fallback.runtimeProvider === primary.runtimeProvider && fallback.model === primary.model) continue;
+    targets.push({
+      ...structuredClone(fallback),
+      id: uniqueTargetId(fallback.id, usedIds),
+    });
+  }
+  if (targets.length < 2) {
+    return {
+      policy: null,
+      currentProvider: effective.effectiveProvider,
+      currentModel: effective.effectiveModel,
+      reason: "no_distinct_fallback_targets",
+    };
+  }
+  return {
+    currentProvider: effective.effectiveProvider,
+    currentModel: effective.effectiveModel,
+    reason: null,
+    policy: {
+      id: `${slugTargetId(input.policyPrefix)}-${slugTargetId(input.agentId)}`,
+      strategy: "ordered",
+      targets,
+      maxAttemptsPerTarget: 1,
+      maxCredentialRecoveryAttemptsPerTarget: 1,
+      cooldownMs: 30_000,
+      circuitBreakerThreshold: 3,
+    },
+  };
+}
+
+function collectReconcileRiskFlags(agentId: string, policy: RuntimeTargetPolicy): string[] {
+  const flags: string[] = [];
+  const registeredProviders = new Set(listRegisteredRuntimeProviderIds());
+  const capabilities = materializeSubjectCapabilities("agent", agentId, { includeRoles: true });
+  const credentialEligibility = resolveRuntimeTargetCredentialEligibility(policy, { agentId });
+  for (const target of policy.targets) {
+    if (!registeredProviders.has(target.runtimeProvider)) flags.push(`provider_unregistered:${target.id}`);
+    if (!canWithCapabilities(capabilities, "use", "runtime.target", target.id)) {
+      flags.push(`permission_denied:${target.id}`);
+    }
+    const credential = credentialEligibility.get(target.id);
+    if (credential && !credential.eligible) {
+      flags.push(`credential_unavailable:${target.id}:${credential.detail ?? "unknown"}`);
+    }
+  }
+  return flags;
+}
+
+function findBlockingReconcileRisk(flags: string[]): string | null {
+  if (flags.some((flag) => flag.startsWith("provider_unregistered:"))) {
+    return "unsafe_policy:provider_unregistered";
+  }
+  if (flags.some((flag) => flag.startsWith("permission_denied:"))) {
+    return "unsafe_policy:permission_denied";
+  }
+  return null;
 }
 
 @Group({
@@ -593,6 +796,171 @@ export class RuntimeTargetsCommands {
     };
     if (asJson) console.log(JSON.stringify(payload, null, 2));
     else console.log(`${mutation.changed ? "Cleared" : "No"} runtime target policy for agent '${agentId}'.`);
+    return payload;
+  }
+
+  @Command({
+    name: "reconcile",
+    description:
+      "Plan or apply explicit fleet runtime target policies from current agent provider plus supplied fallbacks",
+    helpAfter: RECONCILE_HELP,
+  })
+  @CommandAccess({ kind: "mutate", resource: "runtime.targets", action: "reconcile", risk: "medium" })
+  @Returns(RuntimeTargetsReconcileSchema)
+  reconcile(
+    @Option({
+      flags: "--fallback-json <json>",
+      description: "JSON array of explicit fallback runtime target objects",
+      schema: RequiredFallbackJsonSchema,
+    })
+    fallbackJson?: string,
+    @Option({
+      flags: "--agent <id>",
+      description: "Optional single agent to reconcile",
+    })
+    agentId?: string,
+    @Option({
+      flags: "--provider <id>",
+      description: "Only reconcile agents whose effective provider matches this provider",
+    })
+    providerFilter?: string,
+    @Option({
+      flags: "--policy-prefix <prefix>",
+      description: "Prefix for generated policy ids (default: controller)",
+    })
+    policyPrefix = "controller",
+    @Option({
+      flags: "--force",
+      description: "Replace an existing agent-default runtime target policy",
+    })
+    force?: boolean,
+    @Option({
+      flags: "--apply",
+      description: "Apply the generated plan. Without this flag the command is dry-run only.",
+    })
+    apply?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!fallbackJson?.trim()) {
+      fail(
+        '--fallback-json is required. Example: ravi runtime targets reconcile --fallback-json \'[{"runtimeProvider":"codex","model":"gpt-5"}]\' --json',
+      );
+    }
+    let fallbackTargets: RuntimeTarget[];
+    try {
+      fallbackTargets = parseFallbackTargetsJson(fallbackJson);
+    } catch (error) {
+      fail(`${error instanceof Error ? error.message : String(error)}. No configuration was changed.`);
+    }
+
+    const config = configStore.getConfig();
+    const provider = providerFilter?.trim();
+    const selectedAgents = Object.values(config.agents)
+      .filter((agent) => !agentId?.trim() || agent.id === agentId.trim())
+      .sort((left, right) => left.id.localeCompare(right.id));
+    if (agentId?.trim() && selectedAgents.length === 0) fail(`Agent not found: ${agentId.trim()}`);
+
+    const items: ReconcileItem[] = selectedAgents.map((agent) => {
+      const previousPolicyId = readPolicyId(agent.defaults?.runtimeTargetPolicy);
+      const built = buildReconcilePolicy({
+        agentId: agent.id,
+        agent,
+        fallbackTargets,
+        policyPrefix,
+      });
+      if (provider && built.currentProvider !== provider) {
+        return {
+          agentId: agent.id,
+          action: "skip",
+          reason: `provider_filter:${built.currentProvider ?? "unknown"}`,
+          currentProvider: built.currentProvider,
+          currentModel: built.currentModel,
+          previousPolicyId,
+          proposedPolicy: null,
+          riskFlags: [],
+          changed: false,
+        };
+      }
+      if (previousPolicyId && !force) {
+        return {
+          agentId: agent.id,
+          action: "skip",
+          reason: "existing_policy",
+          currentProvider: built.currentProvider,
+          currentModel: built.currentModel,
+          previousPolicyId,
+          proposedPolicy: null,
+          riskFlags: [],
+          changed: false,
+        };
+      }
+      if (!built.policy) {
+        return {
+          agentId: agent.id,
+          action: "skip",
+          reason: built.reason,
+          currentProvider: built.currentProvider,
+          currentModel: built.currentModel,
+          previousPolicyId,
+          proposedPolicy: null,
+          riskFlags: [],
+          changed: false,
+        };
+      }
+      return {
+        agentId: agent.id,
+        action: "set",
+        reason: null,
+        currentProvider: built.currentProvider,
+        currentModel: built.currentModel,
+        previousPolicyId,
+        proposedPolicy: built.policy,
+        riskFlags: collectReconcileRiskFlags(agent.id, built.policy),
+        changed: false,
+      };
+    });
+
+    let changedAgents = 0;
+    if (apply) {
+      for (const item of items) {
+        if (item.action !== "set" || !item.proposedPolicy) continue;
+        const blockingRisk = findBlockingReconcileRisk(item.riskFlags);
+        if (blockingRisk) {
+          item.action = "skip";
+          item.reason = blockingRisk;
+          continue;
+        }
+        const mutation = mutateAgentDefaults(item.agentId, (defaults) =>
+          buildRuntimeTargetPolicyDefaults(defaults, item.proposedPolicy),
+        );
+        item.changed = mutation.changed;
+        if (mutation.changed) changedAgents += 1;
+      }
+      if (changedAgents > 0) {
+        configStore.refresh();
+        emitConfigChanged();
+      }
+    }
+
+    const plannedAgents = items.filter((item) => item.action === "set").length;
+    const payload = {
+      action: "reconcile" as const,
+      mode: apply ? ("apply" as const) : ("dry-run" as const),
+      changed: changedAgents > 0,
+      totalAgents: selectedAgents.length,
+      plannedAgents,
+      changedAgents,
+      skippedAgents: items.length - plannedAgents,
+      fallbackTargets,
+      items,
+      inspectCommand: "ravi runtime targets explain --agent <agent-id> --json",
+    };
+    if (asJson) console.log(JSON.stringify(payload, null, 2));
+    else {
+      console.log(
+        `${apply ? "Applied" : "Planned"} runtime target reconciliation: ${plannedAgents} planned, ${payload.skippedAgents} skipped, ${changedAgents} changed.`,
+      );
+    }
     return payload;
   }
 }

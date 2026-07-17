@@ -10188,6 +10188,82 @@ export type RuntimeTargetsExplainReturn = {
   source: "session_override" | "task_profile" | "agent_default" | "none";
 };
 
+/** Input shape for `runtime.targets.reconcile`. */
+export type RuntimeTargetsReconcileInput = {
+  agent?: string;
+  apply?: boolean;
+  fallbackJson: string;
+  force?: boolean;
+  policyPrefix?: string;
+  provider?: string;
+};
+
+/** Return shape for `runtime.targets.reconcile`. */
+export type RuntimeTargetsReconcileReturn = {
+  action: "reconcile";
+  changed: boolean;
+  changedAgents: number;
+  fallbackTargets: Array<{
+    credentialRequirements?: {
+      authMethods?: string[];
+      credentialIds?: string[];
+      requireManaged?: boolean;
+      sessionCompatibilityKey?: string;
+    };
+    effort?: string;
+    id: string;
+    model: string;
+    modelPreset?: {
+      id: string;
+      version: number;
+    };
+    requiredCapabilities?: string[];
+    runtimeProvider: string;
+    thinking?: "off" | "normal" | "verbose";
+  }>;
+  inspectCommand: string;
+  items: Array<{
+    action: "set" | "skip";
+    agentId: string;
+    changed: boolean;
+    currentModel: string | null;
+    currentProvider: string | null;
+    previousPolicyId: string | null;
+    proposedPolicy: ({
+      circuitBreakerThreshold?: number;
+      cooldownMs?: number;
+      id: string;
+      maxAttemptsPerTarget: number;
+      maxCredentialRecoveryAttemptsPerTarget?: number;
+      strategy: "ordered" | "health-aware";
+      targets: Array<{
+        credentialRequirements?: {
+          authMethods?: string[];
+          credentialIds?: string[];
+          requireManaged?: boolean;
+          sessionCompatibilityKey?: string;
+        };
+        effort?: string;
+        id: string;
+        model: string;
+        modelPreset?: {
+          id: string;
+          version: number;
+        };
+        requiredCapabilities?: string[];
+        runtimeProvider: string;
+        thinking?: "off" | "normal" | "verbose";
+      }>;
+    }) | null;
+    reason: string | null;
+    riskFlags: string[];
+  }>;
+  mode: "dry-run" | "apply";
+  plannedAgents: number;
+  skippedAgents: number;
+  totalAgents: number;
+};
+
 /** Input shape for `runtime.targets.reorder`. */
 export type RuntimeTargetsReorderInput = {
   agent: string;

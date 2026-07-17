@@ -64,6 +64,13 @@ import { preserveSkillCurationState } from "../skills/skill-curation-state.js";
 import { noteTerminalTurnForLearningLoop, preserveLearningLoopCadenceState } from "./learning-loop-cadence.js";
 import { blockTaskForProviderQuota } from "./provider-quota-task.js";
 import {
+  extractRuntimeLimitResetDescriptor,
+  firstNonEmptyRuntimeLimitLine,
+  normalizeRuntimeLimitText,
+  parseRuntimeLimitResetDescriptorTime,
+  RUNTIME_LIMIT_RESET_GRACE_MS,
+} from "./reset-descriptor.js";
+import {
   createObservationEvent,
   deliverObservationEvents,
   getObservationDebounceMs,
@@ -97,7 +104,7 @@ const IDLE_SESSION_TTL_REASON = "idle_session_ttl";
 const RUNTIME_SESSION_CLOSE_TIMEOUT_MS = 5_000;
 const USER_FACING_LIMIT_SUPPRESSION_DEFAULT_MS = 60 * 60_000;
 const USER_FACING_LIMIT_SUPPRESSION_MAX_MS = 24 * 60 * 60_000;
-const USER_FACING_LIMIT_SUPPRESSION_RESET_GRACE_MS = 60_000;
+const USER_FACING_LIMIT_SUPPRESSION_RESET_GRACE_MS = RUNTIME_LIMIT_RESET_GRACE_MS;
 
 const userFacingRuntimeLimitSuppressions = new Map<string, number>();
 
@@ -422,67 +429,24 @@ type UserFacingRuntimeLimitSuppressionDecision =
       previousExpiresAt: number;
     };
 
-function firstNonEmptyLine(value: string): string {
-  return (
-    value
-      .split("\n")
-      .map((line) => line.trim())
-      .find(Boolean) ?? ""
-  );
-}
-
-function normalizeSuppressionText(value: string): string {
-  return value.replace(/\s+/g, " ").trim().toLowerCase();
-}
-
-function extractSessionLimitResetDescriptor(error: string): string | undefined {
-  const firstLine = firstNonEmptyLine(error);
-  const match = firstLine.match(/\breset(?:s|ting)?\s+(.+?)(?:$|[.;])/i);
-  const raw = match?.[1]?.trim();
-  if (!raw) return undefined;
-  return normalizeSuppressionText(raw.replace(/^at\s+/i, "")).slice(0, 120);
-}
-
-function parseResetDescriptorTime(descriptor: string, now: number): number | undefined {
-  const match = descriptor.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
-  if (!match) return undefined;
-
-  let hour = Number(match[1]);
-  const minute = match[2] === undefined ? 0 : Number(match[2]);
-  const meridiem = match[3]?.toLowerCase();
-  if (!Number.isInteger(hour) || hour < 0 || hour > 23 || !Number.isInteger(minute) || minute < 0 || minute > 59) {
-    return undefined;
-  }
-
-  if (meridiem === "pm" && hour < 12) hour += 12;
-  if (meridiem === "am" && hour === 12) hour = 0;
-
-  const resetAt = new Date(now);
-  resetAt.setHours(hour, minute, 0, 0);
-  if (resetAt.getTime() <= now - USER_FACING_LIMIT_SUPPRESSION_RESET_GRACE_MS) {
-    resetAt.setDate(resetAt.getDate() + 1);
-  }
-  return resetAt.getTime();
-}
-
 export function classifyUserFacingRuntimeLimitFailure(
   error: string,
   now = Date.now(),
 ): UserFacingRuntimeLimitFailure | undefined {
-  const normalized = normalizeSuppressionText(error);
+  const normalized = normalizeRuntimeLimitText(error);
   const isExactAccountLimit = /you['’]?ve hit your (?:weekly|session|usage) limit/i.test(error);
   const isGenericAccountLimitWithReset =
     /\b(?:weekly|session|usage) (?:quota|limit)\b/i.test(error) && /\breset(?:s|ting)?\b/i.test(error);
   if (!isExactAccountLimit && !isGenericAccountLimitWithReset) return undefined;
 
-  const resetDescriptor = extractSessionLimitResetDescriptor(error);
-  const resetAt = resetDescriptor ? parseResetDescriptorTime(resetDescriptor, now) : undefined;
+  const resetDescriptor = extractRuntimeLimitResetDescriptor(error);
+  const resetAt = resetDescriptor ? parseRuntimeLimitResetDescriptorTime(resetDescriptor, now) : undefined;
   const expiresAt = resetAt
     ? Math.min(resetAt + USER_FACING_LIMIT_SUPPRESSION_RESET_GRACE_MS, now + USER_FACING_LIMIT_SUPPRESSION_MAX_MS)
     : now + USER_FACING_LIMIT_SUPPRESSION_DEFAULT_MS;
   const windowKey = resetDescriptor
     ? `reset:${resetDescriptor}`
-    : `message:${firstNonEmptyLine(normalized).slice(0, 160)}`;
+    : `message:${firstNonEmptyRuntimeLimitLine(normalized).slice(0, 160)}`;
 
   return {
     kind: "session_limit",
@@ -2223,6 +2187,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 source: "sdk-error",
               })
             : undefined);
+        const adapterCredentialFailure =
+          event.metadata?.failureScope === "credential" && event.recoverable === true && event.caughtException !== true;
+        const retryableCredentialFailure =
+          credentialFailureSignal?.retryableByCredential === true ||
+          (adapterCredentialFailure && credentialFailureSignal !== undefined);
         const taskBoundQuota =
           runtimeFailureSignal?.kind === "quota_exhausted" && Boolean(streaming.currentTaskBarrierTaskId);
         const classifiedRuntimeTargetFailure =
@@ -2234,7 +2203,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 recoverable: event.recoverable,
                 rawEvent: event.rawEvent,
                 metadata: event.metadata,
-                credentialFailure: credentialFailureSignal?.retryableByCredential === true,
+                credentialFailure: retryableCredentialFailure,
                 targetFailure: event.targetFailure === true,
               })
             : undefined;
@@ -2322,7 +2291,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           break;
         }
 
-        if (credentialFailureSignal?.retryableByCredential && !taskBoundQuota && !streaming.runtimeTargetPolicy) {
+        if (retryableCredentialFailure && !taskBoundQuota && !streaming.runtimeTargetPolicy) {
           const restartReason = `runtime_credential_${credentialFailureSignal.kind}`;
           if (currentTurnHadToolStarted) {
             log.info("Skipping runtime credential retry after tool activity", {
@@ -2531,7 +2500,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               recoverable: event.recoverable,
               rawEvent: event.rawEvent,
               metadata: event.metadata,
-              credentialFailure: credentialFailureSignal?.retryableByCredential === true,
+              credentialFailure: retryableCredentialFailure,
               targetFailure: event.targetFailure === true,
             });
           const attemptsOnTarget = state.attempts.filter(
@@ -2556,9 +2525,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           let credentialRefreshAction: string | undefined;
           let credentialRefreshError: string | undefined;
           if (failureAction === "recover_credential") {
-            credentialRecoveryAttempt = recordRuntimeTargetCredentialRecovery(state, streaming.runtimeTarget.id);
             const credentialId = streaming.currentRuntimeCredential?.credentialId;
-            if (credentialId) {
+            if (!credentialId) {
+              failureAction = "switch_target";
+              credentialRefreshError = "no managed credential available for recovery";
+            } else {
+              credentialRecoveryAttempt = recordRuntimeTargetCredentialRecovery(state, streaming.runtimeTarget.id);
               try {
                 const refresh = await refreshRuntimeCredential(credentialId, { reason: "retryable_failure" });
                 credentialRefreshAction = refresh.action;

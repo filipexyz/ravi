@@ -8,6 +8,7 @@ import type {
 } from "./credential-types.js";
 import type { RuntimeProviderId } from "./types.js";
 import { redactText } from "../utils/redaction.js";
+import { parseRuntimeLimitResetAt } from "./reset-descriptor.js";
 
 export interface RuntimeCredentialClassifierInput {
   runtimeProvider: RuntimeProviderId;
@@ -21,6 +22,7 @@ export interface RuntimeCredentialClassifierInput {
   headers?: Record<string, string | number | undefined>;
   requestId?: string;
   source?: RuntimeCredentialFailureSignal["source"];
+  now?: number;
 }
 
 const REQUEST_LIMIT_HEADERS = ["x-ratelimit-limit-requests", "anthropic-ratelimit-requests-limit"];
@@ -54,7 +56,7 @@ export function classifyRuntimeCredentialFailure(
   const message = input.message?.trim();
   const text = `${providerCode ?? ""} ${providerType ?? ""} ${message ?? ""}`.toLowerCase();
   const retryAfterMs = parseRetryAfterMs(headers["retry-after"]);
-  const resetAt = parseResetAt(headers);
+  const resetAt = parseResetAt(headers) ?? parseRuntimeLimitResetAt(message, input.now ?? Date.now());
   const limitDimensions = extractLimitDimensions(headers);
   const rawHeaders = redactHeaders(headers);
   const runtimeProvider = sanitizeClassifierScalar(input.runtimeProvider) ?? "unknown";
@@ -158,10 +160,23 @@ function classifyKind(input: { status?: number; providerCode?: string; providerT
     return { kind: "billing_blocked", confidence: "high", scope: "account" };
   }
   if (input.status === 429 || code === "rate_limit_error" || type === "rate_limit_error") {
-    if (text.includes("quota") || text.includes("monthly") || text.includes("exceeded your current quota")) {
+    if (
+      text.includes("quota") ||
+      text.includes("monthly") ||
+      text.includes("exceeded your current quota") ||
+      /you['’]?ve hit your (?:weekly|session|usage) limit/i.test(text) ||
+      /(?:weekly|session|usage) (?:quota|limit) (?:has been )?(?:reached|exhausted)/i.test(text)
+    ) {
       return { kind: "quota_exhausted", confidence: "high", scope: "account" };
     }
     return { kind: "rate_limited", confidence: "high", scope: inferLimitScope(text) };
+  }
+  if (
+    /organization has disabled claude subscription access/i.test(text) ||
+    /claude subscription access(?: has been)? disabled/i.test(text) ||
+    (text.includes("subscription access") && text.includes("disabled"))
+  ) {
+    return { kind: "permission_denied", confidence: "high", scope: inferPermissionScope(text) };
   }
   if (input.status === 403 || code === "permission_error" || type === "permission_error") {
     return { kind: "permission_denied", confidence: "medium", scope: inferPermissionScope(text) };

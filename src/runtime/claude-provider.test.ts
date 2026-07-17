@@ -313,7 +313,51 @@ describe("createClaudeRuntimeProvider", () => {
       ),
     );
     const events = await collectEvents(session.events);
-    expect(findEventsByType(events, "turn.failed").at(0)?.error).toContain("weekly limit");
+    const failure = findEventsByType(events, "turn.failed").at(0);
+    expect(failure?.error).toContain("weekly limit");
+    expect(failure?.recoverable).toBe(true);
+    expect(failure?.metadata?.failureScope).toBe("credential");
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(0);
+  });
+
+  it("maps disabled Claude subscription access success envelopes into recoverable credential failures", async () => {
+    nextMessages = [
+      {
+        type: "assistant",
+        message: { content: [{ type: "text", text: "Your organization has disabled Claude subscription access." }] },
+      },
+      {
+        type: "result",
+        subtype: "success",
+        session_id: "claude-session-subscription-disabled",
+        usage: {
+          input_tokens: 0,
+          output_tokens: 0,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        },
+      },
+    ];
+
+    const provider = createClaudeRuntimeProvider();
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "continue" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+      ),
+    );
+    const events = await collectEvents(session.events);
+    const failure = findEventsByType(events, "turn.failed").at(0);
+
+    expect(failure?.error).toContain("disabled Claude subscription access");
+    expect(failure?.recoverable).toBe(true);
+    expect(failure?.metadata?.failureScope).toBe("credential");
     expect(findEventsByType(events, "turn.complete")).toHaveLength(0);
   });
 

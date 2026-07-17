@@ -60,6 +60,7 @@ export async function dispatchMemoryCuratorForCadence(input: MemoryNudgeInput, c
     createdBy: "runtime:memory-nudge",
     createdByAgentId: input.agentId,
     createdBySessionName: input.sessionName,
+    reportToSessionName: null,
     profileInput: {
       agent_id: input.agentId,
       transcript_path: transcriptPath,

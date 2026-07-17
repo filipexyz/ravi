@@ -66,6 +66,7 @@ export async function dispatchSkillCuratorForCadence(input: SkillNudgeInput, cad
     createdBy: "runtime:skill-nudge",
     createdByAgentId: input.agentId,
     createdBySessionName: input.sessionName,
+    reportToSessionName: null,
     profileInput: {
       agent_id: input.agentId,
       transcript_path: transcriptPath,

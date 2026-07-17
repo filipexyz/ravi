@@ -49983,6 +49983,371 @@ export const RuntimeTargetsExplainReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `runtime.targets.reconcile`. */
+export const RuntimeTargetsReconcileInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Optional single agent to reconcile",
+      "type": "string"
+    },
+    "apply": {
+      "description": "Apply the generated plan. Without this flag the command is dry-run only.",
+      "type": "boolean"
+    },
+    "fallbackJson": {
+      "description": "JSON array of explicit fallback runtime target objects",
+      "minLength": 1,
+      "type": "string"
+    },
+    "force": {
+      "description": "Replace an existing agent-default runtime target policy",
+      "type": "boolean"
+    },
+    "policyPrefix": {
+      "description": "Prefix for generated policy ids (default: controller)",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Only reconcile agents whose effective provider matches this provider",
+      "type": "string"
+    }
+  },
+  "required": [
+    "fallbackJson"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.targets.reconcile`. */
+export const RuntimeTargetsReconcileReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "reconcile",
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "changedAgents": {
+      "type": "number"
+    },
+    "fallbackTargets": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "credentialRequirements": {
+            "additionalProperties": false,
+            "properties": {
+              "authMethods": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "credentialIds": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "requireManaged": {
+                "type": "boolean"
+              },
+              "sessionCompatibilityKey": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "effort": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "modelPreset": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "version": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "version"
+            ],
+            "type": "object"
+          },
+          "requiredCapabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "runtimeProvider": {
+            "type": "string"
+          },
+          "thinking": {
+            "enum": [
+              "off",
+              "normal",
+              "verbose"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "runtimeProvider",
+          "model"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "inspectCommand": {
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "set",
+              "skip"
+            ],
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "currentModel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currentProvider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "previousPolicyId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposedPolicy": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "circuitBreakerThreshold": {
+                    "type": "number"
+                  },
+                  "cooldownMs": {
+                    "type": "number"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "maxAttemptsPerTarget": {
+                    "type": "number"
+                  },
+                  "maxCredentialRecoveryAttemptsPerTarget": {
+                    "type": "number"
+                  },
+                  "strategy": {
+                    "enum": [
+                      "ordered",
+                      "health-aware"
+                    ],
+                    "type": "string"
+                  },
+                  "targets": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "credentialRequirements": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "authMethods": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "credentialIds": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "requireManaged": {
+                              "type": "boolean"
+                            },
+                            "sessionCompatibilityKey": {
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "effort": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "model": {
+                          "type": "string"
+                        },
+                        "modelPreset": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "version"
+                          ],
+                          "type": "object"
+                        },
+                        "requiredCapabilities": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "runtimeProvider": {
+                          "type": "string"
+                        },
+                        "thinking": {
+                          "enum": [
+                            "off",
+                            "normal",
+                            "verbose"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "runtimeProvider",
+                        "model"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "id",
+                  "strategy",
+                  "targets",
+                  "maxAttemptsPerTarget"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "riskFlags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "agentId",
+          "action",
+          "reason",
+          "currentProvider",
+          "currentModel",
+          "previousPolicyId",
+          "proposedPolicy",
+          "riskFlags",
+          "changed"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "mode": {
+      "enum": [
+        "dry-run",
+        "apply"
+      ],
+      "type": "string"
+    },
+    "plannedAgents": {
+      "type": "number"
+    },
+    "skippedAgents": {
+      "type": "number"
+    },
+    "totalAgents": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "action",
+    "mode",
+    "changed",
+    "totalAgents",
+    "plannedAgents",
+    "changedAgents",
+    "skippedAgents",
+    "fallbackTargets",
+    "items",
+    "inspectCommand"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `runtime.targets.reorder`. */
 export const RuntimeTargetsReorderInputSchema = {
   "additionalProperties": false,

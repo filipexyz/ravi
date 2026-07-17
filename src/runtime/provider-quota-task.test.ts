@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { createTask, getTaskDetails } from "../tasks/service.js";
-import { blockTaskForProviderQuota } from "./provider-quota-task.js";
+import { blockTaskForProviderQuota, failTaskForRuntimeStartFailure } from "./provider-quota-task.js";
 
 describe("provider quota task convergence", () => {
   let stateDir: string | null = null;
@@ -39,5 +39,31 @@ describe("provider quota task convergence", () => {
     expect(blocked).toBe(true);
     expect(task.status).toBe("blocked");
     expect(task.blockerReason).toContain("weekly limit");
+  });
+
+  it("persists a failed task when runtime startup fails before the task can run", async () => {
+    const created = createTask({
+      title: "Startup-bound curator",
+      instructions: "Test runtime start failure convergence",
+      createdBy: "test",
+      profileInput: {
+        goal: "Prove startup failure convergence",
+        success_criteria: "Task becomes failed",
+        consumer: "test",
+      },
+    });
+    const failed = await failTaskForRuntimeStartFailure({
+      taskId: created.task.id,
+      agentId: "ravi-dev",
+      sessionName: `${created.task.id}-curator`,
+      error: "No managed runtime credential could be resolved for provider claude.",
+      emitEvents: false,
+    });
+
+    const task = getTaskDetails(created.task.id).task;
+    if (!task) throw new Error("Expected startup-bound task to remain queryable after failing");
+    expect(failed).toBe(true);
+    expect(task.status).toBe("failed");
+    expect(task.summary).toContain("No managed runtime credential");
   });
 });

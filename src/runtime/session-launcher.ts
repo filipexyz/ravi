@@ -43,7 +43,7 @@ import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./tas
 import { updateRuntimeLiveState } from "./live-state.js";
 import { ensureObserverBindingsForSession } from "./observation-plane.js";
 import { noteTerminalTurnForLearningLoop } from "./learning-loop-cadence.js";
-import { blockTaskForProviderQuota } from "./provider-quota-task.js";
+import { blockTaskForProviderQuota, failTaskForRuntimeStartFailure } from "./provider-quota-task.js";
 import { resolveSessionOutputTarget } from "./session-output-target.js";
 import {
   classifyRuntimeTargetFailure,
@@ -577,6 +577,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       normalizedFailureScope === "target" || (failureStatus !== undefined && failureStatus >= 500);
     const taskBoundQuota =
       credentialSignal.kind === "quota_exhausted" && Boolean(streamingSession.currentTaskBarrierTaskId);
+    let terminalTaskHandled = false;
     if (taskBoundQuota && streamingSession.currentTaskBarrierTaskId) {
       if (runtimeTargetPolicy && runtimeTargetState && runtimeTarget) {
         runtimeTargetState.pendingTaskQuota = {
@@ -584,7 +585,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
           error: errorMessage,
         };
       } else {
-        await blockTaskForProviderQuota({
+        terminalTaskHandled = await blockTaskForProviderQuota({
           taskId: streamingSession.currentTaskBarrierTaskId,
           agentId: agent.id,
           sessionName,
@@ -624,17 +625,25 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
         : "terminate";
     let credentialRecoveryAttempt: number | undefined;
     let credentialRefreshAction: string | undefined;
+    let credentialRefreshError: string | undefined;
     if (startFailureAction === "recover_credential" && runtimeTargetPolicy && runtimeTargetState && runtimeTarget) {
-      credentialRecoveryAttempt = recordRuntimeTargetCredentialRecovery(runtimeTargetState, runtimeTarget.id);
-      if (runtimeCredentialAttempt?.credentialId) {
+      if (!runtimeCredentialAttempt?.credentialId) {
+        startFailureAction = "switch_target";
+        credentialRefreshError = "no managed credential available for recovery";
+      } else {
+        credentialRecoveryAttempt = recordRuntimeTargetCredentialRecovery(runtimeTargetState, runtimeTarget.id);
         try {
           const refresh = await refreshRuntimeCredential(runtimeCredentialAttempt.credentialId, {
             reason: "retryable_failure",
           });
           credentialRefreshAction = refresh.action;
-          if (refresh.action === "failed") startFailureAction = "switch_target";
+          if (refresh.action === "failed") {
+            startFailureAction = "switch_target";
+            credentialRefreshError = "credential refresh reported failure";
+          }
         } catch (refreshError) {
           startFailureAction = "switch_target";
+          credentialRefreshError = "runtime credential refresh failed";
           log.warn("Runtime credential refresh failed during startup recovery", {
             sessionName,
             provider: runtimeProviderId,
@@ -696,6 +705,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
           logicalTurnId: runtimeTargetState.logicalTurnId,
           credentialRecoveryAttempt: credentialRecoveryAttempt ?? null,
           credentialRefreshAction: credentialRefreshAction ?? null,
+          credentialRefreshError: credentialRefreshError ?? null,
           taskQuotaTaskId: runtimeTargetState.pendingTaskQuota?.taskId ?? null,
         },
       });
@@ -719,6 +729,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
           failureAction: startFailureAction,
           credentialRecoveryAttempt: credentialRecoveryAttempt ?? null,
           credentialRefreshAction: credentialRefreshAction ?? null,
+          credentialRefreshError: credentialRefreshError ?? null,
           phase: "runtime.start",
         },
       });
@@ -764,7 +775,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       }
       runtimeTargetState.terminal = true;
       if (runtimeTargetState.pendingTaskQuota) {
-        await blockTaskForProviderQuota({
+        terminalTaskHandled = await blockTaskForProviderQuota({
           taskId: runtimeTargetState.pendingTaskQuota.taskId,
           agentId: agent.id,
           sessionName,
@@ -802,6 +813,15 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       agentId: agent.id,
       agentCwd: agent.cwd,
     });
+
+    if (streamingSession.currentTaskBarrierTaskId && !terminalTaskHandled) {
+      await failTaskForRuntimeStartFailure({
+        taskId: streamingSession.currentTaskBarrierTaskId,
+        agentId: agent.id,
+        sessionName,
+        error: errorMessage,
+      });
+    }
 
     log.error("Failed to start streaming session", {
       sessionName,

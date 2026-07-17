@@ -956,7 +956,12 @@ function statusForFailure(
   if (signal.kind === "quota_exhausted" || signal.kind === "billing_blocked") return "exhausted";
   if (signal.kind === "auth_invalid") return credential.authMethod?.includes("oauth") ? "needs_reauth" : "invalid";
   if (signal.kind === "permission_denied")
-    return signal.scope === "credential" || signal.scope === "account" ? "invalid" : "healthy";
+    return signal.scope === "credential" ||
+      signal.scope === "account" ||
+      signal.scope === "project" ||
+      signal.scope === "organization"
+      ? "invalid"
+      : "healthy";
   return credential.status === "disabled" ? "disabled" : credential.status;
 }
 

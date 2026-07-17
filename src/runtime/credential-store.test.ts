@@ -276,6 +276,28 @@ describe("runtime credential store and pool", () => {
     expect(getRuntimeCredentialHealth("rcred_healthy")?.lastFailureKind).toBeUndefined();
   });
 
+  it("marks organization-level Claude subscription denial as invalid", () => {
+    createRuntimeCredential({
+      ...credentialInput("rcred_claude_disabled", "Claude disabled subscription", 10),
+      runtimeProvider: "claude",
+      upstreamProvider: "anthropic",
+      authMethod: "oauth",
+    });
+    const signal = classifyRuntimeCredentialFailure({
+      runtimeProvider: "claude",
+      upstreamProvider: "anthropic",
+      credentialId: "rcred_claude_disabled",
+      message: "Your organization has disabled Claude subscription access.",
+    });
+
+    const transition = recordRuntimeCredentialFailure("rcred_claude_disabled", signal, 5_000);
+
+    expect(signal.kind).toBe("permission_denied");
+    expect(signal.scope).toBe("organization");
+    expect(transition.credential.status).toBe("invalid");
+    expect(getRuntimeCredential("rcred_claude_disabled")?.status).toBe("invalid");
+  });
+
   it("clears stale credential error fields after a successful turn", () => {
     createRuntimeCredential(credentialInput("rcred_recovered", "Recovered slot", 10));
     const signal = classifyRuntimeCredentialFailure({

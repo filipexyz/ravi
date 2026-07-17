@@ -20,6 +20,7 @@ import { buildRegistry } from "../registry-snapshot.js";
 import { extractTools, generateManifest } from "../tools-export.js";
 import { dispatch } from "../../sdk/gateway/dispatcher.js";
 import { buildInputSchema } from "../../sdk/client-codegen/registry-shape.js";
+import { dbCreateAgent } from "../../router/router-db.js";
 
 const emitConfigChangedMock = mock(async () => {});
 mock.module("../../nats.js", () => ({
@@ -52,7 +53,14 @@ describe("runtime targets CLI", () => {
     setCommand?.outputHelp();
     reorderCommand?.outputHelp();
 
-    expect(targets?.commands.map((entry) => entry.name())).toEqual(["show", "explain", "set", "reorder", "clear"]);
+    expect(targets?.commands.map((entry) => entry.name())).toEqual([
+      "show",
+      "explain",
+      "set",
+      "reorder",
+      "clear",
+      "reconcile",
+    ]);
     expect(targets?.helpInformation()).toContain("show");
     expect(setHelp.match(/ravi runtime targets set --agent/g)).toHaveLength(2);
     expect(reorderHelp).toContain("--order");
@@ -63,6 +71,7 @@ describe("runtime targets CLI", () => {
       "runtime_targets_set",
       "runtime_targets_reorder",
       "runtime_targets_clear",
+      "runtime_targets_reconcile",
     ]);
   });
 
@@ -149,7 +158,7 @@ describe("runtime targets CLI", () => {
 
   it("publishes typed show, set, reorder and clear commands with JSON output", () => {
     const commands = getCommandsMetadata(RuntimeTargetsCommands);
-    for (const name of ["show", "set", "reorder", "clear"]) {
+    for (const name of ["show", "set", "reorder", "clear", "reconcile"]) {
       const command = commands.find((entry) => entry.name === name);
       expect(command && getReturnsMetadata(RuntimeTargetsCommands).get(command.method)).toBeDefined();
       expect(command && getCommandAccessMetadata(RuntimeTargetsCommands).get(command.method)).toMatchObject({
@@ -175,10 +184,12 @@ describe("runtime targets CLI", () => {
     const show = registry.commands.find((entry) => entry.fullName === "runtime.targets.show")!;
     const set = registry.commands.find((entry) => entry.fullName === "runtime.targets.set")!;
     const reorder = registry.commands.find((entry) => entry.fullName === "runtime.targets.reorder")!;
+    const reconcile = registry.commands.find((entry) => entry.fullName === "runtime.targets.reconcile")!;
 
     expect(buildInputSchema(show).required).toEqual(["agent"]);
     expect(buildInputSchema(set).required).toEqual(["agent", "policyJson"]);
     expect(buildInputSchema(reorder).required).toEqual(["agent", "order"]);
+    expect(buildInputSchema(reconcile).required).toEqual(["fallbackJson"]);
 
     const tools = extractTools([RuntimeTargetsCommands]);
     const setManifest = generateManifest(tools).find((entry) => entry.name === "runtime_targets_set")!;
@@ -438,6 +449,177 @@ describe("runtime targets CLI", () => {
         "Create one with set --policy-json",
       );
       expect(getAgent("main")?.defaults?.runtimeTargetPolicy).toBeUndefined();
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("reconciles missing policies as a dry-run without mutating agent defaults", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-targets-reconcile-dry-");
+    try {
+      configStore.refresh();
+      dbUpdateAgent("main", {
+        provider: "claude",
+        model: "claude-sonnet-4-5",
+        defaults: { locale: "pt-BR" },
+      });
+      dbCreateAgent({
+        id: "codex-agent",
+        cwd: "/tmp/codex-agent",
+        provider: "codex",
+        model: "gpt-5.5",
+      });
+      dbUpdateAgent("codex-agent", { defaults: { locale: "en-US" } });
+      configStore.refresh();
+
+      const commands = new RuntimeTargetsCommands();
+      const result = commands.reconcile(
+        JSON.stringify([
+          { runtimeProvider: "codex", model: "gpt-5.5" },
+          { id: "pi-live", runtimeProvider: "pi", model: "google-antigravity/gemini-2.5-flash" },
+        ]),
+        undefined,
+        "claude",
+        "controller",
+        false,
+        false,
+      );
+
+      expect(result.mode).toBe("dry-run");
+      expect(result.totalAgents).toBeGreaterThanOrEqual(2);
+      expect(result.changedAgents).toBe(0);
+      expect(result.items.find((item) => item.agentId === "main")).toMatchObject({
+        action: "set",
+        currentProvider: "claude",
+        currentModel: "claude-sonnet-4-5",
+        proposedPolicy: {
+          id: "controller-main",
+          targets: [
+            { id: "claude-primary", runtimeProvider: "claude", model: "claude-sonnet-4-5" },
+            { id: "codex-1", runtimeProvider: "codex", model: "gpt-5.5" },
+            { id: "pi-live", runtimeProvider: "pi", model: "google-antigravity/gemini-2.5-flash" },
+          ],
+        },
+      });
+      expect(result.items.find((item) => item.agentId === "codex-agent")).toMatchObject({
+        action: "skip",
+        reason: "provider_filter:codex",
+      });
+      expect(getAgent("main")?.defaults).toMatchObject({ locale: "pt-BR" });
+      expect(getAgent("main")?.defaults?.runtimeTargetPolicy).toBeUndefined();
+      expect(emitConfigChangedMock).not.toHaveBeenCalled();
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("applies reconciled policies while preserving unrelated defaults and existing policies unless forced", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-targets-reconcile-apply-");
+    try {
+      configStore.refresh();
+      dbUpdateAgent("main", {
+        provider: "claude",
+        model: "claude-opus-4-8",
+        defaults: {
+          locale: "pt-BR",
+          heartbeat: { enabled: true },
+          runtimePermissions: {
+            profile: "full-access",
+            capabilities: [{ permission: "use", objectType: "runtime.target", objectId: "*" }],
+          },
+        },
+      });
+      dbCreateAgent({
+        id: "already",
+        cwd: "/tmp/already",
+        provider: "claude",
+        model: "claude-sonnet-5",
+      });
+      dbUpdateAgent("already", {
+        defaults: {
+          locale: "pt-BR",
+          runtimeTargetPolicy: {
+            id: "existing-policy",
+            strategy: "ordered",
+            targets: [{ id: "existing", runtimeProvider: "codex", model: "gpt-5" }],
+            maxAttemptsPerTarget: 1,
+          },
+        },
+      });
+      configStore.refresh();
+
+      const commands = new RuntimeTargetsCommands();
+      const result = commands.reconcile(
+        JSON.stringify([{ runtimeProvider: "codex", model: "gpt-5.5" }]),
+        undefined,
+        "claude",
+        "controller",
+        false,
+        true,
+      );
+
+      expect(result.mode).toBe("apply");
+      expect(result.changedAgents).toBe(1);
+      expect(result.items.find((item) => item.agentId === "already")).toMatchObject({
+        action: "skip",
+        reason: "existing_policy",
+        previousPolicyId: "existing-policy",
+      });
+      expect(getAgent("main")?.defaults).toMatchObject({
+        locale: "pt-BR",
+        heartbeat: { enabled: true },
+        runtimeTargetPolicy: {
+          id: "controller-main",
+          strategy: "ordered",
+          targets: [
+            { id: "claude-primary", runtimeProvider: "claude", model: "claude-opus-4-8" },
+            { id: "codex-1", runtimeProvider: "codex", model: "gpt-5.5" },
+          ],
+        },
+      });
+      expect(getAgent("already")?.defaults?.runtimeTargetPolicy).toMatchObject({ id: "existing-policy" });
+      expect(emitConfigChangedMock).toHaveBeenCalledTimes(1);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("skips unsafe reconciled policies during apply without mutating agent defaults", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-targets-reconcile-risk-");
+    try {
+      configStore.refresh();
+      dbCreateAgent({
+        id: "blocked",
+        cwd: "/tmp/blocked",
+        provider: "claude",
+        model: "claude-sonnet-4-5",
+      });
+      dbUpdateAgent("blocked", { defaults: { locale: "pt-BR" } });
+      configStore.refresh();
+
+      const commands = new RuntimeTargetsCommands();
+      const result = commands.reconcile(
+        JSON.stringify([{ runtimeProvider: "codex", model: "gpt-5.5" }]),
+        "blocked",
+        undefined,
+        "controller",
+        false,
+        true,
+      );
+
+      expect(result.mode).toBe("apply");
+      expect(result.changedAgents).toBe(0);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toMatchObject({
+        agentId: "blocked",
+        action: "skip",
+        reason: "unsafe_policy:permission_denied",
+        changed: false,
+      });
+      expect(result.items[0]?.riskFlags).toContain("permission_denied:claude-primary");
+      expect(result.items[0]?.riskFlags).toContain("permission_denied:codex-1");
+      expect(getAgent("blocked")?.defaults).toEqual({ locale: "pt-BR" });
+      expect(emitConfigChangedMock).not.toHaveBeenCalled();
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }

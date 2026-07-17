@@ -159,6 +159,18 @@ function normalizeTaskReportToSessionName(sessionName?: string | null): string |
   return trimmed ? trimmed : null;
 }
 
+function resolveCreateTaskReportToSessionName(input: CreateTaskInput): string | null {
+  return normalizeTaskReportToSessionName(
+    input.reportToSessionName === undefined ? input.createdBySessionName : input.reportToSessionName,
+  );
+}
+
+function resolveDispatchTaskReportToSessionName(input: DispatchTaskInput, task: TaskRecord): string | null {
+  return normalizeTaskReportToSessionName(
+    input.reportToSessionName === undefined ? task.reportToSessionName : input.reportToSessionName,
+  );
+}
+
 function normalizeTaskReportEvents(events?: readonly TaskReportEvent[] | null): TaskReportEvent[] {
   const allowed = new Set<string>(TASK_REPORT_EVENTS);
   const normalized = [...new Set((events ?? []).filter((event): event is TaskReportEvent => allowed.has(event)))];
@@ -851,7 +863,7 @@ export function dbCreateTask(input: CreateTaskInput): { task: TaskRecord; event:
   const now = Date.now();
   const [worktreeMode, worktreePath, worktreeBranch] = worktreeToColumns(input.worktree);
   const checkpointIntervalMs = resolveTaskCheckpointIntervalMs(input.checkpointIntervalMs);
-  const reportToSessionName = normalizeTaskReportToSessionName(input.reportToSessionName ?? input.createdBySessionName);
+  const reportToSessionName = resolveCreateTaskReportToSessionName(input);
   const reportEvents = serializeTaskReportEvents(input.reportEvents);
 
   db.prepare(`
@@ -1650,7 +1662,7 @@ export function dbDispatchTask(
   const [worktreeMode, worktreePath, worktreeBranch] = worktreeToColumns(input.worktree);
   const task = getTaskOrThrow(taskId);
   const checkpointIntervalMs = resolveTaskCheckpointIntervalMs(input.checkpointIntervalMs ?? task.checkpointIntervalMs);
-  const reportToSessionName = normalizeTaskReportToSessionName(input.reportToSessionName ?? task.reportToSessionName);
+  const reportToSessionName = resolveDispatchTaskReportToSessionName(input, task);
   const reportEvents = serializeTaskReportEvents(input.reportEvents ?? task.reportEvents);
 
   db.prepare("DELETE FROM task_launch_plans WHERE task_id = ?").run(taskId);

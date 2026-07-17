@@ -88,15 +88,60 @@ describe("runtime credential classifier", () => {
   });
 
   it("classifies Claude weekly subscription limits without an HTTP status", () => {
+    const now = Date.UTC(2026, 6, 14, 23, 45);
     const signal = classifyRuntimeCredentialFailure({
       runtimeProvider: "claude",
       upstreamProvider: "anthropic",
       message: "You've hit your weekly limit · resets Jul 15, 2am (UTC)",
+      now,
     });
 
     expect(signal.kind).toBe("quota_exhausted");
     expect(signal.scope).toBe("account");
     expect(signal.confidence).toBe("high");
+    expect(signal.resetAt).toBe(Date.UTC(2026, 6, 15, 2, 0));
+    expect(signal.retryableByCredential).toBe(false);
+  });
+
+  it("parses Claude session-limit reset times instead of defaulting to a 24h cooldown", () => {
+    const signal = classifyRuntimeCredentialFailure({
+      runtimeProvider: "claude",
+      upstreamProvider: "anthropic",
+      message: "You've hit your session limit · resets 12:30am (UTC)",
+      now: Date.UTC(2026, 6, 16, 23, 55),
+    });
+
+    expect(signal.kind).toBe("quota_exhausted");
+    expect(signal.resetAt).toBe(Date.UTC(2026, 6, 17, 0, 30));
+  });
+
+  it("keeps structured 429 Claude session limits as exhausted quota", () => {
+    const signal = classifyRuntimeCredentialFailure({
+      runtimeProvider: "claude",
+      upstreamProvider: "anthropic",
+      httpStatus: 429,
+      providerType: "error",
+      message: "You've hit your session limit · resets 12:30am (UTC)",
+      now: Date.UTC(2026, 6, 16, 23, 55),
+    });
+
+    expect(signal.kind).toBe("quota_exhausted");
+    expect(signal.scope).toBe("account");
+    expect(signal.retryableByCredential).toBe(true);
+    expect(signal.resetAt).toBe(Date.UTC(2026, 6, 17, 0, 30));
+  });
+
+  it("classifies disabled Claude subscription access as an account permission failure", () => {
+    const signal = classifyRuntimeCredentialFailure({
+      runtimeProvider: "claude",
+      upstreamProvider: "anthropic",
+      message: "Your organization has disabled Claude subscription access.",
+    });
+
+    expect(signal.kind).toBe("permission_denied");
+    expect(signal.scope).toBe("organization");
+    expect(signal.confidence).toBe("high");
+    expect(signal.retryableByCredential).toBe(false);
   });
 
   it("does not authorize credential recovery from text alone", () => {
