@@ -1993,14 +1993,14 @@ function shouldSkipDaemonRestartTaskSessionSnapshot(
 }
 
 function isDedicatedTaskSessionName(sessionName: string): boolean {
-  return /^task-[A-Za-z0-9_-]+-work(?:$|[:/])/.test(sessionName);
+  return /^task-[A-Za-z0-9_-]+-(?:work|curator)(?:$|[:/])/.test(sessionName);
 }
 
 function inferTaskIdFromDedicatedTaskSessionName(sessionName: string): string | null {
   if (!isDedicatedTaskSessionName(sessionName)) return null;
-  const workIndex = sessionName.indexOf("-work");
-  if (workIndex <= 0) return null;
-  const taskId = sessionName.slice(0, workIndex);
+  const suffixMatch = sessionName.match(/-(?:work|curator)(?:$|[:/])/);
+  if (!suffixMatch || suffixMatch.index === undefined || suffixMatch.index <= 0) return null;
+  const taskId = sessionName.slice(0, suffixMatch.index);
   return taskId.startsWith("task-") ? taskId : null;
 }
 

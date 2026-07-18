@@ -188,9 +188,6 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       });
     }
     drainPendingStarts();
-    if ((stashedMessages.get(sessionName)?.length ?? 0) > 0 && restartStashedSession) {
-      await restartStashedSession({ sessionName, reason: "runtime_target_exhausted" });
-    }
     return;
   }
   const resolvedSession = sessionResolutionResult.resolution;

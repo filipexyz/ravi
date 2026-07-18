@@ -581,6 +581,82 @@ describe("runtime session trace instrumentation", () => {
     });
   });
 
+  it("rebases recent history when the same provider loses its session id", async () => {
+    saveMessage(SESSION_NAME, "user", "Estamos revisando o benchmark MMC e a task nativa.");
+    saveMessage(SESSION_NAME, "assistant", "Eu lancei 8 processos e preciso transformar isso em task rastreavel.");
+    saveMessage(SESSION_NAME, "user", "E ai?");
+
+    const streaming = makeStreamingSession({
+      pendingMessages: [createQueuedRuntimeUserMessage({ prompt: "E ai?", deliveryBarrier: "after_tool" })],
+    });
+    const provider: SessionRuntimeProvider = {
+      id: PROVIDER,
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-build-continuity-rebase-same-provider-missing-session",
+      sessionName: SESSION_NAME,
+      prompt: {
+        prompt: "E ai?",
+        source,
+        deliveryBarrier: "after_tool",
+      },
+      session: makeSession(),
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default", effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resumeDecision: {
+        hadStoredProviderSessionId: false,
+        storedRuntimeProvider: PROVIDER,
+        requestedRuntimeProvider: PROVIDER,
+        supportsSessionResume: true,
+        providerMatches: true,
+        sessionStateValid: false,
+        sessionStateInvalidReason: "missing_provider_session",
+        canResume: false,
+        reason: "missing_provider_session",
+        staleCleared: false,
+      },
+      resolvedSource: source,
+      streamingSession: streaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+    });
+
+    const yielded = await runtimeRequest.prompt.next();
+    const content = yielded.value?.message.content ?? "";
+
+    expect(content).toContain("# Runtime Continuity Rebase");
+    expect(content).toContain("Reason: missing_provider_session");
+    expect(content).toContain("Estamos revisando o benchmark MMC");
+    expect(content).toContain("transformar isso em task rastreavel");
+    expect(content.match(/E ai\\?/g)).toHaveLength(1);
+
+    streaming.done = true;
+    streaming.onTurnComplete?.();
+    await runtimeRequest.prompt.return?.(undefined);
+
+    const rebaseEvent = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "runtime.context.rebased");
+    expect(rebaseEvent?.payloadJson).toMatchObject({
+      reason: "missing_provider_session",
+      messageCount: 2,
+      truncated: false,
+    });
+  });
+
   it("blocks invisible provider env fallback when a managed credential pool cannot resolve", async () => {
     createRuntimeCredential({
       id: "rcred_trace_missing",
@@ -1983,6 +2059,7 @@ describe("runtime session trace instrumentation", () => {
     });
     const stashedMessages = new Map<string, RuntimeUserMessage[]>([[SESSION_NAME, [queued]]]);
     const runtimeEvents: Array<Record<string, unknown>> = [];
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
 
     await startRuntimeSession({
       sessionName: SESSION_NAME,
@@ -2003,12 +2080,16 @@ describe("runtime session trace instrumentation", () => {
         runtimeEvents.push(data);
       },
       drainPendingStarts: () => {},
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
       runtimeResolution: { ok: false, error: new Error(`Runtime target policy '${policy.id}' is exhausted.`) },
     });
 
     expect(dbGetTask(task.id)?.status).toBe("blocked");
     expect(state.terminal).toBe(true);
     expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(restartRequests).toEqual([]);
     expect(runtimeEvents).toEqual([expect.objectContaining({ type: "turn.failed", recoverable: false })]);
     expect(readLearningLoopCadenceState(getSession(SESSION_KEY)?.runtimeSessionParams)?.terminalTurnCount).toBe(1);
   });

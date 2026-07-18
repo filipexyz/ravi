@@ -302,6 +302,10 @@ export async function buildRuntimeStartRequest(
     canResumeCredentialSession,
     resumeProviderSessionId,
     resumeDecision,
+    continuitySensitivePrompt:
+      prompt.deliveryBarrier === "after_tool" ||
+      prompt._resumeStashedMessages === true ||
+      Boolean(prompt._daemonRestartResume),
   });
   let continuityRebasePending = continuityRebaseReason !== null;
   let currentContinuityRebase: RuntimeContinuityRebasePrompt | null = null;
@@ -509,16 +513,16 @@ function resolveContinuityRebaseReason(input: {
   canResumeCredentialSession: boolean;
   resumeProviderSessionId?: string;
   resumeDecision?: RuntimeResumeDecision;
+  continuitySensitivePrompt?: boolean;
 }): RuntimeContinuityRebasePrompt["reason"] | null {
   if (input.resumeProviderSessionId || input.canResumeCredentialSession) return null;
   const reason = input.resumeDecision?.reason;
   if (reason === "provider_mismatch") return reason;
-  if (
-    reason === "missing_provider_session" &&
-    input.resumeDecision?.storedRuntimeProvider &&
-    input.resumeDecision.providerMatches === false
-  ) {
-    return reason;
+  if (reason === "missing_provider_session") {
+    if (input.resumeDecision?.storedRuntimeProvider && input.resumeDecision.providerMatches === false) {
+      return reason;
+    }
+    return input.continuitySensitivePrompt ? reason : null;
   }
   if (reason === "session_state_invalid" && input.resumeDecision?.hadStoredProviderSessionId) return reason;
   return null;

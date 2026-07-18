@@ -940,37 +940,38 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-restart-terminal-task-");
     try {
       const now = Date.now();
-      const created = dbCreateTask({
-        title: "terminal task restart",
-        instructions: "must not resume after done",
-        createdBy: "test",
-        createdByAgentId: "dev",
-        createdBySessionName: "dev",
-      });
-      const sessionName = `${created.task.id}-work`;
-      getOrCreateSession(`agent:dev:${sessionName}`, "dev", stateDir, { name: sessionName });
-      dbDispatchTask(created.task.id, {
-        agentId: "dev",
-        sessionName,
-        assignedBy: "test",
-      });
-      dbCompleteTask(created.task.id, {
-        actor: "test",
-        agentId: "dev",
-        sessionName,
-        message: "done",
-      });
       dbUpsertDaemonRestartEpoch({ restartEpoch: "epoch-terminal-task", reason: "test", createdAt: now });
 
       const dispatcher = createDispatcher(2);
-      dispatcher.streamingSessions.set(
-        sessionName,
-        createActiveSession({
-          turnActive: true,
-          lastActivity: now - 1_000,
-          currentTaskBarrierTaskId: created.task.id,
-        }),
-      );
+      for (const suffix of ["work", "curator"]) {
+        const created = dbCreateTask({
+          title: `terminal task restart ${suffix}`,
+          instructions: "must not resume after done",
+          createdBy: "test",
+          createdByAgentId: "dev",
+          createdBySessionName: "dev",
+        });
+        const sessionName = `${created.task.id}-${suffix}`;
+        getOrCreateSession(`agent:dev:${sessionName}`, "dev", stateDir, { name: sessionName });
+        dbDispatchTask(created.task.id, {
+          agentId: "dev",
+          sessionName,
+          assignedBy: "test",
+        });
+        dbCompleteTask(created.task.id, {
+          actor: "test",
+          agentId: "dev",
+          sessionName,
+          message: "done",
+        });
+        dispatcher.streamingSessions.set(
+          sessionName,
+          createActiveSession({
+            turnActive: true,
+            lastActivity: now - 1_000,
+          }),
+        );
+      }
 
       expect(
         dispatcher.recordDaemonRestartSnapshot({
