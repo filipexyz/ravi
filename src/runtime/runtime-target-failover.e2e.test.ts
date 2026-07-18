@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { configStore } from "../config-store.js";
+import { saveMessage } from "../db.js";
 import { nats } from "../nats.js";
 import { dbUpdateAgent, dbUpsertChat, dbUpsertDaemonRestartEpoch } from "../router/router-db.js";
 import { attachChatToSession, getOrCreateSession, getSession, updateRuntimeProviderState } from "../router/sessions.js";
@@ -117,9 +118,10 @@ describe("runtime target failover E2E", () => {
     stateDir = null;
   });
 
-  it("fails primary, starts an incompatible secondary without stale resume state, and emits exactly one response", async () => {
+  it("fails primary, starts an incompatible secondary with continuity rebase, and emits exactly one response", async () => {
     let primaryRequest: RuntimeStartRequest | undefined;
     let secondaryRequest: RuntimeStartRequest | undefined;
+    let secondaryPrompt = "";
     const codexProvider = createCodexRuntimeProvider({
       defaultModel: "gpt-5",
       transport: {
@@ -149,10 +151,17 @@ describe("runtime target failover E2E", () => {
     registerRuntimeProvider(secondary, () =>
       provider(
         secondary,
-        [
-          { type: "assistant.message", text: "completed by secondary" },
-          { type: "turn.complete", providerSessionId: "secondary-session", usage: { inputTokens: 1, outputTokens: 1 } },
-        ],
+        ({ prompt }) => {
+          secondaryPrompt = prompt;
+          return [
+            { type: "assistant.message", text: "completed by secondary" },
+            {
+              type: "turn.complete",
+              providerSessionId: "secondary-session",
+              usage: { inputTokens: 1, outputTokens: 1 },
+            },
+          ];
+        },
         (request) => {
           secondaryRequest = request;
         },
@@ -187,6 +196,8 @@ describe("runtime target failover E2E", () => {
     });
     getOrCreateSession("target-e2e", "main", stateDir ?? "/tmp", { name: "target-e2e" });
     updateRuntimeProviderState("target-e2e", primary, { providerSessionId: "primary-session" });
+    saveMessage("target-e2e", "user", "Estamos falando do contrato DMN da fila fiscal.", "primary-session");
+    saveMessage("target-e2e", "assistant", "Revisei o contrato DMN e a regra principal e2e-123.", "primary-session");
     const chat = dbUpsertChat({
       channel: "whatsapp",
       instanceId: "main",
@@ -216,6 +227,12 @@ describe("runtime target failover E2E", () => {
       expect(responses[0]?.data.response).toBe("completed by secondary");
       expect(primaryRequest?.resume).toBe("primary-session");
       expect(secondaryRequest?.resume).toBeUndefined();
+      expect(secondaryPrompt).toContain("# Runtime Continuity Rebase");
+      expect(secondaryPrompt).toContain("Reason: provider_mismatch");
+      expect(secondaryPrompt).toContain("Estamos falando do contrato DMN da fila fiscal.");
+      expect(secondaryPrompt).toContain("Revisei o contrato DMN e a regra principal e2e-123.");
+      expect(secondaryPrompt).toContain("## Current User Message(s)");
+      expect(secondaryPrompt.match(/finish this logical turn/g)).toHaveLength(1);
       expect(
         emitted.filter(
           (event) => event.topic === "ravi.session.target-e2e.runtime" && event.data.type === "turn.failed",

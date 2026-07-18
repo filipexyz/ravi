@@ -496,6 +496,91 @@ describe("runtime session trace instrumentation", () => {
     });
   });
 
+  it("rebases recent session history on provider cold start without duplicating the current message", async () => {
+    saveMessage(SESSION_NAME, "user", "Estamos falando do DMN e do profile metodologico.");
+    saveMessage(SESSION_NAME, "assistant", "Revisei o profile DMN: nao devemos pedir para carregar skill tal.");
+    saveMessage(SESSION_NAME, "user", "Ouviu?");
+
+    const streaming = makeStreamingSession({
+      pendingMessages: [createQueuedRuntimeUserMessage({ prompt: "Ouviu?", deliveryBarrier: "after_tool" })],
+    });
+    const provider: SessionRuntimeProvider = {
+      id: PROVIDER,
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-build-continuity-rebase",
+      sessionName: SESSION_NAME,
+      prompt: {
+        prompt: "Ouviu?",
+        source,
+        deliveryBarrier: "after_tool",
+      },
+      session: makeSession(),
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default", effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resumeDecision: {
+        hadStoredProviderSessionId: true,
+        storedRuntimeProvider: "codex",
+        requestedRuntimeProvider: PROVIDER,
+        supportsSessionResume: true,
+        providerMatches: false,
+        sessionStateValid: true,
+        canResume: false,
+        reason: "provider_mismatch",
+        staleCleared: true,
+      },
+      resolvedSource: source,
+      streamingSession: streaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+    });
+
+    const yielded = await runtimeRequest.prompt.next();
+    const content = yielded.value?.message.content ?? "";
+
+    expect(content).toContain("# Runtime Continuity Rebase");
+    expect(content).toContain("Reason: provider_mismatch");
+    expect(content).toContain("Estamos falando do DMN");
+    expect(content).toContain("nao devemos pedir para carregar skill tal");
+    expect(content.match(/Ouviu\\?/g)).toHaveLength(1);
+
+    streaming.done = true;
+    streaming.onTurnComplete?.();
+    await runtimeRequest.prompt.return?.(undefined);
+
+    const turn = getSessionTurn(streaming.currentTraceTurnId ?? "");
+    const tracedPrompt = getSessionTraceBlob(turn?.userPromptSha256 ?? "")?.contentText;
+    expect(tracedPrompt).toContain("# Runtime Continuity Rebase");
+    expect(tracedPrompt).toContain("## Current User Message(s)");
+
+    const rebaseEvent = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "runtime.context.rebased");
+    expect(rebaseEvent).toMatchObject({
+      eventGroup: "runtime_context",
+      status: "applied",
+      provider: PROVIDER,
+    });
+    expect(rebaseEvent?.payloadJson).toMatchObject({
+      reason: "provider_mismatch",
+      messageCount: 2,
+      truncated: false,
+    });
+  });
+
   it("blocks invisible provider env fallback when a managed credential pool cannot resolve", async () => {
     createRuntimeCredential({
       id: "rcred_trace_missing",

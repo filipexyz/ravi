@@ -162,6 +162,10 @@ export interface RuntimeMessageGeneratorOptions {
   sessionName: string;
   session: RuntimeHostStreamingSession;
   stashedMessages: Map<string, RuntimeUserMessage[]>;
+  transformCombinedPrompt?: (input: {
+    deliverableMessages: RuntimeUserMessage[];
+    combinedPrompt: string;
+  }) => string | undefined;
   beforeTurnStart?: (input: { deliverableMessages: RuntimeUserMessage[]; combinedPrompt: string }) => void;
   traceTurnStart?: (input: {
     combinedPrompt: string;
@@ -173,6 +177,7 @@ export async function* createRuntimeMessageGenerator({
   sessionName,
   session,
   stashedMessages,
+  transformCombinedPrompt,
   beforeTurnStart,
   traceTurnStart,
 }: RuntimeMessageGeneratorOptions): AsyncGenerator<RuntimePromptMessage> {
@@ -207,7 +212,12 @@ export async function* createRuntimeMessageGenerator({
       deliverable.map((message) => message.pendingId).filter((pendingId): pendingId is string => Boolean(pendingId)),
     );
     session.currentTurnPendingIds = [...yieldedIds];
-    const combined = deliverable.map((m) => m.message.content).join("\n\n");
+    const baseCombined = deliverable.map((m) => m.message.content).join("\n\n");
+    const combined =
+      transformCombinedPrompt?.({
+        combinedPrompt: baseCombined,
+        deliverableMessages: deliverable.map((message) => ({ ...message })),
+      }) ?? baseCombined;
     log.info("Generator: yielding", {
       sessionName,
       count: deliverable.length,

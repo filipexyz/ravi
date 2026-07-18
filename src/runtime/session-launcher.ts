@@ -21,7 +21,7 @@ import { refreshRuntimeCredential } from "./credential-refresh.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import { formatUserFacingTurnFailure, runRuntimeEventLoop, type RuntimeSafeEmit } from "./host-event-loop.js";
-import { getRuntimeToolAccessMode } from "./host-services.js";
+import { getRuntimeToolAccessMode, resolveScopedTurnToolAccessMode } from "./host-services.js";
 import {
   createPendingRuntimeHandle,
   type RuntimeHostStreamingSession,
@@ -443,7 +443,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       requiresMcpServers: !!agent.specMode,
       requiresRemoteSpawn: !!agent.remote,
       toolAccessMode: shouldUseTurnScopedAuthorityForPrompt(prompt, resolvedSource)
-        ? "restricted"
+        ? resolveScopedTurnToolAccessMode(runtimeCapabilities, agent.id)
         : getRuntimeToolAccessMode(runtimeCapabilities, agent.id),
     });
 
@@ -482,6 +482,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       storedRuntimeSessionParams,
       storedProviderSessionId,
       canResumeStoredSession,
+      resumeDecision,
       resolvedSource,
       approvalSource,
       streamingSession,

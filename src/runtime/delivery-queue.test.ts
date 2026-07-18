@@ -90,6 +90,34 @@ describe("runtime delivery queue", () => {
     await generator.return(undefined);
   });
 
+  it("applies a prompt transform before yielding and tracing the turn", async () => {
+    const queuedMessage = createQueuedRuntimeUserMessage({ prompt: "continua" });
+    const session = makeStreamingSession({
+      pendingMessages: [queuedMessage],
+    });
+    let tracedPrompt = "";
+    const generator = createRuntimeMessageGenerator({
+      sessionName: "dev",
+      session,
+      stashedMessages: new Map(),
+      transformCombinedPrompt: ({ combinedPrompt }) => `historico\n\n${combinedPrompt}`,
+      traceTurnStart: ({ combinedPrompt }) => {
+        tracedPrompt = combinedPrompt;
+        return null;
+      },
+    });
+
+    const result = await generator.next();
+
+    expect(result.done).toBe(false);
+    expect(result.value?.message.content).toBe("historico\n\ncontinua");
+    expect(tracedPrompt).toBe("historico\n\ncontinua");
+
+    session.done = true;
+    session.onTurnComplete?.();
+    await generator.return(undefined);
+  });
+
   it("clears idle session eviction timer during runtime shutdown", () => {
     const idleTimer = setTimeout(() => {}, 60_000);
     const session = makeStreamingSession({

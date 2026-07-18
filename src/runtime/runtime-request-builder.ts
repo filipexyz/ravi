@@ -6,8 +6,10 @@ import {
   buildRuntimeTracePromptSectionMetadata,
   createSessionTraceTurnId,
   recordAdapterRequestTrace,
+  recordRuntimeTraceEvent,
   summarizeRuntimeCapabilities,
 } from "../session-trace/runtime-trace.js";
+import { getRecentHistory } from "../db.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { classifyCompactionAnnouncement } from "./compaction-announcement.js";
 import { resolveAgentSkills } from "./allowed-skills.js";
@@ -39,6 +41,12 @@ import {
 } from "./runtime-request-context.js";
 import { resolveRuntimeSessionContinuity } from "./runtime-session-continuity.js";
 import { buildRuntimeSystemPrompt } from "./runtime-system-prompt.js";
+import {
+  applyRuntimeContinuityRebasePrompt,
+  buildRuntimeContinuityRebasePrompt,
+  type RuntimeContinuityRebasePrompt,
+} from "./session-continuity-rebase.js";
+import type { RuntimeResumeDecision } from "./session-resolver.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
 import type { RuntimeTarget } from "./target-policy.js";
 import type { RuntimeCapabilities, RuntimeProviderId, RuntimeStartRequest, SessionRuntimeProvider } from "./types.js";
@@ -71,6 +79,7 @@ export interface RuntimeStartRequestBuildOptions {
   storedRuntimeSessionParams: Record<string, unknown> | undefined;
   storedProviderSessionId?: string;
   canResumeStoredSession: boolean;
+  resumeDecision?: RuntimeResumeDecision;
   resolvedSource?: RuntimeMessageTarget;
   approvalSource?: RuntimeMessageTarget;
   streamingSession: RuntimeHostStreamingSession;
@@ -180,6 +189,7 @@ export async function buildRuntimeStartRequest(
     storedRuntimeSessionParams,
     storedProviderSessionId,
     canResumeStoredSession,
+    resumeDecision,
     resolvedSource,
     approvalSource,
     streamingSession,
@@ -288,6 +298,13 @@ export async function buildRuntimeStartRequest(
     canResumeStoredSession: canResumeCredentialSession,
     defaultRuntimeProviderId,
   });
+  const continuityRebaseReason = resolveContinuityRebaseReason({
+    canResumeCredentialSession,
+    resumeProviderSessionId,
+    resumeDecision,
+  });
+  let continuityRebasePending = continuityRebaseReason !== null;
+  let currentContinuityRebase: RuntimeContinuityRebasePrompt | null = null;
   const { specServer, hooks, remoteSpawn } = buildRuntimeHostAttachments({
     runtimeCapabilities,
     agent,
@@ -332,7 +349,7 @@ export async function buildRuntimeStartRequest(
     }
     bindRuntimeCredentialAttemptTurn(runtimeCredential?.attemptId, turnId);
     markRuntimeCredentialAttemptStarted(runtimeCredential?.attemptId);
-    return recordAdapterRequestTrace({
+    const traceTurn = recordAdapterRequestTrace({
       sessionKey: dbSessionKey,
       sessionName,
       agentId: agent.id,
@@ -373,11 +390,55 @@ export async function buildRuntimeStartRequest(
       commands: input.deliverableMessages.flatMap((message) => message.commands ?? []),
       runtimeCredential: runtimeCredential ? serializeRuntimeCredentialAttemptBinding(runtimeCredential) : null,
     });
+    if (traceTurn && currentContinuityRebase) {
+      recordRuntimeTraceEvent({
+        sessionKey: dbSessionKey,
+        sessionName,
+        agentId: agent.id,
+        runId,
+        turnId,
+        provider: runtimeProviderId,
+        model,
+        eventType: "runtime.context.rebased",
+        eventGroup: "runtime_context",
+        status: "applied",
+        source: streamingSession.currentSource ?? resolvedSource ?? null,
+        payloadJson: {
+          reason: currentContinuityRebase.reason,
+          messageCount: currentContinuityRebase.messageCount,
+          latestMessageId: currentContinuityRebase.latestMessageId ?? null,
+          chars: currentContinuityRebase.chars,
+          truncated: currentContinuityRebase.truncated,
+        },
+      });
+    }
+    return traceTurn;
   };
   const messageGenerator = createRuntimeMessageGenerator({
     sessionName,
     session: streamingSession,
     stashedMessages,
+    transformCombinedPrompt: (input) => {
+      currentContinuityRebase = null;
+      if (!continuityRebasePending || !continuityRebaseReason) {
+        return input.combinedPrompt;
+      }
+      continuityRebasePending = false;
+      const history = getRecentHistory(sessionName, 32);
+      const rebase = buildRuntimeContinuityRebasePrompt({
+        sessionName,
+        runtimeProvider: runtimeProviderId,
+        model,
+        reason: continuityRebaseReason,
+        history,
+        currentPrompts: input.deliverableMessages.map((message) => message.message.content),
+      });
+      if (!rebase) {
+        return input.combinedPrompt;
+      }
+      currentContinuityRebase = rebase;
+      return applyRuntimeContinuityRebasePrompt(input.combinedPrompt, rebase);
+    },
     beforeTurnStart: (input) => {
       const turnPrompt = resolveRuntimeTurnPrompt(input.deliverableMessages, prompt);
       const turnSource = turnPrompt.source ?? resolvedSource;
@@ -442,6 +503,25 @@ export async function buildRuntimeStartRequest(
     toolContext,
     ...(credentialResolution.attemptBinding ? { runtimeCredentialAttempt: credentialResolution.attemptBinding } : {}),
   };
+}
+
+function resolveContinuityRebaseReason(input: {
+  canResumeCredentialSession: boolean;
+  resumeProviderSessionId?: string;
+  resumeDecision?: RuntimeResumeDecision;
+}): RuntimeContinuityRebasePrompt["reason"] | null {
+  if (input.resumeProviderSessionId || input.canResumeCredentialSession) return null;
+  const reason = input.resumeDecision?.reason;
+  if (reason === "provider_mismatch") return reason;
+  if (
+    reason === "missing_provider_session" &&
+    input.resumeDecision?.storedRuntimeProvider &&
+    input.resumeDecision.providerMatches === false
+  ) {
+    return reason;
+  }
+  if (reason === "session_state_invalid" && input.resumeDecision?.hadStoredProviderSessionId) return reason;
+  return null;
 }
 
 function resolveRuntimeTurnPrompt(
