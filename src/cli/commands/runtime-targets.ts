@@ -666,6 +666,17 @@ export class RuntimeTargetsCommands {
       fail(`${error instanceof Error ? error.message : String(error)}. No configuration was changed.`);
     }
 
+    const riskFlags = collectReconcileRiskFlags(agentId, policy);
+    const blockingRisk = findBlockingReconcileRisk(riskFlags);
+    if (blockingRisk) {
+      fail(
+        `Runtime target policy '${policy.id}' is unsafe for agent '${agentId}': ${blockingRisk.replace(
+          "unsafe_policy:",
+          "",
+        )}. Risk flags: ${riskFlags.join(", ")}. No configuration was changed. Grant the missing runtime target permission or fix the target ids first.`,
+      );
+    }
+
     let previousPolicyId: string | null = null;
     const mutation = mutateAgentDefaults(agentId, (defaults) => {
       previousPolicyId = readPolicyId(defaults?.runtimeTargetPolicy);

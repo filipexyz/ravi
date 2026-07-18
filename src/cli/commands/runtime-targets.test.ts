@@ -339,11 +339,53 @@ describe("runtime targets CLI", () => {
     }
   });
 
+  it("rejects set policies the agent is not permitted to use without changing defaults", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-targets-set-risk-");
+    try {
+      configStore.refresh();
+      dbCreateAgent({
+        id: "blocked-set",
+        cwd: "/tmp/blocked-set",
+        provider: "claude",
+        model: "claude-sonnet-4-5",
+      });
+      dbUpdateAgent("blocked-set", { defaults: { locale: "pt-BR" } });
+      configStore.refresh();
+
+      const commands = new RuntimeTargetsCommands();
+      expect(() =>
+        runWithContext({}, () =>
+          commands.set(
+            "blocked-set",
+            JSON.stringify({
+              id: "unsafe-set-policy",
+              strategy: "ordered",
+              targets: [{ id: "claude-primary", runtimeProvider: "claude", model: "claude-sonnet-4-5" }],
+              maxAttemptsPerTarget: 1,
+            }),
+          ),
+        ),
+      ).toThrow("permission_denied:claude-primary");
+      expect(getAgent("blocked-set")?.defaults).toEqual({ locale: "pt-BR" });
+      expect(emitConfigChangedMock).not.toHaveBeenCalled();
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
   it("persists set and clear without overwriting other agent defaults", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-targets-cli-");
     try {
       configStore.refresh();
-      dbUpdateAgent("main", { defaults: { locale: "pt-BR", heartbeat: { enabled: true } } });
+      dbUpdateAgent("main", {
+        defaults: {
+          locale: "pt-BR",
+          heartbeat: { enabled: true },
+          runtimePermissions: {
+            capabilities: [{ permission: "use", objectType: "runtime.target", objectId: "*" }],
+          },
+        },
+      });
       configStore.refresh();
       const commands = new RuntimeTargetsCommands();
       const result = commands.set(
@@ -381,7 +423,13 @@ describe("runtime targets CLI", () => {
       expect(emitConfigChangedMock).toHaveBeenCalledTimes(1);
       commands.clear("main");
       expect(emitConfigChangedMock).toHaveBeenCalledTimes(2);
-      expect(getAgent("main")?.defaults).toEqual({ locale: "pt-BR", heartbeat: { enabled: true } });
+      expect(getAgent("main")?.defaults).toEqual({
+        locale: "pt-BR",
+        heartbeat: { enabled: true },
+        runtimePermissions: {
+          capabilities: [{ permission: "use", objectType: "runtime.target", objectId: "*" }],
+        },
+      });
       expect(commands.show("main")).toMatchObject({ enabled: false, order: [], policy: null });
     } finally {
       await cleanupIsolatedRaviState(stateDir);
@@ -391,6 +439,14 @@ describe("runtime targets CLI", () => {
   it("reorders persisted targets repeatedly and rejects unsafe mutation inputs without changing defaults", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-targets-reorder-");
     try {
+      configStore.refresh();
+      dbUpdateAgent("main", {
+        defaults: {
+          runtimePermissions: {
+            capabilities: [{ permission: "use", objectType: "runtime.target", objectId: "*" }],
+          },
+        },
+      });
       configStore.refresh();
       const commands = new RuntimeTargetsCommands();
       commands.set(
