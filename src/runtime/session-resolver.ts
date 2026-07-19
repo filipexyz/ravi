@@ -153,20 +153,29 @@ export function resolveRuntimeSession(options: {
     resolvedTargetPolicy.policy && options.prompt._resumeStashedMessages && sessionEntry
       ? reconstructRuntimeTargetTurnState(sessionEntry.sessionKey, resolvedTargetPolicy.policy.id)
       : undefined;
-  const targetState: RuntimeTargetTurnState | undefined = resolvedTargetPolicy.policy
-    ? ((options.prompt._resumeStashedMessages ? reconstructedTargetState : undefined) ??
-      options.prompt._runtimeTargetState ?? {
+  const promptTargetState = options.prompt._runtimeTargetState;
+  let targetState: RuntimeTargetTurnState | undefined;
+  if (resolvedTargetPolicy.policy) {
+    if (
+      options.prompt._resumeStashedMessages &&
+      reconstructedTargetState &&
+      (!promptTargetState || reconstructedTargetState.logicalTurnId === promptTargetState.logicalTurnId)
+    ) {
+      targetState = reconstructedTargetState;
+    } else {
+      targetState = promptTargetState ?? {
         logicalTurnId: crypto.randomUUID(),
         attempts: [],
         credentialRecoveries: {},
         sideEffectBoundaryCrossed: false,
         terminal: false,
-      })
-    : undefined;
+      };
+    }
+  }
   if (resolvedTargetPolicy.policy && targetState) {
-    // Persist the reconstructed envelope before selection. If selection is
-    // exhausted and throws, the launcher still needs the authoritative state
-    // to discard only this logical turn instead of replaying it forever.
+    // Persist the selected envelope before selection. If selection is exhausted
+    // and throws, the launcher still needs the authoritative state to discard
+    // only this logical turn instead of replaying it forever.
     options.prompt._runtimeTargetPolicy = resolvedTargetPolicy.policy;
     options.prompt._runtimeTargetPolicyResolution = {
       source: resolvedTargetPolicy.source,

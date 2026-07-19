@@ -1591,7 +1591,7 @@ describe("RaviBot runtime guards", () => {
         provider: providerId,
         events: (async function* () {
           const retry = await request.prompt.next();
-          expect(retry.value?.message.content).toBe("first\n\nsecond");
+          expect(retry.value?.message.content).toBe("second");
           releaseRetryPrompt?.();
           yield {
             type: "assistant.message",

@@ -2363,4 +2363,89 @@ describe("runtime session trace instrumentation", () => {
     ]);
     expect(streaming.done).toBe(true);
   });
+
+  it("drops the current side-effect turn and restarts only later queued prompts after a recoverable interrupt", async () => {
+    const policy: RuntimeTargetPolicy = {
+      id: "interrupt-side-effect-policy",
+      strategy: "ordered",
+      maxAttemptsPerTarget: 1,
+      targets: [{ id: "primary", runtimeProvider: PROVIDER, model: MODEL }],
+    };
+    const oldState: RuntimeTargetTurnState = {
+      logicalTurnId: "old-tool-turn",
+      attempts: [{ targetId: "primary", attempt: 1, startedAt: Date.now() - 1 }],
+      credentialRecoveries: {},
+      sideEffectBoundaryCrossed: true,
+      terminal: true,
+    };
+    const newState: RuntimeTargetTurnState = {
+      logicalTurnId: "new-followup-turn",
+      attempts: [{ targetId: "primary", attempt: 1, startedAt: Date.now() }],
+      credentialRecoveries: {},
+      sideEffectBoundaryCrossed: false,
+      terminal: false,
+    };
+    const current = createQueuedRuntimeUserMessage({
+      prompt: "current turn already touched a tool",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+      _runtimeTargetPolicy: policy,
+      _runtimeTargetState: oldState,
+    });
+    const followup = createQueuedRuntimeUserMessage({
+      prompt: "Ouviu?",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+      _runtimeTargetPolicy: policy,
+      _runtimeTargetState: newState,
+    });
+    const streaming = makeStreamingSession({
+      interrupted: true,
+      pendingMessages: [current, followup],
+      currentTurnPendingIds: current.pendingId ? [current.pendingId] : [],
+      currentTurnToolStarted: true,
+      runtimeTargetPolicy: policy,
+      runtimeTarget: policy.targets[0],
+      runtimeTargetState: oldState,
+    });
+    seedAdapterTrace(streaming, "turn-recoverable-interrupt-after-tool");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error: "recoverable interrupt after tool",
+          recoverable: true,
+          rawEvent: {
+            type: "result",
+            subtype: "error_during_execution",
+            errors: ["[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=tool_use"],
+          },
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual(["Ouviu?"]);
+    expect(stashedMessages.get(SESSION_NAME)?.[0]?.launchPrompt?._runtimeTargetState?.logicalTurnId).toBe(
+      "new-followup-turn",
+    );
+    expect(restartRequests).toEqual([
+      {
+        sessionName: SESSION_NAME,
+        reason: "recoverable_interrupt_failure",
+      },
+    ]);
+    expect(streaming.done).toBe(true);
+  });
 });

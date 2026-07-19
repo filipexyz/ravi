@@ -46,6 +46,7 @@ import {
   shutdownRuntimeStreamingSession,
   stashCurrentTurnRuntimeMessages,
   stashPendingRuntimeMessages,
+  stashPendingRuntimeMessagesExceptCurrentTurn,
   type RuntimeHostStreamingSession,
   type RuntimeUserMessage,
 } from "./host-session.js";
@@ -504,12 +505,19 @@ export function formatUserFacingTurnFailure(error: string): string {
     .value.split("\n")
     .map((line) => line.trim())
     .find(Boolean);
-  const detail = firstLine ?? (error.trim() || "unknown error");
+  const detail = normalizeUserFacingTurnFailureDetail(firstLine ?? (error.trim() || "unknown error"));
   const clipped =
     detail.length > MAX_TURN_FAILURE_RESPONSE
       ? `${detail.slice(0, MAX_TURN_FAILURE_RESPONSE - 15)}... [truncated]`
       : detail;
   return `Error: ${clipped}`;
+}
+
+function normalizeUserFacingTurnFailureDetail(detail: string): string {
+  if (/^Runtime target policy '.+' is exhausted\.$/.test(detail)) {
+    return "runtime targets are temporarily unavailable. Send a new message to retry.";
+  }
+  return detail;
 }
 
 function resolveCostTrackingModel(
@@ -2278,12 +2286,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           });
           // End the session instead of `continue`: claude-code can wedge after
           // an interrupt-during-tool_use (`[ede_diagnostic] stop_reason=tool_use`).
-          // Subsequent prompts to the wedged subprocess silently no-op while the
-          // dispatch queue keeps growing. Closing here forces a fresh SDK spawn
-          // immediately; preserve queued/current messages so the next session
-          // can drain them instead of losing the interrupted turn.
-          stashPendingRuntimeMessages(sessionName, streaming, stashedMessages);
-          restartStashedReason = restartReason;
+          // Once a tool started, replaying the current turn can duplicate side
+          // effects. Keep only later queued prompts for the fresh SDK spawn.
+          let stashedCount: number;
+          if (currentTurnHadToolStarted) {
+            stashedCount = stashPendingRuntimeMessagesExceptCurrentTurn(sessionName, streaming, stashedMessages);
+          } else {
+            stashPendingRuntimeMessages(sessionName, streaming, stashedMessages);
+            stashedCount = streaming.pendingMessages.length;
+          }
+          if (stashedCount > 0) {
+            restartStashedReason = restartReason;
+          }
           noteTerminalTurnForCadence();
           signalTurnComplete();
           clearTraceTurnState();

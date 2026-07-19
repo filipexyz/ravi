@@ -440,4 +440,67 @@ describe("runtime session resolver", () => {
       provenance: "session.runtimeTargetPolicy",
     });
   });
+
+  it("prefers a stashed prompt turn envelope over an older reconstructed side-effect turn", () => {
+    const policy = {
+      id: "stashed-followup-policy",
+      strategy: "ordered" as const,
+      maxAttemptsPerTarget: 1,
+      targets: [
+        { id: "primary", runtimeProvider: "codex", model: "primary-model" },
+        { id: "secondary", runtimeProvider: "claude", model: "secondary-model" },
+      ],
+    };
+    getOrCreateSession(SESSION_KEY, "main", stateDir ?? "/tmp", { name: SESSION_NAME });
+    recordRuntimeTraceEvent({
+      sessionKey: SESSION_KEY,
+      sessionName: SESSION_NAME,
+      agentId: "main",
+      eventType: "runtime.start",
+      eventGroup: "runtime",
+      status: "starting",
+      payloadJson: {
+        runtimeTargetPolicyId: policy.id,
+        runtimeTargetId: "primary",
+        logicalTurnId: "old-tool-turn",
+      },
+    });
+    recordRuntimeTraceEvent({
+      sessionKey: SESSION_KEY,
+      sessionName: SESSION_NAME,
+      agentId: "main",
+      eventType: "tool.start",
+      eventGroup: "tool",
+      status: "running",
+      payloadJson: {
+        policyId: policy.id,
+        targetId: "primary",
+        logicalTurnId: "old-tool-turn",
+      },
+    });
+    const promptState = {
+      logicalTurnId: "new-followup-turn",
+      attempts: [],
+      credentialRecoveries: {},
+      sideEffectBoundaryCrossed: false,
+      terminal: false,
+    };
+
+    const resumed = resolveRuntimeSession({
+      sessionName: SESSION_NAME,
+      prompt: {
+        prompt: "resume only the fresh follow-up",
+        _runtimeTargetPolicy: policy,
+        _runtimeTargetState: promptState,
+        _resumeStashedMessages: true,
+      },
+      defaultRuntimeProviderId: "codex",
+    });
+
+    expect(resumed?.runtimeTarget?.id).toBe("primary");
+    expect(resumed?.runtimeTargetState?.logicalTurnId).toBe("new-followup-turn");
+    expect(resumed?.runtimeTargetState?.attempts).toEqual([
+      expect.objectContaining({ targetId: "primary", attempt: 1 }),
+    ]);
+  });
 });

@@ -160,6 +160,26 @@ export function stashPendingRuntimeMessages(
   );
 }
 
+export function stashPendingRuntimeMessagesExceptCurrentTurn(
+  sessionName: string,
+  session: RuntimeHostStreamingSession,
+  stashedMessages: Map<string, RuntimeUserMessage[]>,
+): number {
+  const currentTurnPendingIds = new Set(session.currentTurnPendingIds ?? []);
+  if (currentTurnPendingIds.size === 0) {
+    stashPendingRuntimeMessages(sessionName, session, stashedMessages);
+    return session.pendingMessages.length;
+  }
+
+  const messages = session.pendingMessages
+    .filter((message) => !message.pendingId || !currentTurnPendingIds.has(message.pendingId))
+    .map((message) => ({ ...message }));
+
+  if (messages.length > 0) stashedMessages.set(sessionName, messages);
+  else stashedMessages.delete(sessionName);
+  return messages.length;
+}
+
 export function stashCurrentTurnRuntimeMessages(
   sessionName: string,
   session: RuntimeHostStreamingSession,

@@ -31,6 +31,9 @@ describe("runtime target failure redaction", () => {
     expect(formatUserFacingTurnFailure("Authorization: Bearer SYNTHETICTOKEN123456789")).toBe(
       "Error: Authorization: [REDACTED]",
     );
+    expect(formatUserFacingTurnFailure("Runtime target policy 'main-failover' is exhausted.")).toBe(
+      "Error: runtime targets are temporarily unavailable. Send a new message to retry.",
+    );
   });
 });
 
