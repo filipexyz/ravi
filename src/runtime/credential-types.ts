@@ -169,6 +169,9 @@ export interface RuntimeCredentialSelectionRequest {
   runtimeProvider: RuntimeProviderId;
   upstreamProvider?: string;
   model?: string;
+  credentialIds?: string[];
+  authMethods?: string[];
+  sessionCompatibilityKey?: string;
   agentId?: string;
   taskProfile?: string;
   sessionKey?: string;

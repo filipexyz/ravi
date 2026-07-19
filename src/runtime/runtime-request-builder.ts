@@ -6,8 +6,10 @@ import {
   buildRuntimeTracePromptSectionMetadata,
   createSessionTraceTurnId,
   recordAdapterRequestTrace,
+  recordRuntimeTraceEvent,
   summarizeRuntimeCapabilities,
 } from "../session-trace/runtime-trace.js";
+import { getRecentHistory } from "../db.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { classifyCompactionAnnouncement } from "./compaction-announcement.js";
 import { resolveAgentSkills } from "./allowed-skills.js";
@@ -29,6 +31,7 @@ import {
   markRuntimeCredentialAttemptStarted,
   reserveRuntimeCredentialAttempt,
 } from "./credential-store.js";
+
 import { buildRuntimeHostAttachments } from "./runtime-host-attachments.js";
 import { prepareRuntimeProviderBootstrap } from "./runtime-provider-bootstrap.js";
 import {
@@ -38,8 +41,25 @@ import {
 } from "./runtime-request-context.js";
 import { resolveRuntimeSessionContinuity } from "./runtime-session-continuity.js";
 import { buildRuntimeSystemPrompt } from "./runtime-system-prompt.js";
+import {
+  applyRuntimeContinuityRebasePrompt,
+  buildRuntimeContinuityRebasePrompt,
+  type RuntimeContinuityRebasePrompt,
+} from "./session-continuity-rebase.js";
+import type { RuntimeResumeDecision } from "./session-resolver.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
+import type { RuntimeTarget } from "./target-policy.js";
 import type { RuntimeCapabilities, RuntimeProviderId, RuntimeStartRequest, SessionRuntimeProvider } from "./types.js";
+
+export class RuntimeStartFailure extends Error {
+  constructor(
+    message: string,
+    readonly failureScope: "credential" | "target",
+  ) {
+    super(message);
+    this.name = "RuntimeStartFailure";
+  }
+}
 
 export interface RuntimeStartRequestBuildOptions {
   runId: string;
@@ -53,10 +73,13 @@ export interface RuntimeStartRequestBuildOptions {
   sessionCwd: string;
   dbSessionKey: string;
   model: string;
+  runtimeTarget?: RuntimeTarget;
+  taskProfileId?: string;
   runtimeResolution: TaskRuntimeResolution;
   storedRuntimeSessionParams: Record<string, unknown> | undefined;
   storedProviderSessionId?: string;
   canResumeStoredSession: boolean;
+  resumeDecision?: RuntimeResumeDecision;
   resolvedSource?: RuntimeMessageTarget;
   approvalSource?: RuntimeMessageTarget;
   streamingSession: RuntimeHostStreamingSession;
@@ -160,10 +183,13 @@ export async function buildRuntimeStartRequest(
     sessionCwd,
     dbSessionKey,
     model,
+    runtimeTarget,
+    taskProfileId,
     runtimeResolution,
     storedRuntimeSessionParams,
     storedProviderSessionId,
     canResumeStoredSession,
+    resumeDecision,
     resolvedSource,
     approvalSource,
     streamingSession,
@@ -200,13 +226,36 @@ export async function buildRuntimeStartRequest(
     runtimeProvider: runtimeProviderId,
     upstreamProvider: resolveRuntimeCredentialUpstreamProvider(runtimeProviderId, model),
     model,
+    ...(runtimeTarget?.credentialRequirements?.credentialIds
+      ? { credentialIds: runtimeTarget.credentialRequirements.credentialIds }
+      : {}),
+    ...(runtimeTarget?.credentialRequirements?.authMethods
+      ? { authMethods: runtimeTarget.credentialRequirements.authMethods }
+      : {}),
+    ...(runtimeTarget?.credentialRequirements?.sessionCompatibilityKey
+      ? { sessionCompatibilityKey: runtimeTarget.credentialRequirements.sessionCompatibilityKey }
+      : {}),
     agentId: agent.id,
+    ...(taskProfileId ? { taskProfile: taskProfileId } : {}),
     sessionKey: dbSessionKey,
     sessionName,
     runId,
   });
-  if (!credentialResolution.attemptBinding && credentialResolution.managedPoolConfigured) {
-    throw new Error(formatRuntimeCredentialResolutionFailure(runtimeProviderId, model, credentialResolution.rejected));
+  const targetRequiresManagedCredential = Boolean(
+    runtimeTarget?.credentialRequirements &&
+      (runtimeTarget.credentialRequirements.requireManaged ||
+        runtimeTarget.credentialRequirements.credentialIds?.length ||
+        runtimeTarget.credentialRequirements.authMethods?.length ||
+        runtimeTarget.credentialRequirements.sessionCompatibilityKey),
+  );
+  if (
+    !credentialResolution.attemptBinding &&
+    (credentialResolution.managedPoolConfigured || targetRequiresManagedCredential)
+  ) {
+    throw new RuntimeStartFailure(
+      formatRuntimeCredentialResolutionFailure(runtimeProviderId, model, credentialResolution.rejected),
+      "target",
+    );
   }
   if (credentialResolution.attemptBinding) {
     (toolContext as Record<string, unknown>).runtimeCredential = serializeRuntimeCredentialAttemptBinding(
@@ -249,6 +298,17 @@ export async function buildRuntimeStartRequest(
     canResumeStoredSession: canResumeCredentialSession,
     defaultRuntimeProviderId,
   });
+  const continuityRebaseReason = resolveContinuityRebaseReason({
+    canResumeCredentialSession,
+    resumeProviderSessionId,
+    resumeDecision,
+    continuitySensitivePrompt:
+      prompt.deliveryBarrier === "after_tool" ||
+      prompt._resumeStashedMessages === true ||
+      Boolean(prompt._daemonRestartResume),
+  });
+  let continuityRebasePending = continuityRebaseReason !== null;
+  let currentContinuityRebase: RuntimeContinuityRebasePrompt | null = null;
   const { specServer, hooks, remoteSpawn } = buildRuntimeHostAttachments({
     runtimeCapabilities,
     agent,
@@ -293,7 +353,7 @@ export async function buildRuntimeStartRequest(
     }
     bindRuntimeCredentialAttemptTurn(runtimeCredential?.attemptId, turnId);
     markRuntimeCredentialAttemptStarted(runtimeCredential?.attemptId);
-    return recordAdapterRequestTrace({
+    const traceTurn = recordAdapterRequestTrace({
       sessionKey: dbSessionKey,
       sessionName,
       agentId: agent.id,
@@ -334,11 +394,55 @@ export async function buildRuntimeStartRequest(
       commands: input.deliverableMessages.flatMap((message) => message.commands ?? []),
       runtimeCredential: runtimeCredential ? serializeRuntimeCredentialAttemptBinding(runtimeCredential) : null,
     });
+    if (traceTurn && currentContinuityRebase) {
+      recordRuntimeTraceEvent({
+        sessionKey: dbSessionKey,
+        sessionName,
+        agentId: agent.id,
+        runId,
+        turnId,
+        provider: runtimeProviderId,
+        model,
+        eventType: "runtime.context.rebased",
+        eventGroup: "runtime_context",
+        status: "applied",
+        source: streamingSession.currentSource ?? resolvedSource ?? null,
+        payloadJson: {
+          reason: currentContinuityRebase.reason,
+          messageCount: currentContinuityRebase.messageCount,
+          latestMessageId: currentContinuityRebase.latestMessageId ?? null,
+          chars: currentContinuityRebase.chars,
+          truncated: currentContinuityRebase.truncated,
+        },
+      });
+    }
+    return traceTurn;
   };
   const messageGenerator = createRuntimeMessageGenerator({
     sessionName,
     session: streamingSession,
     stashedMessages,
+    transformCombinedPrompt: (input) => {
+      currentContinuityRebase = null;
+      if (!continuityRebasePending || !continuityRebaseReason) {
+        return input.combinedPrompt;
+      }
+      continuityRebasePending = false;
+      const history = getRecentHistory(sessionName, 32);
+      const rebase = buildRuntimeContinuityRebasePrompt({
+        sessionName,
+        runtimeProvider: runtimeProviderId,
+        model,
+        reason: continuityRebaseReason,
+        history,
+        currentPrompts: input.deliverableMessages.map((message) => message.message.content),
+      });
+      if (!rebase) {
+        return input.combinedPrompt;
+      }
+      currentContinuityRebase = rebase;
+      return applyRuntimeContinuityRebasePrompt(input.combinedPrompt, rebase);
+    },
     beforeTurnStart: (input) => {
       const turnPrompt = resolveRuntimeTurnPrompt(input.deliverableMessages, prompt);
       const turnSource = turnPrompt.source ?? resolvedSource;
@@ -403,6 +507,25 @@ export async function buildRuntimeStartRequest(
     toolContext,
     ...(credentialResolution.attemptBinding ? { runtimeCredentialAttempt: credentialResolution.attemptBinding } : {}),
   };
+}
+
+function resolveContinuityRebaseReason(input: {
+  canResumeCredentialSession: boolean;
+  resumeProviderSessionId?: string;
+  resumeDecision?: RuntimeResumeDecision;
+  continuitySensitivePrompt?: boolean;
+}): RuntimeContinuityRebasePrompt["reason"] | null {
+  if (input.resumeProviderSessionId || input.canResumeCredentialSession) return null;
+  const reason = input.resumeDecision?.reason;
+  if (reason === "provider_mismatch") return reason;
+  if (reason === "missing_provider_session") {
+    if (input.resumeDecision?.storedRuntimeProvider && input.resumeDecision.providerMatches === false) {
+      return reason;
+    }
+    return input.continuitySensitivePrompt ? reason : null;
+  }
+  if (reason === "session_state_invalid" && input.resumeDecision?.hadStoredProviderSessionId) return reason;
+  return null;
 }
 
 function resolveRuntimeTurnPrompt(

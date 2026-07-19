@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { redactJson, redactText } from "./redaction.js";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
 type TerminalStream = "stdout" | "stderr";
@@ -127,7 +128,9 @@ class Logger {
     const levelStr = level.toUpperCase().padEnd(5);
 
     // Build context string from persistent context + data
-    const merged = { ...this.context, ...(typeof data === "object" && data ? data : {}) };
+    const mergedValue = redactJson({ ...this.context, ...(typeof data === "object" && data ? data : {}) }).value;
+    const merged =
+      mergedValue && typeof mergedValue === "object" && !Array.isArray(mergedValue) ? { ...mergedValue } : {};
     const contextParts: string[] = [];
 
     // Prioritize important fields
@@ -166,7 +169,9 @@ class Logger {
 
   private formatForFile(level: LogLevel, message: string, data?: unknown): string {
     const timestamp = new Date().toISOString();
-    const merged = { ...this.context, ...(typeof data === "object" && data ? data : {}) };
+    const mergedValue = redactJson({ ...this.context, ...(typeof data === "object" && data ? data : {}) }).value;
+    const merged =
+      mergedValue && typeof mergedValue === "object" && !Array.isArray(mergedValue) ? { ...mergedValue } : {};
 
     const entry = {
       t: timestamp,
@@ -196,9 +201,10 @@ class Logger {
   private log(level: LogLevel, message: string, data?: unknown): void {
     if (!this.shouldLog(level)) return;
 
-    const normalizedData = this.normalizeLogData(data);
-    const terminalLine = this.formatForTerminal(level, message, normalizedData);
-    const fileLine = this.formatForFile(level, message, normalizedData);
+    const normalizedData = redactJson(this.normalizeLogData(data)).value;
+    const safeMessage = redactText(message).value;
+    const terminalLine = this.formatForTerminal(level, safeMessage, normalizedData);
+    const fileLine = this.formatForFile(level, safeMessage, normalizedData);
 
     this.writeToTerminal(terminalLine);
     this.writeToFile(fileLine);

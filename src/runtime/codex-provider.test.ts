@@ -482,6 +482,238 @@ rl.on("line", (line) => {
     ]);
   });
 
+  it("retries a rejected app-server fork instead of resuming the parent thread", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-fork-retry-appserver-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+    const rejectedMarkerPath = join(cwd, "fork-rejected");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync, existsSync, writeFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rejectedMarkerPath = ${JSON.stringify(rejectedMarkerPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && ["thread/fork", "thread/resume", "thread/start", "turn/start"].includes(message.method)) {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+  }
+  if (message.id && message.method === "thread/fork") {
+    if (!existsSync(rejectedMarkerPath)) {
+      writeFileSync(rejectedMarkerPath, "rejected");
+      send({ id: message.id, error: { code: -32000, message: "fork rejected by app-server" } });
+      return;
+    }
+    send({ id: message.id, result: { thread: { id: "thread_child" }, model: "gpt-5", modelProvider: "openai" } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/started",
+      params: { threadId: message.params.threadId, turn: { id: "turn_child", status: "inProgress" } },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/completed",
+      params: { threadId: message.params.threadId, turn: { id: "turn_child", status: "completed" } },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const prompt = (async function* () {
+      yield {
+        type: "user" as const,
+        message: { role: "user" as const, content: "first child turn" },
+        session_id: "",
+        parent_tool_use_id: null,
+      };
+      yield {
+        type: "user" as const,
+        message: { role: "user" as const, content: "retry child turn" },
+        session_id: "",
+        parent_tool_use_id: null,
+      };
+    })();
+    const session = provider.startSession(
+      makeStartRequest([], {
+        cwd,
+        prompt,
+        resume: "thread_parent",
+        forkSession: true,
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const requests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(requests.map((request) => request.method)).toEqual([
+      "initialize",
+      "thread/fork",
+      "initialize",
+      "thread/fork",
+      "turn/start",
+    ]);
+    expect(requests.some((request) => request.method === "thread/resume")).toBe(false);
+    expect(findEventsByType(events, "turn.failed")).toHaveLength(1);
+    expect(findEventsByType(events, "turn.complete")).toEqual([
+      expect.objectContaining({ providerSessionId: "thread_child" }),
+    ]);
+  });
+
+  it.each([
+    "websocket",
+    "stdio",
+  ] as const)("waits for fatal %s transport teardown before retrying consecutive fork turns", async (transportKind) => {
+    const cwd = mkdtempSync(join(tmpdir(), `ravi-codex-fatal-${transportKind}-retry-`));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+    const failureMarkerPath = join(cwd, "transport-failed");
+    const pidPath = join(cwd, "active-pid");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env bun
+import { appendFileSync, existsSync, writeFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const failureMarkerPath = ${JSON.stringify(failureMarkerPath)};
+const pidPath = ${JSON.stringify(pidPath)};
+const websocketMode = process.argv.includes("--listen");
+writeFileSync(pidPath, String(process.pid));
+process.on("SIGTERM", () => setTimeout(() => process.exit(0), 75));
+
+const record = (message) => {
+  if (message.id && ["initialize", "thread/fork", "thread/resume", "thread/start", "turn/start"].includes(message.method)) {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+  }
+};
+const handle = (message, send, close) => {
+  record(message);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && message.method === "thread/fork") {
+    if (!existsSync(failureMarkerPath)) {
+      writeFileSync(failureMarkerPath, "failed");
+      if (websocketMode) {
+        close();
+      } else {
+        send({ id: message.id, error: { code: -32000, message: "fork rejected" } });
+        process.stdout.write("{malformed-json\\n");
+      }
+      return;
+    }
+    send({ id: message.id, result: { thread: { id: "thread_child" }, model: "gpt-5", modelProvider: "openai" } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({ jsonrpc: "2.0", method: "turn/started", params: { threadId: message.params.threadId, turn: { id: "turn_child", status: "inProgress" } } });
+    send({ jsonrpc: "2.0", method: "turn/completed", params: { threadId: message.params.threadId, turn: { id: "turn_child", status: "completed" } } });
+  }
+};
+
+if (websocketMode) {
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request, server) {
+      if (server.upgrade(request)) return;
+      return new Response("websocket required", { status: 426 });
+    },
+    websocket: {
+      message(socket, raw) {
+        handle(
+          JSON.parse(String(raw)),
+          (message) => socket.send(JSON.stringify(message)),
+          () => socket.close(1011, "forced transport failure"),
+        );
+      },
+    },
+  });
+  process.stderr.write("listening on: ws://127.0.0.1:" + server.port + "\\n");
+} else {
+  const lines = createInterface({ input: process.stdin });
+  lines.on("line", (line) => {
+    handle(
+      JSON.parse(line),
+      (message) => process.stdout.write(JSON.stringify(message) + "\\n"),
+      () => {},
+    );
+  });
+}
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest(["first child turn", "retry child turn"], {
+        cwd,
+        env: { PATH: process.env.PATH ?? "", RAVI_CODEX_TRANSPORT: transportKind },
+        resume: "thread_parent",
+        forkSession: true,
+      }),
+    );
+
+    const events: RuntimeEvent[] = [];
+    let oldPidAliveAtFailure: boolean | null = null;
+    for await (const event of session.events) {
+      events.push(event);
+      if (event.type !== "turn.failed") continue;
+      const failedPid = Number(readFileSync(pidPath, "utf8"));
+      try {
+        process.kill(failedPid, 0);
+        oldPidAliveAtFailure = true;
+      } catch (error) {
+        oldPidAliveAtFailure = (error as NodeJS.ErrnoException).code !== "ESRCH";
+      }
+    }
+
+    const requests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { method: string; params: { threadId?: string } });
+    expect(requests.map((request) => request.method)).toEqual([
+      "initialize",
+      "thread/fork",
+      "initialize",
+      "thread/fork",
+      "turn/start",
+    ]);
+    expect(requests.some((request) => request.method === "thread/resume")).toBe(false);
+    expect(requests.find((request) => request.method === "turn/start")?.params.threadId).toBe("thread_child");
+    expect(oldPidAliveAtFailure).toBe(false);
+    expect(findEventsByType(events, "turn.failed")).toHaveLength(1);
+    expect(findEventsByType(events, "turn.complete")).toEqual([
+      expect.objectContaining({ providerSessionId: "thread_child" }),
+    ]);
+  });
+
   it("passes max/ultra effort as model_reasoning_effort in app-server thread/start and thread/resume", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-effort-appserver-"));
     const command = join(cwd, "fake-codex-app-server.mjs");
@@ -2529,6 +2761,377 @@ rl.on("line", (line) => {
     expect(assistantMessages).toContain("second turn done");
     expect(calls[0]?.resume).toBeUndefined();
     expect(calls[1]?.resume).toBeUndefined();
+  });
+
+  it("maps caught Codex event iterator exceptions into terminal failures", async () => {
+    for (const failure of [
+      new Error("Invalid API key"),
+      Object.assign(new Error("token expired"), { name: "InternalStateError" }),
+      new Error("connection terminated unexpectedly"),
+      Object.assign(new Error("provider aborted unexpectedly"), { name: "AbortError" }),
+      "credential unavailable",
+    ]) {
+      const { transport } = createMockTransport([
+        () => ({
+          events: {
+            [Symbol.asyncIterator]() {
+              return {
+                async next() {
+                  throw failure;
+                },
+              };
+            },
+          },
+        }),
+      ]);
+      const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+
+      const events = await collectEvents(provider.startSession(makeStartRequest(["do not replay"])).events);
+
+      expect(events.at(-1)).toMatchObject({
+        type: "turn.failed",
+        error: failure instanceof Error ? failure.message : String(failure),
+        caughtException: true,
+        recoverable: true,
+      });
+      expect(findEventsByType(events, "turn.failed")).toHaveLength(1);
+      expect(findEventsByType(events, "turn.interrupted")).toHaveLength(0);
+    }
+  });
+
+  it("observes a rejected turn result when the event iterator also rejects", async () => {
+    const { transport } = createMockTransport([
+      () => ({
+        events: {
+          [Symbol.asyncIterator]() {
+            return {
+              async next() {
+                throw new Error("event stream failed first");
+              },
+            };
+          },
+        },
+        result: Promise.reject(new Error("transport result also failed")),
+      }),
+    ]);
+    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+
+    const events = await collectEvents(provider.startSession(makeStartRequest(["do not replay"])).events);
+    await Promise.resolve();
+
+    expect(findEventsByType(events, "turn.failed")).toHaveLength(1);
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "event stream failed first",
+      caughtException: true,
+      recoverable: true,
+    });
+  });
+
+  it("maps an unrequested CLI termination signal into a terminal failure", async () => {
+    const { transport } = createMockTransport([
+      () => ({
+        events: (async function* () {
+          yield { type: "thread.started", thread_id: "thread_terminated" };
+          yield { type: "turn.started" };
+        })(),
+        result: Promise.resolve({
+          exitCode: null,
+          signal: "SIGTERM",
+          stderr: "Codex process terminated unexpectedly",
+        }),
+      }),
+    ]);
+    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+
+    const events = await collectEvents(provider.startSession(makeStartRequest(["do not replay"])).events);
+
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "Codex process terminated unexpectedly",
+      targetFailure: true,
+      recoverable: true,
+      rawEvent: { type: "transport.exit", exitCode: null, signal: "SIGTERM" },
+    });
+    expect(findEventsByType(events, "turn.interrupted")).toHaveLength(0);
+  });
+
+  it("maps an unrequested turn.interrupted event into a terminal failure", async () => {
+    const { transport } = createMockTransport([
+      () => ({
+        events: (async function* () {
+          yield { type: "thread.started", thread_id: "thread_spontaneous_interrupt" };
+          yield { type: "turn.started" };
+          yield { type: "turn.interrupted" };
+        })(),
+      }),
+    ]);
+    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+
+    const events = await collectEvents(provider.startSession(makeStartRequest(["do not replay"])).events);
+
+    expect(findEventsByType(events, "turn.interrupted")).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "Codex turn interrupted without a local interrupt request",
+      targetFailure: true,
+      recoverable: true,
+    });
+  });
+
+  it("waits for interrupt control acceptance before trusting turn.interrupted", async () => {
+    let releaseInterruptedEvent!: () => void;
+    let markTurnStarted!: () => void;
+    let resolveControl!: (result: Record<string, unknown>) => void;
+    const interruptedEvent = new Promise<void>((resolve) => {
+      releaseInterruptedEvent = resolve;
+    });
+    const turnStarted = new Promise<void>((resolve) => {
+      markTurnStarted = resolve;
+    });
+    const transport = {
+      startTurn() {
+        return {
+          events: (async function* () {
+            yield { type: "thread.started", thread_id: "thread_interrupt_race" };
+            yield { type: "turn.started", turn_id: "turn_interrupt_race" };
+            markTurnStarted();
+            await interruptedEvent;
+            yield { type: "turn.interrupted" };
+          })(),
+          result: Promise.resolve({ exitCode: 0, signal: null, stderr: "" }),
+          interrupt: () => {},
+        };
+      },
+      control(request: Record<string, unknown>) {
+        return new Promise<Record<string, unknown>>((resolve) => {
+          resolveControl = resolve;
+        }).then((result) => ({ operation: request.operation, ...result }));
+      },
+    };
+    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["do not trust rejected interrupt"]));
+    const eventsPromise = collectEvents(session.events);
+    await turnStarted;
+
+    const controlPromise = session.control?.({ operation: "turn.interrupt" });
+    releaseInterruptedEvent();
+    resolveControl({
+      ok: false,
+      state: { provider: "codex", activeTurn: true, supportedOperations: ["turn.interrupt"] },
+      error: "interrupt rejected",
+    });
+
+    await expect(controlPromise).resolves.toMatchObject({ ok: false });
+    const events = await eventsPromise;
+    expect(findEventsByType(events, "turn.interrupted")).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "Codex turn interrupted without a local interrupt request",
+      targetFailure: true,
+      recoverable: true,
+    });
+  });
+
+  it("keeps an accepted Codex interrupt monotonic when a later interrupt is rejected", async () => {
+    let releaseInterruptedEvent!: () => void;
+    let markTurnStarted!: () => void;
+    let controlCalls = 0;
+    const interruptedEvent = new Promise<void>((resolve) => {
+      releaseInterruptedEvent = resolve;
+    });
+    const turnStarted = new Promise<void>((resolve) => {
+      markTurnStarted = resolve;
+    });
+    const transport = {
+      startTurn() {
+        return {
+          events: (async function* () {
+            yield { type: "thread.started", thread_id: "thread_interrupt_monotonic" };
+            yield { type: "turn.started", turn_id: "turn_interrupt_monotonic" };
+            markTurnStarted();
+            await interruptedEvent;
+            yield { type: "turn.interrupted" };
+          })(),
+          result: Promise.resolve({ exitCode: 0, signal: null, stderr: "" }),
+          interrupt: () => {},
+        };
+      },
+      control(request: Record<string, unknown>) {
+        controlCalls += 1;
+        return Promise.resolve({
+          operation: request.operation,
+          ok: controlCalls === 1,
+          state: { provider: "codex", activeTurn: true, supportedOperations: ["turn.interrupt"] },
+          ...(controlCalls === 1 ? {} : { error: "interrupt rejected" }),
+        });
+      },
+    };
+    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["preserve accepted interrupt"]));
+    const eventsPromise = collectEvents(session.events);
+    await turnStarted;
+
+    await expect(session.control?.({ operation: "turn.interrupt" })).resolves.toMatchObject({ ok: true });
+    await expect(session.control?.({ operation: "turn.interrupt" })).resolves.toMatchObject({ ok: false });
+    releaseInterruptedEvent();
+
+    const events = await eventsPromise;
+    expect(findEventsByType(events, "turn.interrupted")).toHaveLength(1);
+    expect(findEventsByType(events, "turn.failed")).toHaveLength(0);
+  });
+
+  it("aggregates overlapping Codex interrupt decisions for the active turn", async () => {
+    let releaseInterruptedEvent!: () => void;
+    let markTurnStarted!: () => void;
+    let markBothControlsStarted!: () => void;
+    const controlResolvers: Array<(result: Record<string, unknown>) => void> = [];
+    const interruptedEvent = new Promise<void>((resolve) => {
+      releaseInterruptedEvent = resolve;
+    });
+    const turnStarted = new Promise<void>((resolve) => {
+      markTurnStarted = resolve;
+    });
+    const bothControlsStarted = new Promise<void>((resolve) => {
+      markBothControlsStarted = resolve;
+    });
+    const transport = {
+      startTurn() {
+        return {
+          events: (async function* () {
+            yield { type: "thread.started", thread_id: "thread_interrupt_overlap" };
+            yield { type: "turn.started", turn_id: "turn_interrupt_overlap" };
+            markTurnStarted();
+            await interruptedEvent;
+            yield { type: "turn.interrupted" };
+          })(),
+          result: Promise.resolve({ exitCode: 0, signal: null, stderr: "" }),
+          interrupt: () => {},
+        };
+      },
+      control(request: Record<string, unknown>) {
+        return new Promise<Record<string, unknown>>((resolve) => {
+          controlResolvers.push(resolve);
+          if (controlResolvers.length === 2) markBothControlsStarted();
+        }).then((result) => ({ operation: request.operation, ...result }));
+      },
+    };
+    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["preserve overlapping interrupt"]));
+    const eventsPromise = collectEvents(session.events);
+    await turnStarted;
+
+    const firstInterrupt = session.control?.({ operation: "turn.interrupt" });
+    const secondInterrupt = session.control?.({ operation: "turn.interrupt" });
+    await bothControlsStarted;
+    releaseInterruptedEvent();
+    controlResolvers[1]?.({
+      ok: false,
+      state: { provider: "codex", activeTurn: true, supportedOperations: ["turn.interrupt"] },
+      error: "interrupt rejected",
+    });
+    controlResolvers[0]?.({
+      ok: true,
+      state: { provider: "codex", activeTurn: true, supportedOperations: ["turn.interrupt"] },
+    });
+
+    await expect(firstInterrupt).resolves.toMatchObject({ ok: true });
+    await expect(secondInterrupt).resolves.toMatchObject({ ok: false });
+    const events = await eventsPromise;
+    expect(findEventsByType(events, "turn.interrupted")).toHaveLength(1);
+    expect(findEventsByType(events, "turn.failed")).toHaveLength(0);
+  });
+
+  it("does not let a late Codex interrupt acceptance contaminate the next turn", async () => {
+    let releaseFirstCompletion!: () => void;
+    let releaseSecondInterrupt!: () => void;
+    let markFirstTurnStarted!: () => void;
+    let markSecondTurnStarted!: () => void;
+    let resolveControl!: (result: Record<string, unknown>) => void;
+    const firstCompletion = new Promise<void>((resolve) => {
+      releaseFirstCompletion = resolve;
+    });
+    const secondInterrupt = new Promise<void>((resolve) => {
+      releaseSecondInterrupt = resolve;
+    });
+    const firstTurnStarted = new Promise<void>((resolve) => {
+      markFirstTurnStarted = resolve;
+    });
+    const secondTurnStarted = new Promise<void>((resolve) => {
+      markSecondTurnStarted = resolve;
+    });
+    let turnCount = 0;
+    const transport = {
+      startTurn() {
+        turnCount += 1;
+        if (turnCount === 1) {
+          return {
+            events: (async function* () {
+              yield { type: "turn.started", turn_id: "turn_before_late_interrupt" };
+              markFirstTurnStarted();
+              await firstCompletion;
+              yield { type: "turn.completed" };
+            })(),
+            result: Promise.resolve({ exitCode: 0, signal: null, stderr: "" }),
+            interrupt: () => {},
+          };
+        }
+        return {
+          events: (async function* () {
+            yield { type: "turn.started", turn_id: "turn_after_late_interrupt" };
+            markSecondTurnStarted();
+            await secondInterrupt;
+            yield { type: "turn.interrupted" };
+          })(),
+          result: Promise.resolve({ exitCode: 0, signal: null, stderr: "" }),
+          interrupt: () => {},
+        };
+      },
+      control(request: Record<string, unknown>) {
+        return new Promise<Record<string, unknown>>((resolve) => {
+          resolveControl = resolve;
+        }).then((result) => ({ operation: request.operation, ...result }));
+      },
+    };
+    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["first", "second"]));
+    const eventsPromise = collectEvents(session.events);
+    await firstTurnStarted;
+
+    const lateInterrupt = session.control?.({ operation: "turn.interrupt" });
+    releaseFirstCompletion();
+    await secondTurnStarted;
+    resolveControl({
+      ok: true,
+      state: { provider: "codex", activeTurn: true, supportedOperations: ["turn.interrupt"] },
+    });
+    releaseSecondInterrupt();
+
+    await expect(lateInterrupt).resolves.toMatchObject({ ok: true });
+    const events = await eventsPromise;
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(1);
+    expect(findEventsByType(events, "turn.interrupted")).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({ type: "turn.failed", targetFailure: true });
+  });
+
+  it("maps caught Codex startTurn exceptions into terminal failures", async () => {
+    const provider = createCodexRuntimeProvider({
+      transport: {
+        startTurn() {
+          throw "token expired";
+        },
+      } as any,
+      defaultModel: "gpt-5",
+    });
+
+    const events = await collectEvents(provider.startSession(makeStartRequest(["do not replay"])).events);
+
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "token expired",
+      caughtException: true,
+      recoverable: true,
+    });
   });
 
   it("maps failed CLI turns into turn.failed", async () => {

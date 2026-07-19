@@ -14,15 +14,18 @@ import {
 } from "../router/index.js";
 import { dbUpsertChat, getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { dbCreateTask, dbDispatchTask, dbGetTask } from "../tasks/task-db.js";
 import { getSessionTraceBlob, getSessionTurn, listSessionEvents } from "../session-trace/session-trace-db.js";
 import { recordAdapterRequestTrace } from "../session-trace/runtime-trace.js";
 import {
   bindRuntimeCredentialAttemptTurn,
   createRuntimeCredential,
+  getRuntimeCredential,
   getRuntimeCredentialHealth,
   markRuntimeCredentialAttemptStarted,
   reserveRuntimeCredentialAttempt,
 } from "./credential-store.js";
+import { registerRuntimeCredentialRefreshHook, unregisterRuntimeCredentialRefreshHook } from "./credential-refresh.js";
 import { RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON } from "./context-window-recovery.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import type { RuntimeHostStreamingSession, RuntimeMessageTarget, RuntimeUserMessage } from "./host-session.js";
@@ -32,8 +35,11 @@ import {
   runRuntimeEventLoop,
   shouldSuppressUserFacingRuntimeLimitFailure,
 } from "./host-event-loop.js";
+import { readLearningLoopCadenceState } from "./learning-loop-cadence.js";
 import { getRuntimeLiveStateForSession } from "./live-state.js";
 import { buildRuntimeStartRequest, resolveRuntimeCredentialUpstreamProvider } from "./runtime-request-builder.js";
+import { resolveRuntimeSession } from "./session-resolver.js";
+import { startRuntimeSession } from "./session-launcher.js";
 import type {
   RuntimeCapabilities,
   RuntimeEvent,
@@ -42,6 +48,7 @@ import type {
   RuntimeSkillVisibilitySnapshot,
   SessionRuntimeProvider,
 } from "./types.js";
+import type { RuntimeTargetPolicy, RuntimeTargetTurnState } from "./target-policy.js";
 
 let stateDir: string | null = null;
 
@@ -341,11 +348,12 @@ async function runTraceLoop(
 describe("runtime session trace instrumentation", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-runtime-trace-test-");
-    getOrCreateSession(SESSION_KEY, AGENT_ID, stateDir ?? "/tmp");
+    getOrCreateSession(SESSION_KEY, AGENT_ID, stateDir ?? "/tmp", { name: SESSION_NAME });
     resetUserFacingRuntimeLimitSuppressionsForTest();
   });
 
   afterEach(async () => {
+    unregisterRuntimeCredentialRefreshHook(PROVIDER);
     resetUserFacingRuntimeLimitSuppressionsForTest();
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
@@ -488,6 +496,167 @@ describe("runtime session trace instrumentation", () => {
     });
   });
 
+  it("rebases recent session history on provider cold start without duplicating the current message", async () => {
+    saveMessage(SESSION_NAME, "user", "Estamos falando do DMN e do profile metodologico.");
+    saveMessage(SESSION_NAME, "assistant", "Revisei o profile DMN: nao devemos pedir para carregar skill tal.");
+    saveMessage(SESSION_NAME, "user", "Ouviu?");
+
+    const streaming = makeStreamingSession({
+      pendingMessages: [createQueuedRuntimeUserMessage({ prompt: "Ouviu?", deliveryBarrier: "after_tool" })],
+    });
+    const provider: SessionRuntimeProvider = {
+      id: PROVIDER,
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-build-continuity-rebase",
+      sessionName: SESSION_NAME,
+      prompt: {
+        prompt: "Ouviu?",
+        source,
+        deliveryBarrier: "after_tool",
+      },
+      session: makeSession(),
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default", effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resumeDecision: {
+        hadStoredProviderSessionId: true,
+        storedRuntimeProvider: "codex",
+        requestedRuntimeProvider: PROVIDER,
+        supportsSessionResume: true,
+        providerMatches: false,
+        sessionStateValid: true,
+        canResume: false,
+        reason: "provider_mismatch",
+        staleCleared: true,
+      },
+      resolvedSource: source,
+      streamingSession: streaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+    });
+
+    const yielded = await runtimeRequest.prompt.next();
+    const content = yielded.value?.message.content ?? "";
+
+    expect(content).toContain("# Runtime Continuity Rebase");
+    expect(content).toContain("Reason: provider_mismatch");
+    expect(content).toContain("Estamos falando do DMN");
+    expect(content).toContain("nao devemos pedir para carregar skill tal");
+    expect(content.match(/Ouviu\\?/g)).toHaveLength(1);
+
+    streaming.done = true;
+    streaming.onTurnComplete?.();
+    await runtimeRequest.prompt.return?.(undefined);
+
+    const turn = getSessionTurn(streaming.currentTraceTurnId ?? "");
+    const tracedPrompt = getSessionTraceBlob(turn?.userPromptSha256 ?? "")?.contentText;
+    expect(tracedPrompt).toContain("# Runtime Continuity Rebase");
+    expect(tracedPrompt).toContain("## Current User Message(s)");
+
+    const rebaseEvent = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "runtime.context.rebased");
+    expect(rebaseEvent).toMatchObject({
+      eventGroup: "runtime_context",
+      status: "applied",
+      provider: PROVIDER,
+    });
+    expect(rebaseEvent?.payloadJson).toMatchObject({
+      reason: "provider_mismatch",
+      messageCount: 2,
+      truncated: false,
+    });
+  });
+
+  it("rebases recent history when the same provider loses its session id", async () => {
+    saveMessage(SESSION_NAME, "user", "Estamos revisando o benchmark MMC e a task nativa.");
+    saveMessage(SESSION_NAME, "assistant", "Eu lancei 8 processos e preciso transformar isso em task rastreavel.");
+    saveMessage(SESSION_NAME, "user", "E ai?");
+
+    const streaming = makeStreamingSession({
+      pendingMessages: [createQueuedRuntimeUserMessage({ prompt: "E ai?", deliveryBarrier: "after_tool" })],
+    });
+    const provider: SessionRuntimeProvider = {
+      id: PROVIDER,
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-build-continuity-rebase-same-provider-missing-session",
+      sessionName: SESSION_NAME,
+      prompt: {
+        prompt: "E ai?",
+        source,
+        deliveryBarrier: "after_tool",
+      },
+      session: makeSession(),
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default", effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resumeDecision: {
+        hadStoredProviderSessionId: false,
+        storedRuntimeProvider: PROVIDER,
+        requestedRuntimeProvider: PROVIDER,
+        supportsSessionResume: true,
+        providerMatches: true,
+        sessionStateValid: false,
+        sessionStateInvalidReason: "missing_provider_session",
+        canResume: false,
+        reason: "missing_provider_session",
+        staleCleared: false,
+      },
+      resolvedSource: source,
+      streamingSession: streaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+    });
+
+    const yielded = await runtimeRequest.prompt.next();
+    const content = yielded.value?.message.content ?? "";
+
+    expect(content).toContain("# Runtime Continuity Rebase");
+    expect(content).toContain("Reason: missing_provider_session");
+    expect(content).toContain("Estamos revisando o benchmark MMC");
+    expect(content).toContain("transformar isso em task rastreavel");
+    expect(content.match(/E ai\\?/g)).toHaveLength(1);
+
+    streaming.done = true;
+    streaming.onTurnComplete?.();
+    await runtimeRequest.prompt.return?.(undefined);
+
+    const rebaseEvent = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "runtime.context.rebased");
+    expect(rebaseEvent?.payloadJson).toMatchObject({
+      reason: "missing_provider_session",
+      messageCount: 2,
+      truncated: false,
+    });
+  });
+
   it("blocks invisible provider env fallback when a managed credential pool cannot resolve", async () => {
     createRuntimeCredential({
       id: "rcred_trace_missing",
@@ -553,7 +722,7 @@ describe("runtime session trace instrumentation", () => {
     ).rejects.toThrow("No managed runtime credential could be resolved");
   });
 
-  it("infers upstream provider and maps Codex auth profiles into the runtime env", async () => {
+  it("propagates a bound task profile into credential selection and rejects a mismatch", async () => {
     const previousCodexProvider = process.env.RAVI_CODEX_PROVIDER;
     const previousPiProvider = process.env.RAVI_PI_PROVIDER;
     const previousClaudeProvider = process.env.RAVI_CLAUDE_UPSTREAM_PROVIDER;
@@ -569,6 +738,7 @@ describe("runtime session trace instrumentation", () => {
       authMethod: "codex-profile",
       sourceKind: "provider-profile",
       authProfileRef: "~/ravi-test-codex-home",
+      taskProfileAllowlist: ["default"],
       bindings: [
         {
           sourceKind: "provider-profile",
@@ -596,6 +766,28 @@ describe("runtime session trace instrumentation", () => {
       startSession: () => makeRuntimeSession([]),
     };
 
+    const task = dbCreateTask({
+      title: "Credential task profile propagation",
+      instructions: "Bind the default task profile to the runtime session.",
+      profileId: "default",
+      createdBy: "test",
+    });
+    dbDispatchTask(task.task.id, {
+      agentId: AGENT_ID,
+      sessionName: SESSION_NAME,
+      assignedBy: "test",
+    });
+    const resolved = resolveRuntimeSession({
+      sessionName: SESSION_NAME,
+      prompt: {
+        prompt: "hello codex profile",
+        _agentId: AGENT_ID,
+        taskBarrierTaskId: task.task.id,
+      },
+      defaultRuntimeProviderId: "codex",
+    });
+    expect(resolved?.taskProfileId).toBe("default");
+
     try {
       const { runtimeRequest, runtimeCredentialAttempt } = await buildRuntimeStartRequest({
         runId: "run-build-codex-profile",
@@ -613,6 +805,7 @@ describe("runtime session trace instrumentation", () => {
         sessionCwd: stateDir ?? "/tmp",
         dbSessionKey: SESSION_KEY,
         model: "gpt-5",
+        taskProfileId: resolved?.taskProfileId,
         runtimeResolution: {
           options: { model: "gpt-5" },
           sources: { model: "agent_default", effort: null, thinking: null },
@@ -649,6 +842,37 @@ describe("runtime session trace instrumentation", () => {
       expect(adapterRequest?.payloadJson).toMatchObject({
         runtime_credential: "[REDACTED]",
       });
+
+      const mismatchedStreaming = makeStreamingSession({
+        pendingMessages: [createQueuedRuntimeUserMessage({ prompt: "mismatch", deliveryBarrier: "after_tool" })],
+      });
+      await expect(
+        buildRuntimeStartRequest({
+          runId: "run-build-codex-profile-mismatch",
+          sessionName: SESSION_NAME,
+          prompt: { prompt: "mismatch", source, deliveryBarrier: "after_tool" },
+          session: makeSession(),
+          agent: makeAgent({ provider: "codex" }),
+          runtimeProviderId: "codex",
+          runtimeProvider: provider,
+          runtimeCapabilities: capabilities,
+          sessionCwd: stateDir ?? "/tmp",
+          dbSessionKey: SESSION_KEY,
+          model: "gpt-5",
+          taskProfileId: "other-profile",
+          runtimeResolution: {
+            options: { model: "gpt-5" },
+            sources: { model: "agent_default", effort: null, thinking: null },
+            hasTaskRuntimeContext: true,
+          },
+          storedRuntimeSessionParams: undefined,
+          canResumeStoredSession: false,
+          resolvedSource: source,
+          streamingSession: mismatchedStreaming,
+          stashedMessages: new Map(),
+          defaultRuntimeProviderId: "claude",
+        }),
+      ).rejects.toThrow("No managed runtime credential could be resolved");
     } finally {
       if (previousCodexProvider === undefined) delete process.env.RAVI_CODEX_PROVIDER;
       else process.env.RAVI_CODEX_PROVIDER = previousCodexProvider;
@@ -1296,6 +1520,126 @@ describe("runtime session trace instrumentation", () => {
     expect(getSessionTurn("turn-failed")?.status).toBe("failed");
   });
 
+  it("switches runtime targets, replays exactly the current turn before tools, and ticks cadence once", async () => {
+    const policy: RuntimeTargetPolicy = {
+      id: "provider-failover",
+      strategy: "ordered",
+      maxAttemptsPerTarget: 1,
+      targets: [
+        { id: "primary", runtimeProvider: PROVIDER, model: MODEL },
+        { id: "secondary", runtimeProvider: "trace-secondary", model: "trace-secondary-model" },
+      ],
+    };
+    const state: RuntimeTargetTurnState = {
+      logicalTurnId: "logical-turn-1",
+      attempts: [{ targetId: "primary", attempt: 1, startedAt: Date.now() }],
+      sideEffectBoundaryCrossed: false,
+      terminal: false,
+    };
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "replay on secondary",
+      source,
+      _agentId: AGENT_ID,
+      _runtimeTargetPolicy: policy,
+      _runtimeTargetState: state,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      runtimeTargetPolicy: policy,
+      runtimeTarget: policy.targets[0],
+      runtimeTargetState: state,
+    });
+    seedAdapterTrace(streaming, "turn-target-switch");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([{ type: "turn.failed", error: "provider unavailable", recoverable: true }]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "runtime_target_switch" }]);
+    expect(stashedMessages.get(SESSION_NAME)?.[0]?.launchPrompt?._runtimeTargetState?.attempts[0]?.outcome).toBe(
+      "recoverable_failure",
+    );
+    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "runtime.target.switch_requested")).toBe(
+      true,
+    );
+    expect(getSessionTurn("turn-target-switch")?.status).toBe("aborted");
+
+    state.attempts.push({ targetId: "secondary", attempt: 1, startedAt: Date.now() });
+    const secondaryStreaming = makeStreamingSession({
+      runtimeTargetPolicy: policy,
+      runtimeTarget: policy.targets[1],
+      runtimeTargetState: state,
+    });
+    seedAdapterTrace(secondaryStreaming, "turn-target-switch-secondary");
+
+    await runTraceLoop(
+      secondaryStreaming,
+      makeRuntimeSession([
+        {
+          type: "turn.complete",
+          providerSessionId: "secondary-session",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
+      ]),
+    );
+
+    expect(state.terminal).toBe(true);
+    expect(readLearningLoopCadenceState(getSession(SESSION_KEY)?.runtimeSessionParams)?.terminalTurnCount).toBe(1);
+  });
+
+  it("blocks target replay after any tool starts", async () => {
+    const policy: RuntimeTargetPolicy = {
+      id: "safe-failover",
+      strategy: "ordered",
+      maxAttemptsPerTarget: 1,
+      targets: [
+        { id: "primary", runtimeProvider: PROVIDER, model: MODEL },
+        { id: "secondary", runtimeProvider: "trace-secondary", model: "trace-secondary-model" },
+      ],
+    };
+    const state: RuntimeTargetTurnState = {
+      logicalTurnId: "logical-turn-side-effect",
+      attempts: [{ targetId: "primary", attempt: 1, startedAt: Date.now() }],
+      sideEffectBoundaryCrossed: false,
+      terminal: false,
+    };
+    const streaming = makeStreamingSession({
+      currentTurnToolStarted: true,
+      runtimeTargetPolicy: policy,
+      runtimeTarget: policy.targets[0],
+      runtimeTargetState: state,
+    });
+    seedAdapterTrace(streaming, "turn-target-side-effect");
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([{ type: "turn.failed", error: "provider unavailable", recoverable: true }]),
+      {
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(restartRequests).toEqual([]);
+    expect(state.sideEffectBoundaryCrossed).toBe(true);
+    expect(state.terminal).toBe(true);
+    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "runtime.target.replay_blocked")).toBe(
+      true,
+    );
+  });
+
   it("deduplicates user-facing provider session limit failures within the same reset window", () => {
     const now = new Date("2026-06-16T15:56:00-03:00").getTime();
     const scope = "codex:whatsapp:main:120363424772797713@g.us";
@@ -1401,35 +1745,79 @@ describe("runtime session trace instrumentation", () => {
     const stashedMessages = new Map<string, RuntimeUserMessage[]>();
     const restartRequests: Array<{ sessionName: string; reason: string }> = [];
     const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const responses: string[] = [];
+    const outputChat = dbUpsertChat({
+      channel: source.channel,
+      instanceId: source.accountId,
+      platformChatId: source.chatId,
+      chatType: "dm",
+      title: "credential retry cadence e2e",
+    });
+    attachChatToSession({ sessionKey: SESSION_KEY, chatId: outputChat.id, setOutputTarget: true });
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
+      if (topic !== `ravi.session.${SESSION_NAME}.response` || !data || typeof data !== "object") return;
+      const response = (data as { response?: unknown }).response;
+      if (typeof response === "string") responses.push(response);
+    });
     const before = Date.now();
 
-    await runTraceLoop(
-      streaming,
-      makeRuntimeSession([
-        {
-          type: "turn.failed",
-          error: "rate limited",
-          recoverable: true,
-          rawEvent: {
-            type: "error",
-            status: 429,
-            headers: {
-              "retry-after": "2",
-              "x-request-id": "req_credential_retry",
+    try {
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          {
+            type: "turn.failed",
+            error: "rate limited",
+            recoverable: true,
+            rawEvent: {
+              type: "error",
+              status: 429,
+              headers: {
+                "retry-after": "2",
+                "x-request-id": "req_credential_retry",
+              },
             },
           },
+        ]),
+        {
+          stashedMessages,
+          restartStashedSession: async (input) => {
+            restartRequests.push(input);
+          },
+          safeEmit: async (topic, data) => {
+            emitted.push({ topic, data });
+          },
         },
-      ]),
-      {
-        stashedMessages,
-        restartStashedSession: async (input) => {
-          restartRequests.push(input);
+      );
+
+      const replayedMessages = stashedMessages.get(SESSION_NAME) ?? [];
+      const recoveredStreaming = makeStreamingSession({
+        agentMode: "active",
+        pendingMessages: replayedMessages,
+        currentTurnPendingIds: replayedMessages.flatMap((message) =>
+          message.pendingId === undefined ? [] : [message.pendingId],
+        ),
+      });
+      seedAdapterTrace(recoveredStreaming, "turn-credential-retry-success");
+      await runTraceLoop(
+        recoveredStreaming,
+        makeRuntimeSession([
+          { type: "assistant.message", text: "credential retry succeeded" },
+          {
+            type: "turn.complete",
+            providerSessionId: "credential-retry-success-session",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          },
+        ]),
+        {
+          safeEmit: async (topic, data) => {
+            emitted.push({ topic, data });
+          },
         },
-        safeEmit: async (topic, data) => {
-          emitted.push({ topic, data });
-        },
-      },
-    );
+      );
+    } finally {
+      emitSpy.mockRestore();
+    }
 
     expect(emitted.map((event) => event.data.type)).not.toContain("turn.failed");
     expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.failed")).toBe(false);
@@ -1445,11 +1833,339 @@ describe("runtime session trace instrumentation", () => {
     const health = getRuntimeCredentialHealth("rcred_retry_before_tool");
     expect(health?.lastRequestId).toBe("req_credential_retry");
     expect(health?.cooldownUntil ?? 0).toBeGreaterThanOrEqual(before + 1_500);
+    expect(responses).toEqual(["credential retry succeeded"]);
+    expect(readLearningLoopCadenceState(getSession(SESSION_KEY)?.runtimeSessionParams)?.terminalTurnCount).toBe(1);
     const attempt = getDb()
       .prepare("SELECT status, completed_at FROM runtime_credential_attempts WHERE credential_id = ?")
       .get("rcred_retry_before_tool") as { status: string; completed_at: number | null } | undefined;
     expect(attempt?.status).toBe("failed");
     expect(typeof attempt?.completed_at).toBe("number");
+  });
+
+  it("switches targets when managed credential refresh fails without retrying the same target", async () => {
+    const policy: RuntimeTargetPolicy = {
+      id: "credential-refresh-failover",
+      strategy: "ordered",
+      maxAttemptsPerTarget: 1,
+      maxCredentialRecoveryAttemptsPerTarget: 1,
+      targets: [
+        { id: "primary", runtimeProvider: PROVIDER, model: MODEL },
+        { id: "secondary", runtimeProvider: "trace-secondary", model: "trace-secondary-model" },
+      ],
+    };
+    const state: RuntimeTargetTurnState = {
+      logicalTurnId: "logical-credential-refresh-failure",
+      attempts: [{ targetId: "primary", attempt: 1, startedAt: Date.now() }],
+      credentialRecoveries: {},
+      sideEffectBoundaryCrossed: false,
+      terminal: false,
+    };
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "fail over after credential refresh failure",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+      _runtimeTargetPolicy: policy,
+      _runtimeTargetState: state,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      currentRuntimeCredential: seedRuntimeCredentialAttempt("rcred_refresh_failure"),
+      runtimeTargetPolicy: policy,
+      runtimeTarget: policy.targets[0],
+      runtimeTargetState: state,
+    });
+    seedAdapterTrace(streaming, "turn-credential-refresh-failure");
+    registerRuntimeCredentialRefreshHook(PROVIDER, async () => {
+      throw new Error("sensitive upstream refresh detail");
+    });
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error: "rate limited",
+          recoverable: true,
+          rawEvent: { type: "error", status: 429, headers: { "retry-after": "2" } },
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "runtime_target_switch" }]);
+    expect(state.credentialRecoveries).toEqual({ primary: 1 });
+    expect(state.attempts).toMatchObject([
+      { targetId: "primary", outcome: "recoverable_failure", failureKind: "credential" },
+    ]);
+    expect(stashedMessages.get(SESSION_NAME)).toHaveLength(1);
+    const recovery = listSessionEvents(SESSION_KEY).find(
+      (event) => event.eventType === "runtime.target.credential_recovery" && event.status === "failed",
+    );
+    expect(recovery?.error).toBe("runtime credential refresh failed");
+    expect(recovery?.error).not.toContain("sensitive upstream refresh detail");
+  });
+
+  it("defers a task-bound quota block until authorized target failover finishes", async () => {
+    const task = dbCreateTask({
+      title: "Quota-bound target task",
+      instructions: "Fail closed when provider quota is exhausted",
+      createdBy: "test",
+      createdByAgentId: AGENT_ID,
+      createdBySessionName: SESSION_NAME,
+    }).task;
+    const policy: RuntimeTargetPolicy = {
+      id: "task-quota-fail-closed",
+      strategy: "ordered",
+      maxAttemptsPerTarget: 1,
+      maxCredentialRecoveryAttemptsPerTarget: 0,
+      targets: [
+        { id: "primary", runtimeProvider: PROVIDER, model: MODEL },
+        { id: "secondary", runtimeProvider: "trace-secondary", model: "trace-secondary-model" },
+      ],
+    };
+    const state: RuntimeTargetTurnState = {
+      logicalTurnId: "logical-task-quota",
+      attempts: [{ targetId: "primary", attempt: 1, startedAt: Date.now() }],
+      credentialRecoveries: {},
+      sideEffectBoundaryCrossed: false,
+      terminal: false,
+    };
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "stop when the task quota is exhausted",
+      deliveryBarrier: "after_tool",
+      source,
+      taskBarrierTaskId: task.id,
+      _agentId: AGENT_ID,
+      _runtimeTargetPolicy: policy,
+      _runtimeTargetState: state,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      currentTaskBarrierTaskId: task.id,
+      currentRuntimeCredential: seedRuntimeCredentialAttempt("rcred_task_quota"),
+      runtimeTargetPolicy: policy,
+      runtimeTarget: policy.targets[0],
+      runtimeTargetState: state,
+    });
+    seedAdapterTrace(streaming, "turn-task-quota");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error: "provider quota exhausted for this account",
+          recoverable: true,
+          rawEvent: { type: "error", status: 429, headers: { "retry-after": "3600" } },
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(dbGetTask(task.id)?.status).toBe("open");
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "runtime_target_switch" }]);
+    expect(stashedMessages.get(SESSION_NAME)).toHaveLength(1);
+    expect(state).toMatchObject({
+      terminal: false,
+      attempts: [{ targetId: "primary", outcome: "recoverable_failure", failureKind: "credential" }],
+      pendingTaskQuota: { taskId: task.id, error: "provider quota exhausted for this account" },
+    });
+
+    state.attempts.push({ targetId: "secondary", attempt: 1, startedAt: Date.now() });
+    const secondaryStreaming = makeStreamingSession({
+      currentTaskBarrierTaskId: task.id,
+      runtimeTargetPolicy: policy,
+      runtimeTarget: policy.targets[1],
+      runtimeTargetState: state,
+    });
+    seedAdapterTrace(secondaryStreaming, "turn-task-quota-secondary");
+    await runTraceLoop(
+      secondaryStreaming,
+      makeRuntimeSession([
+        {
+          type: "turn.complete",
+          providerSessionId: "secondary-session",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
+      ]),
+    );
+
+    expect(dbGetTask(task.id)?.status).toBe("open");
+    expect(state).toMatchObject({
+      terminal: true,
+      attempts: [
+        { targetId: "primary", outcome: "recoverable_failure" },
+        { targetId: "secondary", outcome: "success" },
+      ],
+    });
+    expect(state.pendingTaskQuota).toBeUndefined();
+  });
+
+  it("blocks a deferred task-bound quota when runtime target selection is exhausted", async () => {
+    const task = dbCreateTask({
+      title: "Exhausted quota-bound target task",
+      instructions: "Converge after target policy exhaustion",
+      createdBy: "test",
+      createdByAgentId: AGENT_ID,
+      createdBySessionName: SESSION_NAME,
+    }).task;
+    const policy: RuntimeTargetPolicy = {
+      id: "task-quota-exhausted",
+      strategy: "ordered",
+      maxAttemptsPerTarget: 1,
+      targets: [{ id: "primary", runtimeProvider: PROVIDER, model: MODEL }],
+    };
+    const state: RuntimeTargetTurnState = {
+      logicalTurnId: "logical-task-quota-exhausted",
+      attempts: [
+        {
+          targetId: "primary",
+          attempt: 1,
+          startedAt: Date.now() - 1,
+          completedAt: Date.now(),
+          outcome: "recoverable_failure",
+          failureKind: "credential",
+        },
+      ],
+      credentialRecoveries: {},
+      pendingTaskQuota: { taskId: task.id, error: "provider quota exhausted after all targets" },
+      sideEffectBoundaryCrossed: false,
+      terminal: false,
+    };
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "resume exhausted quota turn",
+      source,
+      taskBarrierTaskId: task.id,
+      _agentId: AGENT_ID,
+      _runtimeTargetPolicy: policy,
+      _runtimeTargetState: state,
+    });
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>([[SESSION_NAME, [queued]]]);
+    const runtimeEvents: Array<Record<string, unknown>> = [];
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await startRuntimeSession({
+      sessionName: SESSION_NAME,
+      prompt: {
+        prompt: "resume exhausted quota turn",
+        source,
+        taskBarrierTaskId: task.id,
+        _agentId: AGENT_ID,
+        _resumeStashedMessages: true,
+        _runtimeTargetPolicy: policy,
+        _runtimeTargetState: state,
+      },
+      configModel: MODEL,
+      instanceId: "test",
+      streamingSessions: new Map(),
+      stashedMessages,
+      safeEmit: async (_topic, data) => {
+        runtimeEvents.push(data);
+      },
+      drainPendingStarts: () => {},
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+      runtimeResolution: { ok: false, error: new Error(`Runtime target policy '${policy.id}' is exhausted.`) },
+    });
+
+    expect(dbGetTask(task.id)?.status).toBe("blocked");
+    expect(state.terminal).toBe(true);
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(restartRequests).toEqual([]);
+    expect(runtimeEvents).toEqual([expect.objectContaining({ type: "turn.failed", recoverable: false })]);
+    expect(readLearningLoopCadenceState(getSession(SESSION_KEY)?.runtimeSessionParams)?.terminalTurnCount).toBe(1);
+  });
+
+  it("does not let credential heuristics override an explicit non-replayable failure scope", async () => {
+    const policy: RuntimeTargetPolicy = {
+      id: "explicit-request-scope",
+      strategy: "ordered",
+      maxAttemptsPerTarget: 1,
+      targets: [
+        { id: "primary", runtimeProvider: PROVIDER, model: MODEL },
+        { id: "secondary", runtimeProvider: "trace-secondary", model: "trace-secondary-model" },
+      ],
+    };
+    const state: RuntimeTargetTurnState = {
+      logicalTurnId: "logical-explicit-request-scope",
+      attempts: [{ targetId: "primary", attempt: 1, startedAt: Date.now() }],
+      credentialRecoveries: {},
+      sideEffectBoundaryCrossed: false,
+      terminal: false,
+    };
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "do not replay an invalid request",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+      _runtimeTargetPolicy: policy,
+      _runtimeTargetState: state,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      currentRuntimeCredential: seedRuntimeCredentialAttempt("rcred_explicit_request_scope"),
+      runtimeTargetPolicy: policy,
+      runtimeTarget: policy.targets[0],
+      runtimeTargetState: state,
+    });
+    seedAdapterTrace(streaming, "turn-explicit-request-scope");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error: "authentication-shaped invalid request",
+          recoverable: true,
+          rawEvent: { type: "error", status: 401 },
+          metadata: { failureScope: "request" },
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(restartRequests).toEqual([]);
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(state).toMatchObject({
+      terminal: true,
+      credentialRecoveries: {},
+      attempts: [{ targetId: "primary", outcome: "terminal_failure", failureKind: "request" }],
+    });
+    expect(getRuntimeCredential("rcred_explicit_request_scope")?.status).toBe("healthy");
+    expect(getRuntimeCredentialHealth("rcred_explicit_request_scope")).toMatchObject({
+      consecutiveFailures: 0,
+      requestCount: 0,
+    });
+    const credentialAttempt = getDb()
+      .prepare("SELECT status, classifier_kind FROM runtime_credential_attempts WHERE credential_id = ?")
+      .get("rcred_explicit_request_scope") as { status: string; classifier_kind: string | null } | undefined;
+    expect(credentialAttempt).toEqual({ status: "failed", classifier_kind: null });
   });
 
   it("resets provider state and restarts with a recovery prompt after context window exhaustion", async () => {
@@ -1639,6 +2355,91 @@ describe("runtime session trace instrumentation", () => {
       "new message while busy",
     ]);
     expect(stashedMessages.get(SESSION_NAME)?.[0]?.launchPrompt?.source).toEqual(source);
+    expect(restartRequests).toEqual([
+      {
+        sessionName: SESSION_NAME,
+        reason: "recoverable_interrupt_failure",
+      },
+    ]);
+    expect(streaming.done).toBe(true);
+  });
+
+  it("drops the current side-effect turn and restarts only later queued prompts after a recoverable interrupt", async () => {
+    const policy: RuntimeTargetPolicy = {
+      id: "interrupt-side-effect-policy",
+      strategy: "ordered",
+      maxAttemptsPerTarget: 1,
+      targets: [{ id: "primary", runtimeProvider: PROVIDER, model: MODEL }],
+    };
+    const oldState: RuntimeTargetTurnState = {
+      logicalTurnId: "old-tool-turn",
+      attempts: [{ targetId: "primary", attempt: 1, startedAt: Date.now() - 1 }],
+      credentialRecoveries: {},
+      sideEffectBoundaryCrossed: true,
+      terminal: true,
+    };
+    const newState: RuntimeTargetTurnState = {
+      logicalTurnId: "new-followup-turn",
+      attempts: [{ targetId: "primary", attempt: 1, startedAt: Date.now() }],
+      credentialRecoveries: {},
+      sideEffectBoundaryCrossed: false,
+      terminal: false,
+    };
+    const current = createQueuedRuntimeUserMessage({
+      prompt: "current turn already touched a tool",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+      _runtimeTargetPolicy: policy,
+      _runtimeTargetState: oldState,
+    });
+    const followup = createQueuedRuntimeUserMessage({
+      prompt: "Ouviu?",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+      _runtimeTargetPolicy: policy,
+      _runtimeTargetState: newState,
+    });
+    const streaming = makeStreamingSession({
+      interrupted: true,
+      pendingMessages: [current, followup],
+      currentTurnPendingIds: current.pendingId ? [current.pendingId] : [],
+      currentTurnToolStarted: true,
+      runtimeTargetPolicy: policy,
+      runtimeTarget: policy.targets[0],
+      runtimeTargetState: oldState,
+    });
+    seedAdapterTrace(streaming, "turn-recoverable-interrupt-after-tool");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error: "recoverable interrupt after tool",
+          recoverable: true,
+          rawEvent: {
+            type: "result",
+            subtype: "error_during_execution",
+            errors: ["[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=tool_use"],
+          },
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual(["Ouviu?"]);
+    expect(stashedMessages.get(SESSION_NAME)?.[0]?.launchPrompt?._runtimeTargetState?.logicalTurnId).toBe(
+      "new-followup-turn",
+    );
     expect(restartRequests).toEqual([
       {
         sessionName: SESSION_NAME,

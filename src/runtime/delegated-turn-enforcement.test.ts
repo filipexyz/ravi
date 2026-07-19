@@ -158,7 +158,8 @@ describe("delegated turn enforcement (end-to-end)", () => {
   it("does not add extra cron authority without provider-owned automation config", () => {
     const ctx = turnContext(cronPrompt());
 
-    expect(runWithContext(ctx, () => agentCan(agent.id, "execute", "group", "sessions_info"))).toBe(true);
+    expect(runWithContext(ctx, () => agentCan(agent.id, "execute", "group", "sessions_info"))).toBe(false);
+    expect(runWithContext(ctx, () => enforceScopeCheck("admin", "sessions", "info")).allowed).toBe(true);
     expect(runWithContext(ctx, () => agentCan(agent.id, "access", "session", "restricted"))).toBe(false);
   });
 

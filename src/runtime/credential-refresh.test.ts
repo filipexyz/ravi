@@ -65,6 +65,15 @@ describe("runtime credential refresh", () => {
       }).credential?.id,
     ).toBe("rcred_low");
 
+    expect(
+      selectRuntimeCredential({
+        runtimeProvider: "codex",
+        upstreamProvider: "openai",
+        now: 3_000,
+      }).credential?.id,
+    ).toBe("rcred_high");
+    expect(getRuntimeCredential("rcred_high")?.status).toBe("cooldown");
+
     const refreshed = await refreshRuntimeCredentialPool({
       runtimeProvider: "codex",
       upstreamProvider: "openai",

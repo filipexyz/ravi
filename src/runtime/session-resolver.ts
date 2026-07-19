@@ -1,4 +1,5 @@
 import { configStore } from "../config-store.js";
+import { canWithCapabilities, materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 import {
   clearProviderSession,
   expandHome,
@@ -8,13 +9,28 @@ import {
   type SessionEntry,
 } from "../router/index.js";
 import { logger } from "../utils/logger.js";
-import { createRuntimeProvider } from "./provider-registry.js";
+import { dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
+import { resolveTaskProfileForTask } from "../tasks/profiles.js";
+import { createRuntimeProvider, listRegisteredRuntimeProviderIds } from "./provider-registry.js";
 import { resolveAgentModelSelection } from "./model-preset-resolver.js";
 import type { RuntimeProviderId } from "./types.js";
 import { resolveStoredRuntimeProvider } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import type { RuntimeCapabilities, SessionRuntimeProvider } from "./types.js";
 import { validateRuntimeSessionState, type RuntimeSessionStateInvalidReason } from "./session-state.js";
+import { resolveRuntimeTargetPolicy } from "./target-policy-config.js";
+import {
+  selectRuntimeTarget,
+  collectRuntimeCapabilityNames,
+  deriveRuntimeTargetHealth,
+  type RuntimeTarget,
+  type RuntimeTargetPolicy,
+  type RuntimeTargetRejection,
+  type RuntimeTargetTurnState,
+} from "./target-policy.js";
+import type { RuntimeTargetPolicySource } from "./target-policy-config.js";
+import { reconstructRuntimeTargetHealth, reconstructRuntimeTargetTurnState } from "./target-policy-trace.js";
+import { resolveRuntimeTargetCredentialEligibility } from "./target-credential-eligibility.js";
 
 const log = logger.child("runtime:session-resolver");
 
@@ -34,6 +50,13 @@ export interface RuntimeSessionResolution {
   storedRuntimeProvider?: RuntimeProviderId;
   canResumeStoredSession: boolean;
   resumeDecision: RuntimeResumeDecision;
+  runtimeTargetPolicy?: RuntimeTargetPolicy;
+  runtimeTarget?: RuntimeTarget;
+  runtimeTargetRejected?: RuntimeTargetRejection[];
+  runtimeTargetState?: RuntimeTargetTurnState;
+  runtimeTargetPolicySource?: RuntimeTargetPolicySource;
+  runtimeTargetPolicyProvenance?: string | null;
+  taskProfileId?: string;
 }
 
 export interface RuntimeResumeDecision {
@@ -54,6 +77,40 @@ export interface RuntimeResumeDecision {
     | "session_state_invalid"
     | "unknown";
   staleCleared: boolean;
+}
+
+export type RuntimeSessionResolutionResult =
+  | { ok: true; resolution: RuntimeSessionResolution | null }
+  | { ok: false; error: unknown };
+
+export function tryResolveRuntimeSession(options: {
+  sessionName: string;
+  prompt: RuntimeLaunchPrompt;
+  defaultRuntimeProviderId: RuntimeProviderId;
+}): RuntimeSessionResolutionResult {
+  try {
+    return { ok: true, resolution: resolveRuntimeSession(options) };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
+export function applyRuntimeTargetResolutionToPrompt(
+  prompt: RuntimeLaunchPrompt,
+  resolution: RuntimeSessionResolution | null,
+): void {
+  const { runtimeTargetPolicy, runtimeTarget, runtimeTargetState } = resolution ?? {};
+  if (!runtimeTargetPolicy || !runtimeTarget || !runtimeTargetState) {
+    return;
+  }
+  prompt._runtimeTargetPolicy = runtimeTargetPolicy;
+  prompt._runtimeTargetPolicyResolution = {
+    source: resolution?.runtimeTargetPolicySource ?? "none",
+    provenance: resolution?.runtimeTargetPolicyProvenance ?? null,
+  };
+  prompt._runtimeTargetState = runtimeTargetState;
+  prompt._runtimeProviderId = runtimeTarget.runtimeProvider;
+  prompt._runtimeModel = runtimeTarget.model;
 }
 
 export function resolveRuntimeSession(options: {
@@ -77,14 +134,105 @@ export function resolveRuntimeSession(options: {
     options.prompt._observation && options.prompt._runtimeProviderId
       ? undefined
       : sessionEntry?.runtimeProviderOverride;
+  const taskBinding = options.prompt.taskBarrierTaskId
+    ? dbResolveActiveTaskBindingForSession(options.sessionName, options.prompt.taskBarrierTaskId)
+    : null;
+  const taskProfile = taskBinding ? resolveTaskProfileForTask(taskBinding.task) : null;
+  const resolvedTargetPolicy = resolveRuntimeTargetPolicy({
+    sessionOverride: options.prompt._runtimeTargetPolicy,
+    taskProfilePolicy: taskProfile?.runtimeTargetPolicy,
+    taskProfileId: taskProfile?.id,
+    agentDefaults: agent.defaults,
+    agentId,
+  });
+  if (options.prompt._runtimeTargetPolicyResolution && resolvedTargetPolicy.policy) {
+    resolvedTargetPolicy.source = options.prompt._runtimeTargetPolicyResolution.source;
+    resolvedTargetPolicy.provenance = options.prompt._runtimeTargetPolicyResolution.provenance;
+  }
+  const reconstructedTargetState =
+    resolvedTargetPolicy.policy && options.prompt._resumeStashedMessages && sessionEntry
+      ? reconstructRuntimeTargetTurnState(sessionEntry.sessionKey, resolvedTargetPolicy.policy.id)
+      : undefined;
+  const promptTargetState = options.prompt._runtimeTargetState;
+  let targetState: RuntimeTargetTurnState | undefined;
+  if (resolvedTargetPolicy.policy) {
+    if (
+      options.prompt._resumeStashedMessages &&
+      reconstructedTargetState &&
+      (!promptTargetState || reconstructedTargetState.logicalTurnId === promptTargetState.logicalTurnId)
+    ) {
+      targetState = reconstructedTargetState;
+    } else {
+      targetState = promptTargetState ?? {
+        logicalTurnId: crypto.randomUUID(),
+        attempts: [],
+        credentialRecoveries: {},
+        sideEffectBoundaryCrossed: false,
+        terminal: false,
+      };
+    }
+  }
+  if (resolvedTargetPolicy.policy && targetState) {
+    // Persist the selected envelope before selection. If selection is exhausted
+    // and throws, the launcher still needs the authoritative state to discard
+    // only this logical turn instead of replaying it forever.
+    options.prompt._runtimeTargetPolicy = resolvedTargetPolicy.policy;
+    options.prompt._runtimeTargetPolicyResolution = {
+      source: resolvedTargetPolicy.source,
+      provenance: resolvedTargetPolicy.provenance,
+    };
+    options.prompt._runtimeTargetState = targetState;
+  }
+  const registeredRuntimeProviders = new Set(listRegisteredRuntimeProviderIds());
+  const agentCapabilities = materializeSubjectCapabilities("agent", agentId, { includeRoles: true });
+  const permittedTargetIds = new Set(
+    (resolvedTargetPolicy.policy?.targets ?? [])
+      .filter((target) => canWithCapabilities(agentCapabilities, "use", "runtime.target", target.id))
+      .map((target) => target.id),
+  );
+  const targetSelection =
+    resolvedTargetPolicy.policy && targetState
+      ? selectRuntimeTarget(resolvedTargetPolicy.policy, targetState, {
+          now: Date.now(),
+          registeredProviders: registeredRuntimeProviders,
+          availableCapabilities: new Map(
+            resolvedTargetPolicy.policy.targets
+              .filter((target) => registeredRuntimeProviders.has(target.runtimeProvider))
+              .map((target) => [
+                target.runtimeProvider,
+                collectRuntimeCapabilityNames(createRuntimeProvider(target.runtimeProvider).getCapabilities()),
+              ]),
+          ),
+          permittedTargetIds,
+          credentialEligibility: resolveRuntimeTargetCredentialEligibility(resolvedTargetPolicy.policy, {
+            agentId,
+            ...(taskProfile ? { taskProfileId: taskProfile.id } : {}),
+          }),
+          health: sessionEntry
+            ? reconstructRuntimeTargetHealth(sessionEntry.sessionKey, resolvedTargetPolicy.policy, Date.now())
+            : deriveRuntimeTargetHealth(resolvedTargetPolicy.policy, targetState),
+        })
+      : undefined;
+  if (targetSelection?.status === "exhausted") {
+    throw new Error(`Runtime target policy '${resolvedTargetPolicy.policy?.id}' is exhausted.`);
+  }
+  const runtimeTarget = targetSelection?.status === "selected" ? targetSelection.target : undefined;
+  if (runtimeTarget && targetState) {
+    targetState.attempts.push({
+      targetId: runtimeTarget.id,
+      attempt: targetState.attempts.filter((attempt) => attempt.targetId === runtimeTarget.id).length + 1,
+      startedAt: Date.now(),
+    });
+  }
   const runtimeProviderId: RuntimeProviderId =
-    options.prompt._observation && options.prompt._runtimeProviderId
+    runtimeTarget?.runtimeProvider ??
+    (options.prompt._runtimeProviderId
       ? options.prompt._runtimeProviderId
       : sessionRuntimeProviderOverride
         ? sessionRuntimeProviderOverride
         : agentSelection.modelSource === "agent_preset"
           ? agentSelection.effectiveProvider
-          : (agent.provider ?? options.defaultRuntimeProviderId);
+          : (agent.provider ?? options.defaultRuntimeProviderId));
   const runtimeProvider = createRuntimeProvider(runtimeProviderId);
   const runtimeCapabilities = runtimeProvider.getCapabilities();
 
@@ -166,6 +314,13 @@ export function resolveRuntimeSession(options: {
     storedRuntimeProvider,
     canResumeStoredSession,
     resumeDecision,
+    ...(taskProfile?.id ? { taskProfileId: taskProfile.id } : {}),
+    ...(resolvedTargetPolicy.policy ? { runtimeTargetPolicy: resolvedTargetPolicy.policy } : {}),
+    ...(resolvedTargetPolicy.policy ? { runtimeTargetPolicySource: resolvedTargetPolicy.source } : {}),
+    ...(resolvedTargetPolicy.policy ? { runtimeTargetPolicyProvenance: resolvedTargetPolicy.provenance } : {}),
+    ...(runtimeTarget ? { runtimeTarget } : {}),
+    ...(targetSelection ? { runtimeTargetRejected: targetSelection.rejected } : {}),
+    ...(targetState ? { runtimeTargetState: targetState } : {}),
   };
 }
 

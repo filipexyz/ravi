@@ -259,6 +259,8 @@ export interface TaskProfileDefinition {
   description: string;
   sessionNameTemplate: string;
   runtimeDefaults?: TaskRuntimeOptions;
+  /** Optional runtime target policy selected after session overrides and before agent defaults. */
+  runtimeTargetPolicy?: unknown;
   workspaceBootstrap: TaskProfileWorkspaceBootstrap;
   sync: TaskProfileSyncPolicy;
   rendererHints: TaskProfileRendererHints;
@@ -298,7 +300,7 @@ export interface TaskRecord {
   profileInput?: TaskProfileInputValues;
   runtimeOverride?: TaskRuntimeOptions;
   checkpointIntervalMs?: number;
-  reportToSessionName?: string;
+  reportToSessionName?: string | null;
   reportEvents?: TaskReportEvent[];
   parentTaskId?: string;
   taskDir?: string;
@@ -331,7 +333,7 @@ export interface TaskAssignment {
   worktree?: TaskWorktreeConfig;
   runtimeOverride?: TaskRuntimeOptions;
   checkpointIntervalMs?: number;
-  reportToSessionName?: string;
+  reportToSessionName?: string | null;
   reportEvents?: TaskReportEvent[];
   checkpointLastReportAt?: number;
   checkpointDueAt?: number;
@@ -383,7 +385,7 @@ export interface TaskLaunchPlan {
   worktree?: TaskWorktreeConfig;
   runtimeOverride?: TaskRuntimeOptions;
   checkpointIntervalMs?: number;
-  reportToSessionName?: string;
+  reportToSessionName?: string | null;
   reportEvents?: TaskReportEvent[];
   createdAt: number;
   updatedAt: number;
@@ -427,7 +429,7 @@ export interface CreateTaskInput {
   profileInput?: TaskProfileInputValues;
   runtimeOverride?: TaskRuntimeOptions;
   checkpointIntervalMs?: number;
-  reportToSessionName?: string;
+  reportToSessionName?: string | null;
   reportEvents?: TaskReportEvent[];
   createdBy?: string;
   createdByAgentId?: string;
@@ -447,7 +449,7 @@ export interface DispatchTaskInput {
   worktree?: TaskWorktreeConfig;
   runtimeOverride?: TaskRuntimeOptions;
   checkpointIntervalMs?: number;
-  reportToSessionName?: string;
+  reportToSessionName?: string | null;
   reportEvents?: TaskReportEvent[];
 }
 

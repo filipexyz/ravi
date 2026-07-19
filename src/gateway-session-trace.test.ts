@@ -14,9 +14,11 @@ import {
 } from "./router/router-db.js";
 import { getOrCreateSession, updateSessionName } from "./router/sessions.js";
 import { recordDeliveryTrace } from "./session-trace/channel-trace.js";
-import { listSessionEvents } from "./session-trace/session-trace-db.js";
+import { listPendingRuntimeTargetResponseEvents, listSessionEvents } from "./session-trace/session-trace-db.js";
+import { recordRuntimeSafetyTraceEvent } from "./session-trace/runtime-trace.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
 import type { ResponseMessage } from "./runtime/message-types.js";
+import { createRuntimeTargetResponseEmitId } from "./runtime/target-response-outbox.js";
 import { upsertOmniGroupMetadata } from "./omni/group-metadata-cache.js";
 import type { OmniUserMention } from "./omni/mentions.js";
 
@@ -236,6 +238,97 @@ describe("Gateway session trace instrumentation", () => {
     expect(events[0]?.messageId).toBe("inbound-1");
     expect(events[1]?.messageId).toBe("inbound-1");
     expect(events[1]?.payloadJson).toMatchObject({ deliveryMessageId: "outbound-1", status: "delivered" });
+  });
+
+  it("replays legacy delivery at least once after provider success when the durable ack crashes", async () => {
+    const { sessionKey, sessionName } = seedSession();
+    const logicalTurnId = "turn-legacy-ack-crash";
+    const emitId = createRuntimeTargetResponseEmitId(logicalTurnId);
+    const response = makeResponse({ _emitId: emitId });
+    recordRuntimeSafetyTraceEvent({
+      sessionKey,
+      sessionName,
+      agentId: "main",
+      runId: "run-legacy-ack-crash",
+      turnId: logicalTurnId,
+      eventType: "runtime.target.succeeded",
+      eventGroup: "runtime_target",
+      status: "complete",
+      messageId: emitId,
+      payloadJson: {
+        responseOutbox: {
+          emitId,
+          response: response.response,
+          target: response.target!,
+          instanceId: "runtime-test",
+          version: 2,
+        },
+      },
+    });
+    const send = mock(async () => ({ messageId: "outbound-at-least-once" }));
+    const gateway = makeGateway(send);
+    const internals = gateway as unknown as {
+      acknowledgeRuntimeTargetResponse(
+        sessionName: string,
+        response: ResponseMessage,
+        status: "queued" | "delivered",
+      ): void;
+      replayRuntimeTargetResponseOutbox(): Promise<void>;
+    };
+    const acknowledge = internals.acknowledgeRuntimeTargetResponse.bind(gateway);
+    internals.acknowledgeRuntimeTargetResponse = () => {
+      throw new Error("synthetic crash before durable ack");
+    };
+
+    await handleResponse(gateway, sessionName, response);
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(listPendingRuntimeTargetResponseEvents()).toHaveLength(1);
+
+    // Restart sees the still-pending event and sends it again. This is the
+    // explicit transport contract; model/tool work is not executed again.
+    internals.acknowledgeRuntimeTargetResponse = acknowledge;
+    await internals.replayRuntimeTargetResponseOutbox();
+
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(listPendingRuntimeTargetResponseEvents()).toEqual([]);
+  });
+
+  it("drains more than one runtime target response outbox batch on restart", async () => {
+    const { sessionKey, sessionName } = seedSession();
+    for (let index = 0; index < 101; index++) {
+      const logicalTurnId = `turn-outbox-batch-${index}`;
+      const emitId = createRuntimeTargetResponseEmitId(logicalTurnId);
+      recordRuntimeSafetyTraceEvent({
+        sessionKey,
+        sessionName,
+        agentId: "main",
+        runId: `run-outbox-batch-${index}`,
+        turnId: logicalTurnId,
+        eventType: "runtime.target.succeeded",
+        eventGroup: "runtime_target",
+        status: "complete",
+        messageId: emitId,
+        payloadJson: {
+          responseOutbox: {
+            emitId,
+            response: `committed response ${index}`,
+            target: makeResponse().target!,
+            instanceId: "runtime-test",
+            version: 2,
+          },
+        },
+      });
+    }
+    const send = mock(async (_instanceId: string, _chatId: string, text: string) => ({ messageId: text }));
+    const gateway = makeGateway(send);
+    const internals = gateway as unknown as { replayRuntimeTargetResponseOutbox(): Promise<void> };
+
+    expect(listPendingRuntimeTargetResponseEvents({ limit: 1000 })).toHaveLength(101);
+    await internals.replayRuntimeTargetResponseOutbox();
+
+    expect(send).toHaveBeenCalledTimes(101);
+    expect(listPendingRuntimeTargetResponseEvents({ limit: 1000 })).toEqual([]);
   });
 
   it("enriches gateway traces from canonical chat binding and message actor metadata", async () => {

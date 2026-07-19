@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { requestCascadingApproval, requestPollAnswer, type ApprovalTarget } from "../approval/service.js";
 import { createBashPermissionHook, createToolPermissionHook } from "../bash/index.js";
 import { createPreCompactHook } from "../hooks/index.js";
@@ -8,10 +9,16 @@ import { createSanitizeBashHook } from "../hooks/sanitize-bash.js";
 import { nats } from "../nats.js";
 import type { AgentConfig } from "../router/index.js";
 import { getSpecState, isSpecModeActive } from "../spec/server.js";
+import { dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
 import type { RuntimeCapabilities, RuntimeHookMatcher } from "./types.js";
 
 const log = logger.child("runtime:host-hooks");
+
+/** Task profile whose writes are constrained to the deterministic guard. */
+const CURATOR_PROFILE_ID = "curador-memoria";
+/** SDK write tools the curator must NOT use directly on memory files. */
+const MEMORY_WRITE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 
 export interface RuntimeHostHooksOptions {
   runtimeCapabilities: RuntimeCapabilities;
@@ -76,6 +83,7 @@ export function createRuntimeHostHooks({
   hooks.PreToolUse = [
     ...(hooks.PreToolUse ?? []),
     { hooks: [createSpecBlockHook(sessionName)] },
+    { hooks: [createMemoryGuardHook(sessionName, agent)] },
     {
       matcher: "mcp__spec__exit_spec_mode",
       hooks: [createExitSpecHook({ sessionName, agent, resolvedSource, approvalSource })],
@@ -119,6 +127,99 @@ function createSpecBlockHook(sessionName: string) {
       };
     }
     return {};
+  };
+}
+
+/**
+ * M2 (PR #294 follow-up) — ENFORCE the deterministic memory guard.
+ *
+ * The spec (memory/curation/deterministic-loop) mandates that the curator
+ * routes every memory write through `applyDeterministicGuard` (`ravi memory
+ * guard`): "no path writes memory files directly (Edit/Write allowed only for
+ * the curator's own TASK.md log)". Before this hook that MUST was purely
+ * advisory — a curator LLM could call Write/Edit on MEMORY.md and dodge the
+ * scan (R9/R9b) + cap (R3) + atomic-write (R10) guarantees entirely.
+ *
+ * This hook makes it physical: on a `curador-memoria` turn ONLY, deny the SDK
+ * write tools when they target the agent's own `MEMORY.md` or anything under
+ * `memory/`. The bash guard writes via the CLI process (not an SDK tool), so
+ * the sanctioned path is unaffected; reads and the curator's own TASK.md log
+ * stay allowed. Non-curator sessions are never touched — their normal memory
+ * writes (manual edits, legacy extraction) keep working.
+ *
+ * Fail-open on lookup errors: a DB hiccup must never wedge a turn. The security
+ * property only needs to hold when we can positively confirm a curator turn.
+ */
+export function createMemoryGuardHook(
+  sessionName: string,
+  agent: AgentConfig,
+  resolveBinding: (
+    session: string,
+  ) => { task: { profileId?: string | null } } | null = dbResolveActiveTaskBindingForSession,
+) {
+  return async (input: any) => {
+    const toolName = input.tool_name;
+    if (typeof toolName !== "string" || !MEMORY_WRITE_TOOLS.has(toolName)) {
+      return {};
+    }
+
+    let isCuratorTurn = false;
+    try {
+      const binding = resolveBinding(sessionName);
+      isCuratorTurn = binding?.task.profileId === CURATOR_PROFILE_ID;
+    } catch (err) {
+      log.warn("memory guard hook: task binding lookup failed — allowing (fail-open)", {
+        sessionName,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return {};
+    }
+    if (!isCuratorTurn) {
+      return {};
+    }
+
+    const cwdRaw = agent.cwd?.replace("~", homedir());
+    if (!cwdRaw) {
+      return {};
+    }
+    const cwd = resolve(cwdRaw);
+    const toolInput = (input.tool_input ?? {}) as Record<string, unknown>;
+    const filePath =
+      (typeof toolInput.file_path === "string" && toolInput.file_path) ||
+      (typeof toolInput.notebook_path === "string" && toolInput.notebook_path) ||
+      "";
+    if (!filePath) {
+      return {};
+    }
+
+    const resolved = resolve(cwd, filePath);
+    const memoryIndex = join(cwd, "MEMORY.md");
+    const memoryDir = join(cwd, "memory");
+    const relToDir = relative(memoryDir, resolved);
+    const targetsMemory =
+      resolved === memoryIndex || relToDir === "" || (!relToDir.startsWith("..") && !isAbsolute(relToDir));
+    if (!targetsMemory) {
+      return {};
+    }
+
+    log.warn("memory guard hook: blocked direct curator write to memory", {
+      sessionName,
+      agentId: agent.id,
+      toolName,
+      attempted: resolved,
+    });
+    return {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason:
+          `Curador-memória: escrita direta em memória via ${toolName} é proibida (spec ` +
+          `memory/curation/deterministic-loop). TODA escrita de memória deve passar por ` +
+          `\`ravi memory guard --target ${memoryIndex} --candidate "..."\` (ou --candidate-file), ` +
+          `que aplica scan R9/R9b, cap R3 e atomic-write R10. Edit/Write direto só é permitido no ` +
+          `TASK.md do próprio curador.`,
+      },
+    };
   };
 }
 

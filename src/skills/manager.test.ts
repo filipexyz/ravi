@@ -89,6 +89,7 @@ describe("skills manager", () => {
     const home = join(root, "home");
     const catalogSkills = listCatalogSkills();
     const imageSkill = catalogSkills.find((skill) => skill.name === "image");
+    const runtimeTargetSkill = catalogSkills.find((skill) => skill.name === "runtime-target-failover");
     const slackSkill = catalogSkills.find((skill) => skill.name === "slack");
 
     expect(imageSkill).toBeDefined();
@@ -97,6 +98,9 @@ describe("skills manager", () => {
     expect(slackSkill).toBeDefined();
     expect(slackSkill?.source).toBe("catalog:ravi-system/slack");
     expect(slackSkill?.files?.map((file) => file.path)).toContain("references/canvas.md");
+    expect(runtimeTargetSkill).toBeDefined();
+    expect(runtimeTargetSkill?.source).toBe("catalog:ravi-system/runtime-target-failover");
+    expect(runtimeTargetSkill?.description).toContain("fallback entre runtimes");
 
     const [installed] = installSkills([imageSkill!], { homeDir: home });
 

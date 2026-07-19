@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { querySessionTrace } from "./query.js";
-import { recordAdapterRequestTrace } from "./runtime-trace.js";
+import { recordAdapterRequestTrace, recordRuntimeSafetyTraceEvent } from "./runtime-trace.js";
 import { getSessionTraceBlob, listRecentSessionEventsByType, recordSessionEvent } from "./session-trace-db.js";
 
 let stateDir: string | null = null;
@@ -115,6 +115,36 @@ describe("session trace query", () => {
       model_source: "session_override",
       effort_source: "agent_default",
       thinking_source: "runtime_default",
+    });
+  });
+
+  it("returns the durable runtime-target safety transition recorded in the trace", () => {
+    const recorded = recordRuntimeSafetyTraceEvent({
+      sessionKey: "agent:main:trace-limit",
+      sessionName: "trace-limit",
+      agentId: "main",
+      runId: "run-target-success",
+      turnId: "turn-target-success",
+      provider: "codex",
+      model: "gpt-5",
+      eventType: "runtime.target.succeeded",
+      eventGroup: "runtime.target",
+      status: "complete",
+      messageId: "message-target-success",
+      payloadJson: { targetId: "codex-live" },
+      timestamp: 1400,
+    });
+
+    expect(recorded).toMatchObject({
+      eventType: "runtime.target.succeeded",
+      status: "complete",
+      messageId: "message-target-success",
+      payloadJson: { targetId: "codex-live" },
+    });
+    expect(querySessionTrace({ session: "trace-limit" }).events.at(-1)).toMatchObject({
+      eventType: "runtime.target.succeeded",
+      status: "complete",
+      messageId: "message-target-success",
     });
   });
 });

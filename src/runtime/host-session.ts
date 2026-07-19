@@ -11,6 +11,7 @@ import type {
   RuntimeSessionHandle,
   RuntimeThinking,
 } from "./types.js";
+import type { RuntimeTarget, RuntimeTargetPolicy, RuntimeTargetTurnState } from "./target-policy.js";
 
 export interface RuntimeMessageTarget extends MessageActorMetadata {
   channel: string;
@@ -122,6 +123,12 @@ export interface RuntimeHostStreamingSession {
   currentTraceTurnTerminalRecorded?: boolean;
   /** Managed runtime credential selected for this provider process, if any. */
   currentRuntimeCredential?: RuntimeCredentialAttemptBinding;
+  /** Effective opt-in failover policy for the current logical turn. */
+  runtimeTargetPolicy?: RuntimeTargetPolicy;
+  /** Selected target for this provider process. */
+  runtimeTarget?: RuntimeTarget;
+  /** Durable-in-envelope attempt state used when a turn is replayed. */
+  runtimeTargetState?: RuntimeTargetTurnState;
   /** Recovery timer for the narrow state where a provider is alive but not accepting queued input. */
   idleGapRecoveryTimer?: ReturnType<typeof setTimeout>;
   /** Timer that evicts an idle provider process from the runtime pool. */
@@ -151,6 +158,26 @@ export function stashPendingRuntimeMessages(
     sessionName,
     session.pendingMessages.map((message) => ({ ...message })),
   );
+}
+
+export function stashPendingRuntimeMessagesExceptCurrentTurn(
+  sessionName: string,
+  session: RuntimeHostStreamingSession,
+  stashedMessages: Map<string, RuntimeUserMessage[]>,
+): number {
+  const currentTurnPendingIds = new Set(session.currentTurnPendingIds ?? []);
+  if (currentTurnPendingIds.size === 0) {
+    stashPendingRuntimeMessages(sessionName, session, stashedMessages);
+    return session.pendingMessages.length;
+  }
+
+  const messages = session.pendingMessages
+    .filter((message) => !message.pendingId || !currentTurnPendingIds.has(message.pendingId))
+    .map((message) => ({ ...message }));
+
+  if (messages.length > 0) stashedMessages.set(sessionName, messages);
+  else stashedMessages.delete(sessionName);
+  return messages.length;
 }
 
 export function stashCurrentTurnRuntimeMessages(

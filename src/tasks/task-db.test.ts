@@ -118,6 +118,46 @@ describe("task-db", () => {
     expect(eventTypes).toEqual(["task.created", "task.dispatched", "task.progress", "task.done"]);
   });
 
+  it("lets internal tasks explicitly suppress inherited report targets", () => {
+    const created = dbCreateTask({
+      title: "Internal curator",
+      instructions: "Should not report to the origin conversation",
+      createdBy: "runtime:memory-nudge",
+      createdByAgentId: "main",
+      createdBySessionName: "business-group",
+      reportToSessionName: null,
+    });
+    createdTaskIds.push(created.task.id);
+
+    expect(created.task.reportToSessionName).toBeUndefined();
+
+    const dispatched = dbDispatchTask(created.task.id, {
+      agentId: "main",
+      sessionName: `${created.task.id}-curator`,
+      assignedBy: "runtime:memory-nudge",
+    });
+    expect(dispatched.assignment.reportToSessionName).toBeUndefined();
+  });
+
+  it("lets dispatch explicitly suppress a task-level report target", () => {
+    const created = dbCreateTask({
+      title: "Manual task",
+      instructions: "Dispatch should be able to run silently",
+      createdBy: "test",
+      createdBySessionName: "dev",
+    });
+    createdTaskIds.push(created.task.id);
+    expect(created.task.reportToSessionName).toBe("dev");
+
+    const dispatched = dbDispatchTask(created.task.id, {
+      agentId: "main",
+      sessionName: `${created.task.id}-silent`,
+      assignedBy: "test",
+      reportToSessionName: null,
+    });
+    expect(dispatched.assignment.reportToSessionName).toBeUndefined();
+  });
+
   it("resolves the active task binding for a dispatched session", () => {
     const created = dbCreateTask({
       title: "Resolve active task binding",

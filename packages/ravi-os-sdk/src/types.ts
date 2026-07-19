@@ -167,6 +167,7 @@ export type AgentsDebugReturn = ({
 /** Input shape for `agents.delete`. */
 export type AgentsDeleteInput = {
   id: string;
+  purgeMemory?: boolean;
 };
 
 /** Return shape for `agents.delete`. */
@@ -6185,6 +6186,12 @@ export type HooksCreateInput = {
   cooldown?: string;
   dedupeKey?: string;
   disabled?: boolean;
+  dispatchCadenceTurns?: string;
+  dispatchInstructions?: string;
+  dispatchProfile?: string;
+  dispatchProfileInput?: string;
+  dispatchTargetAgent?: string;
+  dispatchTitle?: string;
   event?: string;
   matcher?: string;
   message?: string;
@@ -8115,6 +8122,139 @@ export type MeetingsVoiceRuntimesReturn = {
   recommendation: string;
 };
 
+/** Input shape for `memory.curate`. */
+export type MemoryCurateInput = {
+  agent?: string;
+  dryRun?: boolean;
+  transcript?: string;
+};
+
+/** Return shape for `memory.curate`. */
+export type MemoryCurateReturn = {
+  agentId: string;
+  dryRun: boolean;
+  taskId: string;
+  transcriptPath: string;
+};
+
+/** Input shape for `memory.enroll`. */
+export type MemoryEnrollInput = {
+  agent?: string;
+  all?: boolean;
+  cadenceTurns?: string;
+  skipHook?: boolean;
+};
+
+/** Return shape for `memory.enroll`. */
+export type MemoryEnrollReturn = {
+  enrolled: Array<{
+    agentId: string;
+    cwd: string;
+    memoryDirCreated: boolean;
+    memoryFileCreated: boolean;
+    memoryPath: string;
+  }>;
+  hook: {
+    cadenceTurns: number;
+    created: boolean;
+    eventName: "Stop";
+    id?: string;
+    name: string;
+    skipped: boolean;
+  };
+};
+
+/** Input shape for `memory.guard`. */
+export type MemoryGuardInput = {
+  agent?: string;
+  cadenceTurn?: string;
+  candidate?: string;
+  candidateFile?: string;
+  capChars?: string;
+  consolidationAttempt?: string;
+  consolidationMaxAttempts?: string;
+  dryRun?: boolean;
+  expectedPrior?: string;
+  hadUserCorrection?: boolean;
+  hookId?: string;
+  processedThroughMessageId?: string;
+  sessionKey?: string;
+  sessionName?: string;
+  store?: string;
+  target?: string;
+  taskId?: string;
+};
+
+/** Return shape for `memory.guard`. */
+export type MemoryGuardReturn = {
+  backupPath?: string;
+  cap: {
+    cap: number;
+    ok: boolean;
+    overflowChars: number;
+    proposedChars: number;
+  };
+  detail?: string;
+  dryRun: boolean;
+  finalChars?: number;
+  outcome: "written" | "rejected" | "drift";
+  reason?: string;
+  scans: {
+    injection: {
+      hadInjection: boolean;
+      matchCount: number;
+    };
+    secret: {
+      hadSecret: boolean;
+      isCredentialOnly: boolean;
+      matchCount: number;
+    };
+  };
+  store: "memory" | "user";
+  target: string;
+};
+
+/** Input shape for `memory.list`. */
+export type MemoryListInput = {
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `memory.list`. */
+export type MemoryListReturn = {
+  agents: Array<{
+    agentId: string;
+    cwd: string;
+    exists: boolean;
+    memoryChars: number;
+    memoryLastModified: number | null;
+    memoryPath: string;
+    topicCount: number;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+};
+
+/** Input shape for `memory.show`. */
+export type MemoryShowInput = {
+  agent?: string;
+  topic?: string;
+};
+
+/** Return shape for `memory.show`. */
+export type MemoryShowReturn = {
+  agentId: string;
+  content: string;
+  path: string;
+};
+
 /** Input shape for `metrics.dates`. */
 export type MetricsDatesInput = Record<string, never>;
 
@@ -9980,6 +10120,273 @@ export type RuntimePresetsShowReturn = {
   referencingAgentsTotal: number;
 };
 
+/** Input shape for `runtime.targets.clear`. */
+export type RuntimeTargetsClearInput = {
+  agent: string;
+};
+
+/** Return shape for `runtime.targets.clear`. */
+export type RuntimeTargetsClearReturn = {
+  action: "set" | "reorder" | "clear";
+  agentId: string;
+  changed: boolean;
+  inspectCommand: string;
+  policy: ({
+    circuitBreakerThreshold?: number;
+    cooldownMs?: number;
+    id: string;
+    maxAttemptsPerTarget: number;
+    maxCredentialRecoveryAttemptsPerTarget?: number;
+    strategy: "ordered" | "health-aware";
+    targets: Array<{
+      credentialRequirements?: {
+        authMethods?: string[];
+        credentialIds?: string[];
+        requireManaged?: boolean;
+        sessionCompatibilityKey?: string;
+      };
+      effort?: string;
+      id: string;
+      model: string;
+      modelPreset?: {
+        id: string;
+        version: number;
+      };
+      requiredCapabilities?: string[];
+      runtimeProvider: string;
+      thinking?: "off" | "normal" | "verbose";
+    }>;
+  }) | null;
+  preservedDefaultKeys: string[];
+  previousPolicyId: string | null;
+};
+
+/** Input shape for `runtime.targets.explain`. */
+export type RuntimeTargetsExplainInput = {
+  agent: string;
+  sessionPolicyJson?: string;
+  taskProfile?: string;
+};
+
+/** Return shape for `runtime.targets.explain`. */
+export type RuntimeTargetsExplainReturn = {
+  agentId: string;
+  enabled: boolean;
+  evaluation: "stateless_preflight";
+  policyId: string | null;
+  provenance: string | null;
+  rejected: Array<{
+    detail?: string;
+    reason: string;
+    targetId: string;
+  }>;
+  selectedTarget: ({
+    id: string;
+    model: string;
+    runtimeProvider: string;
+  }) | null;
+  source: "session_override" | "task_profile" | "agent_default" | "none";
+};
+
+/** Input shape for `runtime.targets.reconcile`. */
+export type RuntimeTargetsReconcileInput = {
+  agent?: string;
+  apply?: boolean;
+  fallbackJson: string;
+  force?: boolean;
+  policyPrefix?: string;
+  provider?: string;
+};
+
+/** Return shape for `runtime.targets.reconcile`. */
+export type RuntimeTargetsReconcileReturn = {
+  action: "reconcile";
+  changed: boolean;
+  changedAgents: number;
+  fallbackTargets: Array<{
+    credentialRequirements?: {
+      authMethods?: string[];
+      credentialIds?: string[];
+      requireManaged?: boolean;
+      sessionCompatibilityKey?: string;
+    };
+    effort?: string;
+    id: string;
+    model: string;
+    modelPreset?: {
+      id: string;
+      version: number;
+    };
+    requiredCapabilities?: string[];
+    runtimeProvider: string;
+    thinking?: "off" | "normal" | "verbose";
+  }>;
+  inspectCommand: string;
+  items: Array<{
+    action: "set" | "skip";
+    agentId: string;
+    changed: boolean;
+    currentModel: string | null;
+    currentProvider: string | null;
+    previousPolicyId: string | null;
+    proposedPolicy: ({
+      circuitBreakerThreshold?: number;
+      cooldownMs?: number;
+      id: string;
+      maxAttemptsPerTarget: number;
+      maxCredentialRecoveryAttemptsPerTarget?: number;
+      strategy: "ordered" | "health-aware";
+      targets: Array<{
+        credentialRequirements?: {
+          authMethods?: string[];
+          credentialIds?: string[];
+          requireManaged?: boolean;
+          sessionCompatibilityKey?: string;
+        };
+        effort?: string;
+        id: string;
+        model: string;
+        modelPreset?: {
+          id: string;
+          version: number;
+        };
+        requiredCapabilities?: string[];
+        runtimeProvider: string;
+        thinking?: "off" | "normal" | "verbose";
+      }>;
+    }) | null;
+    reason: string | null;
+    riskFlags: string[];
+  }>;
+  mode: "dry-run" | "apply";
+  plannedAgents: number;
+  skippedAgents: number;
+  totalAgents: number;
+};
+
+/** Input shape for `runtime.targets.reorder`. */
+export type RuntimeTargetsReorderInput = {
+  agent: string;
+  order: string;
+};
+
+/** Return shape for `runtime.targets.reorder`. */
+export type RuntimeTargetsReorderReturn = {
+  action: "set" | "reorder" | "clear";
+  agentId: string;
+  changed: boolean;
+  inspectCommand: string;
+  policy: ({
+    circuitBreakerThreshold?: number;
+    cooldownMs?: number;
+    id: string;
+    maxAttemptsPerTarget: number;
+    maxCredentialRecoveryAttemptsPerTarget?: number;
+    strategy: "ordered" | "health-aware";
+    targets: Array<{
+      credentialRequirements?: {
+        authMethods?: string[];
+        credentialIds?: string[];
+        requireManaged?: boolean;
+        sessionCompatibilityKey?: string;
+      };
+      effort?: string;
+      id: string;
+      model: string;
+      modelPreset?: {
+        id: string;
+        version: number;
+      };
+      requiredCapabilities?: string[];
+      runtimeProvider: string;
+      thinking?: "off" | "normal" | "verbose";
+    }>;
+  }) | null;
+  preservedDefaultKeys: string[];
+  previousPolicyId: string | null;
+};
+
+/** Input shape for `runtime.targets.set`. */
+export type RuntimeTargetsSetInput = {
+  agent: string;
+  policyJson: string;
+};
+
+/** Return shape for `runtime.targets.set`. */
+export type RuntimeTargetsSetReturn = {
+  action: "set" | "reorder" | "clear";
+  agentId: string;
+  changed: boolean;
+  inspectCommand: string;
+  policy: ({
+    circuitBreakerThreshold?: number;
+    cooldownMs?: number;
+    id: string;
+    maxAttemptsPerTarget: number;
+    maxCredentialRecoveryAttemptsPerTarget?: number;
+    strategy: "ordered" | "health-aware";
+    targets: Array<{
+      credentialRequirements?: {
+        authMethods?: string[];
+        credentialIds?: string[];
+        requireManaged?: boolean;
+        sessionCompatibilityKey?: string;
+      };
+      effort?: string;
+      id: string;
+      model: string;
+      modelPreset?: {
+        id: string;
+        version: number;
+      };
+      requiredCapabilities?: string[];
+      runtimeProvider: string;
+      thinking?: "off" | "normal" | "verbose";
+    }>;
+  }) | null;
+  preservedDefaultKeys: string[];
+  previousPolicyId: string | null;
+};
+
+/** Input shape for `runtime.targets.show`. */
+export type RuntimeTargetsShowInput = {
+  agent: string;
+};
+
+/** Return shape for `runtime.targets.show`. */
+export type RuntimeTargetsShowReturn = {
+  agentId: string;
+  enabled: boolean;
+  inspectCommand: string;
+  order: string[];
+  policy: ({
+    circuitBreakerThreshold?: number;
+    cooldownMs?: number;
+    id: string;
+    maxAttemptsPerTarget: number;
+    maxCredentialRecoveryAttemptsPerTarget?: number;
+    strategy: "ordered" | "health-aware";
+    targets: Array<{
+      credentialRequirements?: {
+        authMethods?: string[];
+        credentialIds?: string[];
+        requireManaged?: boolean;
+        sessionCompatibilityKey?: string;
+      };
+      effort?: string;
+      id: string;
+      model: string;
+      modelPreset?: {
+        id: string;
+        version: number;
+      };
+      requiredCapabilities?: string[];
+      runtimeProvider: string;
+      thinking?: "off" | "normal" | "verbose";
+    }>;
+  }) | null;
+};
+
 /** Input shape for `sdk.client.check`. */
 export type SdkClientCheckInput = {
   out?: string;
@@ -11473,6 +11880,24 @@ export type SkillGatesShowReturn = {
   };
 };
 
+/** Input shape for `skills.archive`. */
+export type SkillsArchiveInput = {
+  force?: boolean;
+  name: string;
+  skill?: string;
+};
+
+/** Return shape for `skills.archive`. */
+export type SkillsArchiveReturn = {
+  archivedTo?: string;
+  detail?: string;
+  dryRun: boolean;
+  outcome: "archived" | "rejected";
+  path?: string;
+  reason?: string;
+  skill: string;
+};
+
 /** Input shape for `skills.grant`. */
 export type SkillsGrantInput = {
   agent: string;
@@ -11518,6 +11943,33 @@ export type SkillsGrantBatchReturn = {
   sampleAgents: string[];
   sampleSkills: string[];
   skillsTargeted: number;
+};
+
+/** Input shape for `skills.guard`. */
+export type SkillsGuardInput = {
+  agent?: string;
+  cadenceTurn?: string;
+  content?: string;
+  contentFile?: string;
+  date?: string;
+  description?: string;
+  dryRun?: boolean;
+  op?: string;
+  sessionKey?: string;
+  skill?: string;
+  taskId?: string;
+};
+
+/** Return shape for `skills.guard`. */
+export type SkillsGuardReturn = {
+  detail?: string;
+  dryRun: boolean;
+  finalChars?: number;
+  op: "patch" | "create";
+  outcome: "written" | "rejected";
+  path?: string;
+  reason?: string;
+  skill: string;
 };
 
 /** Input shape for `skills.inspect`. */
@@ -14908,8 +15360,8 @@ export type WorkflowsSpecsShowReturn = Record<string, unknown>;
 /** Input shape for `yt.analytics-countries`. */
 export type YtAnalyticsCountriesInput = {
   connection?: string;
-  days?: string;
-  limit?: string;
+  days: string;
+  limit: string;
 };
 
 /** Return shape for `yt.analytics-countries`. */
@@ -14927,7 +15379,7 @@ export type YtAnalyticsCountriesReturn = {
 /** Input shape for `yt.analytics-demographics`. */
 export type YtAnalyticsDemographicsInput = {
   connection?: string;
-  days?: string;
+  days: string;
 };
 
 /** Return shape for `yt.analytics-demographics`. */
@@ -14944,7 +15396,7 @@ export type YtAnalyticsDemographicsReturn = {
 /** Input shape for `yt.analytics-devices`. */
 export type YtAnalyticsDevicesInput = {
   connection?: string;
-  days?: string;
+  days: string;
 };
 
 /** Return shape for `yt.analytics-devices`. */
@@ -14961,7 +15413,7 @@ export type YtAnalyticsDevicesReturn = {
 /** Input shape for `yt.analytics-overview`. */
 export type YtAnalyticsOverviewInput = {
   connection?: string;
-  days?: string;
+  days: string;
 };
 
 /** Return shape for `yt.analytics-overview`. */
@@ -14985,8 +15437,8 @@ export type YtAnalyticsOverviewReturn = {
 /** Input shape for `yt.analytics-series`. */
 export type YtAnalyticsSeriesInput = {
   connection?: string;
-  days?: string;
-  metric?: "views" | "estimatedMinutesWatched" | "averageViewDuration" | "subscribersGained" | "likes" | "comments" | "shares";
+  days: string;
+  metric: "views" | "estimatedMinutesWatched" | "averageViewDuration" | "subscribersGained" | "likes" | "comments" | "shares";
 };
 
 /** Return shape for `yt.analytics-series`. */
@@ -15000,8 +15452,8 @@ export type YtAnalyticsSeriesReturn = {
 /** Input shape for `yt.analytics-top`. */
 export type YtAnalyticsTopInput = {
   connection?: string;
-  days?: string;
-  limit?: string;
+  days: string;
+  limit: string;
 };
 
 /** Return shape for `yt.analytics-top`. */
@@ -15022,7 +15474,7 @@ export type YtAnalyticsTopReturn = {
 /** Input shape for `yt.analytics-traffic`. */
 export type YtAnalyticsTrafficInput = {
   connection?: string;
-  days?: string;
+  days: string;
 };
 
 /** Return shape for `yt.analytics-traffic`. */
@@ -15040,7 +15492,7 @@ export type YtAnalyticsTrafficReturn = {
 export type YtCaptionDownloadInput = {
   captionId: string;
   connection?: string;
-  format?: "srt" | "vtt" | "ttml";
+  format: "srt" | "vtt" | "ttml";
   language?: string;
 };
 
@@ -15078,7 +15530,7 @@ export type YtCaptionsReturn = {
 /** Input shape for `yt.comments`. */
 export type YtCommentsInput = {
   connection?: string;
-  limit?: string;
+  limit: string;
   page?: string;
   videoId: string;
 };
@@ -15143,7 +15595,7 @@ export type YtInfoReturn = {
 /** Input shape for `yt.playlist`. */
 export type YtPlaylistInput = {
   connection?: string;
-  limit?: string;
+  limit: string;
   page?: string;
   playlistId: string;
 };
@@ -15192,7 +15644,7 @@ export type YtPlaylistAddReturn = {
 export type YtPlaylistCreateInput = {
   connection?: string;
   description?: string;
-  privacy?: "public" | "private" | "unlisted";
+  privacy: "public" | "private" | "unlisted";
   title: string;
 };
 
@@ -15238,7 +15690,7 @@ export type YtPlaylistRemoveReturn = {
 /** Input shape for `yt.playlists`. */
 export type YtPlaylistsInput = {
   connection?: string;
-  limit?: string;
+  limit: string;
   page?: string;
 };
 
@@ -15275,7 +15727,7 @@ export type YtReplyReturn = {
 /** Input shape for `yt.search`. */
 export type YtSearchInput = {
   connection?: string;
-  limit?: string;
+  limit: string;
   page?: string;
   query: string;
 };
@@ -15326,7 +15778,7 @@ export type YtStatsReturn = {
 /** Input shape for `yt.subscriptions`. */
 export type YtSubscriptionsInput = {
   connection?: string;
-  limit?: string;
+  limit: string;
   page?: string;
 };
 
@@ -15350,7 +15802,7 @@ export type YtSubscriptionsReturn = {
 /** Input shape for `yt.unanswered`. */
 export type YtUnansweredInput = {
   connection?: string;
-  limit?: string;
+  limit: string;
   page?: string;
   videoId: string;
 };
@@ -15401,7 +15853,7 @@ export type YtVideoReturn = {
 /** Input shape for `yt.video-categories`. */
 export type YtVideoCategoriesInput = {
   connection?: string;
-  region?: string;
+  region: string;
 };
 
 /** Return shape for `yt.video-categories`. */
@@ -15434,7 +15886,7 @@ export type YtVideoUpdateInput = {
   connection?: string;
   description?: string;
   id: string;
-  privacy?: "public" | "private" | "unlisted";
+  privacy: "public" | "private" | "unlisted";
   tags?: string;
   title?: string;
 };
@@ -15461,7 +15913,7 @@ export type YtVideoUpdateReturn = {
 /** Input shape for `yt.videos`. */
 export type YtVideosInput = {
   connection?: string;
-  limit?: string;
+  limit: string;
   page?: string;
 };
 

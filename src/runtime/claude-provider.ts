@@ -11,6 +11,7 @@ import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import type {
   RuntimeEvent,
+  RuntimeEventMetadata,
   RuntimeExecutionMetadata,
   RuntimePrepareSessionRequest,
   RuntimePrepareSessionResult,
@@ -23,6 +24,7 @@ import type {
   SessionRuntimeProvider,
 } from "./types.js";
 import { toStrongestCompatibleRuntimeEffort } from "./effort.js";
+import { firstNonEmptyRuntimeLimitLine } from "./reset-descriptor.js";
 import { buildPluginSkillVisibilitySnapshot, emptySkillVisibilitySnapshot } from "./skill-visibility.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
 
@@ -282,6 +284,8 @@ async function* runClaudeTurns(
           })
         : terminalTracker.fail({
             error: error instanceof Error ? error.message : String(error),
+            ...(error instanceof Error ? { errorName: error.name } : {}),
+            caughtException: true,
             recoverable: true,
           });
       if (terminal) {
@@ -562,6 +566,7 @@ function resolveExecutableFromPath(command: string, env: Record<string, string |
 }
 
 async function* normalizeClaudeEvents(queryResult: Query): AsyncGenerator<RuntimeEvent> {
+  let assistantText = "";
   for await (const message of queryResult as AsyncIterable<any>) {
     if (message.type === "stream_event") {
       const evt = message.event;
@@ -601,6 +606,7 @@ async function* normalizeClaudeEvents(queryResult: Query): AsyncGenerator<Runtim
       }
 
       if (text) {
+        assistantText += text;
         yield {
           type: "assistant.message",
           text,
@@ -641,21 +647,67 @@ async function* normalizeClaudeEvents(queryResult: Query): AsyncGenerator<Runtim
         continue;
       }
 
+      const usage = {
+        inputTokens: message.usage?.input_tokens ?? 0,
+        outputTokens: message.usage?.output_tokens ?? 0,
+        cacheReadTokens: message.usage?.cache_read_input_tokens ?? 0,
+        cacheCreationTokens: message.usage?.cache_creation_input_tokens ?? 0,
+      };
+      const successfulResultFailure = classifyClaudeSuccessfulResultFailure(assistantText, usage);
+      if (successfulResultFailure) {
+        yield {
+          type: "turn.failed",
+          error: successfulResultFailure.error,
+          recoverable: successfulResultFailure.recoverable,
+          metadata: successfulResultFailure.metadata,
+          rawEvent,
+        };
+        continue;
+      }
+
       yield {
         type: "turn.complete",
         providerSessionId: typeof message.session_id === "string" ? message.session_id : undefined,
         session: buildClaudeSessionState(typeof message.session_id === "string" ? message.session_id : undefined),
         execution: buildClaudeExecutionMetadata(message),
-        usage: {
-          inputTokens: message.usage?.input_tokens ?? 0,
-          outputTokens: message.usage?.output_tokens ?? 0,
-          cacheReadTokens: message.usage?.cache_read_input_tokens ?? 0,
-          cacheCreationTokens: message.usage?.cache_creation_input_tokens ?? 0,
-        },
+        usage,
         rawEvent,
       };
     }
   }
+}
+
+/**
+ * Claude Code sometimes wraps subscription/entitlement failures in a nominally
+ * successful result. Require both explicit operational failure text and zero
+ * metered usage so a normal answer discussing quotas never becomes a false
+ * failure.
+ */
+export interface ClaudeSuccessfulResultFailure {
+  error: string;
+  recoverable: true;
+  metadata: RuntimeEventMetadata;
+}
+
+export function classifyClaudeSuccessfulResultFailure(
+  assistantText: string,
+  usage: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheCreationTokens?: number },
+): ClaudeSuccessfulResultFailure | undefined {
+  const totalUsage =
+    usage.inputTokens + usage.outputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheCreationTokens ?? 0);
+  if (totalUsage !== 0) return undefined;
+  const firstLine = firstNonEmptyRuntimeLimitLine(assistantText);
+  if (!firstLine) return undefined;
+  const explicitLimit =
+    /you['’]?ve hit your (?:weekly|session|usage) limit/i.test(firstLine) ||
+    /(?:weekly|session|usage) (?:quota|limit) (?:has been )?(?:reached|exhausted)/i.test(firstLine);
+  const subscriptionAccessDisabled =
+    /organization has disabled claude subscription access/i.test(firstLine) ||
+    /claude subscription access(?: has been)? disabled/i.test(firstLine) ||
+    (/subscription access/i.test(firstLine) && /disabled/i.test(firstLine));
+  return explicitLimit || subscriptionAccessDisabled
+    ? { error: firstLine, recoverable: true, metadata: { failureScope: "credential" } }
+    : undefined;
 }
 
 function buildClaudeSessionState(sessionId: string | undefined): RuntimeSessionState | undefined {

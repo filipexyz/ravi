@@ -1191,6 +1191,31 @@ export const skillInspectReturnSchema = z
   })
   .strict();
 
+export const skillsGuardReturnSchema = z
+  .object({
+    outcome: z.enum(["written", "rejected"]),
+    op: z.enum(["patch", "create"]),
+    skill: z.string(),
+    reason: z.string().optional(),
+    detail: z.string().optional(),
+    path: z.string().optional(),
+    finalChars: z.number().optional(),
+    dryRun: z.boolean(),
+  })
+  .strict();
+
+export const skillsArchiveReturnSchema = z
+  .object({
+    outcome: z.enum(["archived", "rejected"]),
+    skill: z.string(),
+    reason: z.string().optional(),
+    detail: z.string().optional(),
+    path: z.string().optional(),
+    archivedTo: z.string().optional(),
+    dryRun: z.boolean(),
+  })
+  .strict();
+
 export const specsListReturnSchema = pagedItemsReturnSchema
   .extend({
     specs: z.array(looseObjectSchema),

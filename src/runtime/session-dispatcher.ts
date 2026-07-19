@@ -29,7 +29,6 @@ import {
   type RuntimeUserMessage,
 } from "./host-session.js";
 import { applyDirectRuntimeModelSwitch, resolveRuntimeModelSwitchStrategy } from "./model-switch.js";
-import { resolveAgentModelSelection } from "./model-preset-resolver.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID } from "./provider-registry.js";
 import type { RuntimeProviderId } from "./types.js";
 import { formatUserFacingTurnFailure, type RuntimeSafeEmit } from "./host-event-loop.js";
@@ -40,6 +39,11 @@ import {
   type PendingRuntimeSessionStart,
 } from "./session-launcher.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import {
+  applyRuntimeTargetResolutionToPrompt,
+  tryResolveRuntimeSession,
+  type RuntimeSessionResolutionResult,
+} from "./session-resolver.js";
 import { resolveSessionOutputTarget } from "./session-output-target.js";
 import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-runtime-context.js";
 import {
@@ -651,22 +655,52 @@ export class RuntimeSessionDispatcher {
       log.error("No agent found for prompt", { sessionName, agentId });
       return;
     }
-    const agentSelection = resolveAgentModelSelection(agent);
-    const sessionRuntimeProviderOverride =
-      prompt._observation && prompt._runtimeProviderId ? undefined : sessionEntry?.runtimeProviderOverride;
+    const runtimeResolution: RuntimeSessionResolutionResult | undefined =
+      existing && !existing.done
+        ? tryResolveRuntimeSession({
+            sessionName,
+            prompt,
+            defaultRuntimeProviderId: DEFAULT_RUNTIME_PROVIDER_ID,
+          })
+        : undefined;
+    if (runtimeResolution?.ok) {
+      applyRuntimeTargetResolutionToPrompt(prompt, runtimeResolution.resolution);
+    }
     const requestedProvider: RuntimeProviderId =
-      prompt._observation && prompt._runtimeProviderId
-        ? prompt._runtimeProviderId
-        : sessionRuntimeProviderOverride
-          ? sessionRuntimeProviderOverride
-          : agentSelection.modelSource === "agent_preset"
-            ? agentSelection.effectiveProvider
-            : (agent.provider ?? DEFAULT_RUNTIME_PROVIDER_ID);
+      runtimeResolution?.ok && runtimeResolution.resolution
+        ? runtimeResolution.resolution.runtimeProviderId
+        : ((existing && !existing.done ? existing.queryHandle.provider : undefined) ??
+          prompt._runtimeProviderId ??
+          agent.provider ??
+          DEFAULT_RUNTIME_PROVIDER_ID);
+    const resolvedRuntimeTargetPolicy = runtimeResolution?.ok
+      ? runtimeResolution.resolution?.runtimeTargetPolicy
+      : undefined;
+    const resolvedRuntimeTarget = runtimeResolution?.ok ? runtimeResolution.resolution?.runtimeTarget : undefined;
+    const runtimeTargetRequiresRestart =
+      !!resolvedRuntimeTargetPolicy &&
+      (!existing?.runtimeTargetPolicy ||
+        existing.runtimeTargetPolicy.id !== resolvedRuntimeTargetPolicy.id ||
+        existing.runtimeTarget?.id !== resolvedRuntimeTarget?.id ||
+        existing.currentModel !== resolvedRuntimeTarget?.model);
+    const runtimeResolutionFailed = runtimeResolution?.ok === false;
     let retainReleasedSlot = false;
 
     if (existing && !existing.done) {
-      if (existing.agentId !== agent.id || existing.queryHandle.provider !== requestedProvider) {
-        const restartReason = existing.agentId !== agent.id ? "agent_change" : "provider_change";
+      if (
+        existing.agentId !== agent.id ||
+        runtimeResolutionFailed ||
+        runtimeTargetRequiresRestart ||
+        existing.queryHandle.provider !== requestedProvider
+      ) {
+        const restartReason =
+          existing.agentId !== agent.id
+            ? "agent_change"
+            : runtimeResolutionFailed
+              ? "runtime_resolution_failed"
+              : runtimeTargetRequiresRestart
+                ? "runtime_target_policy"
+                : "provider_change";
         log.info("Streaming: restarting session after runtime identity change", {
           sessionName,
           reason: restartReason,
@@ -755,7 +789,7 @@ export class RuntimeSessionDispatcher {
           );
           shutdownRuntimeStreamingSession(existing, "runtime_task_settings_change");
           this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
-          await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot: true });
+          await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot: true, runtimeResolution });
           return;
         }
         if (!existing.currentModel) {
@@ -768,7 +802,7 @@ export class RuntimeSessionDispatcher {
             modelPresetVersion: requestedRuntime.modelPresetVersion ?? null,
           });
           if (modelStatus === "restart-next-turn") {
-            await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot: true });
+            await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot: true, runtimeResolution });
             return;
           }
         }
@@ -1162,7 +1196,7 @@ export class RuntimeSessionDispatcher {
         deliveryBarrierSource: prompt.deliveryBarrierSource ?? null,
       },
     });
-    await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot });
+    await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot, runtimeResolution });
   }
 
   private prepareDaemonRestartResumePrompt(
@@ -1206,7 +1240,7 @@ export class RuntimeSessionDispatcher {
   async startStreamingSession(
     sessionName: string,
     prompt: RuntimeLaunchPrompt,
-    options: { retainReleasedSlot?: boolean } = {},
+    options: { retainReleasedSlot?: boolean; runtimeResolution?: RuntimeSessionResolutionResult } = {},
   ): Promise<void> {
     this.pendingStartSessions.add(sessionName);
     let reserved = false;
@@ -1229,6 +1263,7 @@ export class RuntimeSessionDispatcher {
         drainPendingStarts: () => this.drainPendingStarts(),
         restartStashedSession: ({ sessionName: stashedSessionName, reason }) =>
           this.restartStashedSession(stashedSessionName, reason),
+        runtimeResolution: options.runtimeResolution,
       });
     } finally {
       this.inFlightStartPrompts.delete(sessionName);
@@ -1958,14 +1993,14 @@ function shouldSkipDaemonRestartTaskSessionSnapshot(
 }
 
 function isDedicatedTaskSessionName(sessionName: string): boolean {
-  return /^task-[A-Za-z0-9_-]+-work(?:$|[:/])/.test(sessionName);
+  return /^task-[A-Za-z0-9_-]+-(?:work|curator)(?:$|[:/])/.test(sessionName);
 }
 
 function inferTaskIdFromDedicatedTaskSessionName(sessionName: string): string | null {
   if (!isDedicatedTaskSessionName(sessionName)) return null;
-  const workIndex = sessionName.indexOf("-work");
-  if (workIndex <= 0) return null;
-  const taskId = sessionName.slice(0, workIndex);
+  const suffixMatch = sessionName.match(/-(?:work|curator)(?:$|[:/])/);
+  if (!suffixMatch || suffixMatch.index === undefined || suffixMatch.index <= 0) return null;
+  const taskId = sessionName.slice(0, suffixMatch.index);
   return taskId.startsWith("task-") ? taskId : null;
 }
 

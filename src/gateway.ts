@@ -25,7 +25,11 @@ import { nats } from "./nats.js";
 import type { ResponseMessage } from "./runtime/message-types.js";
 import { configStore } from "./config-store.js";
 import { recordDeliveryTrace, recordPresenceTrace, recordResponseEmittedTrace } from "./session-trace/channel-trace.js";
-import { listRecentSessionEventsByType } from "./session-trace/session-trace-db.js";
+import {
+  listPendingRuntimeTargetResponseEvents,
+  listRecentSessionEventsByType,
+} from "./session-trace/session-trace-db.js";
+import { recordRuntimeSafetyTraceEvent } from "./session-trace/runtime-trace.js";
 import { logger } from "./utils/logger.js";
 import type { OmniSender } from "./omni/sender.js";
 import type { OmniConsumer } from "./omni/consumer.js";
@@ -47,6 +51,7 @@ import { prepareOmniMentionMessage, type OmniUserMention } from "./omni/mentions
 import { resolveOmniConnection } from "./omni-config.js";
 import { resolveOmniGroupMetadata } from "./omni/group-metadata-cache.js";
 import { buildRaviTtsRequest, handleRaviTtsRequest, RAVI_TTS_TOPIC, shouldAutoTtsForAgent } from "./audio/tts.js";
+import { readRuntimeTargetResponseOutbox } from "./runtime/target-response-outbox.js";
 
 const log = logger.child("gateway");
 const PRESENCE_RENEW_THROTTLE_MS = 4_000;
@@ -232,6 +237,7 @@ export class Gateway {
     this.subscribeToTts();
     this.subscribeToStickerSend();
     this.subscribeToConfigChanges();
+    await this.replayRuntimeTargetResponseOutbox();
 
     log.info("Gateway started");
   }
@@ -891,6 +897,7 @@ export class Gateway {
           target,
           textLen: text.length,
         });
+        this.acknowledgeRuntimeTargetResponse(sessionName, response, "queued");
       } catch (error) {
         await emitDelivery({
           status: "failed",
@@ -951,6 +958,7 @@ export class Gateway {
         durationMs: Date.now() - t0,
         textLen: prepared.text.length,
       });
+      this.acknowledgeRuntimeTargetResponse(sessionName, response, "delivered");
       this.emitTtsForResponse(sessionName, response, prepared.text, target).catch((error) => {
         log.warn("Failed to emit response TTS event", { sessionName, emitId: response._emitId, error });
       });
@@ -967,6 +975,50 @@ export class Gateway {
         error: err instanceof Error ? err.message : String(err),
         durationMs: Date.now() - t0,
       });
+    }
+  }
+
+  private acknowledgeRuntimeTargetResponse(
+    sessionName: string,
+    response: ResponseMessage,
+    status: "queued" | "delivered",
+  ): void {
+    if (!response._emitId?.startsWith("rt_")) return;
+    const session = getSessionByName(sessionName);
+    if (!session) throw new Error(`Cannot acknowledge runtime target response for missing session: ${sessionName}`);
+    recordRuntimeSafetyTraceEvent({
+      sessionKey: session.sessionKey,
+      sessionName,
+      agentId: session.agentId,
+      messageId: response._emitId,
+      eventType: "runtime.target.response_dispatched",
+      eventGroup: "runtime",
+      status,
+      payloadJson: { emitId: response._emitId },
+    });
+  }
+
+  private async replayRuntimeTargetResponseOutbox(): Promise<void> {
+    while (true) {
+      const pending = listPendingRuntimeTargetResponseEvents({ limit: 100 });
+      if (pending.length === 0) return;
+      const pendingIds = new Set(pending.map((event) => event.id));
+      for (const event of pending) {
+        const outbox = readRuntimeTargetResponseOutbox(event);
+        if (!outbox) {
+          log.error("Invalid runtime target response outbox row", { eventId: event.id });
+          continue;
+        }
+        await this.handleResponseEvent(outbox.sessionName, outbox.response);
+      }
+      const remaining = listPendingRuntimeTargetResponseEvents({ limit: 100 });
+      if (remaining.length === 0) return;
+      if (remaining.length === pending.length && remaining.every((event) => pendingIds.has(event.id))) {
+        log.warn("Runtime target response outbox replay made no durable progress", {
+          pending: remaining.length,
+        });
+        return;
+      }
     }
   }
 

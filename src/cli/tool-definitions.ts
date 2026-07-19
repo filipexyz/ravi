@@ -138,6 +138,7 @@ function toSdkDefinition(tool: ExportedTool): SdkToolDefinition {
     const optName = extractOptionName(opt.flags);
     properties[optName] = { type: isBooleanOption(opt.flags) ? "boolean" : "string" };
     if (opt.description) properties[optName].description = opt.description;
+    if (opt.schema && !opt.schema.safeParse(undefined).success) required.push(optName);
   }
 
   return {

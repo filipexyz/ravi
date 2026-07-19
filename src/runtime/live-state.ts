@@ -1,4 +1,5 @@
 import type { SessionEntry } from "../router/types.js";
+import { redactText } from "../utils/redaction.js";
 import type { RuntimeMessageTarget } from "./host-session.js";
 import type { RuntimeProviderId, RuntimeSkillVisibilityRecord } from "./types.js";
 
@@ -43,7 +44,7 @@ export function updateRuntimeLiveState(sessionName: string, patch: RuntimeLiveSt
     activity: patch.activity,
     updatedAt: now,
     ...(busy ? { busySince: current?.busySince ?? now } : {}),
-    ...(patch.summary !== undefined ? { summary: patch.summary } : {}),
+    ...(patch.summary !== undefined ? { summary: redactText(patch.summary).value } : {}),
     ...(patch.agentId !== undefined ? { agentId: patch.agentId } : {}),
     ...(patch.runId !== undefined ? { runId: patch.runId } : {}),
     ...(patch.provider !== undefined ? { provider: patch.provider } : {}),

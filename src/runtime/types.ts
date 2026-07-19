@@ -391,6 +391,8 @@ export interface RuntimeEventMetadata {
   thread?: RuntimeThreadMetadata;
   turn?: RuntimeTurnMetadata;
   item?: RuntimeItemMetadata;
+  /** Provider-normalized failure scope used by the core replay policy. */
+  failureScope?: "credential" | "target" | "request" | "session" | "unknown";
 }
 
 interface RuntimeEventBase {
@@ -501,6 +503,12 @@ export type RuntimeEvent =
   | ({
       type: "turn.failed";
       error: string;
+      /** Trusted JavaScript error identity captured by an adapter catch boundary. */
+      errorName?: string;
+      /** The adapter caught a thrown value instead of receiving a normalized provider failure event. */
+      caughtException?: boolean;
+      /** Adapter-owned structured evidence that the provider process or transport failed. */
+      targetFailure?: boolean;
       recoverable?: boolean;
       rawEvent?: Record<string, unknown>;
     } & RuntimeEventBase)

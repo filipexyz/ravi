@@ -809,7 +809,7 @@ describe("RaviBot runtime guards", () => {
   it("marks task bootstrap as accepted and persists runtime provider state before the first turn completes", async () => {
     activeProvider = "codex";
     const sessionKey = "agent:main:task-bootstrap";
-    const dispatched = createDispatchedTaskForSession(sessionKey, { profileId: "task-doc-none" });
+    const dispatched = createDispatchedTaskForSession(sessionKey, { profileId: "default" });
     const originalRaviBin = process.env.RAVI_BIN;
     process.env.RAVI_BIN = "/tmp/ravi-repo/bin/ravi";
 
@@ -1154,7 +1154,7 @@ describe("RaviBot runtime guards", () => {
       modelOverride: "session-model",
     });
     const dispatched = createDispatchedTaskForSession(sessionKey, {
-      profileId: "task-doc-none",
+      profileId: "default",
       taskRuntimeOverride: {
         model: "task-model",
         effort: "xhigh",
@@ -1193,7 +1193,7 @@ describe("RaviBot runtime guards", () => {
       modelOverride: "test-model",
     });
     const dispatched = createDispatchedTaskForSession(sessionKey, {
-      profileId: "task-doc-none",
+      profileId: "default",
       taskRuntimeOverride: {
         model: "test-model",
       },
@@ -1249,7 +1249,7 @@ describe("RaviBot runtime guards", () => {
   it("lets dispatch runtime overrides beat task runtime overrides at task start", async () => {
     const sessionKey = "agent:main:dispatch-runtime-model";
     const dispatched = createDispatchedTaskForSession(sessionKey, {
-      profileId: "task-doc-none",
+      profileId: "default",
       taskRuntimeOverride: {
         model: "task-model",
       },
@@ -1591,7 +1591,7 @@ describe("RaviBot runtime guards", () => {
         provider: providerId,
         events: (async function* () {
           const retry = await request.prompt.next();
-          expect(retry.value?.message.content).toBe("first\n\nsecond");
+          expect(retry.value?.message.content).toBe("second");
           releaseRetryPrompt?.();
           yield {
             type: "assistant.message",

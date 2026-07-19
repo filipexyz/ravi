@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["src/**", "!src/cli/commands/index.ts"]
+    "includes": ["src/**", "scripts/check-consolidated-release.ts", "!src/cli/commands/index.ts"]
   },
   "formatter": {
     "enabled": true,

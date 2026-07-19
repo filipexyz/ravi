@@ -822,6 +822,10 @@ export const AgentsDeleteInputSchema = {
     "id": {
       "description": "Agent ID",
       "type": "string"
+    },
+    "purgeMemory": {
+      "description": "Also delete the agent's MEMORY.md and memory/ topic files (destructive, opt-in)",
+      "type": "boolean"
     }
   },
   "required": [
@@ -30874,7 +30878,7 @@ export const HooksCreateInputSchema = {
   "additionalProperties": false,
   "properties": {
     "action": {
-      "description": "Action: inject_context, send_session_event, append_history, comment_task",
+      "description": "Action: inject_context, send_session_event, append_history, comment_task, dispatch_task",
       "type": "string"
     },
     "agent": {
@@ -30900,6 +30904,30 @@ export const HooksCreateInputSchema = {
     "disabled": {
       "description": "Create hook disabled",
       "type": "boolean"
+    },
+    "dispatchCadenceTurns": {
+      "description": "R1 deterministic cadence: only fire dispatch_task every N events on the session (requires event.sessionKey)",
+      "type": "string"
+    },
+    "dispatchInstructions": {
+      "description": "Instructions template for dispatch_task payload",
+      "type": "string"
+    },
+    "dispatchProfile": {
+      "description": "Task profile id for dispatch_task payload",
+      "type": "string"
+    },
+    "dispatchProfileInput": {
+      "description": "JSON string with profile inputs for dispatch_task payload",
+      "type": "string"
+    },
+    "dispatchTargetAgent": {
+      "description": "Assign the dispatched task to this agent (defaults to firing agent)",
+      "type": "string"
+    },
+    "dispatchTitle": {
+      "description": "Task title template for dispatch_task payload",
+      "type": "string"
     },
     "event": {
       "description": "Event: SessionStart, PreToolUse, PostToolUse, CwdChanged, FileChanged, Stop",
@@ -41807,6 +41835,505 @@ export const MeetingsVoiceRuntimesReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `memory.curate`. */
+export const MemoryCurateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id to curate memory for",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Task instructs the curator to propose but not persist",
+      "type": "boolean"
+    },
+    "transcript": {
+      "description": "Path to the transcript to feed the curator (defaults to <agentCwd>/CURATOR_TRANSCRIPT.md)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `memory.curate`. */
+export const MemoryCurateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "taskId": {
+      "type": "string"
+    },
+    "transcriptPath": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "taskId",
+    "agentId",
+    "dryRun",
+    "transcriptPath"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `memory.enroll`. */
+export const MemoryEnrollInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Enroll a single agent id (mutually exclusive with --all)",
+      "type": "string"
+    },
+    "all": {
+      "description": "Enroll every registered agent",
+      "type": "boolean"
+    },
+    "cadenceTurns": {
+      "description": "Turn cadence for the curator hook (default 10)",
+      "type": "string"
+    },
+    "skipHook": {
+      "description": "Only provision MEMORY.md files; skip creating the memory-curator hook",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `memory.enroll`. */
+export const MemoryEnrollReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "enrolled": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "memoryDirCreated": {
+            "type": "boolean"
+          },
+          "memoryFileCreated": {
+            "type": "boolean"
+          },
+          "memoryPath": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId",
+          "cwd",
+          "memoryPath",
+          "memoryFileCreated",
+          "memoryDirCreated"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "hook": {
+      "additionalProperties": false,
+      "properties": {
+        "cadenceTurns": {
+          "type": "number"
+        },
+        "created": {
+          "type": "boolean"
+        },
+        "eventName": {
+          "const": "Stop",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "skipped": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "eventName",
+        "cadenceTurns",
+        "created",
+        "skipped"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "enrolled",
+    "hook"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `memory.guard`. */
+export const MemoryGuardInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id whose memory this write belongs to (for telemetry)",
+      "type": "string"
+    },
+    "cadenceTurn": {
+      "description": "Cadence turn that triggered this cycle (uint) — carried in telemetry",
+      "type": "string"
+    },
+    "candidate": {
+      "description": "Inline candidate content (alternative to --candidate-file); useful for short entries",
+      "type": "string"
+    },
+    "candidateFile": {
+      "description": "Absolute path of the file containing the candidate content to append",
+      "type": "string"
+    },
+    "capChars": {
+      "description": "Hard character cap for the target FILE (memory store defaults to 65536; the prompt-injection budget is the separate read cap 8192)",
+      "type": "string"
+    },
+    "consolidationAttempt": {
+      "description": "1-indexed attempt within the current turn; guard rejects at max (default 3)",
+      "type": "string"
+    },
+    "consolidationMaxAttempts": {
+      "description": "Override the anti-thrash max (default 3)",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Return the projected write outcome WITHOUT touching disk",
+      "type": "boolean"
+    },
+    "expectedPrior": {
+      "description": "Path with content the caller last observed (R10 drift check)",
+      "type": "string"
+    },
+    "hadUserCorrection": {
+      "description": "Flag on when the session had a clear user correction — R23 marks recallMiss if saved=0",
+      "type": "boolean"
+    },
+    "hookId": {
+      "description": "Originating hook id (when dispatched from a dispatch_task hook)",
+      "type": "string"
+    },
+    "processedThroughMessageId": {
+      "description": "R27: highest messages.id (src/db.ts) the curator read through this cycle. On a successful write, advances the session's incremental-read watermark so the NEXT cycle's CURATOR_TRANSCRIPT.md only contains rows added after it, instead of re-reading the whole session. Requires --session-key.",
+      "type": "string"
+    },
+    "sessionKey": {
+      "description": "Session key that originated the write; goes into telemetry for R23 audit",
+      "type": "string"
+    },
+    "sessionName": {
+      "description": "Human session name (for cross-referencing in the telemetry stream)",
+      "type": "string"
+    },
+    "store": {
+      "description": "'memory' | 'user' — governs telemetry buckets; default 'memory'",
+      "type": "string"
+    },
+    "target": {
+      "description": "Absolute path of the target store (e.g. /path/MEMORY.md)",
+      "type": "string"
+    },
+    "taskId": {
+      "description": "Curator task id for telemetry cross-reference",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `memory.guard`. */
+export const MemoryGuardReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "backupPath": {
+      "type": "string"
+    },
+    "cap": {
+      "additionalProperties": false,
+      "properties": {
+        "cap": {
+          "type": "number"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "overflowChars": {
+          "type": "number"
+        },
+        "proposedChars": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "ok",
+        "proposedChars",
+        "cap",
+        "overflowChars"
+      ],
+      "type": "object"
+    },
+    "detail": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "finalChars": {
+      "type": "number"
+    },
+    "outcome": {
+      "enum": [
+        "written",
+        "rejected",
+        "drift"
+      ],
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "scans": {
+      "additionalProperties": false,
+      "properties": {
+        "injection": {
+          "additionalProperties": false,
+          "properties": {
+            "hadInjection": {
+              "type": "boolean"
+            },
+            "matchCount": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "hadInjection",
+            "matchCount"
+          ],
+          "type": "object"
+        },
+        "secret": {
+          "additionalProperties": false,
+          "properties": {
+            "hadSecret": {
+              "type": "boolean"
+            },
+            "isCredentialOnly": {
+              "type": "boolean"
+            },
+            "matchCount": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "hadSecret",
+            "isCredentialOnly",
+            "matchCount"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "secret",
+        "injection"
+      ],
+      "type": "object"
+    },
+    "store": {
+      "enum": [
+        "memory",
+        "user"
+      ],
+      "type": "string"
+    },
+    "target": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "outcome",
+    "target",
+    "store",
+    "scans",
+    "cap",
+    "dryRun"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `memory.list`. */
+export const MemoryListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching agents to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `memory.list`. */
+export const MemoryListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "exists": {
+            "type": "boolean"
+          },
+          "memoryChars": {
+            "type": "number"
+          },
+          "memoryLastModified": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "memoryPath": {
+            "type": "string"
+          },
+          "topicCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "agentId",
+          "cwd",
+          "memoryPath",
+          "exists",
+          "memoryChars",
+          "topicCount",
+          "memoryLastModified"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "agents",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `memory.show`. */
+export const MemoryShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id to show memory for",
+      "type": "string"
+    },
+    "topic": {
+      "description": "Show a specific topic file under memory/ instead of the index",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `memory.show`. */
+export const MemoryShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "content": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "agentId",
+    "path",
+    "content"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `metrics.dates`. */
 export const MetricsDatesInputSchema = {
   "additionalProperties": false,
@@ -49139,6 +49666,1241 @@ export const RuntimePresetsShowReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `runtime.targets.clear`. */
+export const RuntimeTargetsClearInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent whose runtime target policy should be removed",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.targets.clear`. */
+export const RuntimeTargetsClearReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "set",
+        "reorder",
+        "clear"
+      ],
+      "type": "string"
+    },
+    "agentId": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "inspectCommand": {
+      "type": "string"
+    },
+    "policy": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "circuitBreakerThreshold": {
+              "type": "number"
+            },
+            "cooldownMs": {
+              "type": "number"
+            },
+            "id": {
+              "type": "string"
+            },
+            "maxAttemptsPerTarget": {
+              "type": "number"
+            },
+            "maxCredentialRecoveryAttemptsPerTarget": {
+              "type": "number"
+            },
+            "strategy": {
+              "enum": [
+                "ordered",
+                "health-aware"
+              ],
+              "type": "string"
+            },
+            "targets": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "credentialRequirements": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "authMethods": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "credentialIds": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "requireManaged": {
+                        "type": "boolean"
+                      },
+                      "sessionCompatibilityKey": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "effort": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "modelPreset": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "version": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version"
+                    ],
+                    "type": "object"
+                  },
+                  "requiredCapabilities": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "runtimeProvider": {
+                    "type": "string"
+                  },
+                  "thinking": {
+                    "enum": [
+                      "off",
+                      "normal",
+                      "verbose"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "runtimeProvider",
+                  "model"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "strategy",
+            "targets",
+            "maxAttemptsPerTarget"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "preservedDefaultKeys": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "previousPolicyId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "agentId",
+    "policy",
+    "previousPolicyId",
+    "preservedDefaultKeys",
+    "inspectCommand"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.targets.explain`. */
+export const RuntimeTargetsExplainInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent whose defaults should be evaluated",
+      "minLength": 1,
+      "type": "string"
+    },
+    "sessionPolicyJson": {
+      "description": "Optional session override policy to evaluate first",
+      "type": "string"
+    },
+    "taskProfile": {
+      "description": "Optional task profile whose policy and credential scope apply",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.targets.explain`. */
+export const RuntimeTargetsExplainReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "evaluation": {
+      "const": "stateless_preflight",
+      "type": "string"
+    },
+    "policyId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "provenance": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "rejected": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "targetId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "targetId",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "selectedTarget": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "runtimeProvider": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "runtimeProvider",
+            "model"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "enum": [
+        "session_override",
+        "task_profile",
+        "agent_default",
+        "none"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "agentId",
+    "evaluation",
+    "enabled",
+    "source",
+    "provenance",
+    "policyId",
+    "selectedTarget",
+    "rejected"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.targets.reconcile`. */
+export const RuntimeTargetsReconcileInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Optional single agent to reconcile",
+      "type": "string"
+    },
+    "apply": {
+      "description": "Apply the generated plan. Without this flag the command is dry-run only.",
+      "type": "boolean"
+    },
+    "fallbackJson": {
+      "description": "JSON array of explicit fallback runtime target objects",
+      "minLength": 1,
+      "type": "string"
+    },
+    "force": {
+      "description": "Replace an existing agent-default runtime target policy",
+      "type": "boolean"
+    },
+    "policyPrefix": {
+      "description": "Prefix for generated policy ids (default: controller)",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Only reconcile agents whose effective provider matches this provider",
+      "type": "string"
+    }
+  },
+  "required": [
+    "fallbackJson"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.targets.reconcile`. */
+export const RuntimeTargetsReconcileReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "reconcile",
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "changedAgents": {
+      "type": "number"
+    },
+    "fallbackTargets": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "credentialRequirements": {
+            "additionalProperties": false,
+            "properties": {
+              "authMethods": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "credentialIds": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "requireManaged": {
+                "type": "boolean"
+              },
+              "sessionCompatibilityKey": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "effort": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "modelPreset": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "version": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "version"
+            ],
+            "type": "object"
+          },
+          "requiredCapabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "runtimeProvider": {
+            "type": "string"
+          },
+          "thinking": {
+            "enum": [
+              "off",
+              "normal",
+              "verbose"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "runtimeProvider",
+          "model"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "inspectCommand": {
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "set",
+              "skip"
+            ],
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "currentModel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currentProvider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "previousPolicyId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposedPolicy": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "circuitBreakerThreshold": {
+                    "type": "number"
+                  },
+                  "cooldownMs": {
+                    "type": "number"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "maxAttemptsPerTarget": {
+                    "type": "number"
+                  },
+                  "maxCredentialRecoveryAttemptsPerTarget": {
+                    "type": "number"
+                  },
+                  "strategy": {
+                    "enum": [
+                      "ordered",
+                      "health-aware"
+                    ],
+                    "type": "string"
+                  },
+                  "targets": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "credentialRequirements": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "authMethods": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "credentialIds": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "requireManaged": {
+                              "type": "boolean"
+                            },
+                            "sessionCompatibilityKey": {
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "effort": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "model": {
+                          "type": "string"
+                        },
+                        "modelPreset": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "version"
+                          ],
+                          "type": "object"
+                        },
+                        "requiredCapabilities": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "runtimeProvider": {
+                          "type": "string"
+                        },
+                        "thinking": {
+                          "enum": [
+                            "off",
+                            "normal",
+                            "verbose"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "runtimeProvider",
+                        "model"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "id",
+                  "strategy",
+                  "targets",
+                  "maxAttemptsPerTarget"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "riskFlags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "agentId",
+          "action",
+          "reason",
+          "currentProvider",
+          "currentModel",
+          "previousPolicyId",
+          "proposedPolicy",
+          "riskFlags",
+          "changed"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "mode": {
+      "enum": [
+        "dry-run",
+        "apply"
+      ],
+      "type": "string"
+    },
+    "plannedAgents": {
+      "type": "number"
+    },
+    "skippedAgents": {
+      "type": "number"
+    },
+    "totalAgents": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "action",
+    "mode",
+    "changed",
+    "totalAgents",
+    "plannedAgents",
+    "changedAgents",
+    "skippedAgents",
+    "fallbackTargets",
+    "items",
+    "inspectCommand"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.targets.reorder`. */
+export const RuntimeTargetsReorderInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent whose existing runtime target policy should be reordered",
+      "minLength": 1,
+      "type": "string"
+    },
+    "order": {
+      "description": "Comma-separated exact permutation of stable ids from runtime targets show",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent",
+    "order"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.targets.reorder`. */
+export const RuntimeTargetsReorderReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "set",
+        "reorder",
+        "clear"
+      ],
+      "type": "string"
+    },
+    "agentId": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "inspectCommand": {
+      "type": "string"
+    },
+    "policy": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "circuitBreakerThreshold": {
+              "type": "number"
+            },
+            "cooldownMs": {
+              "type": "number"
+            },
+            "id": {
+              "type": "string"
+            },
+            "maxAttemptsPerTarget": {
+              "type": "number"
+            },
+            "maxCredentialRecoveryAttemptsPerTarget": {
+              "type": "number"
+            },
+            "strategy": {
+              "enum": [
+                "ordered",
+                "health-aware"
+              ],
+              "type": "string"
+            },
+            "targets": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "credentialRequirements": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "authMethods": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "credentialIds": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "requireManaged": {
+                        "type": "boolean"
+                      },
+                      "sessionCompatibilityKey": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "effort": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "modelPreset": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "version": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version"
+                    ],
+                    "type": "object"
+                  },
+                  "requiredCapabilities": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "runtimeProvider": {
+                    "type": "string"
+                  },
+                  "thinking": {
+                    "enum": [
+                      "off",
+                      "normal",
+                      "verbose"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "runtimeProvider",
+                  "model"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "strategy",
+            "targets",
+            "maxAttemptsPerTarget"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "preservedDefaultKeys": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "previousPolicyId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "agentId",
+    "policy",
+    "previousPolicyId",
+    "preservedDefaultKeys",
+    "inspectCommand"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.targets.set`. */
+export const RuntimeTargetsSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent whose opt-in runtime target policy should change",
+      "minLength": 1,
+      "type": "string"
+    },
+    "policyJson": {
+      "description": "Complete runtime target policy as strict JSON",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent",
+    "policyJson"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.targets.set`. */
+export const RuntimeTargetsSetReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "set",
+        "reorder",
+        "clear"
+      ],
+      "type": "string"
+    },
+    "agentId": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "inspectCommand": {
+      "type": "string"
+    },
+    "policy": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "circuitBreakerThreshold": {
+              "type": "number"
+            },
+            "cooldownMs": {
+              "type": "number"
+            },
+            "id": {
+              "type": "string"
+            },
+            "maxAttemptsPerTarget": {
+              "type": "number"
+            },
+            "maxCredentialRecoveryAttemptsPerTarget": {
+              "type": "number"
+            },
+            "strategy": {
+              "enum": [
+                "ordered",
+                "health-aware"
+              ],
+              "type": "string"
+            },
+            "targets": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "credentialRequirements": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "authMethods": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "credentialIds": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "requireManaged": {
+                        "type": "boolean"
+                      },
+                      "sessionCompatibilityKey": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "effort": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "modelPreset": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "version": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version"
+                    ],
+                    "type": "object"
+                  },
+                  "requiredCapabilities": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "runtimeProvider": {
+                    "type": "string"
+                  },
+                  "thinking": {
+                    "enum": [
+                      "off",
+                      "normal",
+                      "verbose"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "runtimeProvider",
+                  "model"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "strategy",
+            "targets",
+            "maxAttemptsPerTarget"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "preservedDefaultKeys": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "previousPolicyId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "agentId",
+    "policy",
+    "previousPolicyId",
+    "preservedDefaultKeys",
+    "inspectCommand"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.targets.show`. */
+export const RuntimeTargetsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent whose configured policy should be shown",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.targets.show`. */
+export const RuntimeTargetsShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "inspectCommand": {
+      "type": "string"
+    },
+    "order": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "policy": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "circuitBreakerThreshold": {
+              "type": "number"
+            },
+            "cooldownMs": {
+              "type": "number"
+            },
+            "id": {
+              "type": "string"
+            },
+            "maxAttemptsPerTarget": {
+              "type": "number"
+            },
+            "maxCredentialRecoveryAttemptsPerTarget": {
+              "type": "number"
+            },
+            "strategy": {
+              "enum": [
+                "ordered",
+                "health-aware"
+              ],
+              "type": "string"
+            },
+            "targets": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "credentialRequirements": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "authMethods": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "credentialIds": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "requireManaged": {
+                        "type": "boolean"
+                      },
+                      "sessionCompatibilityKey": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "effort": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "modelPreset": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "version": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version"
+                    ],
+                    "type": "object"
+                  },
+                  "requiredCapabilities": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "runtimeProvider": {
+                    "type": "string"
+                  },
+                  "thinking": {
+                    "enum": [
+                      "off",
+                      "normal",
+                      "verbose"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "runtimeProvider",
+                  "model"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "strategy",
+            "targets",
+            "maxAttemptsPerTarget"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "agentId",
+    "enabled",
+    "policy",
+    "order",
+    "inspectCommand"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sdk.client.check`. */
 export const SdkClientCheckInputSchema = {
   "additionalProperties": false,
@@ -55436,6 +57198,67 @@ export const SkillGatesShowReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `skills.archive`. */
+export const SkillsArchiveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "force": {
+      "description": "Actually archive (without it, dry-run preview only)",
+      "type": "boolean"
+    },
+    "name": {
+      "description": "Skill name to archive (agent-created only)",
+      "type": "string"
+    },
+    "skill": {
+      "description": "Skill name (alternative to positional)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.archive`. */
+export const SkillsArchiveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "archivedTo": {
+      "type": "string"
+    },
+    "detail": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "outcome": {
+      "enum": [
+        "archived",
+        "rejected"
+      ],
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "skill": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "outcome",
+    "skill",
+    "dryRun"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `skills.grant`. */
 export const SkillsGrantInputSchema = {
   "additionalProperties": false,
@@ -55609,6 +57432,104 @@ export const SkillsGrantBatchReturnSchema = {
     "errors",
     "sampleAgents",
     "sampleSkills"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skills.guard`. */
+export const SkillsGuardInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id whose skill this is (provenance)",
+      "type": "string"
+    },
+    "cadenceTurn": {
+      "description": "Cadence turn (provenance)",
+      "type": "string"
+    },
+    "content": {
+      "description": "Inline content — patch: the learned pitfall/correction; create: the SKILL.md body",
+      "type": "string"
+    },
+    "contentFile": {
+      "description": "File with the content (alternative to --content)",
+      "type": "string"
+    },
+    "date": {
+      "description": "Absolute ISO date for 'today' (provenance)",
+      "type": "string"
+    },
+    "description": {
+      "description": "Skill description (required for create)",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Compute the write outcome without touching disk",
+      "type": "boolean"
+    },
+    "op": {
+      "description": "'patch' (append a learned section) | 'create' (new umbrella skill)",
+      "type": "string"
+    },
+    "sessionKey": {
+      "description": "Originating session (provenance)",
+      "type": "string"
+    },
+    "skill": {
+      "description": "Skill name to patch/create (agent-editable user skills only)",
+      "type": "string"
+    },
+    "taskId": {
+      "description": "Curador task id (provenance)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.guard`. */
+export const SkillsGuardReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "detail": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "finalChars": {
+      "type": "number"
+    },
+    "op": {
+      "enum": [
+        "patch",
+        "create"
+      ],
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "written",
+        "rejected"
+      ],
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "skill": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "outcome",
+    "op",
+    "skill",
+    "dryRun"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -70286,6 +72207,10 @@ export const YtAnalyticsCountriesInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "days",
+    "limit"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -70350,6 +72275,9 @@ export const YtAnalyticsDemographicsInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "days"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -70410,6 +72338,9 @@ export const YtAnalyticsDevicesInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "days"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -70470,6 +72401,9 @@ export const YtAnalyticsOverviewInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "days"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -70568,6 +72502,10 @@ export const YtAnalyticsSeriesInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "days",
+    "metric"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -70639,6 +72577,10 @@ export const YtAnalyticsTopInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "days",
+    "limit"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -70715,6 +72657,9 @@ export const YtAnalyticsTrafficInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "days"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -70789,7 +72734,8 @@ export const YtCaptionDownloadInputSchema = {
     }
   },
   "required": [
-    "captionId"
+    "captionId",
+    "format"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -70932,6 +72878,7 @@ export const YtCommentsInputSchema = {
     }
   },
   "required": [
+    "limit",
     "videoId"
   ],
   "type": "object"
@@ -71165,6 +73112,7 @@ export const YtPlaylistInputSchema = {
     }
   },
   "required": [
+    "limit",
     "playlistId"
   ],
   "type": "object"
@@ -71349,6 +73297,7 @@ export const YtPlaylistCreateInputSchema = {
     }
   },
   "required": [
+    "privacy",
     "title"
   ],
   "type": "object"
@@ -71506,6 +73455,9 @@ export const YtPlaylistsInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "limit"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -71644,6 +73596,7 @@ export const YtSearchInputSchema = {
     }
   },
   "required": [
+    "limit",
     "query"
   ],
   "type": "object"
@@ -71828,6 +73781,9 @@ export const YtSubscriptionsInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "limit"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -71921,6 +73877,7 @@ export const YtUnansweredInputSchema = {
     }
   },
   "required": [
+    "limit",
     "videoId"
   ],
   "type": "object"
@@ -72101,6 +74058,9 @@ export const YtVideoCategoriesInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "region"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -72230,7 +74190,8 @@ export const YtVideoUpdateInputSchema = {
     }
   },
   "required": [
-    "id"
+    "id",
+    "privacy"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -72324,6 +74285,9 @@ export const YtVideosInputSchema = {
       "type": "string"
     }
   },
+  "required": [
+    "limit"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 

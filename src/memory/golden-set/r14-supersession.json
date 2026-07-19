@@ -1,0 +1,22 @@
+{
+  "id": "r14-supersession",
+  "invariant": "R14",
+  "description": "New fact about `LLM provider` contradicts existing entry with the same identity_key — supersessão in-place, never coexist live.",
+  "transcript_excerpt": "user: agora estamos usando Anthropic pra tudo, saímos do OpenAI mês passado.",
+  "candidate": {
+    "title": "Primary LLM provider = Anthropic",
+    "content": "Primary LLM provider for Ravi is Anthropic Claude (migrated away from OpenAI 2026-06).",
+    "type": "project",
+    "identity_key": "ravi-llm-provider"
+  },
+  "existing_entry": {
+    "title": "Primary LLM provider = OpenAI",
+    "identity_key": "ravi-llm-provider",
+    "content": "Primary LLM provider for Ravi is OpenAI GPT-4."
+  },
+  "expected": {
+    "action": "save",
+    "reason": "ok",
+    "note": "Replace-in-place (non-destructive from R7 perspective: the old entry gets marked `superseded-from` and the new entry ships). Only DESTRUCTIVE removes stage — supersession does not."
+  }
+}

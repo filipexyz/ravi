@@ -27,9 +27,20 @@ describe("runtime terminality helpers", () => {
   it("builds fallback terminal events when no native terminal was emitted", () => {
     const tracker = createRuntimeTerminalEventTracker();
 
-    expect(tracker.fail({ error: "stream ended", recoverable: true })).toEqual({
+    expect(
+      tracker.fail({
+        error: "stream ended",
+        errorName: "RangeError",
+        caughtException: true,
+        targetFailure: true,
+        recoverable: true,
+      }),
+    ).toEqual({
       type: "turn.failed",
       error: "stream ended",
+      errorName: "RangeError",
+      caughtException: true,
+      targetFailure: true,
       recoverable: true,
     });
     expect(tracker.interrupt()).toBeNull();

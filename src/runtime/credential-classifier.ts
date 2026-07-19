@@ -7,6 +7,8 @@ import type {
   RuntimeCredentialLimitPressure,
 } from "./credential-types.js";
 import type { RuntimeProviderId } from "./types.js";
+import { redactText } from "../utils/redaction.js";
+import { parseRuntimeLimitResetAt } from "./reset-descriptor.js";
 
 export interface RuntimeCredentialClassifierInput {
   runtimeProvider: RuntimeProviderId;
@@ -20,6 +22,7 @@ export interface RuntimeCredentialClassifierInput {
   headers?: Record<string, string | number | undefined>;
   requestId?: string;
   source?: RuntimeCredentialFailureSignal["source"];
+  now?: number;
 }
 
 const REQUEST_LIMIT_HEADERS = ["x-ratelimit-limit-requests", "anthropic-ratelimit-requests-limit"];
@@ -36,6 +39,12 @@ const TOKEN_REMAINING_HEADERS = [
   "anthropic-ratelimit-input-tokens-remaining",
   "anthropic-ratelimit-output-tokens-remaining",
 ];
+const STRUCTURED_CREDENTIAL_FAILURE_KINDS = new Set([
+  "authentication_error",
+  "billing_error",
+  "permission_error",
+  "rate_limit_error",
+]);
 
 export function classifyRuntimeCredentialFailure(
   input: RuntimeCredentialClassifierInput,
@@ -47,33 +56,56 @@ export function classifyRuntimeCredentialFailure(
   const message = input.message?.trim();
   const text = `${providerCode ?? ""} ${providerType ?? ""} ${message ?? ""}`.toLowerCase();
   const retryAfterMs = parseRetryAfterMs(headers["retry-after"]);
-  const resetAt = parseResetAt(headers);
+  const resetAt = parseResetAt(headers) ?? parseRuntimeLimitResetAt(message, input.now ?? Date.now());
   const limitDimensions = extractLimitDimensions(headers);
   const rawHeaders = redactHeaders(headers);
+  const runtimeProvider = sanitizeClassifierScalar(input.runtimeProvider) ?? "unknown";
+  const upstreamProvider = sanitizeClassifierScalar(input.upstreamProvider);
+  const model = sanitizeClassifierScalar(input.model);
+  const credentialId = sanitizeClassifierScalar(input.credentialId);
+  const safeProviderCode = sanitizeClassifierScalar(input.providerCode);
+  const safeProviderType = sanitizeClassifierScalar(input.providerType);
+  const safeMessage = sanitizeClassifierScalar(message);
+  const requestId = sanitizeClassifierScalar(input.requestId ?? headers["x-request-id"] ?? headers["request-id"]);
 
   const classified = classifyKind({ status, providerCode, providerType, text });
+  const structuredCredentialEvidence = hasStructuredCredentialFailureEvidence({
+    status,
+    providerCode,
+    providerType,
+  });
   return {
     kind: classified.kind,
     confidence: classified.confidence,
-    runtimeProvider: input.runtimeProvider,
-    ...(input.upstreamProvider ? { upstreamProvider: input.upstreamProvider } : {}),
-    ...(input.model ? { model: input.model } : {}),
-    ...(input.credentialId ? { credentialId: input.credentialId } : {}),
+    runtimeProvider,
+    ...(upstreamProvider ? { upstreamProvider } : {}),
+    ...(model ? { model } : {}),
+    ...(credentialId ? { credentialId } : {}),
     ...(status ? { httpStatus: status } : {}),
-    ...(input.providerCode ? { providerCode: input.providerCode } : {}),
-    ...(input.providerType ? { providerType: input.providerType } : {}),
-    ...(message ? { message: redactSecretLikeText(message) } : {}),
+    ...(safeProviderCode ? { providerCode: safeProviderCode } : {}),
+    ...(safeProviderType ? { providerType: safeProviderType } : {}),
+    ...(safeMessage ? { message: safeMessage } : {}),
     ...(retryAfterMs ? { retryAfterMs } : {}),
     ...(resetAt ? { resetAt } : {}),
-    ...((input.requestId ?? headers["x-request-id"] ?? headers["request-id"])
-      ? { requestId: String(input.requestId ?? headers["x-request-id"] ?? headers["request-id"]) }
-      : {}),
+    ...(requestId ? { requestId } : {}),
     ...(Object.keys(rawHeaders).length > 0 ? { rawHeaders } : {}),
     scope: classified.scope,
-    retryableByCredential: isRetryableByCredential(classified.kind, classified.scope),
+    retryableByCredential: structuredCredentialEvidence && isRetryableByCredential(classified.kind, classified.scope),
     source: input.source ?? (status ? "http" : "heuristic"),
     ...(limitDimensions.length > 0 ? { limitDimensions } : {}),
   };
+}
+
+function hasStructuredCredentialFailureEvidence(input: {
+  status?: number;
+  providerCode?: string;
+  providerType?: string;
+}): boolean {
+  if (input.status === 401 || input.status === 402 || input.status === 403 || input.status === 429) return true;
+  return (
+    STRUCTURED_CREDENTIAL_FAILURE_KINDS.has(input.providerCode ?? "") ||
+    STRUCTURED_CREDENTIAL_FAILURE_KINDS.has(input.providerType ?? "")
+  );
 }
 
 export function evaluateCredentialLimitPressure(
@@ -128,16 +160,35 @@ function classifyKind(input: { status?: number; providerCode?: string; providerT
     return { kind: "billing_blocked", confidence: "high", scope: "account" };
   }
   if (input.status === 429 || code === "rate_limit_error" || type === "rate_limit_error") {
-    if (text.includes("quota") || text.includes("monthly") || text.includes("exceeded your current quota")) {
+    if (
+      text.includes("quota") ||
+      text.includes("monthly") ||
+      text.includes("exceeded your current quota") ||
+      /you['’]?ve hit your (?:weekly|session|usage) limit/i.test(text) ||
+      /(?:weekly|session|usage) (?:quota|limit) (?:has been )?(?:reached|exhausted)/i.test(text)
+    ) {
       return { kind: "quota_exhausted", confidence: "high", scope: "account" };
     }
     return { kind: "rate_limited", confidence: "high", scope: inferLimitScope(text) };
+  }
+  if (
+    /organization has disabled claude subscription access/i.test(text) ||
+    /claude subscription access(?: has been)? disabled/i.test(text) ||
+    (text.includes("subscription access") && text.includes("disabled"))
+  ) {
+    return { kind: "permission_denied", confidence: "high", scope: inferPermissionScope(text) };
   }
   if (input.status === 403 || code === "permission_error" || type === "permission_error") {
     return { kind: "permission_denied", confidence: "medium", scope: inferPermissionScope(text) };
   }
   if (input.status === 529 || input.status === 503 || text.includes("overloaded")) {
     return { kind: "provider_overloaded", confidence: "high", scope: "provider" };
+  }
+  if (
+    /you['’]?ve hit your (?:weekly|session|usage) limit/i.test(text) ||
+    /(?:weekly|session|usage) (?:quota|limit) (?:has been )?(?:reached|exhausted)/i.test(text)
+  ) {
+    return { kind: "quota_exhausted", confidence: "high", scope: "account" };
   }
   if (input.status && input.status >= 500) {
     return { kind: "network_transient", confidence: "medium", scope: "provider" };
@@ -199,7 +250,7 @@ function normalizeHeaders(headers: RuntimeCredentialClassifierInput["headers"]):
 function redactHeaders(headers: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
-    out[key] = isSensitiveHeader(key) ? "[redacted]" : redactSecretLikeText(value);
+    out[key] = isSensitiveHeader(key) ? "[REDACTED]" : redactText(value).value;
   }
   return out;
 }
@@ -220,6 +271,11 @@ function isSensitiveHeader(key: string): boolean {
 function normalizeToken(value: string | undefined): string | undefined {
   const normalized = value?.trim().toLowerCase();
   return normalized || undefined;
+}
+
+function sanitizeClassifierScalar(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized ? redactText(normalized).value : undefined;
 }
 
 function parseRetryAfterMs(value: string | undefined): number | undefined {
@@ -287,10 +343,4 @@ function firstNumber(headers: Record<string, string>, keys: string[]): number | 
     if (Number.isFinite(parsed)) return parsed;
   }
   return undefined;
-}
-
-function redactSecretLikeText(value: string): string {
-  return value
-    .replace(/\b(sk-[A-Za-z0-9_-]{8,})\b/g, "[redacted-secret]")
-    .replace(/\b([A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{12,})\b/g, "[redacted-token]");
 }
