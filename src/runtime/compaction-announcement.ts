@@ -1,5 +1,6 @@
 import type { RuntimeMessageTarget } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { classifyTurnProvenance, type TurnOrigin, type TurnProvenance } from "./turn-provenance.js";
 
 /**
  * Best-effort classification of what kind of turn is effectively executing when
@@ -8,14 +9,7 @@ import type { RuntimeLaunchPrompt } from "./message-types.js";
  * observability (runtime status, `runtime.status` trace, live state, skill
  * visibility reset, logs) is never affected by this classification.
  */
-export type CompactionTurnOrigin =
-  | "human"
-  | "cron"
-  | "trigger"
-  | "session-followup"
-  | "heartbeat"
-  | "automation"
-  | "background";
+export type CompactionTurnOrigin = TurnOrigin;
 
 export interface CompactionAnnouncementSnapshot {
   /** Whether external compaction announcements may be emitted for the effective turn. */
@@ -35,29 +29,18 @@ type CompactionAnnouncementSource = Pick<
 
 export interface CompactionAnnouncementClassificationInput {
   /** Launch prompt of the turn effectively executing (not pending/after_response messages). */
-  prompt?: Pick<RuntimeLaunchPrompt, "_cron" | "_trigger" | "_sessionFollowup" | "_heartbeat">;
+  prompt?: Partial<RuntimeLaunchPrompt>;
   /** Resolved output source for the turn effectively executing. */
   source?: CompactionAnnouncementSource;
 }
 
-const AUTOMATION_PROVENANCE_SOURCES = new Set([
-  "cron",
-  "trigger",
-  "session-followup",
-  "sessionfollowup",
-  "heartbeat",
-  "routine",
-  "task",
-  "background",
-  "automation",
-  "daemon-restart",
-]);
-
-function readProvenanceSource(source: CompactionAnnouncementSource | undefined): string | undefined {
-  const provenance = source?.identityProvenance;
-  if (!provenance || typeof provenance !== "object") return undefined;
-  const value = (provenance as Record<string, unknown>).source;
-  return typeof value === "string" && value.trim() ? value.trim().toLowerCase() : undefined;
+export function compactionAnnouncementForTurn(provenance: TurnProvenance): CompactionAnnouncementSnapshot {
+  return {
+    externalAnnouncementsAllowed: !provenance.background,
+    automationOriginated: provenance.automationOriginated,
+    origin: provenance.origin,
+    reason: provenance.reason,
+  };
 }
 
 /**
@@ -74,37 +57,5 @@ function readProvenanceSource(source: CompactionAnnouncementSource | undefined):
 export function classifyCompactionAnnouncement(
   input: CompactionAnnouncementClassificationInput,
 ): CompactionAnnouncementSnapshot {
-  const { prompt, source } = input;
-
-  const suppress = (origin: CompactionTurnOrigin, reason: string): CompactionAnnouncementSnapshot => ({
-    externalAnnouncementsAllowed: false,
-    automationOriginated: true,
-    origin,
-    reason,
-  });
-
-  if (prompt?._cron) return suppress("cron", "prompt._cron");
-  if (prompt?._trigger) return suppress("trigger", "prompt._trigger");
-  if (prompt?._sessionFollowup) return suppress("session-followup", "prompt._sessionFollowup");
-  if (prompt?._heartbeat) return suppress("heartbeat", "prompt._heartbeat");
-
-  if (source?.actorType === "automation" && source.automationId) {
-    return suppress("automation", "source.actorType=automation");
-  }
-
-  const provenanceSource = readProvenanceSource(source);
-  if (provenanceSource && AUTOMATION_PROVENANCE_SOURCES.has(provenanceSource)) {
-    return suppress("automation", `identityProvenance.source=${provenanceSource}`);
-  }
-
-  if (source?.suppressPresence === true) {
-    return suppress("background", "source.suppressPresence");
-  }
-
-  return {
-    externalAnnouncementsAllowed: true,
-    automationOriginated: false,
-    origin: "human",
-    reason: "no automation signal",
-  };
+  return compactionAnnouncementForTurn(classifyTurnProvenance(input));
 }

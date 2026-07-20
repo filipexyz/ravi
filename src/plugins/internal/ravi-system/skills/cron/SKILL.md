@@ -73,6 +73,9 @@ Opções:
 - `--timeout <seconds|duration>` - Timeout para shell jobs, ex: `60`, `30s`, `10m`
 - `--env-file <path>` - Arquivo dotenv simples para shell jobs
 - `--on-error notify-session:<session>` - Notifica sessão só quando shell job falhar
+- `--idempotency-key <key>` - Reutiliza duravelmente a mesma criação em retries; a mesma key não pode representar outro job
+
+Quando `cron add` roda dentro de um turn de observer com source turn id, Ravi deriva a idempotência automaticamente de rule + source turn + ação normalizada. Isso impede que replay/retry crie follow-ups duplicados, inclusive depois que um one-shot `--delete-after` já foi removido. Fora desse contexto, produtores automatizados devem passar uma `--idempotency-key` estável.
 
 Depois de criar job que deve responder em um chat/sessão específica, sempre rode `ravi cron show <id>` e confira `agent`, `account`, `session`/`reply-session` antes de considerar pronto. Não confie no account herdado do contexto atual: se o cron entregar pelo account errado, o agent pode trabalhar e falhar no delivery com `chat not found`.
 

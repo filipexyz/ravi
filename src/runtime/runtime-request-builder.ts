@@ -9,7 +9,7 @@ import {
   summarizeRuntimeCapabilities,
 } from "../session-trace/runtime-trace.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
-import { classifyCompactionAnnouncement } from "./compaction-announcement.js";
+import { classifyTurnProvenance } from "./turn-provenance.js";
 import { resolveAgentSkills } from "./allowed-skills.js";
 import { createRuntimeMessageGenerator } from "./delivery-queue.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
@@ -333,6 +333,7 @@ export async function buildRuntimeStartRequest(
       pendingIds: input.deliverableMessages.map((message) => message.pendingId).filter((id): id is string => !!id),
       commands: input.deliverableMessages.flatMap((message) => message.commands ?? []),
       runtimeCredential: runtimeCredential ? serializeRuntimeCredentialAttemptBinding(runtimeCredential) : null,
+      turnProvenance: streamingSession.currentTurnProvenance ?? null,
     });
   };
   const messageGenerator = createRuntimeMessageGenerator({
@@ -345,7 +346,7 @@ export async function buildRuntimeStartRequest(
       if (turnSource) {
         streamingSession.currentSource = turnSource;
       }
-      streamingSession.currentTurnCompactionAnnouncement = classifyCompactionAnnouncement({
+      streamingSession.currentTurnProvenance = classifyTurnProvenance({
         prompt: turnPrompt,
         source: turnSource,
       });

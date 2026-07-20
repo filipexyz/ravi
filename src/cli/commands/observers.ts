@@ -28,11 +28,12 @@ import {
   dbListObserverRules,
   dbSetObserverRuleEnabled,
   dbUpsertObserverRule,
-  ensureObserverBindingsForSession,
   explainObserverRulesForSession,
+  reconcileObserverBindingsForSession,
   validateObserverRules,
   type ObservationDeliveryPolicy,
   type ObserverMode,
+  type ObserverReconcileMode,
   type ObserverRuleInput,
   type ObserverScope,
   type ObserverTagTargetType,
@@ -126,6 +127,7 @@ function serializeRule(rule: ReturnType<typeof dbListObserverRules>[number]): Re
     tagSlug: rule.tagSlug ?? null,
     tagInherited: rule.tagInherited,
     permissionGrants: rule.permissionGrants,
+    selector: rule.selector ?? null,
     metadata: rule.metadata ?? null,
     createdAt: rule.createdAt,
     updatedAt: rule.updatedAt,
@@ -151,6 +153,7 @@ function serializeBinding(binding: ReturnType<typeof dbListObserverBindings>[num
     eventTypes: binding.eventTypes,
     deliveryPolicy: binding.deliveryPolicy,
     permissionGrants: binding.permissionGrants,
+    selector: binding.selector ?? null,
     metadata: binding.metadata ?? null,
     enabled: binding.enabled,
     createdAt: binding.createdAt,
@@ -170,6 +173,7 @@ function printBinding(binding: ReturnType<typeof dbListObserverBindings>[number]
   console.log(`  Profile:  ${binding.observerProfileId ?? "default"}@${binding.observerProfileVersion ?? "current"}`);
   console.log(`  Rule:     ${binding.ruleId}`);
   console.log(`  Events:   ${binding.eventTypes.join(", ")}`);
+  if (binding.selector) console.log(`  Selector: ${binding.selector}`);
   if (binding.metadata?.observerPolicy) {
     console.log(`  Policy:   ${JSON.stringify(binding.metadata.observerPolicy)}`);
   }
@@ -194,6 +198,7 @@ function printRule(rule: ReturnType<typeof dbListObserverRules>[number]): void {
   console.log(`  Profile:  ${rule.observerProfileId ?? "default"}`);
   console.log(`  Delivery: ${rule.deliveryPolicy}`);
   console.log(`  Events:   ${rule.eventTypes.join(", ")}`);
+  if (rule.selector) console.log(`  Selector: ${rule.selector}`);
   const selectors = [
     rule.sourceAgentId ? `agent=${rule.sourceAgentId}` : null,
     rule.sourceSession ? `session=${rule.sourceSession}` : null,
@@ -325,19 +330,36 @@ export class ObserverCommands {
   refresh(
     @Arg("session", { description: "Source session name or key" })
     sessionName: string,
+    @Option({
+      flags: "--reconcile <mode>",
+      description: "attach-missing|detach-disabled|refresh-profile|full-reconcile",
+    })
+    reconcileMode?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
     const session = getSessionByName(sessionName) ?? getSession(sessionName);
     if (!session) fail(`Session not found: ${sessionName}`);
-    const result = ensureObserverBindingsForSession({
+    const allowedModes = new Set<ObserverReconcileMode>([
+      "attach-missing",
+      "detach-disabled",
+      "refresh-profile",
+      "full-reconcile",
+    ]);
+    const mode = (reconcileMode?.trim() || "attach-missing") as ObserverReconcileMode;
+    if (!allowedModes.has(mode)) fail(`Invalid observer reconcile mode: ${reconcileMode}`);
+    const result = reconcileObserverBindingsForSession({
       sessionName: session.name ?? sessionName,
       session,
+      mode,
     });
     const payload = {
       source: result.source,
       total: result.bindings.length,
       created: result.created.map(serializeBinding),
+      disabled: result.disabled.map(serializeBinding),
+      refreshedProfiles: result.refreshedProfiles.map(serializeBinding),
+      mode: result.mode,
       bindings: result.bindings.map(serializeBinding),
       skipped: result.skipped,
     };
@@ -345,7 +367,7 @@ export class ObserverCommands {
       printJson(payload);
     } else {
       console.log(
-        `Refreshed observer bindings for ${session.name ?? sessionName}: ${result.bindings.length} total, ${result.created.length} created.`,
+        `Refreshed observer bindings for ${session.name ?? sessionName}: ${result.bindings.length} total, ${result.created.length} created, ${result.disabled.length} disabled, ${result.refreshedProfiles.length} profiles refreshed.`,
       );
     }
     return payload;
@@ -513,6 +535,11 @@ export class ObserverRuleCommands {
     })
     permissionsCsv?: string,
     @Option({
+      flags: "--selector <expression>",
+      description: "Predicate over source.*, turn.* and event.*; use 'clear' to remove",
+    })
+    selector?: string,
+    @Option({
       flags: "--meta <json>",
       description: "Free JSON metadata for the rule",
     })
@@ -528,6 +555,7 @@ export class ObserverRuleCommands {
     const parsedEventTypes = parseCsv(eventTypesCsv);
     const parsedPriority = parseInteger(priorityStr, "priority");
     const parsedPermissions = parseCsv(permissionsCsv);
+    const parsedSelector = parseClearableText(selector);
     const parsedMetadata = parseJsonObject(metadataJson);
     const input: ObserverRuleInput = {
       id,
@@ -552,6 +580,7 @@ export class ObserverRuleCommands {
       ...(tagTargetType?.trim() ? { tagTargetType: tagTargetType.trim() as ObserverTagTargetType } : {}),
       ...(tagInherited ? { tagInherited: true } : {}),
       ...(parsedPermissions ? { permissionGrants: parsedPermissions } : {}),
+      ...(parsedSelector !== undefined ? { selector: parsedSelector } : {}),
       ...(parsedMetadata ? { metadata: parsedMetadata } : {}),
       ...(disabled === true ? { enabled: false } : {}),
     };

@@ -25,7 +25,7 @@ import {
   classifyRuntimeContextWindowFailure,
   RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
 } from "./context-window-recovery.js";
-import { classifyCompactionAnnouncement } from "./compaction-announcement.js";
+import { compactionAnnouncementForTurn } from "./compaction-announcement.js";
 import { classifyRuntimeCredentialFailure } from "./credential-classifier.js";
 import { mergeRuntimeCredentialSessionMetadata } from "./credential-resolver.js";
 import { refreshRuntimeCredential } from "./credential-refresh.js";
@@ -69,6 +69,7 @@ import type {
   RuntimeSessionHandle,
   RuntimeSkillVisibilitySnapshot,
 } from "./types.js";
+import { classifyTurnProvenance } from "./turn-provenance.js";
 
 const log = logger.child("bot");
 
@@ -688,6 +689,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       turnId: input.turnId ?? streaming.currentTraceTurnId,
       preview: input.preview,
       payload: input.payload,
+      turn: streaming.currentTurnProvenance ?? classifyTurnProvenance({ source: streaming.currentSource }),
     });
     observationEvents.push(event);
     deliverObservationBatch([event], ["realtime"], "realtime");
@@ -862,15 +864,22 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     // Include _source on turn-ending events so any gateway daemon can stop typing.
     // In multi-daemon mode the daemon that processes the prompt may differ from
     // the daemon that received the inbound message (which set activeTargets locally).
-    const augmented =
-      (event.type === "result" || event.type === "silent") && streaming.currentSource
-        ? { ...event, _source: streaming.currentSource }
-        : event;
+    const augmented = {
+      ...event,
+      ...(streaming.currentTurnProvenance ? { _turnProvenance: streaming.currentTurnProvenance } : {}),
+      ...((event.type === "result" || event.type === "silent") && streaming.currentSource
+        ? { _source: streaming.currentSource }
+        : {}),
+    };
     await safeEmit(`ravi.session.${sessionName}.${legacyEventTopicSuffix}`, augmented);
   };
 
   const emitRuntimeEvent = async (event: Record<string, unknown>) => {
-    const augmented = streaming.currentSource ? { ...event, _source: streaming.currentSource } : event;
+    const augmented = {
+      ...event,
+      ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
+      ...(streaming.currentTurnProvenance ? { _turnProvenance: streaming.currentTurnProvenance } : {}),
+    };
     await safeEmit(`ravi.session.${sessionName}.runtime`, augmented);
   };
 
@@ -1329,9 +1338,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // Snapshot whether compaction announcements may be externalized for the
         // turn effectively executing. Falls back to source-only classification
         // if a per-turn snapshot was not recorded (e.g. resumed stashed turn).
-        const compactionAnnouncement =
-          streaming.currentTurnCompactionAnnouncement ??
-          classifyCompactionAnnouncement({ source: streaming.currentSource });
+        const compactionAnnouncement = compactionAnnouncementForTurn(
+          streaming.currentTurnProvenance ?? classifyTurnProvenance({ source: streaming.currentSource }),
+        );
         if (status === "compacting" || compactionChanged) {
           log.info("Compaction status", {
             sessionName,
@@ -1487,6 +1496,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           sessionName,
           agentId: agent.id,
           metadata: event.metadata,
+          ...(streaming.currentTurnProvenance ? { _turnProvenance: streaming.currentTurnProvenance } : {}),
         }).catch((err) => log.warn("Failed to emit tool start", { error: err }));
         updateRuntimeLiveState(sessionName, {
           activity: "thinking",
@@ -1661,6 +1671,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           sessionName,
           agentId: agent.id,
           metadata: event.metadata,
+          ...(streaming.currentTurnProvenance ? { _turnProvenance: streaming.currentTurnProvenance } : {}),
         }).catch((err) => log.warn("Failed to emit tool end", { error: err }));
         updateRuntimeLiveState(sessionName, {
           activity: event.isError ? "blocked" : "thinking",

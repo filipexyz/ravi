@@ -5216,6 +5216,7 @@ export type CronAddInput = {
   envFile?: string;
   every?: string;
   exec?: string;
+  idempotencyKey?: string;
   isolated?: boolean;
   message?: string;
   name: string;
@@ -8269,6 +8270,7 @@ export type ObserversProfilesValidateReturn = {
 
 /** Input shape for `observers.refresh`. */
 export type ObserversRefreshInput = {
+  reconcile?: string;
   session: string;
 };
 
@@ -8371,6 +8373,7 @@ export type ObserversRulesSetInput = {
   provider?: string;
   role?: string;
   scope?: string;
+  selector?: string;
   sourceAgent?: string;
   sourceProfile?: string;
   sourceProject?: string;

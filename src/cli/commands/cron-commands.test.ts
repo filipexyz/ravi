@@ -12,6 +12,8 @@ let cronJob: Record<string, unknown> | null = null;
 let cronJobs: Record<string, unknown>[] = [];
 let mockScopeContext: Record<string, unknown> | undefined;
 let mockScopeEnforced = false;
+let mockCliContext: Record<string, unknown> | undefined;
+let creationIdempotency: unknown;
 
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
@@ -34,7 +36,7 @@ mock.module("../decorators.js", () => ({
 }));
 
 mock.module("../context.js", () => ({
-  getContext: () => undefined,
+  getContext: () => mockCliContext,
   fail: (message: string) => {
     throw new Error(message);
   },
@@ -107,7 +109,8 @@ mock.module("../../router/router-db.js", () => ({
 }));
 
 mock.module("../../cron/index.js", () => ({
-  dbCreateCronJob: (input: Record<string, unknown>) => {
+  createCronJobIdempotently: (input: Record<string, unknown>, idempotency?: unknown) => {
+    creationIdempotency = idempotency;
     cronJob = {
       id: "cron-created",
       enabled: true,
@@ -118,7 +121,7 @@ mock.module("../../cron/index.js", () => ({
       nextRunAt: 2,
       ...input,
     };
-    return cronJob;
+    return { created: true, targetId: "cron-created", job: cronJob };
   },
   dbGetCronJob: () => cronJob,
   dbListCronJobs: () => (cronJobs.length > 0 ? cronJobs : cronJob ? [cronJob] : []),
@@ -171,6 +174,8 @@ describe("CronCommands --json", () => {
     emitMock.mockClear();
     mockScopeContext = undefined;
     mockScopeEnforced = false;
+    mockCliContext = undefined;
+    creationIdempotency = undefined;
     cronJobs = [];
     cronJob = {
       id: "cron-1",
@@ -229,6 +234,77 @@ describe("CronCommands --json", () => {
     await expect(
       new CronCommands().add("Bad", undefined, "30m", undefined, undefined, "hello", "echo no"),
     ).rejects.toThrow("--message cannot be combined with --shell/--exec");
+  });
+
+  it("derives durable creation idempotency from observer source turns", async () => {
+    mockCliContext = {
+      agentId: "observer",
+      sessionKey: "obs:binding-1",
+      context: {
+        metadata: {
+          observation: { ruleId: "proactive-followups", sourceTurnIds: ["turn-2", "turn-1", "turn-1"] },
+        },
+      },
+    };
+
+    await captureJson(() =>
+      new CronCommands().add(
+        "Proactive follow-up",
+        undefined,
+        undefined,
+        "2026-07-21T09:00:00-03:00",
+        undefined,
+        "Check the source session",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    );
+
+    expect(creationIdempotency).toEqual({
+      observer: { ruleId: "proactive-followups", sourceTurnIds: ["turn-1", "turn-2"] },
+    });
+  });
+
+  it("lets an explicit idempotency key override observer-derived context", async () => {
+    mockCliContext = {
+      context: {
+        metadata: { observation: { ruleId: "proactive-followups", sourceTurnIds: ["turn-1"] } },
+      },
+    };
+
+    await captureJson(() =>
+      new CronCommands().add(
+        "Proactive follow-up",
+        undefined,
+        "30m",
+        undefined,
+        undefined,
+        "Check the source session",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        "operator-key",
+      ),
+    );
+
+    expect(creationIdempotency).toEqual({ explicitKey: "operator-key" });
   });
 
   it("returns updated cron job data for set --json", async () => {

@@ -95,6 +95,20 @@ Selectors MAY match:
 - route/chat/contact metadata when explicitly exposed;
 - tags attached to agents, sessions, tasks, projects, contacts, or profiles.
 
+Rules MAY also store a boolean `selector` predicate over three bounded roots:
+
+- `source.*`: durable source/session/chat descriptor fields;
+- `turn.*`: canonical `TurnProvenance`, including `turn.origin` and `turn.background`;
+- `event.*`: the individual observation event.
+
+Example:
+
+```text
+turn.background == "false" && source.agentId != "ravi-workflow-router"
+```
+
+Source-only predicates SHOULD be evaluated before binding creation. Predicates that reference `turn.*` or `event.*` MUST be deferred and evaluated for each event before delivery. Invalid observer predicates MUST fail closed and validation MUST report them. The legacy `metadata.sourceExclusions` object MAY be accepted as compatibility input, but new policy SHOULD use `selector`.
+
 A matched rule creates or reuses one observer binding. Binding creation MUST be idempotent.
 
 Matching MUST be deterministic. For the same source session metadata, rule set, and tag set, Ravi MUST produce the same observer set.
@@ -221,7 +235,9 @@ Rules MAY apply:
 - on project/profile metadata changes;
 - on operator replay.
 
-Existing observer bindings SHOULD survive rule edits unless the operator requests reconciliation. Reconciliation behavior MUST be explicit: `future-only`, `attach-missing`, `detach-disabled`, or `full-reconcile`.
+Existing observer bindings SHOULD survive rule edits unless the operator requests reconciliation. Reconciliation behavior MUST be explicit: `attach-missing`, `detach-disabled`, `refresh-profile`, or `full-reconcile`. Disabling an obsolete binding MUST preserve its observer history.
+
+Observation delivery MUST be durably idempotent per binding and event id. A retry after a publish failure MAY reclaim the event; a successful delivery MUST NOT be published twice for the same `(bindingId, eventId)` pair. Observer prompts SHOULD carry the unique source trace turn ids. Side-effecting reaction executors MUST use those ids with the rule id and normalized action for durable action idempotency.
 
 ## Invariants
 
@@ -251,17 +267,17 @@ The implementation SHOULD eventually expose:
 ```bash
 ravi observers rules list
 ravi observers rules show <id>
-ravi observers rules set <id> <observer-agent> [--provider <runtime>] [--model <model>] [--profile <observer-profile>]
+ravi observers rules set <id> <observer-agent> [--provider <runtime>] [--model <model>] [--profile <observer-profile>] [--selector <expression>]
 ravi observers rules enable <id>
 ravi observers rules disable <id>
 ravi observers rules validate
 ravi observers rules explain --session <session>
-ravi observers refresh <session>
+ravi observers refresh <session> [--reconcile attach-missing|detach-disabled|refresh-profile|full-reconcile]
 ```
 
 `explain` MUST show matched rules, unmatched rules, selected tags, created bindings, skipped bindings, and conflicts.
 
-`refresh` MUST apply the current rule set to an already-existing source session, creating missing bindings idempotently.
+`refresh` MUST apply the current rule set to an already-existing source session, creating missing bindings idempotently. Explicit reconciliation modes MUST also expose disabled bindings and refreshed profile snapshots.
 
 ## Acceptance Criteria
 

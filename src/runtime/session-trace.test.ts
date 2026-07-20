@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { saveMessage } from "../db.js";
 import { nats } from "../nats.js";
 import { attachChatToSession } from "../router/sessions.js";
-import { classifyCompactionAnnouncement } from "./compaction-announcement.js";
+import { classifyTurnProvenance } from "./turn-provenance.js";
 import {
   getOrCreateSession,
   getSession,
@@ -445,7 +445,15 @@ describe("runtime session trace instrumentation", () => {
       delivery_barrier: "after_tool",
       task_barrier_task_id: "task-1",
       tool_access_mode: "restricted",
+      turn_provenance: {
+        origin: "task",
+        background: true,
+        automationOriginated: true,
+        automationId: "task:task-1",
+        reason: "prompt.taskBarrierTaskId",
+      },
     });
+    expect(streaming.currentTurnProvenance).toMatchObject({ origin: "task", background: true });
 
     const turn = getSessionTurn(streaming.currentTraceTurnId ?? "");
     expect(turn?.status).toBe("running");
@@ -895,7 +903,7 @@ describe("runtime session trace instrumentation", () => {
     attachSpeakingOutputChat();
     const streaming = makeStreamingSession({
       agentMode: "active",
-      currentTurnCompactionAnnouncement: classifyCompactionAnnouncement({ source }),
+      currentTurnProvenance: classifyTurnProvenance({ source }),
     });
     seedAdapterTrace(streaming);
 
@@ -928,7 +936,7 @@ describe("runtime session trace instrumentation", () => {
       attachSpeakingOutputChat();
       const streaming = makeStreamingSession({
         agentMode: "active",
-        currentTurnCompactionAnnouncement: classifyCompactionAnnouncement({
+        currentTurnProvenance: classifyTurnProvenance({
           prompt: scenario.prompt,
           source,
         }),

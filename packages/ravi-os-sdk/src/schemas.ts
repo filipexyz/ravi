@@ -26252,6 +26252,10 @@ export const CronAddInputSchema = {
       "description": "Alias for --shell",
       "type": "string"
     },
+    "idempotencyKey": {
+      "description": "Durable create idempotency key",
+      "type": "string"
+    },
     "isolated": {
       "description": "Run in isolated session",
       "type": "boolean"
@@ -42345,6 +42349,10 @@ export const ObserversProfilesValidateReturnSchema = {
 export const ObserversRefreshInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "reconcile": {
+      "description": "attach-missing|detach-disabled|refresh-profile|full-reconcile",
+      "type": "string"
+    },
     "session": {
       "description": "Source session name or key",
       "type": "string"
@@ -42713,6 +42721,10 @@ export const ObserversRulesSetInputSchema = {
     },
     "scope": {
       "description": "global|agent|session|task|profile|project|tag",
+      "type": "string"
+    },
+    "selector": {
+      "description": "Predicate over source.*, turn.* and event.*; use 'clear' to remove",
       "type": "string"
     },
     "sourceAgent": {

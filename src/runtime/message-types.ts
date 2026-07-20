@@ -101,6 +101,8 @@ export interface ObservationPromptMetadata {
   profileVersion?: string;
   permissionGrants?: string[];
   eventIds: string[];
+  /** Source trace turns used to derive durable reaction idempotency. */
+  sourceTurnIds?: string[];
 }
 
 export interface DaemonRestartResumePromptMetadata {

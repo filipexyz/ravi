@@ -108,6 +108,13 @@ describe("session trace query", () => {
       pluginNames: [],
       mcpServerNames: [],
       hasRemoteSpawn: false,
+      turnProvenance: {
+        origin: "cron",
+        background: true,
+        automationOriginated: true,
+        automationId: "cron:job-1",
+        reason: "prompt._cron",
+      },
     });
 
     expect(trace).not.toBeNull();
@@ -115,6 +122,7 @@ describe("session trace query", () => {
       model_source: "session_override",
       effort_source: "agent_default",
       thinking_source: "runtime_default",
+      turn_provenance: { origin: "cron", background: true, automationId: "cron:job-1" },
     });
   });
 });
