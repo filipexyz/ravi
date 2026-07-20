@@ -34,6 +34,14 @@ import type {
 } from "../native/types.js";
 import { SlackWebApiClient } from "./client.js";
 import { resolveSlackCredentialConfigFromEnv, type SlackCredentialResolver } from "./credentials.js";
+import {
+  buildSlackInstanceProvenance,
+  resolveScopedSlackIdentity,
+  resolveSlackInstanceAliases,
+  SLACK_AMBIGUOUS_INSTANCE_ALIAS_REASON,
+  SLACK_IDENTITY_NOT_FOUND_REASON,
+  type SlackInstanceAliasResolution,
+} from "./instance-alias.js";
 import { storeSlackInteractionResponseUrl } from "./interactions.js";
 import {
   cleanSlackId,
@@ -640,7 +648,9 @@ export class SlackSocketModeService {
     const isGroup = peerKind !== "dm";
     const routeThreadId = message.thread.routeThreadTs;
     const routeAccountId = this.options.routeAccountId ?? this.options.accountId;
-    const instanceId = this.options.instanceId ?? this.options.accountId;
+    const receivedInstanceId = this.options.instanceId ?? this.options.accountId;
+    const instanceAliases = resolveSlackInstanceAliases(routerConfig, receivedInstanceId);
+    const instanceId = instanceAliases.canonical;
     const canonicalChat = dbUpsertChat({
       channel: "slack",
       instanceId,
@@ -729,7 +739,7 @@ export class SlackSocketModeService {
     syncSlackSessionSubscription(resolved.sessionKey, canonicalChat.id);
     const actorIdentity = resolveSlackActorIdentity({
       chatId: canonicalChat.id,
-      instanceId,
+      instanceAliases,
       platformUserId: message.userId,
     });
     const processedFiles = await this.processFiles(message, resolved.agent.cwd);
@@ -796,7 +806,7 @@ export class SlackSocketModeService {
     if (this.routingPolicy.subscriptionScope === "chat_and_thread" && routeThreadId) {
       const rootChat = dbUpsertChat({
         channel: "slack",
-        instanceId: this.options.instanceId ?? this.options.accountId,
+        instanceId,
         platformChatId: message.channelId,
         chatType: peerKind,
         title: message.channelId,
@@ -970,9 +980,32 @@ export class SlackSocketModeService {
 
 function resolveSlackActorIdentity(input: {
   chatId: string;
-  instanceId: string;
+  instanceAliases: SlackInstanceAliasResolution;
   platformUserId: string;
 }): SlackActorIdentity {
+  const scoped = resolveScopedSlackIdentity(
+    input.instanceAliases,
+    (instanceId) => resolvePlatformIdentity({ channel: "slack", instanceId, platformUserId: input.platformUserId }),
+    (identity) => (identity.ownerType && identity.ownerId ? `${identity.ownerType}:${identity.ownerId}` : null),
+  );
+
+  // An explicit configured slug/UUID alias collision must fail closed even when a
+  // participant was cached from an earlier, non-conflicting resolution. Evaluating
+  // ambiguity before the participant fast path prevents a stale cache from masking
+  // a later owner conflict across equivalent instance aliases.
+  if (scoped.reason === SLACK_AMBIGUOUS_INSTANCE_ALIAS_REASON) {
+    return {
+      actorType: "unknown",
+      rawSenderId: input.platformUserId,
+      normalizedSenderId: input.platformUserId,
+      identityConfidence: 0,
+      identityProvenance: buildSlackInstanceProvenance(input.instanceAliases, {
+        reason: SLACK_AMBIGUOUS_INSTANCE_ALIAS_REASON,
+        matchedInstance: null,
+      }),
+    };
+  }
+
   const participant = dbListChatParticipants(input.chatId).find(
     (candidate) => candidate.normalizedPlatformUserId === input.platformUserId,
   );
@@ -999,9 +1032,7 @@ function resolveSlackActorIdentity(input: {
     };
   }
 
-  const identity =
-    resolvePlatformIdentity({ channel: "slack", instanceId: input.instanceId, platformUserId: input.platformUserId }) ??
-    resolvePlatformIdentity({ channel: "slack", instanceId: "", platformUserId: input.platformUserId });
+  const identity = scoped.identity;
   if (identity?.ownerType === "agent" && identity.ownerId) {
     return {
       actorType: "agent",
@@ -1010,11 +1041,10 @@ function resolveSlackActorIdentity(input: {
       rawSenderId: input.platformUserId,
       normalizedSenderId: identity.normalizedPlatformUserId,
       identityConfidence: identity.confidence,
-      identityProvenance: {
-        source: "platform_identities",
-        channel: identity.channel,
-        instanceId: identity.instanceId,
-      },
+      identityProvenance: buildSlackInstanceProvenance(input.instanceAliases, {
+        reason: scoped.reason,
+        matchedInstance: scoped.matchedInstance,
+      }),
     };
   }
   if (identity?.ownerType === "contact" && identity.ownerId) {
@@ -1025,11 +1055,10 @@ function resolveSlackActorIdentity(input: {
       rawSenderId: input.platformUserId,
       normalizedSenderId: identity.normalizedPlatformUserId,
       identityConfidence: identity.confidence,
-      identityProvenance: {
-        source: "platform_identities",
-        channel: identity.channel,
-        instanceId: identity.instanceId,
-      },
+      identityProvenance: buildSlackInstanceProvenance(input.instanceAliases, {
+        reason: scoped.reason,
+        matchedInstance: scoped.matchedInstance,
+      }),
     };
   }
 
@@ -1038,7 +1067,10 @@ function resolveSlackActorIdentity(input: {
     rawSenderId: input.platformUserId,
     normalizedSenderId: input.platformUserId,
     identityConfidence: 0,
-    identityProvenance: { source: "slack_socket_mode", reason: "missing_contact" },
+    identityProvenance: buildSlackInstanceProvenance(input.instanceAliases, {
+      reason: SLACK_IDENTITY_NOT_FOUND_REASON,
+      matchedInstance: null,
+    }),
   };
 }
 

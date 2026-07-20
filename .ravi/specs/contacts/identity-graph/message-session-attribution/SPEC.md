@@ -109,6 +109,39 @@ For group or shared-chat inbound messages:
 - The sender actor and chat target MUST be stored separately.
 - A group message MUST NOT update a contact unless the actual sender, mention target, reply target, or explicit command target resolves to that contact.
 
+## Instance-Scoped Identity Resolution
+
+Platform identity lookup is scoped by `channel + instance_id + normalized_platform_user_id`.
+When a channel can address the same instance by more than one reference (for example a Slack
+logical account slug versus a configured legacy instance UUID), resolution MUST canonicalize
+those references from explicit configuration instead of relying on the exact received value.
+
+Rules:
+
+- The canonical instance reference and its aliases MUST be derived only from explicit
+  configuration for the same instance. Another instance/workspace MUST NOT be searched.
+- Resolution MUST consult the canonical reference and its configured aliases first, and MUST
+  consult the exact empty legacy scope only after every scoped alias misses. The empty scope
+  MUST be matched by exact equality and MUST NOT act as a wildcard.
+- When equivalent aliases resolve to different owners, resolution MUST fail closed: no actor,
+  reason `ambiguous_instance_alias`, and it MUST NOT pick a row by ordering.
+- New platform identity writes SHOULD use the canonical instance reference when a configured
+  mapping exists. Existing rows under the slug, UUID, or exact empty legacy scope MUST remain
+  readable without destructive mass migration, and canonical writes/retries MUST be idempotent
+  and MUST NOT create duplicate platform identities.
+- `identity_provenance_json` MUST preserve the received alias, the canonical instance
+  reference, the matched scope (when resolved), and a concrete reason code. `identity_not_found`
+  (no platform identity resolved) MUST remain distinct from `missing_contact` (an external actor
+  surface without a resolved contact principal) where both states are modeled. Unresolved and
+  ambiguous actors MUST remain at zero capabilities and MUST NOT inherit agent authority.
+- The alias collision check MUST take precedence over any cached chat-participant fast path.
+  A participant cached from an earlier, non-conflicting resolution MUST NOT mask a later
+  owner conflict across equivalent aliases; that conflict MUST still fail closed.
+- Attribution and its derived authority MUST be temporally stable across consecutive turns
+  and turn-context rotations. For an unchanged agent profile, a resolved actor MUST keep the
+  same owner principal and non-zero agent-identity/effective capabilities on every turn, and
+  an unresolved or ambiguous actor MUST stay `missing_contact` with zero capabilities.
+
 ## Outbound Flow
 
 Outbound handling MUST distinguish the actor sending the message from the chat or contact being targeted.
@@ -195,3 +228,5 @@ These legacy or compatibility surfaces are not target architecture:
 - Contact interaction projections update only for resolved contact actors or explicit contact targets.
 - Contact timeline entries can link back to message/session/chat/platform provenance.
 - Permission checks can use structured active actor context without parsing prompts or raw provider ids.
+- Identity resolution canonicalizes configured instance aliases so a known actor stored under one instance reference (slug, UUID, or exact empty legacy scope) resolves for the same instance, without ever selecting another instance/workspace.
+- Equivalent instance aliases that resolve to different owners fail closed with `ambiguous_instance_alias`, no actor, and zero capabilities, distinct from `identity_not_found`.

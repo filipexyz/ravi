@@ -59,6 +59,52 @@ The adapter MUST resolve Slack tokens through `src/credentials` unless explicit 
 
 It MUST NOT log `xapp`, `xoxb`, OAuth secrets, or backend raw secret values.
 
+## Instance Identity Scope
+
+The native adapter MAY address a Slack workspace by its logical account slug while
+platform identities for the same workspace may have been stored under the configured
+legacy instance UUID (or the exact empty legacy scope). Identity resolution MUST NOT
+depend on exact-only lookup against the received value.
+
+The adapter MUST:
+
+- derive a canonical Slack instance reference and its deterministic aliases from
+  explicit `RouterConfig`/`ConfigStore` configuration for the same instance, preferring
+  the configured instance UUID as canonical when a slug↔UUID mapping exists;
+- resolve identities only against the canonical reference, aliases explicitly mapped to
+  that same instance, and finally the exact empty legacy scope;
+- treat the empty `instance_id` scope as an exact equality only, never as a wildcard, and
+  consult it only after every scoped alias misses;
+- never resolve a Slack user id from another configured workspace/instance.
+
+When equivalent aliases resolve to different owners the adapter MUST fail closed: it MUST
+report reason `ambiguous_instance_alias`, produce no actor and zero capabilities, and MUST
+NOT choose the first result by ordering.
+
+Resolution MUST carry structured, non-sensitive provenance including the received alias,
+the canonical instance reference, the matched instance scope (when resolved), and a reason
+code (`resolved`, `identity_not_found`, or `ambiguous_instance_alias`). Provenance fields
+MUST use concrete schemas.
+
+New platform identity and chat/message/participant writes SHOULD use the canonical instance
+reference when a configured mapping exists. Existing rows stored under slug, UUID, or the
+exact empty legacy scope MUST remain readable without destructive mass migration, and
+canonical writes/retries MUST be idempotent and MUST NOT create duplicate platform
+identities.
+
+The alias collision check MUST be evaluated before any cached chat-participant fast path.
+A participant cached from an earlier, non-conflicting resolution MUST NOT mask a later
+slug/UUID owner conflict; such a conflict MUST still fail closed with
+`ambiguous_instance_alias`.
+
+Resolved actor attribution and its downstream authority MUST be temporally stable: for an
+unchanged agent profile and the same resolved owner, consecutive Slack turns and
+turn-context rotations MUST keep `actorResolution=resolved`, the same owner principal, a
+non-zero agent-identity capability count, and a non-zero effective capability count. A
+genuinely unknown or ambiguous external actor MUST remain fail-closed
+(`missing_contact`, zero agent-identity and effective capabilities) across the same
+rotations.
+
 ## Native Operations
 
 Slack workspace operations MUST follow `channels/slack/operations`.
