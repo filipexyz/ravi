@@ -134,6 +134,13 @@ Rules:
   (no platform identity resolved) MUST remain distinct from `missing_contact` (an external actor
   surface without a resolved contact principal) where both states are modeled. Unresolved and
   ambiguous actors MUST remain at zero capabilities and MUST NOT inherit agent authority.
+- The alias collision check MUST take precedence over any cached chat-participant fast path.
+  A participant cached from an earlier, non-conflicting resolution MUST NOT mask a later
+  owner conflict across equivalent aliases; that conflict MUST still fail closed.
+- Attribution and its derived authority MUST be temporally stable across consecutive turns
+  and turn-context rotations. For an unchanged agent profile, a resolved actor MUST keep the
+  same owner principal and non-zero agent-identity/effective capabilities on every turn, and
+  an unresolved or ambiguous actor MUST stay `missing_contact` with zero capabilities.
 
 ## Outbound Flow
 

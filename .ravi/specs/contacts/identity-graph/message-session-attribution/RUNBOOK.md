@@ -54,7 +54,14 @@ When a message or session is attributed to the wrong identity:
      `ambiguous_instance_alias`. An `ambiguous_instance_alias` means equivalent aliases point
      at different owners and resolution fails closed by design; reconcile the conflicting
      platform identities rather than expecting a match.
+   - The alias collision check runs before the cached participant fast path, so a conflict
+     introduced after a participant was cached still fails closed. If a previously resolved
+     actor suddenly reports `ambiguous_instance_alias`, look for a second platform identity
+     linked under the other alias rather than a stale cache being ignored.
 4. Check owner: contact, agent, or unresolved.
+   - If a known actor stays resolved on the first turn but loses attribution or authority on
+     a later turn, remember authority is re-derived every turn: compare each turn's
+     `identity_provenance` and confirm no conflicting alias identity was linked between turns.
 5. Check whether the chat target was accidentally treated as the speaker.
 6. Check `chat_participants` for canonical membership.
 7. Check `session_participants` for observed runtime participation.

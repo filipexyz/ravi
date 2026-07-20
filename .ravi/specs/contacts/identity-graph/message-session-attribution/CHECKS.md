@@ -110,12 +110,15 @@ Expected:
 - equivalent aliases resolving to different owners fail closed with `ambiguous_instance_alias`, no actor, and zero capabilities
 - resolution provenance preserves the received alias, canonical instance reference, matched scope, and reason code, keeping `identity_not_found` distinct from `missing_contact`
 - new writes use the canonical instance reference and stay duplicate-free across retries
+- an alias owner conflict introduced after a participant was cached still fails closed; the participant fast path does not mask a later conflict
+- a resolved actor keeps the same owner and non-zero agent-identity/effective capabilities across consecutive turns and turn-context rotations, while an unknown or ambiguous actor stays `missing_contact` with zero capabilities across the same rotations
 
 ## Smoke Commands
 
 ```bash
 bun test src/omni/consumer-context.test.ts src/gateway-session-trace.test.ts
 bun test src/channels/slack/instance-alias.test.ts src/channels/slack/socket-mode.test.ts
+bun test src/runtime/runtime-request-context.test.ts
 bun run build
 ```
 

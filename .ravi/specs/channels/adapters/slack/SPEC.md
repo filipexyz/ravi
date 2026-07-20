@@ -92,6 +92,19 @@ exact empty legacy scope MUST remain readable without destructive mass migration
 canonical writes/retries MUST be idempotent and MUST NOT create duplicate platform
 identities.
 
+The alias collision check MUST be evaluated before any cached chat-participant fast path.
+A participant cached from an earlier, non-conflicting resolution MUST NOT mask a later
+slug/UUID owner conflict; such a conflict MUST still fail closed with
+`ambiguous_instance_alias`.
+
+Resolved actor attribution and its downstream authority MUST be temporally stable: for an
+unchanged agent profile and the same resolved owner, consecutive Slack turns and
+turn-context rotations MUST keep `actorResolution=resolved`, the same owner principal, a
+non-zero agent-identity capability count, and a non-zero effective capability count. A
+genuinely unknown or ambiguous external actor MUST remain fail-closed
+(`missing_contact`, zero agent-identity and effective capabilities) across the same
+rotations.
+
 ## Native Operations
 
 Slack workspace operations MUST follow `channels/slack/operations`.

@@ -14,11 +14,21 @@ import {
   listSessionSubscriptions,
 } from "../../router/index.js";
 import type { AgentConfig } from "../../router/index.js";
-import { dbFindChatMessage, dbGetChat, dbListChatParticipants, dbUpsertChat, getDb } from "../../router/router-db.js";
+import {
+  dbFindChatMessage,
+  dbGetChat,
+  dbGetContext,
+  dbListChatParticipants,
+  dbUpsertChat,
+  getDb,
+} from "../../router/router-db.js";
 import type { InstanceConfig } from "../../router/router-db.js";
 import type { RouterConfig } from "../../router/types.js";
 import type { MessageContext, MessageTarget, RuntimeLaunchPrompt } from "../../runtime/message-types.js";
-import { buildRuntimeRequestContext } from "../../runtime/runtime-request-context.js";
+import {
+  buildRuntimeRequestContext,
+  refreshRuntimeRequestContextForTurn,
+} from "../../runtime/runtime-request-context.js";
 import type { TaskRuntimeResolution } from "../../tasks/types.js";
 import {
   SlackAssistantThreadPresence,
@@ -1494,5 +1504,210 @@ describe("Slack Socket Mode instance alias canonicalization", () => {
       identity.platformIdentity!.id,
     );
     expect(resolvePlatformIdentity({ channel: "slack", instanceId: SLUG, platformUserId: "U123" })).toBeNull();
+  });
+
+  it("keeps a resolved Slack identity and its agent-identity authority stable across turn rotations", async () => {
+    const identity = ensureContactFromInbound({
+      channel: "slack",
+      instanceId: UUID,
+      platformSenderId: "U777",
+      contactIdentity: "U777",
+      displayName: "Luis",
+      intakeMode: "pending",
+      source: "test",
+    });
+    expect(identity.platformIdentity?.instanceId).toBe(UUID);
+
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = makeService({ instanceId: SLUG, config: aliasConfig(), published });
+
+    const envelopes = [
+      slackMessageEnvelope({ envelopeId: "env-turn-1", eventId: "EvTurn1", user: "U777", ts: "1713000040.000100" }),
+      slackMessageEnvelope({ envelopeId: "env-turn-2", eventId: "EvTurn2", user: "U777", ts: "1713000041.000100" }),
+      slackMessageEnvelope({ envelopeId: "env-turn-3", eventId: "EvTurn3", user: "U777", ts: "1713000042.000100" }),
+    ];
+    for (const envelope of envelopes) {
+      await service.handleEnvelope(envelope);
+    }
+    expect(published).toHaveLength(3);
+
+    const agent: AgentConfig = { id: "ravi-hil", cwd: "/tmp/ravi-hil" };
+    const session = getSessionByName("ravi-hil");
+
+    const turnPrompt = (index: number): RuntimeLaunchPrompt => {
+      const source = published[index]!.payload.source as MessageTarget;
+      const context = published[index]!.payload.context as MessageContext;
+      return { prompt: "publica", source, context };
+    };
+
+    const { runtimeContext, toolContext, raviEnv } = buildRuntimeRequestContext({
+      dbSessionKey: session!.sessionKey,
+      sessionName: "ravi-hil",
+      sessionCwd: "/tmp/ravi-hil",
+      agent,
+      prompt: turnPrompt(0),
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: turnPrompt(0).source,
+    });
+    const runtimeEnv: Record<string, string> = { ...raviEnv };
+
+    const assertResolvedTurn = (): void => {
+      expect(runtimeContext.metadata?.actorResolution).toBe("resolved");
+      expect(runtimeContext.metadata?.actorPrincipal).toBe(`contact:${identity.contact!.id}`);
+      expect(Number(runtimeContext.metadata?.agentIdentityCapabilityCount)).toBeGreaterThan(0);
+      expect(Number(runtimeContext.metadata?.effectiveCapabilityCount)).toBeGreaterThan(0);
+      expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+    };
+
+    assertResolvedTurn();
+    const stableCapabilityCount = Number(runtimeContext.metadata?.agentIdentityCapabilityCount);
+
+    let previousContextId = runtimeContext.contextId;
+    for (const index of [1, 2]) {
+      const refreshed = refreshRuntimeRequestContextForTurn({
+        runtimeContext,
+        toolContext,
+        runtimeEnv,
+        dbSessionKey: session!.sessionKey,
+        sessionName: "ravi-hil",
+        sessionCwd: "/tmp/ravi-hil",
+        agent,
+        prompt: turnPrompt(index),
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+        resolvedSource: turnPrompt(index).source,
+      });
+
+      expect(refreshed).toBe(runtimeContext);
+      expect(runtimeContext.contextId).not.toBe(previousContextId);
+      expect(dbGetContext(previousContextId)?.revokedAt).toBeNumber();
+      expect(toolContext.contextId).toBe(runtimeContext.contextId);
+      expect(toolContext.context).toBe(runtimeContext);
+      assertResolvedTurn();
+      expect(Number(runtimeContext.metadata?.agentIdentityCapabilityCount)).toBe(stableCapabilityCount);
+      previousContextId = runtimeContext.contextId;
+    }
+  });
+
+  it("keeps an unknown external Slack actor fail-closed with zero authority across turn rotations", async () => {
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = makeService({ instanceId: SLUG, config: aliasConfig(), published });
+
+    const envelopes = [
+      slackMessageEnvelope({ envelopeId: "env-unk-1", eventId: "EvUnk1", user: "U404", ts: "1713000050.000100" }),
+      slackMessageEnvelope({ envelopeId: "env-unk-2", eventId: "EvUnk2", user: "U404", ts: "1713000051.000100" }),
+      slackMessageEnvelope({ envelopeId: "env-unk-3", eventId: "EvUnk3", user: "U404", ts: "1713000052.000100" }),
+    ];
+    for (const envelope of envelopes) {
+      await service.handleEnvelope(envelope);
+    }
+    expect(published).toHaveLength(3);
+
+    const agent: AgentConfig = { id: "ravi-hil", cwd: "/tmp/ravi-hil" };
+    const session = getSessionByName("ravi-hil");
+
+    const turnPrompt = (index: number): RuntimeLaunchPrompt => {
+      const source = published[index]!.payload.source as MessageTarget;
+      const context = published[index]!.payload.context as MessageContext;
+      expect(source.actorType).toBe("unknown");
+      expect(source.contactId).toBeUndefined();
+      return { prompt: "publica", source, context };
+    };
+
+    const { runtimeContext, toolContext, raviEnv } = buildRuntimeRequestContext({
+      dbSessionKey: session!.sessionKey,
+      sessionName: "ravi-hil",
+      sessionCwd: "/tmp/ravi-hil",
+      agent,
+      prompt: turnPrompt(0),
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: turnPrompt(0).source,
+    });
+    const runtimeEnv: Record<string, string> = { ...raviEnv };
+
+    const assertFailClosedTurn = (): void => {
+      expect(runtimeContext.metadata?.actorResolution).toBe("missing_contact");
+      expect(Number(runtimeContext.metadata?.agentIdentityCapabilityCount)).toBe(0);
+      expect(Number(runtimeContext.metadata?.effectiveCapabilityCount)).toBe(0);
+      expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(false);
+    };
+
+    assertFailClosedTurn();
+
+    let previousContextId = runtimeContext.contextId;
+    for (const index of [1, 2]) {
+      refreshRuntimeRequestContextForTurn({
+        runtimeContext,
+        toolContext,
+        runtimeEnv,
+        dbSessionKey: session!.sessionKey,
+        sessionName: "ravi-hil",
+        sessionCwd: "/tmp/ravi-hil",
+        agent,
+        prompt: turnPrompt(index),
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+        resolvedSource: turnPrompt(index).source,
+      });
+
+      expect(runtimeContext.contextId).not.toBe(previousContextId);
+      expect(dbGetContext(previousContextId)?.revokedAt).toBeNumber();
+      assertFailClosedTurn();
+      previousContextId = runtimeContext.contextId;
+    }
+  });
+
+  it("fails closed on a later alias owner conflict even after a participant was cached", async () => {
+    const firstOwner = ensureContactFromInbound({
+      channel: "slack",
+      instanceId: UUID,
+      platformSenderId: "U999",
+      contactIdentity: "U999",
+      displayName: "Owner UUID",
+      intakeMode: "pending",
+      source: "test",
+    });
+    expect(firstOwner.platformIdentity?.instanceId).toBe(UUID);
+
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = makeService({ instanceId: SLUG, config: aliasConfig(), published });
+
+    await service.handleEnvelope(
+      slackMessageEnvelope({ envelopeId: "env-cache-1", eventId: "EvCache1", user: "U999", ts: "1713000060.000100" }),
+    );
+
+    const firstSource = published[0]!.payload.source as MessageTarget;
+    expect(firstSource.actorType).toBe("contact");
+    expect(firstSource.contactId).toBe(firstOwner.contact!.id);
+    const canonicalChatId = firstSource.canonicalChatId!;
+    const cachedParticipants = dbListChatParticipants(canonicalChatId);
+    expect(cachedParticipants).toHaveLength(1);
+    expect(cachedParticipants[0]).toMatchObject({ contactId: firstOwner.contact!.id });
+
+    const conflict = createContact({ phone: "5511999990009", name: "Owner Slug", status: "allowed" });
+    linkContactIdentity(conflict.id, { channel: "slack", platformUserId: "U999", instanceId: SLUG });
+
+    await service.handleEnvelope(
+      slackMessageEnvelope({ envelopeId: "env-cache-2", eventId: "EvCache2", user: "U999", ts: "1713000061.000100" }),
+    );
+
+    expect(published).toHaveLength(2);
+    const secondSource = published[1]!.payload.source as MessageTarget;
+    const secondContext = published[1]!.payload.context as MessageContext;
+    expect(secondSource.actorType).toBe("unknown");
+    expect(secondSource.contactId).toBeUndefined();
+    expect(secondSource.platformIdentityId).toBeUndefined();
+    expect(secondSource.identityProvenance).toMatchObject({
+      canonicalInstance: UUID,
+      matchedInstance: null,
+      reason: "ambiguous_instance_alias",
+    });
+    expect(actorResolutionForSource(secondSource, secondContext)).toBe("missing_contact");
   });
 });

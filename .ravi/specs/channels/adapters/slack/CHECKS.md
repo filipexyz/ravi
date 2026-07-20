@@ -14,3 +14,5 @@
 - [ ] Conflicting owners across equivalent aliases MUST fail closed with `ambiguous_instance_alias`, no actor, and zero capabilities.
 - [ ] Resolution provenance MUST carry the received alias, canonical instance reference, matched scope, and reason code using concrete schemas.
 - [ ] New writes MUST use the canonical instance reference and stay duplicate-free across retries.
+- [ ] An explicit alias owner collision MUST fail closed even when a chat participant was cached from an earlier non-conflicting resolution; the participant fast path MUST NOT mask a later slug/UUID conflict.
+- [ ] A resolved Slack actor MUST keep the same owner, non-zero agent-identity authority, and allowed representative capability across consecutive turns and turn-context rotations.

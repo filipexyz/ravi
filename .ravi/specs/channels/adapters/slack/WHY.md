@@ -40,6 +40,15 @@ map to different owners, silently picking one could attribute a turn to the wron
 The adapter therefore fails closed with an explicit reason rather than choosing the first
 row, keeping unresolved and ambiguous actors at zero capabilities.
 
+The participant cache is only a performance shortcut, so it must not be trusted over that
+security boundary. A participant linked during an earlier, non-conflicting turn could
+otherwise mask a conflict introduced later, re-attributing turns to a stale owner. Running
+the collision check before the cache keeps the fail-closed guarantee true over time. The
+same reasoning applies across turn-context rotations: because authority is re-derived from
+the resolved actor every turn, a correctly resolved identity must keep its owner and
+capabilities stable turn after turn, and an unknown or ambiguous actor must stay at zero —
+the regression this fix targets was precisely a known actor flipping to unresolved.
+
 ## Why Borrow From Hermes
 
 Hermes' Slack gateway shows the operational details that matter before real workspace usage:

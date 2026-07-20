@@ -34,3 +34,12 @@
      than expecting a match.
   5. The empty legacy scope is consulted only after scoped aliases miss and is never a
      wildcard; another workspace's rows are never selected.
+  6. A previously resolved participant does not override a new alias conflict: the collision
+     check runs before the participant cache, so a later slug/UUID owner conflict still
+     fails closed. If a known actor suddenly reports `ambiguous_instance_alias`, look for a
+     second platform identity that was linked under the other alias.
+- Authority lost mid-conversation: a resolved Slack actor keeps the same owner and non-zero
+  agent-identity/effective capabilities across turns and turn-context rotations. If a later
+  turn drops to `missing_contact` or zero capabilities for an unchanged agent, inspect the
+  turn's `identityProvenance` and confirm no conflicting alias identity was introduced
+  between turns.

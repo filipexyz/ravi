@@ -983,6 +983,29 @@ function resolveSlackActorIdentity(input: {
   instanceAliases: SlackInstanceAliasResolution;
   platformUserId: string;
 }): SlackActorIdentity {
+  const scoped = resolveScopedSlackIdentity(
+    input.instanceAliases,
+    (instanceId) => resolvePlatformIdentity({ channel: "slack", instanceId, platformUserId: input.platformUserId }),
+    (identity) => (identity.ownerType && identity.ownerId ? `${identity.ownerType}:${identity.ownerId}` : null),
+  );
+
+  // An explicit configured slug/UUID alias collision must fail closed even when a
+  // participant was cached from an earlier, non-conflicting resolution. Evaluating
+  // ambiguity before the participant fast path prevents a stale cache from masking
+  // a later owner conflict across equivalent instance aliases.
+  if (scoped.reason === SLACK_AMBIGUOUS_INSTANCE_ALIAS_REASON) {
+    return {
+      actorType: "unknown",
+      rawSenderId: input.platformUserId,
+      normalizedSenderId: input.platformUserId,
+      identityConfidence: 0,
+      identityProvenance: buildSlackInstanceProvenance(input.instanceAliases, {
+        reason: SLACK_AMBIGUOUS_INSTANCE_ALIAS_REASON,
+        matchedInstance: null,
+      }),
+    };
+  }
+
   const participant = dbListChatParticipants(input.chatId).find(
     (candidate) => candidate.normalizedPlatformUserId === input.platformUserId,
   );
@@ -1006,25 +1029,6 @@ function resolveSlackActorIdentity(input: {
       normalizedSenderId: input.platformUserId,
       identityConfidence: 1,
       identityProvenance: { source: "chat_participants", chatId: input.chatId },
-    };
-  }
-
-  const scoped = resolveScopedSlackIdentity(
-    input.instanceAliases,
-    (instanceId) => resolvePlatformIdentity({ channel: "slack", instanceId, platformUserId: input.platformUserId }),
-    (identity) => (identity.ownerType && identity.ownerId ? `${identity.ownerType}:${identity.ownerId}` : null),
-  );
-
-  if (scoped.reason === SLACK_AMBIGUOUS_INSTANCE_ALIAS_REASON) {
-    return {
-      actorType: "unknown",
-      rawSenderId: input.platformUserId,
-      normalizedSenderId: input.platformUserId,
-      identityConfidence: 0,
-      identityProvenance: buildSlackInstanceProvenance(input.instanceAliases, {
-        reason: SLACK_AMBIGUOUS_INSTANCE_ALIAS_REASON,
-        matchedInstance: null,
-      }),
     };
   }
 
