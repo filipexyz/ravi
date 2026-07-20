@@ -2308,6 +2308,23 @@ function getDb(): Database {
 
     CREATE INDEX IF NOT EXISTS idx_cron_jobs_enabled ON cron_jobs(enabled);
     CREATE INDEX IF NOT EXISTS idx_cron_jobs_next_run ON cron_jobs(next_run_at);
+
+    -- Durable idempotency ledger for reactions whose target may later be deleted.
+    CREATE TABLE IF NOT EXISTS reaction_actions (
+      idempotency_key_hash TEXT PRIMARY KEY,
+      key_source TEXT NOT NULL CHECK(key_source IN ('explicit','observer')),
+      action_type TEXT NOT NULL,
+      action_fingerprint TEXT NOT NULL,
+      rule_id TEXT,
+      source_turn_ids_json TEXT NOT NULL DEFAULT '[]',
+      target_type TEXT NOT NULL,
+      target_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      completed_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_reaction_actions_source
+      ON reaction_actions(rule_id, action_type, created_at);
   `);
 
   // Migration: add reply_session to cron_jobs

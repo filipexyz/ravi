@@ -69,7 +69,7 @@ describe("classifyCompactionAnnouncement", () => {
       },
     });
     expect(result.externalAnnouncementsAllowed).toBe(false);
-    expect(result.origin).toBe("automation");
+    expect(result.origin).toBe("session-followup");
   });
 
   it("suppresses announcements when identity provenance is an automation source", () => {
@@ -77,7 +77,7 @@ describe("classifyCompactionAnnouncement", () => {
       source: { ...humanSource, identityProvenance: { source: "cron" } },
     });
     expect(result.externalAnnouncementsAllowed).toBe(false);
-    expect(result.origin).toBe("automation");
+    expect(result.origin).toBe("cron");
   });
 
   it("suppresses announcements for background sources that set suppressPresence", () => {
@@ -94,6 +94,6 @@ describe("classifyCompactionAnnouncement", () => {
     });
     // actorType=automation without an automationId is not a sufficient signal on its own.
     expect(result.externalAnnouncementsAllowed).toBe(true);
-    expect(result.origin).toBe("human");
+    expect(result.origin).toBe("unknown");
   });
 });

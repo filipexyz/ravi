@@ -738,6 +738,58 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
   });
 
+  it("runs heartbeat and observer prompts under explicit automation principals", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const heartbeat = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt: { prompt: "heartbeat", _heartbeat: true },
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+    }).runtimeContext;
+    expect(heartbeat.metadata).toMatchObject({
+      actorPrincipal: "automation:heartbeat",
+      agentIdentityCompartment: "automation:heartbeat",
+      turnProvenance: { origin: "heartbeat", background: true },
+      actor: { identityProvenance: { source: "heartbeat" } },
+    });
+
+    const observer = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt: {
+        prompt: "observe",
+        _observation: {
+          sourceSessionKey: "source-key",
+          sourceSessionName: "source",
+          bindingId: "binding-1",
+          ruleId: "rule-1",
+          role: "observer",
+          mode: "observe",
+          eventIds: ["event-1"],
+          sourceTurnIds: ["turn-source-1"],
+        },
+      },
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+    }).runtimeContext;
+    expect(observer.metadata).toMatchObject({
+      actorPrincipal: "automation:observer:binding-1",
+      agentIdentityCompartment: "automation:observer:binding-1",
+      turnProvenance: { origin: "observer", background: true },
+      actor: { identityProvenance: { source: "observer", bindingId: "binding-1", ruleId: "rule-1" } },
+      observation: { ruleId: "rule-1", sourceTurnIds: ["turn-source-1"] },
+    });
+  });
+
   it("runs session followup prompts as automation principals with their delivery surface", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });

@@ -93,6 +93,9 @@ describe("runtime session pool", () => {
       }),
     ).toBe("background");
     expect(classifyRuntimeSessionStartLane("main", { prompt: "task", taskBarrierTaskId: "task-1" })).toBe("background");
+    expect(classifyRuntimeSessionStartLane("main", { prompt: "cron", _cron: true })).toBe("background");
+    expect(classifyRuntimeSessionStartLane("main", { prompt: "trigger", _trigger: true })).toBe("background");
+    expect(classifyRuntimeSessionStartLane("main", { prompt: "heartbeat", _heartbeat: true })).toBe("background");
     expect(
       classifyRuntimeSessionStartLane("main", {
         prompt: "system",

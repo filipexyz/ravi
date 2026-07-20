@@ -13,8 +13,10 @@ import {
   ensureObserverBindingsForSession,
   explainObserverRulesForSession,
   getObservationDebounceMs,
+  reconcileObserverBindingsForSession,
   setObservationPromptPublisherForTests,
 } from "./observation-plane.js";
+import { classifyTurnProvenance } from "./turn-provenance.js";
 
 let stateDir: string | null = null;
 const publishedPrompts: Array<{
@@ -78,6 +80,126 @@ describe("Observation Plane", () => {
     });
     expect(second.created).toHaveLength(0);
     expect(dbListObserverBindings({ sourceSessionKey: "source-session" })).toHaveLength(1);
+  });
+
+  it("defers turn selectors and excludes a cron running in the main session", async () => {
+    const session = getOrCreateSession("agent:worker:main", "worker", "/tmp/worker", { name: "main" });
+    const rule = dbUpsertObserverRule({
+      id: "interactive-followups",
+      scope: "global",
+      observerAgentId: "observer",
+      observerRole: "interactive-followups",
+      observerMode: "summarize",
+      eventTypes: ["turn.complete"],
+      selector: `turn.background == "false"`,
+    });
+    const attached = ensureObserverBindingsForSession({ sessionName: "main", session });
+
+    expect(rule.selector).toBe(`turn.background == "false"`);
+    expect(attached.bindings).toHaveLength(1);
+    expect(attached.skipped).toHaveLength(0);
+
+    const cronResult = await deliverObservationEvents({
+      sourceSessionName: "main",
+      sourceSession: session,
+      agentId: "worker",
+      events: [
+        createObservationEvent({
+          runId: "run-main-cron",
+          sequence: 1,
+          type: "turn.complete",
+          turn: classifyTurnProvenance({ prompt: { prompt: "cron", _cron: true, _jobId: "job-1" } }),
+        }),
+      ],
+    });
+    expect(cronResult.delivered).toHaveLength(0);
+    expect(publishedPrompts).toHaveLength(0);
+
+    const humanResult = await deliverObservationEvents({
+      sourceSessionName: "main",
+      sourceSession: session,
+      agentId: "worker",
+      events: [
+        createObservationEvent({
+          runId: "run-main-human",
+          sequence: 1,
+          type: "turn.complete",
+          turn: classifyTurnProvenance({ source: { actorType: "contact" } }),
+        }),
+      ],
+    });
+    expect(humanResult.delivered).toHaveLength(1);
+    expect(publishedPrompts).toHaveLength(1);
+  });
+
+  it("evaluates source-only selectors before creating a binding", () => {
+    const session = getOrCreateSession("source-selector", "worker", "/tmp/worker", { name: "source-selector" });
+    session.channel = "slack";
+    dbUpsertObserverRule({
+      id: "whatsapp-only",
+      scope: "global",
+      observerAgentId: "observer",
+      observerRole: "whatsapp-only",
+      selector: `source.channel == "whatsapp"`,
+    });
+
+    const result = ensureObserverBindingsForSession({ sessionName: "source-selector", session });
+    expect(result.bindings).toHaveLength(0);
+    expect(result.skipped[0]?.reason).toBe("selector_mismatch");
+  });
+
+  it("keeps legacy sourceExclusions metadata as compatibility input", () => {
+    const session = getOrCreateSession("agent:worker:cron:legacy", "worker", "/tmp/worker", {
+      name: "legacy-cron",
+    });
+    dbUpsertObserverRule({
+      id: "legacy-exclusions",
+      observerAgentId: "observer",
+      observerRole: "legacy-exclusions",
+      metadata: { sourceExclusions: { sessionKeyFragments: [":cron:"] } },
+    });
+
+    const result = ensureObserverBindingsForSession({ sessionName: "legacy-cron", session });
+    expect(result.bindings).toHaveLength(0);
+    expect(result.skipped[0]?.reason).toBe("excluded_source_session_key_fragment");
+  });
+
+  it("rejects invalid or out-of-bound observer selectors", () => {
+    expect(() =>
+      dbUpsertObserverRule({
+        id: "invalid-selector",
+        observerAgentId: "observer",
+        selector: `secret.token == "nope"`,
+      }),
+    ).toThrow("Invalid observer selector");
+  });
+
+  it("reconciles and disables durable bindings that no longer match", () => {
+    const session = getOrCreateSession("reconcile-source", "worker", "/tmp/worker", {
+      name: "reconcile-source",
+    });
+    session.channel = "slack";
+    dbUpsertObserverRule({
+      id: "reconcile-rule",
+      observerAgentId: "observer",
+      observerRole: "reconcile-role",
+      selector: `source.channel == "slack"`,
+    });
+    ensureObserverBindingsForSession({ sessionName: "reconcile-source", session });
+    dbUpsertObserverRule({
+      id: "reconcile-rule",
+      observerAgentId: "observer",
+      selector: `source.channel == "whatsapp"`,
+    });
+
+    const result = reconcileObserverBindingsForSession({
+      sessionName: "reconcile-source",
+      session,
+      mode: "full-reconcile",
+    });
+    expect(result.bindings).toHaveLength(0);
+    expect(result.disabled).toHaveLength(1);
+    expect(dbListObserverBindings({ sourceSessionKey: session.sessionKey })[0]?.enabled).toBe(false);
   });
 
   it("matches contact-tagged observer rules via session participants", () => {
@@ -281,6 +403,7 @@ describe("Observation Plane", () => {
           runId: "run-test",
           sequence: 2,
           type: "turn.complete",
+          turnId: "turn-deliver",
           payload: { responseChars: 10 },
         }),
       ],
@@ -290,9 +413,60 @@ describe("Observation Plane", () => {
     expect(publishedPrompts).toHaveLength(1);
     expect(publishedPrompts[0]?.sessionName).toMatch(/^obs:/);
     expect(publishedPrompts[0]?.payload._agentId).toBe("observer");
+    expect(publishedPrompts[0]?.payload._observation).toMatchObject({ sourceTurnIds: ["turn-deliver"] });
     expect(String(publishedPrompts[0]?.payload.prompt)).toContain("Turn Completed");
     expect(String(publishedPrompts[0]?.payload.prompt)).not.toContain('{"id"');
     expect(String(publishedPrompts[0]?.payload.prompt)).not.toContain("ignored by filter");
+  });
+
+  it("claims delivery ids durably and releases the claim when publishing fails", async () => {
+    const session = getOrCreateSession("dedupe-source", "worker", "/tmp/worker", { name: "dedupe-source" });
+    dbUpsertObserverRule({
+      id: "dedupe-rule",
+      observerAgentId: "observer",
+      observerRole: "dedupe-role",
+      observerMode: "summarize",
+      eventTypes: ["turn.complete"],
+    });
+    ensureObserverBindingsForSession({ sessionName: "dedupe-source", session });
+    const event = createObservationEvent({
+      runId: "run-dedupe",
+      sequence: 1,
+      type: "turn.complete",
+    });
+
+    let attempts = 0;
+    setObservationPromptPublisherForTests(async (sessionName, payload) => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("temporary publish failure");
+      publishedPrompts.push({ sessionName, payload });
+    });
+    await expect(
+      deliverObservationEvents({
+        sourceSessionName: "dedupe-source",
+        sourceSession: session,
+        agentId: "worker",
+        events: [event],
+      }),
+    ).rejects.toThrow("temporary publish failure");
+
+    const retry = await deliverObservationEvents({
+      sourceSessionName: "dedupe-source",
+      sourceSession: session,
+      agentId: "worker",
+      events: [event],
+    });
+    const duplicate = await deliverObservationEvents({
+      sourceSessionName: "dedupe-source",
+      sourceSession: session,
+      agentId: "worker",
+      events: [event],
+    });
+
+    expect(retry.delivered).toHaveLength(1);
+    expect(duplicate.delivered).toHaveLength(0);
+    expect(duplicate.skipped[0]?.reason).toBe("events_already_delivered");
+    expect(attempts).toBe(2);
   });
 
   it("uses rule-selected Markdown profiles and snapshots them on bindings", async () => {

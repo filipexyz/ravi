@@ -26,6 +26,7 @@ import {
   snapshotAgentCapabilities,
 } from "./runtime-context-store.js";
 import type { RuntimeCapabilities, RuntimeProviderId } from "./types.js";
+import { classifyTurnProvenance } from "./turn-provenance.js";
 
 export interface RuntimeRequestContextOptions {
   dbSessionKey: string;
@@ -466,6 +467,7 @@ function buildRuntimeContextMetadata(options: {
       ? { runtimeThinking: options.runtimeResolution.options.thinking }
       : {}),
     runtimeModelSource: options.runtimeResolution.sources.model,
+    turnProvenance: classifyTurnProvenance({ prompt: options.prompt, source: options.resolvedSource }),
     ...(options.runtimeResolution.modelPresetId
       ? { runtimeModelPresetId: options.runtimeResolution.modelPresetId }
       : {}),
@@ -476,6 +478,7 @@ function buildRuntimeContextMetadata(options: {
     runtimeThinkingSource: options.runtimeResolution.sources.thinking,
     ...(options.approvalSource ? { approvalSource: options.approvalSource } : {}),
     ...(actorMetadata ? { actor: actorMetadata, actorMetadata } : {}),
+    ...(options.prompt._observation ? { observation: { ...options.prompt._observation } } : {}),
     ...(options.prompt._thread ? { raviThread: options.prompt._thread } : {}),
   };
 }
@@ -515,6 +518,12 @@ function resolveAutomationPromptPrincipal(
   source?: RuntimeMessageTarget,
   context?: RuntimeLaunchPrompt["context"],
 ): AuthorityPrincipal | null {
+  if (prompt._observation) {
+    return {
+      subjectType: "automation",
+      subjectId: `observer:${prompt._observation.bindingId}`,
+    };
+  }
   if (prompt._cron && prompt._jobId) {
     return { subjectType: "automation", subjectId: `cron:${prompt._jobId}` };
   }
@@ -530,6 +539,9 @@ function resolveAutomationPromptPrincipal(
       subjectId: "session-followup",
     };
   }
+  if (prompt._heartbeat) {
+    return { subjectType: "automation", subjectId: "heartbeat" };
+  }
   if (prompt._daemonRestartResume) {
     if (hasResolvedContactActor(source) || hasResolvedContactActor(context)) {
       return null;
@@ -544,9 +556,29 @@ function hasResolvedContactActor(metadata: { actorType?: string; contactId?: str
 }
 
 function buildAutomationIdentityProvenance(prompt: RuntimeLaunchPrompt): Record<string, unknown> | undefined {
+  if (prompt._observation) {
+    return {
+      source: "observer",
+      bindingId: prompt._observation.bindingId,
+      ruleId: prompt._observation.ruleId,
+    };
+  }
   if (prompt._cron && prompt._jobId) {
     return { source: "cron", jobId: prompt._jobId };
   }
+  if (prompt._trigger) {
+    return { source: "trigger", ...(prompt._triggerId ? { triggerId: prompt._triggerId } : {}) };
+  }
+  if (prompt._sessionFollowup) {
+    return {
+      source: "session-followup",
+      ...(prompt._sessionFollowupCadenceId ? { cadenceId: prompt._sessionFollowupCadenceId } : {}),
+      ...(prompt._sessionFollowupRunId ? { runId: prompt._sessionFollowupRunId } : {}),
+    };
+  }
+  if (prompt._heartbeat) return { source: "heartbeat" };
+  if (prompt.taskBarrierTaskId) return { source: "task", taskId: prompt.taskBarrierTaskId };
+  if (prompt._daemonRestartResume) return { source: "daemon-restart" };
   return undefined;
 }
 

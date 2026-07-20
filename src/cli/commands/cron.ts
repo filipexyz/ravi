@@ -14,7 +14,7 @@ import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { resolveSession } from "../../router/sessions.js";
 import { getDefaultTimezone, getAccountForAgent, getDefaultAgentId, dbGetAgent } from "../../router/router-db.js";
 import {
-  dbCreateCronJob,
+  createCronJobIdempotently,
   dbGetCronJob,
   dbListCronJobs,
   dbUpdateCronJob,
@@ -60,6 +60,25 @@ function normalizeCronOnError(value: string | undefined): string | undefined {
     fail(`Invalid --on-error value: ${value}. Use notify-session:<session>`);
   }
   return `${prefix}${trimmed.slice(prefix.length).trim()}`;
+}
+
+function resolveObserverCronIdempotencyContext(): { ruleId: string; sourceTurnIds: string[] } | undefined {
+  const metadata = getContext()?.context?.metadata;
+  const observation = metadata?.observation;
+  if (!observation || typeof observation !== "object" || Array.isArray(observation)) return undefined;
+  const record = observation as Record<string, unknown>;
+  const ruleId = typeof record.ruleId === "string" ? record.ruleId.trim() : "";
+  const sourceTurnIds = Array.isArray(record.sourceTurnIds)
+    ? [
+        ...new Set(
+          record.sourceTurnIds
+            .filter((value): value is string => typeof value === "string")
+            .map((value) => value.trim())
+            .filter(Boolean),
+        ),
+      ].sort()
+    : [];
+  return ruleId && sourceTurnIds.length > 0 ? { ruleId, sourceTurnIds } : undefined;
 }
 
 function resolveCronRouting(job: CronJob): CronRoutingResolution {
@@ -336,6 +355,8 @@ export class CronCommands {
     account?: string,
     @Option({ flags: "--description <text>", description: "Job description" }) description?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--idempotency-key <key>", description: "Durable create idempotency key" })
+    idempotencyKey?: string,
   ) {
     const warnings: string[] = [];
     const shellCommand = shell?.trim() || exec?.trim();
@@ -449,22 +470,44 @@ export class CronCommands {
     };
 
     try {
-      const job = dbCreateCronJob(input);
+      const observerIdempotency = resolveObserverCronIdempotencyContext();
+      const creation = createCronJobIdempotently(
+        input,
+        idempotencyKey !== undefined
+          ? { explicitKey: idempotencyKey }
+          : observerIdempotency
+            ? { observer: observerIdempotency }
+            : undefined,
+      );
+      const job = creation.job;
 
       // Signal daemon to refresh timers
-      await nats.emit("ravi.cron.refresh", {});
+      if (creation.created) await nats.emit("ravi.cron.refresh", {});
 
       const payload = {
-        status: "created" as const,
-        target: { type: "cron" as const, id: job.id },
-        changedCount: 1,
+        status: creation.created ? ("created" as const) : ("deduplicated" as const),
+        target: { type: "cron" as const, id: creation.targetId },
+        changedCount: creation.created ? 1 : 0,
         warnings,
-        job: serializeCronJob(job),
+        job: job ? serializeCronJob(job) : null,
+        ...(creation.reaction
+          ? {
+              idempotency: {
+                keyHash: creation.reaction.keyHash,
+                source: creation.reaction.keySource,
+                deduplicated: !creation.created,
+              },
+            }
+          : {}),
       };
 
       if (asJson) {
         printJson(payload);
+      } else if (!creation.created) {
+        console.log(`\n= Cron action already handled: ${creation.targetId}`);
+        if (!job) console.log("  The original one-shot job has already been removed.");
       } else {
+        if (!job) fail("Created cron job could not be reloaded.");
         console.log(`\n✓ Created job: ${job.id}`);
         console.log(`  Name:       ${job.name}`);
         console.log(`  Mode:       ${job.executionType}`);

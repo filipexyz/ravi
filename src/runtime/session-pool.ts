@@ -1,7 +1,7 @@
 import { getSession, getSessionByName } from "../router/index.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
-import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { classifyTurnProvenance } from "./turn-provenance.js";
 
 export const RUNTIME_SESSION_POOL_MAX_ENV = "RAVI_RUNTIME_SESSION_POOL_MAX";
 export const LEGACY_RUNTIME_SESSION_POOL_MAX_ENV = "RAVI_STREAMING_POOL_MAX";
@@ -165,10 +165,7 @@ export function classifyRuntimeSessionStartLane(
   sessionName?: string | null,
   prompt?: RuntimeLaunchPrompt | null,
 ): RuntimeSessionStartLane {
-  if (prompt?._observation) {
-    return "background";
-  }
-  if (normalizePromptTaskBarrierTaskId(prompt?.taskBarrierTaskId)) {
+  if (classifyTurnProvenance({ prompt }).background) {
     return "background";
   }
   if (sessionName && isTaskSessionName(sessionName)) {

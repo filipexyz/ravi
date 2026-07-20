@@ -1,5 +1,6 @@
 import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barriers.js";
 import type { RuntimeMessageTarget } from "../runtime/host-session.js";
+import type { TurnProvenance } from "../runtime/turn-provenance.js";
 import type {
   RuntimeCapabilities,
   RuntimeEffort,
@@ -71,6 +72,7 @@ export interface RuntimeTraceAdapterRequestInput extends RuntimeTraceIdentity {
   pendingIds?: string[];
   commands?: unknown[];
   runtimeCredential?: Record<string, unknown> | null;
+  turnProvenance?: TurnProvenance | null;
 }
 
 export interface RuntimeTraceTerminalTurnInput extends RuntimeTraceIdentity {
@@ -229,6 +231,7 @@ export function recordAdapterRequestTrace(input: RuntimeTraceAdapterRequestInput
       pending_ids: input.pendingIds ?? [],
       commands: input.commands ?? [],
       runtime_credential: input.runtimeCredential ?? null,
+      turn_provenance: input.turnProvenance ?? null,
     };
     const request = recordSessionBlob({
       kind: "adapter_request",

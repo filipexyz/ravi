@@ -26,7 +26,7 @@ import {
 } from "../router/index.js";
 import { getAgent } from "../router/config.js";
 import { dbListTriggers, dbGetTrigger, dbUpdateTriggerState } from "./triggers-db.js";
-import { evaluateFilter } from "./filter.js";
+import { compileFilter, type CompiledFilter } from "./filter.js";
 import type { Trigger } from "./types.js";
 import { isBlockedTriggerTopic } from "./topic-policy.js";
 import { buildTriggerPrompt } from "./prompt.js";
@@ -39,12 +39,54 @@ const EVENT_DEDUPE_MAX = 2_000;
 /** Tracks a topic subscription stream for teardown */
 type TopicSub = ReturnType<typeof nats.subscribe>;
 
+interface PreparedTrigger {
+  trigger: Trigger;
+  filter: CompiledFilter;
+}
+
+interface TopicSubscription {
+  stream: TopicSub;
+  triggers: PreparedTrigger[];
+}
+
+export function planTriggerTopicRefresh(
+  currentTopics: Iterable<string>,
+  desiredTopics: Iterable<string>,
+): { keep: string[]; add: string[]; remove: string[] } {
+  const current = new Set(currentTopics);
+  const desired = new Set(desiredTopics);
+  return {
+    keep: [...desired].filter((topic) => current.has(topic)).sort(),
+    add: [...desired].filter((topic) => !current.has(topic)).sort(),
+    remove: [...current].filter((topic) => !desired.has(topic)).sort(),
+  };
+}
+
+export function isTriggerOriginatedEvent(topic: string, data: unknown): boolean {
+  if (topic.includes(":trigger:")) return true;
+  if (!data || typeof data !== "object") return false;
+  const record = data as Record<string, unknown>;
+  const origin = (record._turnProvenance as { origin?: unknown } | undefined)?.origin;
+  return origin === "trigger" || record._trigger === true;
+}
+
+export function shouldRetryTriggerTopic(
+  topic: string,
+  running: boolean,
+  desiredTopics: ReadonlySet<string>,
+  subscriptions: ReadonlyMap<string, unknown>,
+): boolean {
+  return running && desiredTopics.has(topic) && !subscriptions.has(topic);
+}
+
 /**
  * TriggerRunner - manages event-driven trigger subscriptions
  */
 export class TriggerRunner {
   /** Topic streams (NOT including refresh/test — those are long-lived) */
-  private topicSubs: TopicSub[] = [];
+  private topicSubs = new Map<string, TopicSubscription>();
+  /** Last desired topic set, used to prevent delayed retries from reviving removed subscriptions. */
+  private desiredTopics = new Set<string>();
   private running = false;
   private recentEventFires = new Map<string, number>();
   private recentEventFireOps = 0;
@@ -83,14 +125,15 @@ export class TriggerRunner {
    * Tear down all topic subscriptions.
    */
   private teardownSubscriptions(): void {
-    for (const sub of this.topicSubs) {
+    for (const subscription of this.topicSubs.values()) {
       try {
-        sub.return?.(undefined);
+        subscription.stream.return?.(undefined);
       } catch {
         // ignore close errors
       }
     }
-    this.topicSubs = [];
+    this.topicSubs.clear();
+    this.desiredTopics.clear();
   }
 
   // Mutex to prevent concurrent setupSubscriptions calls
@@ -119,39 +162,78 @@ export class TriggerRunner {
   }
 
   private async _doSetupSubscriptions(): Promise<void> {
-    // Tear down existing
-    this.teardownSubscriptions();
-
     const triggers = dbListTriggers({ enabledOnly: true });
 
     // Group by topic to share subscriptions
-    const byTopic = new Map<string, Trigger[]>();
+    const byTopic = new Map<string, PreparedTrigger[]>();
     for (const t of triggers) {
+      if (isBlockedTriggerTopic(t.topic)) {
+        log.warn("Skipping trigger on internal topic (anti-loop)", { topic: t.topic, triggerId: t.id });
+        continue;
+      }
       const list = byTopic.get(t.topic) || [];
-      list.push(t);
+      const filter = compileFilter(t.filter);
+      if (!filter.valid) {
+        log.warn("Loaded invalid trigger filter; preserving legacy fail-open behavior", {
+          triggerId: t.id,
+          filter: t.filter,
+          error: filter.error,
+        });
+      }
+      list.push({ trigger: t, filter });
       byTopic.set(t.topic, list);
     }
 
-    for (const [topic, trigs] of byTopic) {
-      if (isBlockedTriggerTopic(topic)) {
-        log.warn("Skipping trigger on internal topic (anti-loop)", { topic });
-        continue;
+    this.desiredTopics = new Set(byTopic.keys());
+    const plan = planTriggerTopicRefresh(this.topicSubs.keys(), this.desiredTopics);
+    for (const topic of plan.keep) {
+      const existing = this.topicSubs.get(topic);
+      const desired = byTopic.get(topic);
+      if (!existing || !desired) continue;
+      const previousById = new Map(existing.triggers.map((item) => [item.trigger.id, item.trigger]));
+      for (const item of desired) {
+        const previous = previousById.get(item.trigger.id);
+        if (previous?.lastFiredAt && (!item.trigger.lastFiredAt || previous.lastFiredAt > item.trigger.lastFiredAt)) {
+          item.trigger.lastFiredAt = previous.lastFiredAt;
+        }
       }
-      this.subscribeToTopic(topic, trigs);
+      // The loop reads this mutable snapshot, so config changes do not churn
+      // a healthy NATS subscription for the same topic.
+      existing.triggers = desired;
+    }
+
+    for (const topic of plan.add) {
+      const desired = byTopic.get(topic);
+      if (desired) this.subscribeToTopic(topic, desired);
+    }
+
+    for (const topic of plan.remove) {
+      const subscription = this.topicSubs.get(topic);
+      if (!subscription) continue;
+      this.topicSubs.delete(topic);
+      try {
+        subscription.stream.return?.(undefined);
+      } catch {
+        // Ignore close failures; the subscription is no longer reachable.
+      }
     }
 
     log.info("Subscriptions set up", {
       topics: byTopic.size,
       triggers: triggers.length,
+      addedTopics: plan.add.length,
+      retainedTopics: plan.keep.length,
+      removedTopics: plan.remove.length,
     });
   }
 
   /**
    * Subscribe to a NATS topic and fire matching triggers.
    */
-  private subscribeToTopic(topic: string, triggers: Trigger[]): void {
+  private subscribeToTopic(topic: string, triggers: PreparedTrigger[]): void {
     const stream = nats.subscribe(topic);
-    this.topicSubs.push(stream);
+    const subscription: TopicSubscription = { stream, triggers };
+    this.topicSubs.set(topic, subscription);
 
     // Run subscription loop in background
     (async () => {
@@ -161,12 +243,13 @@ export class TriggerRunner {
 
           // Skip events from trigger sessions (prevents self-fire loops)
           // Trigger sessions use pattern: ravi.agent:{id}:trigger:{triggerId}.*
-          if (event.topic.includes(":trigger:")) continue;
-          // Also skip events explicitly tagged as trigger-originated
+          // Prefer canonical turn provenance; retain legacy topic/marker checks
+          // for producers that have not adopted it yet.
           const eventData = event.data as Record<string, unknown> | undefined;
-          if (eventData?._trigger) continue;
+          if (isTriggerOriginatedEvent(event.topic, eventData)) continue;
 
-          for (const trigger of triggers) {
+          for (const prepared of subscription.triggers) {
+            const trigger = prepared.trigger;
             // Cooldown check
             if (trigger.lastFiredAt && Date.now() - trigger.lastFiredAt < trigger.cooldownMs) {
               log.debug("Trigger cooldown active, skipping", {
@@ -177,7 +260,7 @@ export class TriggerRunner {
             }
 
             // Filter check: evaluate trigger's filter expression against event data
-            if (!evaluateFilter(trigger.filter, event.data)) {
+            if (!prepared.filter.evaluate(event.data)) {
               log.debug("Trigger filter did not match, skipping", {
                 triggerId: trigger.id,
                 triggerName: trigger.name,
@@ -212,13 +295,14 @@ export class TriggerRunner {
         }
       } catch (err) {
         // Stream closed is expected during teardown
-        if (!this.running) return;
+        if (!this.running || this.topicSubs.get(topic) !== subscription) return;
 
         log.error("Topic subscription error", { topic, error: err });
+        this.topicSubs.delete(topic);
         // Retry after delay
         setTimeout(() => {
-          if (this.running) {
-            this.subscribeToTopic(topic, triggers);
+          if (shouldRetryTriggerTopic(topic, this.running, this.desiredTopics, this.topicSubs)) {
+            this.subscribeToTopic(topic, subscription.triggers);
           }
         }, 5000);
       }

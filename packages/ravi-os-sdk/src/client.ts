@@ -2356,6 +2356,7 @@ export class RaviClient {
       envFile?: string;
       every?: string;
       exec?: string;
+      idempotencyKey?: string;
       isolated?: boolean;
       message?: string;
       onError?: string;
@@ -3860,11 +3861,13 @@ export class RaviClient {
       }
     },
     /** Apply observer rules to an existing source session */
-    refresh: async (session: string): Promise<ObserversRefreshReturn> => {
+    refresh: async (session: string, options?: {
+      reconcile?: string;
+    }): Promise<ObserversRefreshReturn> => {
       return this.transport.call({
         groupSegments: ["observers"],
         command: "refresh",
-        body: { session },
+        body: { session, ...(options ?? {}) },
       });
     },
     rules: {
@@ -3925,6 +3928,7 @@ export class RaviClient {
         provider?: string;
         role?: string;
         scope?: string;
+        selector?: string;
         sourceAgent?: string;
         sourceProfile?: string;
         sourceProject?: string;

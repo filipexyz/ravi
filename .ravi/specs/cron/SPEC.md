@@ -35,3 +35,6 @@ target resolution, and operational inspection.
 - Cron jobs MUST NOT mutate routing, sessions, agents, or channel state.
 - Shell jobs and agent jobs are distinct execution modes with different target semantics.
 - Target resolution MUST be read-only and computed at inspection time.
+- `cron add --idempotency-key <key>` MUST create at most one normalized action for that key and MUST reject reuse with different action content.
+- Cron creation from an observer turn with source turn ids MUST automatically derive durable idempotency from `(ruleId, sourceTurnIds, cron.add, action fingerprint)`.
+- Reaction idempotency MUST survive deletion of the target cron, including `--delete-after` one-shots, so replaying the source observation cannot recreate it.

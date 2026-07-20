@@ -8,6 +8,7 @@ import {
 } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { classifyTurnProvenance } from "./turn-provenance.js";
 import type { RuntimeSessionPoolSnapshot } from "./session-pool.js";
 
 const log = logger.child("runtime:prompt-subscription");
@@ -136,6 +137,7 @@ export class RuntimePromptSubscription {
                 taskBarrierTaskId: prompt.taskBarrierTaskId,
                 commands: prompt.commands,
                 observation: prompt._observation,
+                turnProvenance: classifyTurnProvenance({ prompt }),
                 thread: prompt._thread,
                 _agentId: prompt._agentId,
                 timestamp: new Date().toISOString(),
