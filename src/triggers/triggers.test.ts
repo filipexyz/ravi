@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { compileFilter } from "./filter.js";
+import { isTriggerOriginatedEvent, planTriggerTopicRefresh, shouldRetryTriggerTopic } from "./runner.js";
 import { findTriggerTopicCatalogEntry } from "./topic-catalog.js";
 import { dbCreateTrigger, dbGetTrigger, dbUpdateTrigger } from "./triggers-db.js";
 
@@ -78,5 +80,29 @@ describe("triggers native automation support", () => {
     expect(updated?.shellTimeoutMs).toBeUndefined();
     expect(updated?.shellEnvFile).toBeUndefined();
     expect(updated?.onError).toBeUndefined();
+  });
+
+  it("compiles and caches boolean filters while preserving invalid-filter fail-open behavior", () => {
+    const expression = `data.provider == "slack" && data.actionId startsWith "ticket_"`;
+    const compiled = compileFilter(expression);
+
+    expect(compiled.valid).toBe(true);
+    expect(compileFilter(expression)).toBe(compiled);
+    expect(compiled.evaluate({ provider: "slack", actionId: "ticket_claim" })).toBe(true);
+    expect(compiled.evaluate({ provider: "slack", actionId: "other" })).toBe(false);
+
+    const invalid = compileFilter("this is not a predicate");
+    expect(invalid.valid).toBe(false);
+    expect(invalid.evaluate({ provider: "slack" })).toBe(true);
+  });
+
+  it("refreshes topic subscriptions incrementally without reviving removed or trigger-originated work", () => {
+    expect(planTriggerTopicRefresh(["topic.keep", "topic.remove"], ["topic.keep", "topic.add"])).toEqual({
+      keep: ["topic.keep"],
+      add: ["topic.add"],
+      remove: ["topic.remove"],
+    });
+    expect(shouldRetryTriggerTopic("topic.remove", true, new Set(), new Map())).toBe(false);
+    expect(isTriggerOriginatedEvent("custom.topic", { _turnProvenance: { origin: "trigger" } })).toBe(true);
   });
 });

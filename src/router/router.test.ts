@@ -135,7 +135,7 @@ describe("router context queries", () => {
     ).toEqual(["active", "expired-recent"]);
   });
 
-  it("creates trace indexes and shell trigger columns during schema bootstrap", () => {
+  it("creates trace indexes, shell trigger columns, and the reaction ledger during schema bootstrap", () => {
     const db = getDb();
     const sessionEventIndexes = new Set(
       (db.prepare("PRAGMA index_list(session_events)").all() as Array<{ name: string }>).map((row) => row.name),
@@ -145,6 +145,12 @@ describe("router context queries", () => {
     );
     const triggerColumns = new Set(
       (db.prepare("PRAGMA table_info(triggers)").all() as Array<{ name: string }>).map((row) => row.name),
+    );
+    const reactionColumns = new Set(
+      (db.prepare("PRAGMA table_info(reaction_actions)").all() as Array<{ name: string }>).map((row) => row.name),
+    );
+    const reactionIndexes = new Set(
+      (db.prepare("PRAGMA index_list(reaction_actions)").all() as Array<{ name: string }>).map((row) => row.name),
     );
 
     expect(sessionEventIndexes).toContain("idx_session_events_key_time_seq_id");
@@ -157,6 +163,21 @@ describe("router context queries", () => {
     expect(triggerColumns).toContain("shell_timeout_ms");
     expect(triggerColumns).toContain("shell_env_file");
     expect(triggerColumns).toContain("on_error");
+    expect(reactionColumns).toEqual(
+      new Set([
+        "idempotency_key_hash",
+        "key_source",
+        "action_type",
+        "action_fingerprint",
+        "rule_id",
+        "source_turn_ids_json",
+        "target_type",
+        "target_id",
+        "created_at",
+        "completed_at",
+      ]),
+    );
+    expect(reactionIndexes).toContain("idx_reaction_actions_source");
   });
 
   it("gets reading lists by exact primary-key id without falling back to name", () => {
