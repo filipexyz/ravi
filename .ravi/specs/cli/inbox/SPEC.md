@@ -92,6 +92,8 @@ Commands consumed by agents MUST support machine-readable output.
 - The CLI MUST refresh through Console on auth-expired responses.
 - If credentials are missing, invalid, revoked, or lack inbox scopes, the runner
   MUST skip or pause without deleting unrelated local mirror rows.
+- A paused row MUST perform bounded credential rechecks. Successful login or
+  explicit enable MUST resume it and clear stale authentication errors.
 - OSS Ravi MUST NOT store Console refresh tokens anywhere except the configured
   cloud-auth credential store.
 
@@ -106,15 +108,42 @@ The local loop MUST follow this order:
 5. If there is no change, update only local status/timestamps and sleep.
 6. If generation changed, poll/lease a bounded batch.
 7. Persist each item to the local SQLite mirror.
-8. Publish the canonical NATS event.
-9. Mark the local item delivered.
-10. Ack delivered to Console idempotently.
+8. Renew and verify ownership of the local poll lease before each NATS publish.
+9. Publish the canonical NATS event and, for watch items, its normalized
+   `ravi.watch.*` event.
+10. Flush the NATS connection and require server confirmation.
+11. Mark the local item delivered.
+12. Renew and verify ownership of the local poll lease.
+13. Ack delivered items to Console idempotently.
+14. Mark local ack state and advance the delivery cursor only after Console
+   reports `acked` equal to the number requested.
 
 The no-change path MUST remain pulse-only. It MUST NOT lease items, write
 Console receipts, or force a full Console inbox scan.
 
-The runner MUST NOT ack delivered before local persistence and NATS publish have
-completed for that item.
+The runner MUST NOT mark an item delivered or ack it before local persistence,
+all applicable NATS publishes, and the NATS flush have completed for that item.
+It MUST verify the renewable local poll lease immediately before every NATS
+publish and Console ack.
+
+An ack transport error, malformed ack, or partial ack (`acked !== requested`)
+MUST advance neither local `acked_at` nor the batch delivery cursor. Delivery
+progress MUST be evaluated in sequence order and advance only through the
+contiguous, successfully delivered prefix after a complete remote ack. A gap or
+failed delivery blocks all later sequence progress for that batch.
+
+Generation and pulse ETag state MUST be committed only after the delivered
+cursor reaches the pulse watermark and the poll reports no further page. After
+a successful intermediate page, Ravi MUST persist the contiguous batch cursor,
+drop the ETag, and immediately request the next page when `hasMore` is true.
+When the cursor remains behind but no page is currently available, it MUST stay
+retryable at the normal poll interval rather than hot-looping Console.
+
+Console's subscription cursor is authoritative evidence for prior acks. A later
+pulse MUST reconcile `acked_at` for already-delivered local rows through that
+cursor, scoped to the same Console origin and organization. It MUST NOT mark an
+undelivered row acked. This reconciliation heals a response/crash window; it
+does not make a partial ack response itself successful.
 
 ## Local Delivery Mirror
 
@@ -127,6 +156,9 @@ The SQLite mirror MUST store enough data to:
 - replay a locally stored item without creating a new Console item.
 
 The mirror SHOULD key idempotency by `(console_url, organization_id, item_id)`.
+Once `delivered_at` is set, redelivery is an ack-only retry: the stored NATS
+payload and original subscription provenance MUST remain byte-for-byte stable,
+and mail enrichment/local ingestion/NATS publish MUST NOT run again.
 
 ## NATS Event Contract
 
@@ -212,6 +244,14 @@ Replay MUST preserve `eventId`, `sequence`, `dedupeKey`, `eventType`, and
 original timestamps. Replay MAY add delivery metadata such as `replayed`,
 `replayCount`, and `replayedAt`.
 
+Replay MUST use the same canonical-plus-normalized-watch publish path as live
+delivery, MUST flush NATS before reporting success, and MUST increment the local
+replay count only after that flush succeeds.
+
+A remote `item-id` replay reference MUST resolve uniquely from the item rows'
+own Console+organization scopes. If more than one scope contains that id, the
+command MUST fail closed and require the unambiguous local numeric row id.
+
 ## Daemon Integration
 
 `ravi daemon` SHOULD start the Console delivery runner automatically when:
@@ -223,6 +263,14 @@ original timestamps. Replay MAY add delivery metadata such as `replayed`,
 
 The delivery runner MUST coordinate with itself through a local lock so only one
 local loop leases/publishes/acks Console deliveries at a time.
+Overlapping timer or foreground ticks on the same runner instance MUST also be
+coalesced before attempting the SQLite lease.
+
+The lock is a renewable SQLite lease keyed by normalized Console origin and
+organization. It MUST expire after a bounded interval, release after every tick,
+and allow a second process to take over only after release or expiry. Lease
+release errors MUST NOT prevent the running daemon from scheduling its next
+poll.
 
 ## Acceptance Criteria
 
@@ -234,8 +282,10 @@ local loop leases/publishes/acks Console deliveries at a time.
 - `ravi console delivery poll --once` runs one foreground tick and exits.
 - No-change pulse does not poll/lease Console rows.
 - Changed pulse leads to bounded poll, local persistence, NATS publish, local
-  delivered mark, and Console ack in that order.
+  flush, local delivered mark, and Console ack in that order.
 - Delivered-but-unacked items can be acked later without duplicate local publish.
-- Replay republishes from the local mirror and preserves event identity.
+- A partial/error ack advances neither local ack state nor the delivery cursor.
+- Replay republishes canonical and normalized watch subjects from the local
+  mirror, preserves event identity, and counts success only after NATS flush.
 - Console-produced watch events can be consumed by ordinary `ravi triggers`
   subscriptions through the normalized watch subject.

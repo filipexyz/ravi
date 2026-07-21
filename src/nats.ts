@@ -110,6 +110,12 @@ export async function publish(topic: string, data: Record<string, unknown>): Pro
   conn.publish(topic, sc.encode(JSON.stringify(data)));
 }
 
+/** Wait until the server has processed everything published on this connection. */
+export async function flushNats(): Promise<void> {
+  const conn = await ensureConnected();
+  await conn.flush();
+}
+
 export interface SubscribeOptions {
   /** NATS queue group name. When set, only one subscriber in the group receives each message. */
   queue?: string;

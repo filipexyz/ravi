@@ -164,14 +164,37 @@ export function setSubscriptionEnabled(id: string, enabled: boolean): void {
   getDb()
     .prepare(
       `UPDATE console_inbox_subscriptions
-       SET enabled = ?, updated_at = ?
+       SET enabled = ?,
+           status = CASE WHEN ? = 1 THEN 'active' ELSE status END,
+           last_error_code = CASE WHEN ? = 1 THEN NULL ELSE last_error_code END,
+           last_error_at = CASE WHEN ? = 1 THEN NULL ELSE last_error_at END,
+           updated_at = ?
        WHERE id = ?`,
     )
-    .run(enabled ? 1 : 0, now, id);
+    .run(enabled ? 1 : 0, enabled ? 1 : 0, enabled ? 1 : 0, enabled ? 1 : 0, now, id);
 }
 
-export function updateSubscriptionRemoteId(id: string, subscriptionId: string): void {
+/** Persist the Console subscription identity, optionally starting its cursor contract from scratch. */
+export function updateSubscriptionRemoteId(
+  id: string,
+  subscriptionId: string | null,
+  options: { resetCursor?: boolean } = {},
+): void {
   const now = Date.now();
+  if (options.resetCursor) {
+    getDb()
+      .prepare(
+        `UPDATE console_inbox_subscriptions
+         SET subscription_id = ?,
+             last_generation = NULL,
+             last_sequence = NULL,
+             updated_at = ?
+         WHERE id = ?`,
+      )
+      .run(subscriptionId, now, id);
+    return;
+  }
+
   getDb()
     .prepare(
       `UPDATE console_inbox_subscriptions
@@ -188,6 +211,7 @@ function resetSubscriptionForInstallationRotation(id: string, installationId: st
       `UPDATE console_inbox_subscriptions
        SET installation_id = ?,
            subscription_id = NULL,
+           status = 'active',
            last_generation = NULL,
            last_sequence = NULL,
            last_error_code = NULL,
@@ -196,6 +220,53 @@ function resetSubscriptionForInstallationRotation(id: string, installationId: st
        WHERE id = ?`,
     )
     .run(installationId, now, id);
+}
+
+export function inboxPollLockKey(consoleUrl: string, organizationId: string): string {
+  return `${consoleUrl.replace(/\/+$/, "")}\u0000${organizationId}`;
+}
+
+export function acquireInboxPollLock(input: {
+  lockKey: string;
+  ownerId: string;
+  ttlMs: number;
+  now?: number;
+}): boolean {
+  const now = input.now ?? Date.now();
+  const expiresAt = now + Math.max(1_000, input.ttlMs);
+  const result = getDb()
+    .prepare(
+      `INSERT INTO console_inbox_poll_locks (lock_key, owner_id, acquired_at, expires_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(lock_key) DO UPDATE SET
+         owner_id = excluded.owner_id,
+         acquired_at = excluded.acquired_at,
+         expires_at = excluded.expires_at
+       WHERE console_inbox_poll_locks.expires_at <= ?
+          OR console_inbox_poll_locks.owner_id = excluded.owner_id`,
+    )
+    .run(input.lockKey, input.ownerId, now, expiresAt, now);
+  return result.changes > 0;
+}
+
+export function renewInboxPollLock(input: { lockKey: string; ownerId: string; ttlMs: number; now?: number }): boolean {
+  const now = input.now ?? Date.now();
+  const expiresAt = now + Math.max(1_000, input.ttlMs);
+  const result = getDb()
+    .prepare(
+      `UPDATE console_inbox_poll_locks
+       SET expires_at = ?
+       WHERE lock_key = ? AND owner_id = ? AND expires_at > ?`,
+    )
+    .run(expiresAt, input.lockKey, input.ownerId, now);
+  return result.changes > 0;
+}
+
+export function releaseInboxPollLock(lockKey: string, ownerId: string): boolean {
+  return (
+    getDb().prepare(`DELETE FROM console_inbox_poll_locks WHERE lock_key = ? AND owner_id = ?`).run(lockKey, ownerId)
+      .changes > 0
+  );
 }
 
 export function markSubscriptionPolled(
@@ -278,6 +349,15 @@ export function upsertDeliveredItem(input: {
     .get(input.consoleUrl, input.organizationId, input.itemId) as ItemRowRaw | undefined;
 
   if (existing) {
+    // Once an item has been flushed to NATS, its stored envelope is the
+    // durable record of exactly what was published. Console may redeliver the
+    // same item with a new lease/poll/subscription envelope while it is only
+    // waiting for an ack; never rewrite that published payload or its original
+    // subscription provenance.
+    if (existing.delivered_at !== null) {
+      return { created: false, row: rowToItem(existing) };
+    }
+
     getDb()
       .prepare(
         `UPDATE console_inbox_items SET
@@ -388,6 +468,46 @@ export function getItemByItemId(consoleUrl: string, organizationId: string, item
   return row ? rowToItem(row) : null;
 }
 
+/** Find every locally mirrored scope that owns a Console item id. */
+export function listItemsByItemId(itemId: string): InboxItemRow[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM console_inbox_items
+       WHERE item_id = ?
+       ORDER BY console_url ASC, organization_id ASC, id ASC`,
+    )
+    .all(itemId) as ItemRowRaw[];
+  return rows.map(rowToItem);
+}
+
+/**
+ * Heal local ack state from Console's authoritative subscription cursor.
+ *
+ * Only rows already flushed locally are eligible. An undelivered row must not
+ * become acked merely because its sequence is old, and the Console+org scope
+ * prevents one tenant's cursor from mutating another tenant's mirror.
+ */
+export function reconcileDeliveredItemsAckedThroughSequence(input: {
+  consoleUrl: string;
+  organizationId: string;
+  sequence: number;
+  ackedAt?: number;
+}): number {
+  const ackedAt = input.ackedAt ?? Date.now();
+  const result = getDb()
+    .prepare(
+      `UPDATE console_inbox_items
+       SET acked_at = ?, updated_at = ?
+       WHERE console_url = ?
+         AND organization_id = ?
+         AND sequence <= ?
+         AND delivered_at IS NOT NULL
+         AND acked_at IS NULL`,
+    )
+    .run(ackedAt, ackedAt, input.consoleUrl, input.organizationId, input.sequence);
+  return result.changes;
+}
+
 export function listRecentItems(opts: {
   consoleUrl?: string;
   organizationId?: string;
@@ -414,17 +534,20 @@ export function listRecentItems(opts: {
   return rows.map(rowToItem);
 }
 
-/** Count items pending delivery or ack (used by `ravi inbox status`). */
-export function countPendingItems(subscriptionId: string): { undelivered: number; unacked: number } {
+/** Count pending items for the durable local Console+organization mirror. */
+export function countPendingItems(input: { consoleUrl: string; organizationId: string }): {
+  undelivered: number;
+  unacked: number;
+} {
   const row = getDb()
     .prepare(
       `SELECT
          SUM(CASE WHEN delivered_at IS NULL THEN 1 ELSE 0 END) AS undelivered,
          SUM(CASE WHEN acked_at IS NULL THEN 1 ELSE 0 END) AS unacked
        FROM console_inbox_items
-       WHERE subscription_id = ?`,
+       WHERE console_url = ? AND organization_id = ?`,
     )
-    .get(subscriptionId) as { undelivered: number | null; unacked: number | null };
+    .get(input.consoleUrl, input.organizationId) as { undelivered: number | null; unacked: number | null };
   return {
     undelivered: row.undelivered ?? 0,
     unacked: row.unacked ?? 0,

@@ -5,7 +5,6 @@
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
-import { publish } from "../../nats.js";
 import {
   inboxItemEnvelopeReturnSchema,
   inboxItemsReturnSchema,
@@ -19,16 +18,25 @@ import {
 import {
   INBOX_NATS_SUBJECT,
   getItemById,
-  getItemByItemId,
   getStatusSnapshot,
+  incrementItemReplayCount,
+  listItemsByItemId,
   listLocalInboxItems,
   listLocalInboxSources,
   listRecentItems,
   markLocalInboxItem,
   readLocalInboxItem,
+  publishInboxNatsEvents,
   runSingleTick,
   setEnabledForCurrentOrg,
+  type InboxNatsPayload,
 } from "../../inbox/index.js";
+
+interface InboxCommandDependencies {
+  publishInboxNatsEvents: typeof publishInboxNatsEvents;
+}
+
+const DEFAULT_DEPENDENCIES: InboxCommandDependencies = { publishInboxNatsEvents };
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -90,6 +98,8 @@ function parseTimestamp(value: string | undefined, label: string): number {
   scope: "open",
 })
 export class InboxCommands {
+  constructor(private readonly dependencies: InboxCommandDependencies = DEFAULT_DEPENDENCIES) {}
+
   @Command({ name: "list", description: "List local inbox items" })
   @CommandAccess({ kind: "read", resource: "inbox", action: "list", risk: "low" })
   @Returns(inboxItemsReturnSchema)
@@ -294,7 +304,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "poll", description: "Run a single inbox poll cycle (foreground)" })
-  @CommandAccess({ kind: "read", resource: "inbox", action: "poll", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "inbox", action: "poll", risk: "medium" })
   @Returns(inboxPollReturnSchema)
   async poll(
     @Option({ flags: "--once", description: "Run one cycle and exit (default)" }) _once?: boolean,
@@ -349,7 +359,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "replay", description: "Republish a locally stored inbox item to NATS" })
-  @CommandAccess({ kind: "read", resource: "inbox", action: "replay", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "inbox", action: "replay", risk: "medium" })
   @Returns(inboxReplayReturnSchema)
   async replay(
     @Arg("ref", { description: "Local row id (number) or remote item id (uuid)" }) ref: string,
@@ -362,11 +372,11 @@ export class InboxCommands {
 
     let row = /^\d+$/.test(ref) ? getItemById(Number(ref)) : null;
     if (!row) {
-      const snapshot = getStatusSnapshot();
-      const target = snapshot.subscriptions[0];
-      if (target) {
-        row = getItemByItemId(target.consoleUrl, target.organizationId, ref);
+      const matches = listItemsByItemId(ref);
+      if (matches.length > 1) {
+        fail(`Inbox item ref ${ref} is ambiguous across Console organizations; replay a local numeric row id.`);
       }
+      row = matches[0] ?? null;
     }
 
     if (!row) {
@@ -374,16 +384,16 @@ export class InboxCommands {
       return;
     }
 
-    let payload: Record<string, unknown>;
+    let payload: InboxNatsPayload;
     try {
-      payload = JSON.parse(row.natsPayloadJson) as Record<string, unknown>;
+      payload = JSON.parse(row.natsPayloadJson) as InboxNatsPayload;
     } catch (error) {
       fail(`Stored NATS payload is invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
       return;
     }
 
     const replayedAt = new Date().toISOString();
-    const delivery = (payload.delivery as Record<string, unknown> | undefined) ?? {};
+    const delivery = payload.delivery ?? {};
     payload.delivery = {
       ...delivery,
       replayed: true,
@@ -391,13 +401,18 @@ export class InboxCommands {
       replayedAt,
     };
 
-    await publish(row.natsSubject || INBOX_NATS_SUBJECT, payload);
+    const subjects = await this.dependencies.publishInboxNatsEvents({
+      payload,
+      inboxItemId: row.id,
+      canonicalSubject: row.natsSubject || INBOX_NATS_SUBJECT,
+    });
+    incrementItemReplayCount(row.id);
 
     const result = {
       ok: true,
       itemId: row.itemId,
       sequence: row.sequence,
-      subject: row.natsSubject || INBOX_NATS_SUBJECT,
+      subject: subjects[0] ?? row.natsSubject ?? INBOX_NATS_SUBJECT,
       replayedAt,
     };
     if (asJson) printJson(result);
