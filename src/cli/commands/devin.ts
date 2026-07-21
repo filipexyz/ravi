@@ -84,10 +84,6 @@ function readPrompt(prompt?: string, promptFile?: string): string {
   fail("--prompt or --prompt-file is required.");
 }
 
-function rawFlagPresent(flag: string): boolean {
-  return process.argv.includes(flag);
-}
-
 function formatTime(value: number | undefined): string {
   if (!value) return "-";
   const ms = value > 10_000_000_000 ? value : value * 1000;
@@ -220,15 +216,17 @@ function resolveDevinId(identifier: string): string {
   fail(`Unknown Devin session: ${identifier}`);
 }
 
-function determineMaxAcuLimit(explicitValue?: string): {
+export function determineMaxAcuLimit(
+  explicitValue?: string,
+  noMaxAcuLimit = false,
+): {
   maxAcuLimit?: number;
   source: "explicit" | "env" | "omitted";
 } {
   const explicit = parsePositiveInteger(explicitValue, "--max-acu");
-  const omit = rawFlagPresent("--no-max-acu-limit") || rawFlagPresent("--omit-max-acu-limit");
-  if (explicit !== undefined && omit) fail("Use either --max-acu or --no-max-acu-limit, not both.");
+  if (explicit !== undefined && noMaxAcuLimit) fail("Use either --max-acu or --no-max-acu-limit, not both.");
   if (explicit !== undefined) return { maxAcuLimit: explicit, source: "explicit" };
-  if (omit) return { source: "omitted" };
+  if (noMaxAcuLimit) return { source: "omitted" };
   const configured = getDefaultMaxAcuLimit();
   if (configured !== undefined) return { maxAcuLimit: configured, source: "env" };
   fail("DEVIN_DEFAULT_MAX_ACU_LIMIT is not configured. Use --max-acu <n> or --no-max-acu-limit explicitly.");
@@ -268,9 +266,10 @@ function resolveCreateAsUser(explicit?: string): ResolvedField<string> {
   return { value: undefined, source: "omitted" };
 }
 
-function resolveResumable(): ResolvedField<boolean> {
-  if (rawFlagPresent("--no-resumable")) return { value: false, source: "explicit" };
-  if (rawFlagPresent("--resumable")) return { value: true, source: "explicit" };
+export function resolveResumable(resumable?: boolean, noResumable = false): ResolvedField<boolean> {
+  if (resumable === true && noResumable) fail("Use either --resumable or --no-resumable, not both.");
+  if (noResumable) return { value: false, source: "explicit" };
+  if (resumable === true) return { value: true, source: "explicit" };
   return { value: undefined, source: "omitted" };
 }
 
@@ -418,16 +417,16 @@ export class DevinSessionCommands {
     @Option({ flags: "--child-playbook <id>", description: "Child playbook ID" }) childPlaybookId?: string,
     @Option({ flags: "--devin-mode <mode>", description: "Agent mode: normal|fast|lite|ultra" }) devinMode?: string,
     @Option({ flags: "--platform <platform>", description: "VM platform override (org-specific)" }) platform?: string,
-    @Option({ flags: "--resumable", description: "Preserve VM state for resume (default: true)" }) _resumable?: boolean,
+    @Option({ flags: "--resumable", description: "Preserve VM state for resume (default: true)" }) resumable?: boolean,
     @Option({ flags: "--no-resumable", description: "Disposable session, do not preserve VM state" })
-    _noResumable?: boolean,
+    noResumable?: boolean,
     @Option({ flags: "--structured-output-required", description: "Require structured output before turn ends" })
     structuredOutputRequired?: boolean,
     @Option({ flags: "--devin-id <id>", description: "Idempotent session creation key" }) devinId?: string,
     @Option({ flags: "--advanced-mode <mode>", description: "Legacy: analyze|create|improve|batch|manage" })
     advancedMode?: string,
     @Option({ flags: "--max-acu <n>", description: "Per-session max ACU ceiling" }) maxAcu?: string,
-    @Option({ flags: "--no-max-acu-limit", description: "Intentionally omit max_acu_limit" }) _noMaxAcuLimit?: boolean,
+    @Option({ flags: "--no-max-acu-limit", description: "Intentionally omit max_acu_limit" }) noMaxAcuLimit?: boolean,
     @Option({ flags: "--bypass-approval", description: "Request bypass_approval=true" }) bypassApproval?: boolean,
     @Option({ flags: "--as-user <id>", description: "create_as_user_id (impersonate user)" }) createAsUserId?: string,
     @Option({ flags: "--structured-output-schema <json>", description: "JSON schema for structured output" })
@@ -440,7 +439,7 @@ export class DevinSessionCommands {
     const client = createDevinClientFromEnv();
     const text = readPrompt(prompt, promptFile).trim();
     if (!text) fail("Prompt is empty.");
-    const acu = determineMaxAcuLimit(maxAcu);
+    const acu = determineMaxAcuLimit(maxAcu, noMaxAcuLimit);
     const defaultTags = parseStringList(process.env.DEVIN_DEFAULT_TAGS);
     const tagList = [...new Set(["ravi", ...defaultTags, ...parseStringList(tags)])].sort();
 
@@ -448,7 +447,7 @@ export class DevinSessionCommands {
     const resolvedPlatform = resolvePlatform(platform);
     const resolvedRepos = resolveRepos(repos);
     const resolvedCreateAsUser = resolveCreateAsUser(createAsUserId);
-    const resolvedResumable = resolveResumable();
+    const resolvedResumable = resolveResumable(resumable, noResumable);
     const sessionSecrets = parseSessionSecrets(sessionSecretRefs);
 
     const input: CreateDevinSessionInput = {

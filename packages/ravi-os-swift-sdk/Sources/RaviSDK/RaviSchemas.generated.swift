@@ -5044,7 +5044,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "noActivate": {
-        "default": true,
+        "default": false,
         "description": "Create publish records without activating a site release",
         "type": "boolean"
       },
@@ -6354,7 +6354,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "noAutoplay": {
-        "default": true,
+        "default": false,
         "description": "Do not autoplay in extension clients",
         "type": "boolean"
       },
@@ -21354,7 +21354,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "noCascade": {
-        "default": true,
+        "default": false,
         "description": "Do not revoke descendant contexts (use only for narrow rotation; emits a loud warning)",
         "type": "boolean"
       },
@@ -27228,7 +27228,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "noStore": {
-        "default": true,
+        "default": false,
         "description": "Alias for --print-only (do not write to ~/.ravi/credentials.json)",
         "type": "boolean"
       },
@@ -27912,12 +27912,12 @@ public enum RaviSchemas {
         "type": "string"
       },
       "noMaxAcuLimit": {
-        "default": true,
+        "default": false,
         "description": "Intentionally omit max_acu_limit",
         "type": "boolean"
       },
       "noResumable": {
-        "default": true,
+        "default": false,
         "description": "Disposable session, do not preserve VM state",
         "type": "boolean"
       },
@@ -41562,7 +41562,7 @@ public enum RaviSchemas {
     "additionalProperties": false,
     "properties": {
       "noPostTranscribe": {
-        "default": true,
+        "default": false,
         "description": "Skip post-call audio transcription",
         "type": "boolean"
       },
@@ -44005,7 +44005,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "noActivate": {
-        "default": true,
+        "default": false,
         "description": "Create publish records without activating a site release",
         "type": "boolean"
       },
@@ -69305,7 +69305,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "noAck": {
-        "default": true,
+        "default": false,
         "description": "Don't send read receipt",
         "type": "boolean"
       }

@@ -992,7 +992,7 @@ ANTHROPIC_API_KEY=
       flags: "--no-store",
       description: "Alias for --print-only (do not write to ~/.ravi/credentials.json)",
     })
-    store = true,
+    noStore = false,
     @Option({
       flags: "--from-env",
       description:
@@ -1001,7 +1001,7 @@ ANTHROPIC_API_KEY=
     fromEnv = false,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
-    const persist = printOnly === false && store !== false;
+    const persist = printOnly === false && !noStore;
     const resolvedLabel = label?.trim() || hostname() || "admin";
 
     const live = listLiveAdminContexts();

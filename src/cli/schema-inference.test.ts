@@ -95,11 +95,11 @@ describe("inferOptionSchema — booleans", () => {
     expect(schema.parse(true)).toBe(true);
   });
 
-  it("--no-color produces boolean defaulting to true", () => {
+  it("--no-color exposes flag presence and defaults to false", () => {
     const { schema, parsed } = inferOptionSchema(opt({ flags: "--no-color" }));
     expect(parsed.kind).toBe("negated-boolean");
-    expect(schema.parse(undefined)).toBe(true);
-    expect(schema.parse(false)).toBe(false);
+    expect(schema.parse(undefined)).toBe(false);
+    expect(schema.parse(true)).toBe(true);
   });
 });
 

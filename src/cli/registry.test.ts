@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { Command as CommanderCommand } from "commander";
+import { runWithContext } from "./context.js";
 import { Arg, Command, CommandAccess, Group, Option } from "./decorators.js";
 import { registerCommands } from "./registry.js";
 
@@ -39,6 +40,8 @@ interface CapturedCall {
 
 const capturedDirect: CapturedCall[] = [];
 const capturedNested: CapturedCall[] = [];
+const capturedNegated: boolean[] = [];
+const capturedPaired: Array<{ resumable: boolean | undefined; noResumable: boolean }> = [];
 
 @Group({ name: "shadow", description: "Direct command + nested group with --json", scope: "open" })
 class ShadowDirectCommands {
@@ -58,7 +61,68 @@ class ShadowNestedCommands {
   }
 }
 
+@Group({ name: "negative", description: "Negated options", scope: "open" })
+class NegatedOptionCommands {
+  @Command({ name: "run", description: "Capture a negated option" })
+  @CommandAccess({ kind: "read", resource: "negative", action: "run", risk: "low" })
+  run(@Option({ flags: "--no-cascade", description: "Preserve descendants" }) noCascade = false) {
+    capturedNegated.push(noCascade);
+  }
+}
+
+@Group({ name: "paired", description: "Positive and negated options", scope: "open" })
+class PairedOptionCommands {
+  @Command({ name: "run", description: "Capture paired options" })
+  @CommandAccess({ kind: "read", resource: "paired", action: "run", risk: "low" })
+  run(
+    @Option({ flags: "--resumable", description: "Enable resume" }) resumable?: boolean,
+    @Option({ flags: "--no-resumable", description: "Disable resume" }) noResumable = false,
+  ) {
+    capturedPaired.push({ resumable, noResumable });
+  }
+}
+
+async function parseAsLocalOperator(program: CommanderCommand, argv: string[]): Promise<void> {
+  const contextKey = process.env.RAVI_CONTEXT_KEY;
+  delete process.env.RAVI_CONTEXT_KEY;
+  try {
+    await runWithContext({}, () => program.parseAsync(argv));
+  } finally {
+    if (contextKey === undefined) delete process.env.RAVI_CONTEXT_KEY;
+    else process.env.RAVI_CONTEXT_KEY = contextKey;
+  }
+}
+
 describe("registerCommands", () => {
+  it("binds negated Commander options as no-prefixed flag presence", async () => {
+    capturedNegated.length = 0;
+    const program = new CommanderCommand();
+    program.exitOverride();
+    registerCommands(program, [NegatedOptionCommands]);
+
+    await parseAsLocalOperator(program, ["node", "test", "negative", "run"]);
+    await parseAsLocalOperator(program, ["node", "test", "negative", "run", "--no-cascade"]);
+
+    expect(capturedNegated).toEqual([false, true]);
+  });
+
+  it("keeps paired positive and negated flags distinguishable", async () => {
+    capturedPaired.length = 0;
+    const program = new CommanderCommand();
+    program.exitOverride();
+    registerCommands(program, [PairedOptionCommands]);
+
+    await parseAsLocalOperator(program, ["node", "test", "paired", "run"]);
+    await parseAsLocalOperator(program, ["node", "test", "paired", "run", "--resumable"]);
+    await parseAsLocalOperator(program, ["node", "test", "paired", "run", "--no-resumable"]);
+
+    expect(capturedPaired).toEqual([
+      { resumable: undefined, noResumable: false },
+      { resumable: true, noResumable: false },
+      { resumable: undefined, noResumable: true },
+    ]);
+  });
+
   it("reuses existing nested command nodes for direct commands with subcommands", () => {
     const program = new CommanderCommand();
 
@@ -112,7 +176,7 @@ describe("registerCommands", () => {
     it("propagates --json to a nested subcommand when the parent declares the same flag", async () => {
       capturedNested.length = 0;
       const program = buildProgram();
-      await program.parseAsync(["node", "test", "shadow", "item", "show", "id-123", "--json"]);
+      await parseAsLocalOperator(program, ["node", "test", "shadow", "item", "show", "id-123", "--json"]);
 
       expect(capturedNested).toEqual([{ id: "id-123", json: true }]);
     });
@@ -120,7 +184,7 @@ describe("registerCommands", () => {
     it("still delivers --json to the parent direct command when used without a subcommand", async () => {
       capturedDirect.length = 0;
       const program = buildProgram();
-      await program.parseAsync(["node", "test", "shadow", "item", "id-456", "--json"]);
+      await parseAsLocalOperator(program, ["node", "test", "shadow", "item", "id-456", "--json"]);
 
       expect(capturedDirect).toEqual([{ id: "id-456", json: true }]);
     });
@@ -128,7 +192,7 @@ describe("registerCommands", () => {
     it("omits --json from nested subcommand options when the user did not pass it", async () => {
       capturedNested.length = 0;
       const program = buildProgram();
-      await program.parseAsync(["node", "test", "shadow", "item", "show", "id-789"]);
+      await parseAsLocalOperator(program, ["node", "test", "shadow", "item", "show", "id-789"]);
 
       expect(capturedNested).toEqual([{ id: "id-789", json: undefined }]);
     });

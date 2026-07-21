@@ -744,15 +744,21 @@ describe("ContextCommands", () => {
 
     const command = new ContextCommands();
     const lines: string[] = [];
+    const errors: string[] = [];
     const originalLog = console.log;
+    const originalError = console.error;
     console.log = (value?: unknown) => {
       lines.push(String(value));
+    };
+    console.error = (value?: unknown) => {
+      errors.push(String(value));
     };
 
     try {
       command.revoke("ctx_123", true, undefined, true);
     } finally {
       console.log = originalLog;
+      console.error = originalError;
     }
 
     const payload = JSON.parse(lines[0] ?? "{}");
@@ -765,6 +771,8 @@ describe("ContextCommands", () => {
       cascaded: [],
       revokedAt: 5000,
     });
+    expect(revokedCalls.at(-1)).toEqual({ contextId: "ctx_123", options: { cascade: false, reason: undefined } });
+    expect(errors.join("\n")).toContain("--no-cascade leaves descendant contexts active");
   });
 
   it("fails on malformed capability specs", () => {

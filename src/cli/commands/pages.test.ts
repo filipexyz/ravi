@@ -289,11 +289,12 @@ describe("pages CLI commands", () => {
     });
   });
 
-  it("publishes a local source to a Pages site through the artifact upload pipeline", async () => {
+  it("activates by default and disables activation only with --no-activate", async () => {
     stateDir = await createIsolatedRaviState("ravi-pages-publish-command-test-");
     const dir = await tempDir();
     await writeFile(join(dir, "index.html"), "<h1>Docs</h1>");
     const calls: Array<{ method: string; payload: Record<string, unknown> }> = [];
+    const activations: boolean[] = [];
     const client = {
       me: mock(async () => ({
         user: { email: "alice@example.com" },
@@ -319,6 +320,7 @@ describe("pages CLI commands", () => {
       finalizeArtifactPublish: mock(async (input: Record<string, unknown>, accessToken: string) => {
         expect(accessToken).toBe("access-secret");
         calls.push({ method: "finalizeArtifactPublish", payload: input });
+        activations.push((input.publish as { activate?: boolean } | undefined)?.activate ?? false);
         expect(input).toMatchObject({
           uploadSessionId: "upl_123",
           idempotencyKey: "idem-1",
@@ -328,7 +330,6 @@ describe("pages CLI commands", () => {
           },
           publish: {
             siteRef: "demo",
-            activate: true,
             replaceRelease: true,
             reason: "ship docs",
             visibility: "public",
@@ -355,7 +356,7 @@ describe("pages CLI commands", () => {
     } as unknown as ConsoleApiClient;
     const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
 
-    const { output } = await captureConsole(() =>
+    const publish = (noActivate?: boolean) =>
       command.publish(
         ["proj", "demo", dir],
         undefined,
@@ -372,14 +373,23 @@ describe("pages CLI commands", () => {
         "idem-1",
         "ship docs",
         true,
-        undefined,
+        noActivate,
         undefined,
         true,
-      ),
-    );
-    const payload = JSON.parse(output);
+      );
 
-    expect(calls.map((call) => call.method)).toEqual(["createPageUploadSession", "finalizeArtifactPublish"]);
+    const defaultResult = await captureConsole(() => publish());
+    const noActivateResult = await captureConsole(() => publish(true));
+    const payload = JSON.parse(noActivateResult.output);
+
+    expect(JSON.parse(defaultResult.output)).toMatchObject({ success: true });
+    expect(calls.map((call) => call.method)).toEqual([
+      "createPageUploadSession",
+      "finalizeArtifactPublish",
+      "createPageUploadSession",
+      "finalizeArtifactPublish",
+    ]);
+    expect(activations).toEqual([true, false]);
     expect(payload).toMatchObject({
       success: true,
       url: "https://demo.ravi.page/guide",

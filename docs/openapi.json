@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "fdc8765bea4b81b6"
+    "version": "8330fb46ed5b1d1f"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -5987,7 +5987,7 @@
                     "type": "string"
                   },
                   "noActivate": {
-                    "default": true,
+                    "default": false,
                     "description": "Create publish records without activating a site release",
                     "type": "boolean"
                   },
@@ -7590,7 +7590,7 @@
                     "type": "string"
                   },
                   "noAutoplay": {
-                    "default": true,
+                    "default": false,
                     "description": "Do not autoplay in extension clients",
                     "type": "boolean"
                   },
@@ -25332,7 +25332,7 @@
                     "type": "string"
                   },
                   "noCascade": {
-                    "default": true,
+                    "default": false,
                     "description": "Do not revoke descendant contexts (use only for narrow rotation; emits a loud warning)",
                     "type": "boolean"
                   },
@@ -33236,7 +33236,7 @@
                     "type": "string"
                   },
                   "noStore": {
-                    "default": true,
+                    "default": false,
                     "description": "Alias for --print-only (do not write to ~/.ravi/credentials.json)",
                     "type": "boolean"
                   },
@@ -34214,12 +34214,12 @@
                     "type": "string"
                   },
                   "noMaxAcuLimit": {
-                    "default": true,
+                    "default": false,
                     "description": "Intentionally omit max_acu_limit",
                     "type": "boolean"
                   },
                   "noResumable": {
-                    "default": true,
+                    "default": false,
                     "description": "Disposable session, do not preserve VM state",
                     "type": "boolean"
                   },
@@ -50616,7 +50616,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "noPostTranscribe": {
-                    "default": true,
+                    "default": false,
                     "description": "Skip post-call audio transcription",
                     "type": "boolean"
                   },
@@ -53941,7 +53941,7 @@
                     "type": "string"
                   },
                   "noActivate": {
-                    "default": true,
+                    "default": false,
                     "description": "Create publish records without activating a site release",
                     "type": "boolean"
                   },
@@ -87563,7 +87563,7 @@
                     "type": "string"
                   },
                   "noAck": {
-                    "default": true,
+                    "default": false,
                     "description": "Don't send read receipt",
                     "type": "boolean"
                   }

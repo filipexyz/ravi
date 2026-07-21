@@ -4990,7 +4990,7 @@ export const ArtifactsPublishInputSchema = {
       "type": "string"
     },
     "noActivate": {
-      "default": true,
+      "default": false,
       "description": "Create publish records without activating a site release",
       "type": "boolean"
     },
@@ -6279,7 +6279,7 @@ export const AudioTtsInputSchema = {
       "type": "string"
     },
     "noAutoplay": {
-      "default": true,
+      "default": false,
       "description": "Do not autoplay in extension clients",
       "type": "boolean"
     },
@@ -21091,7 +21091,7 @@ export const ContextRevokeInputSchema = {
       "type": "string"
     },
     "noCascade": {
-      "default": true,
+      "default": false,
       "description": "Do not revoke descendant contexts (use only for narrow rotation; emits a loud warning)",
       "type": "boolean"
     },
@@ -26833,7 +26833,7 @@ export const DaemonInitAdminKeyInputSchema = {
       "type": "string"
     },
     "noStore": {
-      "default": true,
+      "default": false,
       "description": "Alias for --print-only (do not write to ~/.ravi/credentials.json)",
       "type": "boolean"
     },
@@ -27495,12 +27495,12 @@ export const DevinSessionsCreateInputSchema = {
       "type": "string"
     },
     "noMaxAcuLimit": {
-      "default": true,
+      "default": false,
       "description": "Intentionally omit max_acu_limit",
       "type": "boolean"
     },
     "noResumable": {
-      "default": true,
+      "default": false,
       "description": "Disposable session, do not preserve VM state",
       "type": "boolean"
     },
@@ -40953,7 +40953,7 @@ export const MeetingsFinalizeInputSchema = {
   "additionalProperties": false,
   "properties": {
     "noPostTranscribe": {
-      "default": true,
+      "default": false,
       "description": "Skip post-call audio transcription",
       "type": "boolean"
     },
@@ -43340,7 +43340,7 @@ export const PagesPublishInputSchema = {
       "type": "string"
     },
     "noActivate": {
-      "default": true,
+      "default": false,
       "description": "Create publish records without activating a site release",
       "type": "boolean"
     },
@@ -68074,7 +68074,7 @@ export const WhatsappDmReadInputSchema = {
       "type": "string"
     },
     "noAck": {
-      "default": true,
+      "default": false,
       "description": "Don't send read receipt",
       "type": "boolean"
     }
