@@ -107,6 +107,53 @@ export function propertyName(name: string): string {
   return swiftIdentifier(camelCase(name));
 }
 
+/**
+ * Resolve wire-property names to unique Swift identifiers.
+ *
+ * Different JSON keys can collapse to the same lower-camel Swift spelling
+ * (`artifactId` and `artifact_id`, for example). Keep the canonical
+ * lower-camel wire key on the preferred spelling, then fall back to the raw
+ * key's Swift-safe spelling and, only when necessary, a stable numeric suffix.
+ */
+export function uniquePropertyNames(
+  rawNames: readonly string[],
+  reservedSwiftNames: readonly string[] = [],
+): ReadonlyMap<string, string> {
+  const uniqueRawNames = [...new Set(rawNames)].sort(compareStrings);
+  const groups = new Map<string, string[]>();
+
+  for (const rawName of uniqueRawNames) {
+    const baseName = propertyName(rawName);
+    const group = groups.get(baseName) ?? [];
+    group.push(rawName);
+    groups.set(baseName, group);
+  }
+
+  const resolved = new Map<string, string>();
+  const used = new Set(reservedSwiftNames);
+  const orderedGroups = [...groups.entries()].sort(([a], [b]) => compareStrings(a, b));
+
+  // Claim every canonical lower-camel spelling first. This prevents a
+  // fallback from taking the preferred name of another property group.
+  for (const [baseName, group] of orderedGroups) {
+    const canonical = [...group].sort(compareCanonicalWireNames)[0];
+    const swiftName = nextAvailableIdentifier(baseName, used);
+    resolved.set(canonical, swiftName);
+    used.add(swiftName);
+  }
+
+  for (const [, group] of orderedGroups) {
+    const remaining = group.filter((rawName) => !resolved.has(rawName)).sort(compareFallbackWireNames);
+    for (const rawName of remaining) {
+      const swiftName = nextAvailableIdentifier(swiftIdentifier(rawName), used);
+      resolved.set(rawName, swiftName);
+      used.add(swiftName);
+    }
+  }
+
+  return resolved;
+}
+
 export function swiftIdentifier(raw: string): string {
   const safe = raw.replace(/[^A-Za-z0-9_]/g, "_").replace(/^[0-9]/, "_$&");
   const normalized = safe || "value";
@@ -129,4 +176,30 @@ function splitWords(input: string): string[] {
 function capitalize(input: string): string {
   if (!input) return input;
   return input[0].toUpperCase() + input.slice(1).toLowerCase();
+}
+
+function compareCanonicalWireNames(a: string, b: string): number {
+  const aIsCanonical = a === camelCase(a);
+  const bIsCanonical = b === camelCase(b);
+  if (aIsCanonical !== bIsCanonical) return aIsCanonical ? -1 : 1;
+  return compareStrings(a, b);
+}
+
+function compareFallbackWireNames(a: string, b: string): number {
+  const aIsAlreadySafe = a === swiftIdentifier(a);
+  const bIsAlreadySafe = b === swiftIdentifier(b);
+  if (aIsAlreadySafe !== bIsAlreadySafe) return aIsAlreadySafe ? -1 : 1;
+  return compareStrings(a, b);
+}
+
+function nextAvailableIdentifier(baseName: string, used: ReadonlySet<string>): string {
+  if (!used.has(baseName)) return baseName;
+  const separator = baseName.endsWith("_") ? "" : "_";
+  let suffix = 2;
+  while (used.has(`${baseName}${separator}${suffix}`)) suffix += 1;
+  return `${baseName}${separator}${suffix}`;
+}
+
+function compareStrings(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }

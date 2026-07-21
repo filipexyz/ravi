@@ -18,6 +18,7 @@ import {
   propertyName,
   returnSchemaName,
   returnTypeName,
+  uniquePropertyNames,
 } from "./naming.js";
 import { jsonSchemaToSwift, type JsonSchema } from "./json-schema-to-swift.js";
 import { defaultStreamChannels } from "../gateway/streaming/channels.js";
@@ -82,10 +83,11 @@ function renderOptionsStruct(cmd: CommandRegistryEntry): string | null {
   const props = (inputSchema as { properties?: Record<string, JsonSchema> }).properties ?? {};
   const required = new Set((inputSchema as { required?: string[] }).required ?? []);
   const argNames = new Set(cmd.args.map((arg) => arg.name));
-  const fields = cmd.options
-    .filter((opt) => !argNames.has(opt.name))
+  const options = cmd.options.filter((opt) => !argNames.has(opt.name));
+  const swiftNames = uniquePropertyNames(options.map((opt) => opt.name));
+  const fields = options
     .map((opt) => {
-      const swiftName = propertyName(opt.name);
+      const swiftName = swiftNames.get(opt.name)!;
       const swiftType = jsonSchemaToSwift(props[opt.name]);
       const isRequired = required.has(opt.name);
       return { rawName: opt.name, swiftName, swiftType, isRequired };
@@ -152,14 +154,14 @@ function renderReturnDeclaration(cmd: CommandRegistryEntry): string {
 function renderReturnStruct(name: string, schema: JsonSchema): string {
   const props = (schema as { properties?: Record<string, JsonSchema> }).properties ?? {};
   const required = new Set((schema as { required?: string[] }).required ?? []);
-  const fields = Object.keys(props)
-    .sort()
-    .map((rawName) => {
-      const swiftName = propertyName(rawName);
-      const swiftType = jsonSchemaToSwift(props[rawName]);
-      const isRequired = required.has(rawName);
-      return { rawName, swiftName, swiftType, isRequired };
-    });
+  const rawNames = Object.keys(props).sort();
+  const swiftNames = uniquePropertyNames(rawNames);
+  const fields = rawNames.map((rawName) => {
+    const swiftName = swiftNames.get(rawName)!;
+    const swiftType = jsonSchemaToSwift(props[rawName]);
+    const isRequired = required.has(rawName);
+    return { rawName, swiftName, swiftType, isRequired };
+  });
 
   const lines: string[] = [
     `public struct ${name}: Codable, Sendable {`,
@@ -372,13 +374,17 @@ function renderMethod(swiftName: string, cmd: CommandRegistryEntry): string {
   const inputSchema = buildInputSchema(cmd);
   const sig = buildSignature(cmd, inputSchema);
   const returnName = returnTypeName(cmd.groupSegments, cmd.command);
-  const params = renderMethodParams(cmd, sig);
+  const argNames = uniquePropertyNames(
+    sig.args.map((arg) => arg.name),
+    sig.options.length > 0 ? ["options"] : [],
+  );
+  const params = renderMethodParams(cmd, sig, argNames);
   const mutatesBody = sig.args.length > 0 || sig.options.length > 0;
   const lines: string[] = [];
   lines.push(`  public func ${swiftName}(${params}) async throws -> ${returnName} {`);
   lines.push(`    ${mutatesBody ? "var" : "let"} requestBody: [String: RaviJSON] = [:]`);
   for (const arg of sig.args) {
-    const swiftArg = propertyName(arg.name);
+    const swiftArg = argNames.get(arg.name)!;
     if (arg.required) {
       lines.push(`    requestBody[${JSON.stringify(arg.name)}] = try RaviJSON.fromEncodable(${swiftArg})`);
     } else {
@@ -405,11 +411,15 @@ function renderMethod(swiftName: string, cmd: CommandRegistryEntry): string {
   return lines.join("\n");
 }
 
-function renderMethodParams(cmd: CommandRegistryEntry, sig: CommandSignature): string {
+function renderMethodParams(
+  cmd: CommandRegistryEntry,
+  sig: CommandSignature,
+  argNames: ReadonlyMap<string, string>,
+): string {
   const inputSchema = buildInputSchema(cmd);
   const props = (inputSchema as { properties?: Record<string, JsonSchema> }).properties ?? {};
   const params: string[] = sig.args.map((arg) => {
-    const swiftArg = propertyName(arg.name);
+    const swiftArg = argNames.get(arg.name)!;
     const type = jsonSchemaToSwift(props[arg.name]);
     return `_ ${swiftArg}: ${type}${arg.required ? "" : "? = nil"}`;
   });

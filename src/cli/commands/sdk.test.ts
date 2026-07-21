@@ -70,6 +70,23 @@ describe("SdkOpenApiCommands.emit", () => {
     }
   });
 
+  it("writes to the canonical docs snapshot when --out is omitted", () => {
+    const dir = makeTmpDir("emit-default");
+    const originalCwd = process.cwd();
+    const capture = captureConsole();
+    try {
+      process.chdir(dir);
+      const result = new SdkOpenApiCommands().emit() as { status: string; path: string };
+      const target = join(process.cwd(), "docs", "openapi.json");
+      expect(result).toMatchObject({ status: "written", path: target });
+      expect(JSON.parse(readFileSync(target, "utf8")).openapi).toBe("3.1.0");
+    } finally {
+      process.chdir(originalCwd);
+      capture.restore();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("prints to stdout when --stdout is provided", () => {
     const stdout = captureStdout();
     let result: { status: string } | undefined;

@@ -49316,7 +49316,7 @@ export const SdkOpenapiEmitInputSchema = {
   "additionalProperties": false,
   "properties": {
     "out": {
-      "description": "Write spec JSON to this path",
+      "description": "Write spec JSON to this path (default: docs/openapi.json)",
       "type": "string"
     },
     "stdout": {
