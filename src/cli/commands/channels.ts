@@ -5,6 +5,11 @@
 import "reflect-metadata";
 import { spawnSync } from "node:child_process";
 import { z } from "zod";
+import {
+  probeChannelRunnerHealth,
+  type ChannelRunnerHealthProbeResult,
+  type ChannelRunnerHealthSnapshot,
+} from "../../channels/health.js";
 import { ChannelRunner, runChannelRunnerFromEnv } from "../../channels/runner.js";
 import { getCredentialConnection } from "../../credentials/index.js";
 import { nats } from "../../nats.js";
@@ -38,11 +43,54 @@ const pm2ProcessReturnSchema = z
   })
   .strict();
 
+const channelAdapterHealthReturnSchema = z
+  .object({
+    id: z.string(),
+    channelId: z.string(),
+    status: z.enum(["disabled", "starting", "connected", "degraded", "reconnecting", "disconnected", "failed"]),
+    reason: z.string().optional(),
+    connectedAt: z.number().optional(),
+    lastPongAt: z.number().optional(),
+    reconnectCount: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+
+const channelRunnerHealthSnapshotReturnSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    observedAt: z.number(),
+    running: z.boolean(),
+    startedAt: z.number().nullable(),
+    pid: z.number().int().positive(),
+    outbound: z
+      .object({
+        stream: z.string(),
+        consumer: z.string(),
+        enabled: z.boolean(),
+        infrastructureReady: z.boolean(),
+        consuming: z.boolean(),
+      })
+      .strict(),
+    adapters: z.array(channelAdapterHealthReturnSchema),
+  })
+  .strict();
+
+const channelsHealthReturnSchema = z
+  .object({
+    status: z.enum(["ready", "starting", "degraded", "unreachable", "stopped"]),
+    reachable: z.boolean(),
+    checkedAt: z.number(),
+    reason: z.string().optional(),
+  })
+  .strict();
+
 const channelsStatusReturnSchema = z.object({
   pm2Available: z.boolean(),
   processName: z.string(),
   channels: pm2ProcessReturnSchema,
   processes: z.array(pm2ProcessReturnSchema),
+  health: channelsHealthReturnSchema.optional(),
+  runner: channelRunnerHealthSnapshotReturnSchema.nullable().optional(),
 });
 
 const runtimeTargetReturnSchema = z
@@ -235,9 +283,13 @@ function serializePm2Process(process: ReturnType<typeof getPm2Process>, fallback
   };
 }
 
-function buildChannelsStatusJson(): Record<string, unknown> {
-  const pm2Available = isPm2Available();
-  const processes = pm2Available ? getPm2Processes() : [];
+type Pm2ProcessSnapshot = ReturnType<typeof getPm2Processes>[number];
+
+function buildChannelsStatusJson(
+  options: { pm2Available?: boolean; processes?: Pm2ProcessSnapshot[] } = {},
+): Record<string, unknown> {
+  const pm2Available = options.pm2Available ?? isPm2Available();
+  const processes = options.processes ?? (pm2Available ? getPm2Processes() : []);
   const channels = processes.find((process) => process.name === CHANNELS_PM2_PROCESS_NAME);
 
   return {
@@ -245,6 +297,89 @@ function buildChannelsStatusJson(): Record<string, unknown> {
     processName: CHANNELS_PM2_PROCESS_NAME,
     channels: serializePm2Process(channels, CHANNELS_PM2_PROCESS_NAME),
     processes: processes.map((process) => serializePm2Process(process, process.name)),
+  };
+}
+
+export type ChannelsRunnerHealthState = "ready" | "starting" | "degraded" | "unreachable" | "stopped";
+
+export function classifyChannelRunnerHealth(snapshot: ChannelRunnerHealthSnapshot): ChannelsRunnerHealthState {
+  if (!snapshot.running) return "degraded";
+  if (!snapshot.outbound.infrastructureReady) return "starting";
+
+  if (snapshot.adapters.some((adapter) => ["failed", "degraded", "disconnected"].includes(adapter.status))) {
+    return "degraded";
+  }
+  if (snapshot.adapters.some((adapter) => ["starting", "reconnecting"].includes(adapter.status))) {
+    return "starting";
+  }
+  if (snapshot.outbound.enabled && !snapshot.outbound.consuming) return "starting";
+  return "ready";
+}
+
+export async function buildChannelsLiveStatusJson(
+  options: {
+    pm2Available?: boolean;
+    processes?: Pm2ProcessSnapshot[];
+    refreshProcesses?: () => Pm2ProcessSnapshot[];
+    probe?: (options: { pid: number }) => Promise<ChannelRunnerHealthProbeResult>;
+    now?: () => number;
+  } = {},
+): Promise<Record<string, unknown>> {
+  const pm2Available = options.pm2Available ?? isPm2Available();
+  const processes = options.processes ?? (pm2Available ? getPm2Processes() : []);
+  const refreshProcesses = options.refreshProcesses ?? (options.processes === undefined ? getPm2Processes : undefined);
+  const payload = buildChannelsStatusJson({ pm2Available, processes });
+  const checkedAt = options.now?.() ?? Date.now();
+  const channels = processes.find((process) => process.name === CHANNELS_PM2_PROCESS_NAME);
+
+  if (!pm2Available) {
+    return {
+      ...payload,
+      health: { status: "stopped", reachable: false, checkedAt, reason: "pm2_unavailable" },
+      runner: null,
+    };
+  }
+  if (!channels || channels.status !== "online") {
+    return {
+      ...payload,
+      health: { status: "stopped", reachable: false, checkedAt, reason: "not_running" },
+      runner: null,
+    };
+  }
+  if (!Number.isSafeInteger(channels.pid) || channels.pid <= 0) {
+    return {
+      ...payload,
+      health: { status: "unreachable", reachable: false, checkedAt, reason: "invalid_pid" },
+      runner: null,
+    };
+  }
+
+  const result = await (options.probe ?? probeChannelRunnerHealth)({ pid: channels.pid });
+  if (!result.reachable) {
+    const refreshed = refreshProcesses?.();
+    const refreshedChannels = refreshed?.find((process) => process.name === CHANNELS_PM2_PROCESS_NAME);
+    if (refreshed && (refreshedChannels?.pid !== channels.pid || refreshedChannels?.status !== channels.status)) {
+      return buildChannelsLiveStatusJson({
+        ...options,
+        processes: refreshed,
+        refreshProcesses: undefined,
+      });
+    }
+    return {
+      ...payload,
+      health: { status: "unreachable", reachable: false, checkedAt, reason: result.reason },
+      runner: null,
+    };
+  }
+
+  return {
+    ...payload,
+    health: {
+      status: classifyChannelRunnerHealth(result.snapshot),
+      reachable: true,
+      checkedAt,
+    },
+    runner: result.snapshot,
   };
 }
 
@@ -537,8 +672,8 @@ export class ChannelsCommands {
   @Command({ name: "status", description: "Show channel runner status" })
   @CommandAccess({ kind: "read", resource: "channels", action: "status", risk: "low" })
   @Returns(channelsStatusReturnSchema)
-  status(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
-    const payload = buildChannelsStatusJson();
+  async status(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+    const payload = await buildChannelsLiveStatusJson();
     if (asJson) {
       printJson(payload);
       return payload;
@@ -554,6 +689,12 @@ export class ChannelsCommands {
     console.log(
       `  ${CHANNELS_PM2_PROCESS_NAME}: ${String(channels.status)}${channels.pid ? ` (PID ${channels.pid})` : ""}`,
     );
+    const health = payload.health as Record<string, unknown>;
+    console.log(`  health: ${String(health.status)}${health.reason ? ` (${String(health.reason)})` : ""}`);
+    const runner = payload.runner as ChannelRunnerHealthSnapshot | null;
+    for (const adapter of runner?.adapters ?? []) {
+      console.log(`  ${adapter.id}: ${adapter.status}${adapter.reason ? ` (${adapter.reason})` : ""}`);
+    }
     return payload;
   }
 

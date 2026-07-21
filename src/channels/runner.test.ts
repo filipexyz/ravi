@@ -3,6 +3,7 @@ import { CHANNEL_OUTBOUND_RECEIPT_RETENTION_MS } from "./outbound-receipts.js";
 import {
   CHANNEL_OUTBOUND_RECEIPT_PRUNE_INTERVAL_MS,
   pruneChannelOutboundReceiptLedger,
+  slackAdapterHealth,
   startChannelOutboundReceiptPruner,
 } from "./runner.js";
 
@@ -45,5 +46,55 @@ describe("channel runner outbound receipt maintenance", () => {
     stop();
     expect(clearIntervalForTest).toHaveBeenCalledWith(timer);
     expect(CHANNEL_OUTBOUND_RECEIPT_PRUNE_INTERVAL_MS).toBe(6 * 60 * 60 * 1_000);
+  });
+});
+
+describe("channel runner Slack health projection", () => {
+  it("does not call an opening socket connected before Slack hello", () => {
+    expect(
+      slackAdapterHealth("hana-slack", {
+        state: "connecting",
+        reconnectCount: 0,
+        reason: "awaiting_hello",
+      }),
+    ).toEqual({
+      id: "slack:hana-slack",
+      channelId: "slack",
+      status: "starting",
+      reason: "awaiting_hello",
+      reconnectCount: 0,
+    });
+  });
+
+  it("projects heartbeat and reconnect lifecycle without exposing credentials", () => {
+    const health = slackAdapterHealth("hana-slack", {
+      state: "connected",
+      connectedAt: 1_721_563_201_000,
+      lastPongAt: 1_721_563_202_000,
+      reconnectCount: 2,
+    });
+
+    expect(health).toEqual({
+      id: "slack:hana-slack",
+      channelId: "slack",
+      status: "connected",
+      connectedAt: 1_721_563_201_000,
+      lastPongAt: 1_721_563_202_000,
+      reconnectCount: 2,
+    });
+    expect(JSON.stringify(health)).not.toContain("xapp-");
+    expect(JSON.stringify(health)).not.toContain("xoxb-");
+
+    expect(
+      slackAdapterHealth("hana-slack", {
+        state: "reconnecting",
+        reconnectCount: 3,
+        reason: "heartbeat_timeout",
+      }),
+    ).toMatchObject({
+      status: "reconnecting",
+      reason: "heartbeat_timeout",
+      reconnectCount: 3,
+    });
   });
 });

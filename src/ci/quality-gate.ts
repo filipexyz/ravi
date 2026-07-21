@@ -19,6 +19,14 @@ const REQUIRED_COMPANIONS = ["WHY.md", "RUNBOOK.md", "CHECKS.md"] as const;
  * Each prefix maps to a list of known test file glob patterns.
  */
 export const RUNTIME_PATH_MAP: Record<string, string[]> = {
+  "src/channels/health.ts": ["src/channels/health.test.ts"],
+  "src/channels/runner.ts": ["src/channels/runner.test.ts"],
+  "src/channels/slack/socket-mode.ts": ["src/channels/slack/socket-mode.test.ts"],
+  "src/channels/": [
+    "src/channels/health.test.ts",
+    "src/channels/runner.test.ts",
+    "src/channels/slack/socket-mode.test.ts",
+  ],
   "src/omni/": [
     "src/omni/consumer-context.test.ts",
     "src/omni/consumer-policy.test.ts",

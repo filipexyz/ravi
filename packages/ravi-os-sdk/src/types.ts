@@ -2321,6 +2321,12 @@ export type ChannelsRestartReturn = {
       running: boolean;
       status: string;
     };
+    health?: {
+      checkedAt: number;
+      reachable: boolean;
+      reason?: string;
+      status: "ready" | "starting" | "degraded" | "unreachable" | "stopped";
+    };
     pm2Available: boolean;
     processName: string;
     processes: Array<{
@@ -2334,6 +2340,29 @@ export type ChannelsRestartReturn = {
       running: boolean;
       status: string;
     }>;
+    runner?: ({
+      adapters: Array<{
+        channelId: string;
+        connectedAt?: number;
+        id: string;
+        lastPongAt?: number;
+        reason?: string;
+        reconnectCount?: number;
+        status: "disabled" | "starting" | "connected" | "degraded" | "reconnecting" | "disconnected" | "failed";
+      }>;
+      observedAt: number;
+      outbound: {
+        consumer: string;
+        consuming: boolean;
+        enabled: boolean;
+        infrastructureReady: boolean;
+        stream: string;
+      };
+      pid: number;
+      running: boolean;
+      schemaVersion: 1;
+      startedAt: number | null;
+    }) | null;
   };
   target?: {
     bundlePath: string;
@@ -2409,6 +2438,12 @@ export type ChannelsStartReturn = {
       running: boolean;
       status: string;
     };
+    health?: {
+      checkedAt: number;
+      reachable: boolean;
+      reason?: string;
+      status: "ready" | "starting" | "degraded" | "unreachable" | "stopped";
+    };
     pm2Available: boolean;
     processName: string;
     processes: Array<{
@@ -2422,6 +2457,29 @@ export type ChannelsStartReturn = {
       running: boolean;
       status: string;
     }>;
+    runner?: ({
+      adapters: Array<{
+        channelId: string;
+        connectedAt?: number;
+        id: string;
+        lastPongAt?: number;
+        reason?: string;
+        reconnectCount?: number;
+        status: "disabled" | "starting" | "connected" | "degraded" | "reconnecting" | "disconnected" | "failed";
+      }>;
+      observedAt: number;
+      outbound: {
+        consumer: string;
+        consuming: boolean;
+        enabled: boolean;
+        infrastructureReady: boolean;
+        stream: string;
+      };
+      pid: number;
+      running: boolean;
+      schemaVersion: 1;
+      startedAt: number | null;
+    }) | null;
   };
   target?: {
     bundlePath: string;
@@ -2446,6 +2504,12 @@ export type ChannelsStatusReturn = {
     running: boolean;
     status: string;
   };
+  health?: {
+    checkedAt: number;
+    reachable: boolean;
+    reason?: string;
+    status: "ready" | "starting" | "degraded" | "unreachable" | "stopped";
+  };
   pm2Available: boolean;
   processName: string;
   processes: Array<{
@@ -2459,6 +2523,29 @@ export type ChannelsStatusReturn = {
     running: boolean;
     status: string;
   }>;
+  runner?: ({
+    adapters: Array<{
+      channelId: string;
+      connectedAt?: number;
+      id: string;
+      lastPongAt?: number;
+      reason?: string;
+      reconnectCount?: number;
+      status: "disabled" | "starting" | "connected" | "degraded" | "reconnecting" | "disconnected" | "failed";
+    }>;
+    observedAt: number;
+    outbound: {
+      consumer: string;
+      consuming: boolean;
+      enabled: boolean;
+      infrastructureReady: boolean;
+      stream: string;
+    };
+    pid: number;
+    running: boolean;
+    schemaVersion: 1;
+    startedAt: number | null;
+  }) | null;
 };
 
 /** Input shape for `channels.stop`. */
@@ -2486,6 +2573,12 @@ export type ChannelsStopReturn = {
       running: boolean;
       status: string;
     };
+    health?: {
+      checkedAt: number;
+      reachable: boolean;
+      reason?: string;
+      status: "ready" | "starting" | "degraded" | "unreachable" | "stopped";
+    };
     pm2Available: boolean;
     processName: string;
     processes: Array<{
@@ -2499,6 +2592,29 @@ export type ChannelsStopReturn = {
       running: boolean;
       status: string;
     }>;
+    runner?: ({
+      adapters: Array<{
+        channelId: string;
+        connectedAt?: number;
+        id: string;
+        lastPongAt?: number;
+        reason?: string;
+        reconnectCount?: number;
+        status: "disabled" | "starting" | "connected" | "degraded" | "reconnecting" | "disconnected" | "failed";
+      }>;
+      observedAt: number;
+      outbound: {
+        consumer: string;
+        consuming: boolean;
+        enabled: boolean;
+        infrastructureReady: boolean;
+        stream: string;
+      };
+      pid: number;
+      running: boolean;
+      schemaVersion: 1;
+      startedAt: number | null;
+    }) | null;
   };
   target?: {
     bundlePath: string;

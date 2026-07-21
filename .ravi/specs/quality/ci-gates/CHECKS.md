@@ -19,6 +19,8 @@ status: active
 
 ## Coverage Gate Checks
 
+- A diff containing `src/channels/**` without a mapped health, runner, or Socket Mode test fails with a message naming the expected channel coverage.
+- A diff containing `src/channels/**` and at least one mapped focused channel test passes the coverage gate.
 - A diff containing `src/omni/consumer.ts` without a corresponding test file in the diff fails with a message naming the expected coverage, even if the test file exists on disk.
 - A diff containing `src/omni/consumer.ts` and `src/omni/consumer-context.test.ts` passes the coverage gate.
 - A docs-only diff (`docs/**` or `.ravi/specs/**` only) skips the coverage gate but still runs spec validation.

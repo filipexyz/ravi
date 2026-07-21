@@ -68,7 +68,14 @@ export {
   createSlackNativeRuntimeFromEnv,
   createSlackNativeRuntimesFromEnv,
 } from "./socket-mode.js";
-export type { SlackNativeRuntime, SlackSocketModeServiceOptions, SlackTargetScope } from "./socket-mode.js";
+export type {
+  SlackNativeRuntime,
+  SlackSocketModeReason,
+  SlackSocketModeServiceOptions,
+  SlackSocketModeState,
+  SlackSocketModeStatus,
+  SlackTargetScope,
+} from "./socket-mode.js";
 export type {
   SlackBotMessageAliasesByChat,
   SlackEventAuthorization,

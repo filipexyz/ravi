@@ -24,6 +24,14 @@
 - [ ] Missing credentials MUST disable the adapter.
 - [ ] Env fallback MUST be opt-in.
 - [ ] Tests MUST cover routing policy and native delivery.
+- [ ] A newly started Socket Mode service MUST remain connecting until the active socket opens and receives its bounded initial `hello`.
+- [ ] A quiet healthy workspace MUST remain connected through WebSocket ping/pong heartbeats without requiring application messages.
+- [ ] A missing `hello` or pong MUST terminate and replace the stale socket without waiting for its `close` callback.
+- [ ] Socket errors and Slack `disconnect` warnings or `refresh_requested` envelopes MUST trigger bounded reconnection.
+- [ ] Late callbacks from a retired socket generation MUST NOT replace, close, or regress the health state of the active socket.
+- [ ] Explicit shutdown MUST cancel heartbeat/deadline timers and MUST NOT reconnect afterward.
+- [ ] Explicit shutdown MUST settle while `apps.connections.open` is pending and MUST ignore its late result.
+- [ ] Socket lifecycle snapshots MUST report connecting, connected, and reconnecting with non-secret reasons and health timestamps.
 - [ ] An identity stored under the configured UUID MUST resolve when inbound Slack uses the account slug for that same instance.
 - [ ] An identity stored under the configured slug MUST resolve when inbound Slack uses the configured UUID for that same instance.
 - [ ] The same Slack user id in another workspace MUST NOT be selected.

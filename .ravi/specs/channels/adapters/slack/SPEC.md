@@ -28,6 +28,33 @@ The Slack adapter MUST support:
 - working presence via temporary reaction on the inbound Slack message;
 - delivery event emission.
 
+## Socket Liveness
+
+The adapter MUST verify Socket Mode liveness independently of application
+message traffic so a quiet workspace can remain connected without masking a
+half-open connection.
+
+For every Socket Mode connection, the adapter MUST:
+
+- require the initial Slack `hello` within a bounded timeout;
+- send transport-level WebSocket ping frames on a bounded interval;
+- require a matching pong within a bounded deadline;
+- terminate and replace the socket when the hello or pong deadline expires,
+  without depending on the stale socket to emit `close`;
+- reconnect after a socket error even when no later `close` callback arrives;
+- rotate the connection when Slack sends a `disconnect` envelope whose reason
+  is `warning` or `refresh_requested`;
+- ignore late callbacks and timers from a retired socket generation; and
+- cancel heartbeat, deadline, and reconnect work during explicit shutdown.
+- let explicit shutdown settle without waiting for an in-flight
+  `apps.connections.open` request to finish.
+
+The adapter MUST expose live lifecycle state from actual socket events. Calling
+`start()` MUST NOT itself mean `connected`; only the active socket's open/hello
+lifecycle may establish health. State snapshots MUST distinguish connecting,
+connected, and reconnecting, and MUST retain non-secret transition reasons and
+timestamps useful for health diagnosis.
+
 ## Thread Policy
 
 The adapter MUST distinguish:

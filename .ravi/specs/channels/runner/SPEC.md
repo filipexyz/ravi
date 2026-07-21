@@ -39,7 +39,30 @@ The runner MUST expose:
 - `ravi channels run`
 - `ravi channels probe`
 
+## Adapter Health
+
+The runner MUST derive each adapter's live status from the adapter lifecycle,
+not from process existence or from having invoked `start()` successfully.
+
+For each configured Slack account, runner status MUST:
+
+- remain starting/connecting until the active Socket Mode connection is
+  actually healthy;
+- transition through connected and reconnecting as the socket heartbeat and
+  recovery loop changes state;
+- retain non-secret transition reasons and lifecycle/health timestamps;
+- recover independently from the state of other Slack accounts; and
+- transition to disconnected during explicit runner shutdown without allowing
+  retired adapter callbacks to restore an online state.
+
+A PM2 process reported as online MUST NOT, by itself, be treated as proof that a
+Slack adapter is connected.
+
+Live status MUST scope its health request to the PM2 runner PID. If that PID
+changes while the request is in flight, status MUST refresh the PM2 snapshot
+and retry once against the replacement process instead of reporting the stale
+PID as current.
+
 ## Locks
 
 Adapters SHOULD use process or credential-scoped locks before opening external sockets. Slack MUST prevent duplicate Socket Mode consumers for the same connection.
-
