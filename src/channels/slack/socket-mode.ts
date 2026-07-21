@@ -557,18 +557,51 @@ export class SlackSocketModeService {
     const event = envelopeEvent(envelope);
     if (!event || !isSlackMessageEventStructurallyEligible(event)) return null;
 
-    const payload = envelope.payload as { team_id?: string; event_id?: string; event_time?: number } | undefined;
+    const payload = envelope.payload as
+      | {
+          team_id?: string;
+          event_id?: string;
+          event_time?: number;
+          authorizations?: unknown;
+        }
+      | undefined;
     const isBotMessage = isSlackBotMessageCandidate(event);
-    let teamId: string;
+    const sourceTeamId = cleanSlackId(event.source_team);
+    const userTeamId = cleanSlackId(event.user_team);
+    const eventTeamId = cleanSlackId(event.team);
+    const payloadTeamId = cleanSlackId(payload?.team_id);
+    const authorizationsPresent = Boolean(payload && Object.prototype.hasOwnProperty.call(payload, "authorizations"));
+    const authorizationsValid = Array.isArray(payload?.authorizations);
+    const authorizedTeamIds = slackAuthorizationTeamIds(payload?.authorizations);
+    let teamId = eventTeamId ?? payloadTeamId ?? this.options.accountId;
+    let originTeamId: string | undefined;
     let localBotIdentity: SlackLocalBotIdentity | null = null;
     if (isBotMessage) {
-      const teamIds = uniqueCleanSlackIds([payload?.team_id, event.team]);
-      if (teamIds.length !== 1) return null;
-      teamId = teamIds[0]!;
+      const legacyInstallationTeamIds = uniqueCleanSlackIds([payloadTeamId, eventTeamId]);
+      originTeamId =
+        sourceTeamId ?? (legacyInstallationTeamIds.length === 1 ? legacyInstallationTeamIds[0] : undefined);
+      if (!originTeamId) return null;
+      if (authorizationsPresent) {
+        if (!authorizationsValid || authorizedTeamIds.length === 0) return null;
+      } else if (legacyInstallationTeamIds.length !== 1) {
+        return null;
+      }
       localBotIdentity = await this.resolveLocalBotIdentity();
-      if (!localBotIdentity || localBotIdentity.teamId !== teamId) return null;
+      if (
+        !localBotIdentity ||
+        !hasSlackBotInstallationProof({
+          localTeamId: localBotIdentity.teamId,
+          authorizationsPresent,
+          authorizedTeamIds,
+          legacyInstallationTeamIds,
+        })
+      ) {
+        return null;
+      }
+      teamId = eventTeamId ?? payloadTeamId ?? originTeamId;
     } else {
-      teamId = cleanSlackId(event.team) ?? cleanSlackId(payload?.team_id) ?? this.options.accountId;
+      const originCandidates = uniqueCleanSlackIds([payloadTeamId, eventTeamId]);
+      originTeamId = sourceTeamId ?? (originCandidates.length === 1 ? originCandidates[0] : undefined);
     }
     if (
       shouldIgnoreSlackMessageEvent(event, {
@@ -594,6 +627,13 @@ export class SlackSocketModeService {
 
     return {
       teamId,
+      originTeamId,
+      sourceTeamId,
+      userTeamId,
+      eventTeamId,
+      payloadTeamId,
+      authorizedTeamIds,
+      localTeamId: localBotIdentity?.teamId,
       channelId,
       channelType: cleanSlackId(event.channel_type) ?? "channel",
       userId,
@@ -790,7 +830,7 @@ export class SlackSocketModeService {
       title: message.channelId,
       rawProvenance: {
         source: "slack.socket_mode",
-        teamId: message.teamId,
+        ...slackTeamProvenance(message),
         channelId: message.channelId,
         threadTs: routeThreadId ?? null,
         envelopeId: message.envelopeId ?? null,
@@ -895,7 +935,7 @@ export class SlackSocketModeService {
       content: buildSlackMessageContent(message, processedFiles),
       rawProvenance: {
         source: "slack.socket_mode",
-        teamId: message.teamId,
+        ...slackTeamProvenance(message),
         eventId: message.eventId ?? null,
         envelopeId: message.envelopeId ?? null,
         senderKind: message.senderKind,
@@ -918,6 +958,13 @@ export class SlackSocketModeService {
       source: actorIdentity.actorType === "unknown" ? "inbound_message" : "slack_socket_mode:identity_resolved",
       metadata: {
         slackTeamId: message.teamId,
+        slackOriginTeamId: message.originTeamId ?? null,
+        slackSourceTeamId: message.sourceTeamId ?? null,
+        slackUserTeamId: message.userTeamId ?? null,
+        slackEventTeamId: message.eventTeamId ?? null,
+        slackPayloadTeamId: message.payloadTeamId ?? null,
+        slackAuthorizedTeamIds: message.authorizedTeamIds,
+        slackLocalTeamId: message.localTeamId ?? null,
         slackChannelType: message.channelType,
         slackSenderKind: message.senderKind,
         slackUserId: message.slackUserId ?? null,
@@ -954,7 +1001,7 @@ export class SlackSocketModeService {
         title: message.channelId,
         rawProvenance: {
           source: "slack.socket_mode",
-          teamId: message.teamId,
+          ...slackTeamProvenance(message),
           channelId: message.channelId,
         },
         seenAt: message.eventTimeMs,
@@ -1028,6 +1075,13 @@ export class SlackSocketModeService {
         routeAccountId: this.options.routeAccountId ?? this.options.accountId,
         instanceId: input.instanceId,
         teamId: input.message.teamId,
+        originTeamId: input.message.originTeamId,
+        sourceTeamId: input.message.sourceTeamId,
+        userTeamId: input.message.userTeamId,
+        eventTeamId: input.message.eventTeamId,
+        payloadTeamId: input.message.payloadTeamId,
+        authorizedTeamIds: input.message.authorizedTeamIds,
+        localTeamId: input.message.localTeamId,
         channelId: input.message.channelId,
         channelType: input.message.channelType,
         peerKind: input.peerKind,
@@ -1122,6 +1176,39 @@ export class SlackSocketModeService {
 
 function isSlackBotMessageCandidate(event: SlackEventPayload): boolean {
   return Boolean(cleanSlackId(event.bot_id) || event.subtype === "bot_message");
+}
+
+function slackAuthorizationTeamIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return uniqueCleanSlackIds(
+    value.map((authorization) => {
+      if (!authorization || typeof authorization !== "object" || Array.isArray(authorization)) return undefined;
+      return (authorization as Record<string, unknown>).team_id;
+    }),
+  );
+}
+
+function hasSlackBotInstallationProof(input: {
+  localTeamId: string;
+  authorizationsPresent: boolean;
+  authorizedTeamIds: readonly string[];
+  legacyInstallationTeamIds: readonly string[];
+}): boolean {
+  if (input.authorizationsPresent) return input.authorizedTeamIds.includes(input.localTeamId);
+  return input.legacyInstallationTeamIds.length === 1 && input.legacyInstallationTeamIds[0] === input.localTeamId;
+}
+
+function slackTeamProvenance(message: SlackNormalizedMessage): Record<string, unknown> {
+  return {
+    teamId: message.teamId,
+    originTeamId: message.originTeamId ?? null,
+    sourceTeamId: message.sourceTeamId ?? null,
+    userTeamId: message.userTeamId ?? null,
+    eventTeamId: message.eventTeamId ?? null,
+    payloadTeamId: message.payloadTeamId ?? null,
+    authorizedTeamIds: message.authorizedTeamIds,
+    localTeamId: message.localTeamId ?? null,
+  };
 }
 
 function withAbortableTimeout<T>(

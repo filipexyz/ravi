@@ -36,6 +36,20 @@ cached, but each request has a bounded timeout and failures get only a short
 backoff: this avoids a stuck Web API call or a transient Slack failure turning
 into a daemon-lifetime outage without creating an API storm.
 
+Slack Connect also separates message origin from app visibility. `source_team`
+may name the workspace that authored a message while `authorizations[].team_id`
+names an installation on whose behalf Slack delivered the event. Requiring both
+to equal `auth.test.team_id` drops valid cross-workspace bot messages. Ravi uses
+a matching authorization only as positive installation proof. If the key is
+present but does not contain the local team, Ravi fails closed: Slack may have
+truncated a valid installation from the received value, but proving that safely
+requires `apps.event.authorizations.list`. The older outer/inner comparison is a
+strict compatibility fallback only when the key is absent, and it never uses
+the logical Ravi account id. `source_team` remains mandatory as origin whenever
+outer/inner values differ, and each signal is retained separately so
+authorization does not overwrite origin provenance or the legacy effective
+`teamId` value.
+
 Slack bot events may carry both a bot id and a user id. Either can be linked in
 the identity graph, so resolving only the first id loses valid agent identity;
 blindly choosing the first match can also grant the wrong authority. Resolving

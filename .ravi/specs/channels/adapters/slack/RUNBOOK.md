@@ -36,9 +36,19 @@ Restart the channel runner after changing defaults. Then verify all four cases:
 - Wrong thread: check `RAVI_SLACK_SUBSCRIPTION_SCOPE`, `RAVI_SLACK_THREAD_REPLY_MODE`, `RAVI_SLACK_ROOT_REPLY_MODE`.
 - Duplicate response: check duplicate runner processes and Socket Mode lock.
 - All bot messages ignored: inspect the `auth.test` warning. Ravi requires `ok=true`
-  with a complete local `bot_id` + `user_id` + `team_id`, and requires outer
-  `payload.team_id` / `event.team` to identify that same team. Missing or conflicting
-  team provenance fails closed; Ravi never substitutes the logical channel account id.
+  with a complete local `bot_id` + `user_id` + `team_id`. A matching
+  `authorizations[].team_id` proves the installation even when `source_team`,
+  `event.team`, or `payload.team_id` describes another Slack workspace. Since Slack
+  can truncate the authorization list, a present-but-missing match fails closed; use
+  `apps.event.authorizations.list` before adding support for that false-negative case.
+  Only an actually absent `authorizations` key enables the strict legacy check:
+  `payload.team_id` and `event.team` must identify one team equal to the local
+  authenticated team. `source_team` must preserve origin when those values differ, and
+  a missing origin always fails closed. Ravi never substitutes the logical channel
+  account id. Inspect the separate
+  `originTeamId`, `sourceTeamId`, `userTeamId`, `eventTeamId`, `payloadTeamId`,
+  `authorizedTeamIds`, and `localTeamId` provenance fields to identify which check
+  applied. `teamId` remains the legacy event-first effective value.
   Discovery is aborted after its five-second timeout, uses a bounded retry backoff,
   and retries on a later bot message instead of caching failure permanently.
 - Foreign bot admitted but actor is unknown: inspect `identityProvenance.botIdentityReason`.

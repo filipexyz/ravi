@@ -33,7 +33,16 @@ export interface SlackEventsApiPayload {
   readonly type?: string;
   readonly event_id?: string;
   readonly event_time?: number;
-  readonly authorizations?: readonly Record<string, unknown>[];
+  readonly authorizations?: readonly SlackEventAuthorization[];
+}
+
+export interface SlackEventAuthorization {
+  readonly enterprise_id?: string | null;
+  readonly team_id?: string | null;
+  readonly user_id?: string | null;
+  readonly is_bot?: boolean | null;
+  readonly is_enterprise_install?: boolean | null;
+  readonly [key: string]: unknown;
 }
 
 export interface SlackEventPayload {
@@ -47,6 +56,8 @@ export interface SlackEventPayload {
   readonly ts?: string;
   readonly thread_ts?: string;
   readonly team?: string;
+  readonly source_team?: string | null;
+  readonly user_team?: string | null;
   readonly event_ts?: string;
   readonly files?: readonly SlackFilePayload[];
   readonly edited?: Record<string, unknown>;
@@ -80,7 +91,22 @@ export interface SlackNormalizedFile {
 }
 
 export interface SlackNormalizedMessage {
+  /** Legacy effective team value retained for existing consumers. */
   readonly teamId: string;
+  /** Resolved message origin: `source_team`, otherwise one unambiguous outer/inner team. */
+  readonly originTeamId?: string;
+  /** Workspace from which Slack says the message originated. */
+  readonly sourceTeamId?: string;
+  /** Workspace associated with the sending Slack user when provided. */
+  readonly userTeamId?: string;
+  /** Raw inner `event.team`, which is not necessarily the token installation. */
+  readonly eventTeamId?: string;
+  /** Raw outer Events API `payload.team_id`. */
+  readonly payloadTeamId?: string;
+  /** Team ids exposed by the possibly truncated Events API authorization list. */
+  readonly authorizedTeamIds: readonly string[];
+  /** Workspace returned by `auth.test` for the local channel account token. */
+  readonly localTeamId?: string;
   readonly channelId: string;
   readonly channelType: string;
   /** Effective sender id: Slack `user` when present, otherwise `bot_id`. */
