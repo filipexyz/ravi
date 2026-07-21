@@ -1304,6 +1304,47 @@ describe("runtime session trace instrumentation", () => {
     expect(getSessionTurn("turn-failed")?.status).toBe("failed");
   });
 
+  it("keeps raw failure diagnostics internal while sanitizing the external response and live state", async () => {
+    attachSpeakingOutputChat();
+    const rawError =
+      "ENOENT: no such file or directory, scandir '/Users/luis/.cache/ravi/plugins/ravi-system/skills/slack'";
+    const streaming = makeStreamingSession({ agentMode: "active" });
+    seedAdapterTrace(streaming, "turn-internal-failure");
+    const responses: string[] = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        const response = (data as { response?: unknown }).response;
+        if (typeof response === "string") responses.push(response);
+      }
+    });
+
+    try {
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          {
+            type: "turn.failed",
+            error: rawError,
+            recoverable: false,
+          },
+        ]),
+      );
+    } finally {
+      emitSpy.mockRestore();
+    }
+
+    expect(responses).toEqual([
+      "Error: The agent could not complete this request because of an internal runtime error. Please try again.",
+    ]);
+    expect(responses.join("\n")).not.toContain("/Users/luis");
+    expect(getRuntimeLiveStateForSession(makeSession())?.summary).toBe(
+      "The agent could not complete this request because of an internal runtime error. Please try again.",
+    );
+
+    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.failed");
+    expect(terminal?.error).toBe(rawError);
+  });
+
   it("deduplicates user-facing provider session limit failures within the same reset window", () => {
     const now = new Date("2026-06-16T15:56:00-03:00").getTime();
     const scope = "codex:whatsapp:main:120363424772797713@g.us";

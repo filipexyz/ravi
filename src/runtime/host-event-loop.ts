@@ -47,6 +47,7 @@ import {
 import { resolveSessionOutputTarget } from "./session-output-target.js";
 import { resolveRuntimeIdleSessionTtlMs } from "./session-pool.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
+import { formatUserFacingTurnFailure, publicRuntimeFailureDetail } from "./public-failure.js";
 import {
   createObservationEvent,
   deliverObservationEvents,
@@ -75,7 +76,6 @@ const log = logger.child("bot");
 
 const MAX_OUTPUT_LENGTH = 1000;
 const MAX_TURN_FAILURE_LOG_DETAIL = 1800;
-const MAX_TURN_FAILURE_RESPONSE = 320;
 const PROVIDER_INACTIVE_AFTER_TOOL_REASON = "provider_inactive";
 const PROVIDER_TURN_INACTIVITY_REASON = "provider_turn_inactive";
 const IDLE_SESSION_TTL_REASON = "idle_session_ttl";
@@ -504,19 +504,6 @@ function buildUserFacingFailureSuppressionScope(input: {
     ? `${source.channel}:${source.accountId ?? ""}:${source.chatId ?? source.canonicalChatId ?? ""}`
     : input.sessionKey;
   return `${input.provider}:${outputScope}`;
-}
-
-export function formatUserFacingTurnFailure(error: string): string {
-  const firstLine = error
-    .split("\n")
-    .map((line) => line.trim())
-    .find(Boolean);
-  const detail = firstLine ?? (error.trim() || "unknown error");
-  const clipped =
-    detail.length > MAX_TURN_FAILURE_RESPONSE
-      ? `${detail.slice(0, MAX_TURN_FAILURE_RESPONSE - 15)}... [truncated]`
-      : detail;
-  return `Error: ${clipped}`;
 }
 
 function resolveCostTrackingModel(
@@ -2280,7 +2267,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           provider: runtimeSession.provider,
           recoverable: event.recoverable ?? true,
           suppressedRecoverable,
-          error: event.error,
+          error: publicRuntimeFailureDetail(event.error),
           abortReason: null,
         });
         clearTraceTurnState();
@@ -2311,7 +2298,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         }
         updateRuntimeLiveState(sessionName, {
           activity: "blocked",
-          summary: truncateLiveSummary(event.error) || "turn failed",
+          summary: truncateLiveSummary(publicRuntimeFailureDetail(event.error)) || "turn failed",
           agentId: agent.id,
           runId,
           provider: runtimeSession.provider,

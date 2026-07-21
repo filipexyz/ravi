@@ -393,6 +393,28 @@ describe("SessionCommands wait mode", () => {
     expect(publishedPrompts[0]?.sessionName).toBe("codex-cli-locked");
   });
 
+  it("does not expose internal runtime paths when a waited session fails", async () => {
+    runtimeEvents = [
+      {
+        type: "turn.failed",
+        error: "ENOENT: no such file or directory, scandir '/Users/luis/.cache/ravi/plugins/ravi-system/skills/slack'",
+      },
+    ];
+
+    const commands = new SessionCommands();
+    const result = (commands as any).streamToSession("main", "say hi", {
+      sessionKey: "agent:main:main",
+      name: "main",
+      agentId: "main",
+      agentCwd: "/tmp/main",
+    });
+
+    await expect(result).rejects.toThrow(
+      "The agent could not complete this request because of an internal runtime error. Please try again.",
+    );
+    await expect(result).rejects.not.toThrow("/Users/luis");
+  });
+
   it("does not print a success footer when send -w fails", async () => {
     const commands = new SessionCommands();
     const logCalls: string[] = [];

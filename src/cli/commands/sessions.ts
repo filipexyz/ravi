@@ -86,6 +86,7 @@ import {
   parseRuntimeEffort,
 } from "../../runtime/effort.js";
 import type { RuntimeProviderId } from "../../runtime/types.js";
+import { publicRuntimeFailureDetail } from "../../runtime/public-failure.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
 import {
   countHistory,
@@ -5066,7 +5067,7 @@ export class SessionCommands {
     await Promise.race([streaming, new Promise((r) => setTimeout(r, 100))]);
 
     if (completionState.kind === "failed" || completionState.kind === "interrupted") {
-      throw new Error(completionState.error);
+      throw new Error(publicRuntimeFailureDetail(completionState.error));
     }
     if (completionState.kind === "timeout") {
       throw new Error(formatWaitTimeoutError(sessionName));
