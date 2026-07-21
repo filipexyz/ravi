@@ -43024,6 +43024,31 @@ public enum RaviSchemas {
         },
         "type": "array"
       },
+      "disabled": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "mode": {
+        "enum": [
+          "attach-missing",
+          "detach-disabled",
+          "refresh-profile",
+          "full-reconcile"
+        ],
+        "type": "string"
+      },
+      "refreshedProfiles": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
       "skipped": {
         "items": {
           "additionalProperties": {},
@@ -43033,9 +43058,16 @@ public enum RaviSchemas {
         "type": "array"
       },
       "source": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
       },
       "total": {
         "type": "number"
@@ -43043,8 +43075,11 @@ public enum RaviSchemas {
     },
     "required": [
       "source",
+      "mode",
       "total",
       "created",
+      "disabled",
+      "refreshedProfiles",
       "bindings",
       "skipped"
     ],

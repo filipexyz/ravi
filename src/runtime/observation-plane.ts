@@ -423,6 +423,14 @@ interface ObserverSourceExclusions {
   sessionKeyFragments: string[];
 }
 
+const OBSERVER_SOURCE_EXCLUSION_KEYS = [
+  "agentIds",
+  "sessionKeys",
+  "sessionNames",
+  "sessionKeyFragments",
+] as const satisfies readonly (keyof ObserverSourceExclusions)[];
+const OBSERVER_SOURCE_EXCLUSION_KEY_SET = new Set<string>(OBSERVER_SOURCE_EXCLUSION_KEYS);
+
 function sourceExclusionList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -432,6 +440,7 @@ function sourceExclusionList(value: unknown): string[] {
 }
 
 function observerSourceExclusions(metadata?: Record<string, unknown>): ObserverSourceExclusions | null {
+  validateObserverSourceExclusions(metadata);
   const value = metadata?.sourceExclusions;
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const raw = value as Record<string, unknown>;
@@ -450,7 +459,12 @@ function validateObserverSourceExclusions(metadata?: Record<string, unknown>): v
     throw new Error("Observer metadata.sourceExclusions must be an object.");
   }
   const raw = value as Record<string, unknown>;
-  for (const key of ["agentIds", "sessionKeys", "sessionNames", "sessionKeyFragments"] as const) {
+  for (const key of Object.keys(raw)) {
+    if (!OBSERVER_SOURCE_EXCLUSION_KEY_SET.has(key)) {
+      throw new Error(`Observer metadata.sourceExclusions.${key} is not supported.`);
+    }
+  }
+  for (const key of OBSERVER_SOURCE_EXCLUSION_KEYS) {
     const list = raw[key];
     if (list === undefined) continue;
     if (!Array.isArray(list) || list.some((item) => typeof item !== "string" || !item.trim())) {
@@ -463,7 +477,14 @@ function sourceExclusionReason(
   metadata: Record<string, unknown> | undefined,
   source: ObservationSourceDescriptor,
 ): string | null {
-  const exclusions = observerSourceExclusions(metadata);
+  let exclusions: ObserverSourceExclusions | null;
+  try {
+    exclusions = observerSourceExclusions(metadata);
+  } catch {
+    // Persisted legacy metadata may predate validation or have been edited
+    // directly. Unknown/malformed exclusions must never become an allow.
+    return "invalid_source_exclusions";
+  }
   if (!exclusions) return null;
   if (exclusions.agentIds.includes(source.agentId)) return "excluded_source_agent";
   if (exclusions.sessionKeys.includes(source.sessionKey)) return "excluded_source_session_key";
@@ -1283,7 +1304,9 @@ export function reconcileObserverBindingsForSession(input: {
       if (!shouldRefreshProfiles || !selected) continue;
 
       const rule = dbGetObserverRule(binding.ruleId);
-      const profile = resolveObserverProfile(rule?.observerProfileId ?? binding.observerProfileId);
+      // A present rule is authoritative even when its explicit profile was cleared.
+      // Only an orphaned binding falls back to its previously persisted profile id.
+      const profile = resolveObserverProfile(rule ? rule.observerProfileId : binding.observerProfileId);
       db.prepare(
         `UPDATE observer_bindings
          SET observer_profile_id = ?, observer_profile_version = ?, observer_profile_source = ?,

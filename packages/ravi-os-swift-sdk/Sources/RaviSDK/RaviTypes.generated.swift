@@ -12772,13 +12772,19 @@ public struct ObserversRefreshOptions: Codable, Sendable {
 public struct ObserversRefreshReturn: Codable, Sendable {
   public var bindings: [[String: RaviJSON]]
   public var created: [[String: RaviJSON]]
+  public var disabled: [[String: RaviJSON]]
+  public var mode: String
+  public var refreshedProfiles: [[String: RaviJSON]]
   public var skipped: [[String: RaviJSON]]
-  public var source: [String: RaviJSON]
+  public var source: RaviJSON
   public var total: Double
 
-  public init(bindings: [[String: RaviJSON]], created: [[String: RaviJSON]], skipped: [[String: RaviJSON]], source: [String: RaviJSON], total: Double) {
+  public init(bindings: [[String: RaviJSON]], created: [[String: RaviJSON]], disabled: [[String: RaviJSON]], mode: String, refreshedProfiles: [[String: RaviJSON]], skipped: [[String: RaviJSON]], source: RaviJSON, total: Double) {
     self.bindings = bindings
     self.created = created
+    self.disabled = disabled
+    self.mode = mode
+    self.refreshedProfiles = refreshedProfiles
     self.skipped = skipped
     self.source = source
     self.total = total
@@ -12787,6 +12793,9 @@ public struct ObserversRefreshReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case bindings = "bindings"
     case created = "created"
+    case disabled = "disabled"
+    case mode = "mode"
+    case refreshedProfiles = "refreshedProfiles"
     case skipped = "skipped"
     case source = "source"
     case total = "total"
