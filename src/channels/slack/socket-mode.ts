@@ -1,5 +1,5 @@
 import { configStore } from "../../config-store.js";
-import { resolvePlatformIdentity } from "../../contacts.js";
+import { resolvePlatformIdentity, type PlatformIdentity } from "../../contacts.js";
 import { publish } from "../../nats.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
 import {
@@ -41,21 +41,34 @@ import {
   SLACK_AMBIGUOUS_INSTANCE_ALIAS_REASON,
   SLACK_IDENTITY_NOT_FOUND_REASON,
   type SlackInstanceAliasResolution,
+  type SlackScopedIdentityResolution,
 } from "./instance-alias.js";
 import { storeSlackInteractionResponseUrl } from "./interactions.js";
 import {
   cleanSlackId,
   envelopeEvent,
+  isSlackMessageEventStructurallyEligible,
+  normalizeSlackRoutingPolicy,
   resolveSlackThreadContext,
   shouldIgnoreSlackMessageEvent,
   slackPeerKindForChannelType,
+  slackRoutingPolicyFromChannelDefaults,
   slackRoutingPolicyFromEnv,
+  slackSenderIdForEvent,
   slackTsToMs,
 } from "./routing.js";
-import type { SlackNormalizedFile, SlackNormalizedMessage, SlackRoutingPolicy, SlackSocketEnvelope } from "./types.js";
+import type {
+  SlackEventPayload,
+  SlackNormalizedFile,
+  SlackNormalizedMessage,
+  SlackRoutingPolicy,
+  SlackSocketEnvelope,
+} from "./types.js";
 
 const log = logger.child("channels:slack");
 const SLACK_THREAD_CREATED_TOPIC = "ravi.inbound.thread.created";
+const DEFAULT_SLACK_AUTH_TEST_FAILURE_RETRY_MS = 5_000;
+const DEFAULT_SLACK_AUTH_TEST_TIMEOUT_MS = 5_000;
 
 type PublishPrompt = typeof publishSessionPrompt;
 type PublishInteraction = (topic: string, payload: Record<string, unknown>) => Promise<void>;
@@ -74,6 +87,17 @@ interface SlackActorIdentity extends MessageActorMetadata {
   readonly actorType: "contact" | "agent" | "unknown";
 }
 
+interface SlackLocalBotIdentity {
+  readonly botId: string;
+  readonly userId: string;
+  readonly teamId: string;
+}
+
+interface SlackBotIdentityResolutionOutcome {
+  readonly platformUserId: string;
+  readonly resolution: SlackScopedIdentityResolution<PlatformIdentity>;
+}
+
 export interface SlackSocketModeServiceOptions {
   readonly appToken: string;
   readonly botToken: string;
@@ -87,6 +111,12 @@ export interface SlackSocketModeServiceOptions {
   readonly publishInteraction?: PublishInteraction;
   readonly openWebSocket?: WebSocketFactory;
   readonly reconnectDelayMs?: number;
+  /** Negative-cache backoff for failed auth.test calls. Successful identities remain cached. */
+  readonly authTestFailureRetryMs?: number;
+  /** Maximum time bot intake waits for Slack auth.test before failing closed. */
+  readonly authTestTimeoutMs?: number;
+  /** Clock injection for bounded auth.test retry tests. */
+  readonly now?: () => number;
 }
 
 export interface SlackNativeRuntime {
@@ -375,23 +405,21 @@ export class SlackSocketModeService {
   private readonly openWebSocket: WebSocketFactory;
   private readonly routingPolicy: SlackRoutingPolicy;
   private readonly reconnectDelayMs: number;
+  private readonly authTestFailureRetryMs: number;
+  private readonly authTestTimeoutMs: number;
+  private readonly now: () => number;
   private readonly seenEnvelopeIds = new RecentIdCache();
+  private localBotIdentity: SlackLocalBotIdentity | null = null;
+  private localBotIdentityInFlight: Promise<SlackLocalBotIdentity | null> | null = null;
+  private nextLocalBotIdentityAttemptAt = 0;
   private running = false;
   private socket: WebSocket | null = null;
   private loopPromise: Promise<void> | null = null;
 
   constructor(private readonly options: SlackSocketModeServiceOptions) {
-    this.routingPolicy = slackRoutingPolicyFromEnv({
-      ...process.env,
-      ...(options.routingPolicy?.subscriptionScope
-        ? { RAVI_SLACK_SUBSCRIPTION_SCOPE: options.routingPolicy.subscriptionScope }
-        : {}),
-      ...(options.routingPolicy?.threadReplyMode
-        ? { RAVI_SLACK_THREAD_REPLY_MODE: options.routingPolicy.threadReplyMode }
-        : {}),
-      ...(options.routingPolicy?.rootReplyMode
-        ? { RAVI_SLACK_ROOT_REPLY_MODE: options.routingPolicy.rootReplyMode }
-        : {}),
+    this.routingPolicy = normalizeSlackRoutingPolicy({
+      ...slackRoutingPolicyFromEnv(),
+      ...(options.routingPolicy ?? {}),
     });
     this.webClient =
       options.webClient ??
@@ -404,6 +432,19 @@ export class SlackSocketModeService {
     this.publishInteraction = options.publishInteraction ?? publish;
     this.openWebSocket = options.openWebSocket ?? ((url) => new WebSocket(url));
     this.reconnectDelayMs = options.reconnectDelayMs ?? 5_000;
+    this.authTestFailureRetryMs = Math.max(
+      0,
+      Number.isFinite(options.authTestFailureRetryMs)
+        ? (options.authTestFailureRetryMs ?? DEFAULT_SLACK_AUTH_TEST_FAILURE_RETRY_MS)
+        : DEFAULT_SLACK_AUTH_TEST_FAILURE_RETRY_MS,
+    );
+    this.authTestTimeoutMs = Math.max(
+      1,
+      Number.isFinite(options.authTestTimeoutMs)
+        ? (options.authTestTimeoutMs ?? DEFAULT_SLACK_AUTH_TEST_TIMEOUT_MS)
+        : DEFAULT_SLACK_AUTH_TEST_TIMEOUT_MS,
+    );
+    this.now = options.now ?? Date.now;
   }
 
   start(): void {
@@ -446,7 +487,7 @@ export class SlackSocketModeService {
       return "processed";
     }
 
-    const normalized = this.normalizeEnvelope(envelope);
+    const normalized = await this.normalizeEnvelope(envelope);
     if (!normalized) return "ignored";
 
     await this.routeMessage(normalized);
@@ -498,17 +539,39 @@ export class SlackSocketModeService {
     });
   }
 
-  private normalizeEnvelope(envelope: SlackSocketEnvelope): SlackNormalizedMessage | null {
+  private async normalizeEnvelope(envelope: SlackSocketEnvelope): Promise<SlackNormalizedMessage | null> {
     const event = envelopeEvent(envelope);
-    if (!event || shouldIgnoreSlackMessageEvent(event)) return null;
+    if (!event || !isSlackMessageEventStructurallyEligible(event)) return null;
+
+    const payload = envelope.payload as { team_id?: string; event_id?: string; event_time?: number } | undefined;
+    const isBotMessage = isSlackBotMessageCandidate(event);
+    let teamId: string;
+    let localBotIdentity: SlackLocalBotIdentity | null = null;
+    if (isBotMessage) {
+      const teamIds = uniqueCleanSlackIds([payload?.team_id, event.team]);
+      if (teamIds.length !== 1) return null;
+      teamId = teamIds[0]!;
+      localBotIdentity = await this.resolveLocalBotIdentity();
+      if (!localBotIdentity || localBotIdentity.teamId !== teamId) return null;
+    } else {
+      teamId = cleanSlackId(event.team) ?? cleanSlackId(payload?.team_id) ?? this.options.accountId;
+    }
+    if (
+      shouldIgnoreSlackMessageEvent(event, {
+        selfBotId: localBotIdentity?.botId,
+        selfUserId: localBotIdentity?.userId,
+        botMessageAliasesByChat: this.routingPolicy.botMessageAliasesByChat,
+      })
+    ) {
+      return null;
+    }
 
     const channelId = cleanSlackId(event.channel);
-    const userId = cleanSlackId(event.user);
+    const slackUserId = cleanSlackId(event.user);
+    const userId = slackSenderIdForEvent(event);
     const ts = cleanSlackId(event.ts);
     if (!channelId || !userId || !ts) return null;
 
-    const payload = envelope.payload as { team_id?: string; event_id?: string; event_time?: number } | undefined;
-    const teamId = cleanSlackId(event.team) ?? cleanSlackId(payload?.team_id) ?? this.options.accountId;
     const thread = resolveSlackThreadContext(event, this.routingPolicy);
     const eventTimeMs = payload?.event_time ? payload.event_time * 1000 : slackTsToMs(ts);
     const text = typeof event.text === "string" ? event.text : "";
@@ -520,6 +583,9 @@ export class SlackSocketModeService {
       channelId,
       channelType: cleanSlackId(event.channel_type) ?? "channel",
       userId,
+      slackUserId,
+      botId: cleanSlackId(event.bot_id),
+      senderKind: isBotMessage ? "bot" : "user",
       text,
       files,
       ts,
@@ -529,6 +595,57 @@ export class SlackSocketModeService {
       eventTimeMs,
       rawEnvelope: envelope,
     };
+  }
+
+  private async resolveLocalBotIdentity(): Promise<SlackLocalBotIdentity | null> {
+    if (this.localBotIdentity) return this.localBotIdentity;
+    if (this.localBotIdentityInFlight) return this.localBotIdentityInFlight;
+
+    const attemptedAt = this.now();
+    if (attemptedAt < this.nextLocalBotIdentityAttemptAt) return null;
+
+    const authTest = (this.webClient as Partial<Pick<SlackWebApiClient, "authTest">>).authTest;
+    if (typeof authTest !== "function") {
+      this.nextLocalBotIdentityAttemptAt = attemptedAt + this.authTestFailureRetryMs;
+      return null;
+    }
+
+    const request = withAbortableTimeout(
+      (signal) => authTest.call(this.webClient, { signal }),
+      this.authTestTimeoutMs,
+      "Slack auth.test timed out",
+    )
+      .then((response) => {
+        if (response.ok !== true) {
+          throw new Error("Slack auth.test did not return ok=true");
+        }
+        const botId = cleanSlackId(response.bot_id);
+        const userId = cleanSlackId(response.user_id);
+        const teamId = cleanSlackId(response.team_id);
+        if (!botId || !userId || !teamId) {
+          throw new Error("Slack auth.test returned an incomplete bot_id/user_id/team_id identity");
+        }
+        const identity: SlackLocalBotIdentity = { botId, userId, teamId };
+        this.localBotIdentity = identity;
+        this.nextLocalBotIdentityAttemptAt = 0;
+        return identity;
+      })
+      .catch((error) => {
+        this.nextLocalBotIdentityAttemptAt = this.now() + this.authTestFailureRetryMs;
+        log.warn("Slack bot message ignored because local bot identity could not be resolved", {
+          accountId: this.options.accountId,
+          retryAt: this.nextLocalBotIdentityAttemptAt,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+      });
+
+    this.localBotIdentityInFlight = request;
+    try {
+      return await request;
+    } finally {
+      if (this.localBotIdentityInFlight === request) this.localBotIdentityInFlight = null;
+    }
   }
 
   private normalizeInteractionEnvelope(envelope: SlackSocketEnvelope): Record<string, unknown> | null {
@@ -664,6 +781,9 @@ export class SlackSocketModeService {
         threadTs: routeThreadId ?? null,
         envelopeId: message.envelopeId ?? null,
         eventId: message.eventId ?? null,
+        senderKind: message.senderKind,
+        userId: message.slackUserId ?? null,
+        botId: message.botId ?? null,
       },
       seenAt: message.eventTimeMs,
     });
@@ -740,7 +860,9 @@ export class SlackSocketModeService {
     const actorIdentity = resolveSlackActorIdentity({
       chatId: canonicalChat.id,
       instanceAliases,
-      platformUserId: message.userId,
+      platformUserId: message.slackUserId ?? message.userId,
+      alternatePlatformUserIds: message.botId ? [message.botId] : [],
+      senderKind: message.senderKind,
     });
     const processedFiles = await this.processFiles(message, resolved.agent.cwd);
     dbUpsertChatMessage({
@@ -749,8 +871,8 @@ export class SlackSocketModeService {
       instanceId,
       providerMessageId: message.ts,
       rawChatId: message.channelId,
-      rawSenderId: message.userId,
-      normalizedSenderId: message.userId,
+      rawSenderId: actorIdentity.rawSenderId ?? message.userId,
+      normalizedSenderId: actorIdentity.normalizedSenderId ?? message.userId,
       actorType: actorIdentity.actorType,
       contactId: actorIdentity.contactId,
       agentId: actorIdentity.actorAgentId,
@@ -762,6 +884,9 @@ export class SlackSocketModeService {
         teamId: message.teamId,
         eventId: message.eventId ?? null,
         envelopeId: message.envelopeId ?? null,
+        senderKind: message.senderKind,
+        userId: message.slackUserId ?? null,
+        botId: message.botId ?? null,
         fileIds: message.files.map((file) => file.id),
       },
       providerTimestamp: message.eventTimeMs,
@@ -772,14 +897,17 @@ export class SlackSocketModeService {
       platformIdentityId: actorIdentity.platformIdentityId,
       contactId: actorIdentity.contactId,
       agentId: actorIdentity.actorAgentId,
-      rawPlatformUserId: message.userId,
-      normalizedPlatformUserId: message.userId,
+      rawPlatformUserId: actorIdentity.rawSenderId ?? message.userId,
+      normalizedPlatformUserId: actorIdentity.normalizedSenderId ?? message.userId,
       role: "member",
       status: "active",
       source: actorIdentity.actorType === "unknown" ? "inbound_message" : "slack_socket_mode:identity_resolved",
       metadata: {
         slackTeamId: message.teamId,
         slackChannelType: message.channelType,
+        slackSenderKind: message.senderKind,
+        slackUserId: message.slackUserId ?? null,
+        slackBotId: message.botId ?? null,
         actorType: actorIdentity.actorType,
         identityProvenance: actorIdentity.identityProvenance ?? null,
       },
@@ -978,11 +1106,44 @@ export class SlackSocketModeService {
   }
 }
 
+function isSlackBotMessageCandidate(event: SlackEventPayload): boolean {
+  return Boolean(cleanSlackId(event.bot_id) || event.subtype === "bot_message");
+}
+
+function withAbortableTimeout<T>(
+  run: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const error = new Error(message);
+      controller.abort(error);
+      reject(error);
+    }, timeoutMs);
+    timer.unref?.();
+  });
+  return Promise.race([Promise.resolve().then(() => run(controller.signal)), timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 function resolveSlackActorIdentity(input: {
   chatId: string;
   instanceAliases: SlackInstanceAliasResolution;
   platformUserId: string;
+  alternatePlatformUserIds?: readonly string[];
+  senderKind?: "user" | "bot";
 }): SlackActorIdentity {
+  if (input.senderKind === "bot") {
+    return resolveSlackBotActorIdentity({
+      instanceAliases: input.instanceAliases,
+      platformUserIds: uniqueCleanSlackIds([input.platformUserId, ...(input.alternatePlatformUserIds ?? [])]),
+    });
+  }
+
   const scoped = resolveScopedSlackIdentity(
     input.instanceAliases,
     (instanceId) => resolvePlatformIdentity({ channel: "slack", instanceId, platformUserId: input.platformUserId }),
@@ -1072,6 +1233,133 @@ function resolveSlackActorIdentity(input: {
       matchedInstance: null,
     }),
   };
+}
+
+function resolveSlackBotActorIdentity(input: {
+  instanceAliases: SlackInstanceAliasResolution;
+  platformUserIds: readonly string[];
+}): SlackActorIdentity {
+  const platformUserIds = uniqueCleanSlackIds(input.platformUserIds);
+  const primaryPlatformUserId = platformUserIds[0] ?? "unknown";
+  const outcomes: SlackBotIdentityResolutionOutcome[] = platformUserIds.map((platformUserId) => ({
+    platformUserId,
+    resolution: resolveScopedSlackIdentity(
+      input.instanceAliases,
+      (instanceId) => resolvePlatformIdentity({ channel: "slack", instanceId, platformUserId }),
+      (identity) => (identity.ownerType && identity.ownerId ? `${identity.ownerType}:${identity.ownerId}` : null),
+    ),
+  }));
+
+  if (outcomes.some((outcome) => outcome.resolution.reason === SLACK_AMBIGUOUS_INSTANCE_ALIAS_REASON)) {
+    return unknownSlackBotActor({
+      instanceAliases: input.instanceAliases,
+      primaryPlatformUserId,
+      outcomes,
+      botIdentityReason: "ambiguous_instance_alias",
+      aliasReason: SLACK_AMBIGUOUS_INSTANCE_ALIAS_REASON,
+    });
+  }
+
+  const resolved = outcomes.filter(
+    (outcome): outcome is SlackBotIdentityResolutionOutcome & { resolution: { identity: PlatformIdentity } } =>
+      Boolean(outcome.resolution.identity),
+  );
+  const agentOwnerIds = new Set(
+    resolved
+      .map((outcome) =>
+        outcome.resolution.identity.ownerType === "agent" ? outcome.resolution.identity.ownerId : null,
+      )
+      .filter((ownerId): ownerId is string => Boolean(ownerId)),
+  );
+  const allResolvedIdsBelongToOneAgent =
+    resolved.length > 0 &&
+    agentOwnerIds.size === 1 &&
+    resolved.every(
+      (outcome) =>
+        outcome.resolution.identity.ownerType === "agent" &&
+        outcome.resolution.identity.ownerId === Array.from(agentOwnerIds)[0],
+    );
+
+  if (!allResolvedIdsBelongToOneAgent) {
+    const hasAgent = resolved.some((outcome) => outcome.resolution.identity.ownerType === "agent");
+    const hasNonAgent = resolved.some((outcome) => outcome.resolution.identity.ownerType !== "agent");
+    return unknownSlackBotActor({
+      instanceAliases: input.instanceAliases,
+      primaryPlatformUserId,
+      outcomes,
+      botIdentityReason:
+        resolved.length === 0
+          ? "identity_not_found"
+          : hasAgent && hasNonAgent
+            ? "conflicting_platform_owners"
+            : hasAgent
+              ? "conflicting_agents"
+              : "contact_identity_not_agent",
+      aliasReason: SLACK_IDENTITY_NOT_FOUND_REASON,
+    });
+  }
+
+  const matched = resolved[0]!;
+  const identity = matched.resolution.identity;
+  return {
+    actorType: "agent",
+    actorAgentId: identity.ownerId!,
+    platformIdentityId: identity.id,
+    rawSenderId: primaryPlatformUserId,
+    normalizedSenderId: identity.normalizedPlatformUserId,
+    identityConfidence: identity.confidence,
+    identityProvenance: {
+      ...buildSlackInstanceProvenance(input.instanceAliases, {
+        reason: matched.resolution.reason,
+        matchedInstance: matched.resolution.matchedInstance,
+      }),
+      senderKind: "bot",
+      matchedPlatformUserId: matched.platformUserId,
+      candidatePlatformUserIds: platformUserIds,
+      botIdentityReason: "resolved_agent",
+      platformIdentityCandidates: botIdentityCandidateProvenance(outcomes),
+    },
+  };
+}
+
+function unknownSlackBotActor(input: {
+  instanceAliases: SlackInstanceAliasResolution;
+  primaryPlatformUserId: string;
+  outcomes: readonly SlackBotIdentityResolutionOutcome[];
+  botIdentityReason: string;
+  aliasReason: typeof SLACK_AMBIGUOUS_INSTANCE_ALIAS_REASON | typeof SLACK_IDENTITY_NOT_FOUND_REASON;
+}): SlackActorIdentity {
+  return {
+    actorType: "unknown",
+    rawSenderId: input.primaryPlatformUserId,
+    normalizedSenderId: input.primaryPlatformUserId,
+    identityConfidence: 0,
+    identityProvenance: {
+      ...buildSlackInstanceProvenance(input.instanceAliases, {
+        reason: input.aliasReason,
+        matchedInstance: null,
+      }),
+      senderKind: "bot",
+      candidatePlatformUserIds: input.outcomes.map((outcome) => outcome.platformUserId),
+      botIdentityReason: input.botIdentityReason,
+      platformIdentityCandidates: botIdentityCandidateProvenance(input.outcomes),
+    },
+  };
+}
+
+function botIdentityCandidateProvenance(
+  outcomes: readonly SlackBotIdentityResolutionOutcome[],
+): Array<Record<string, unknown>> {
+  return outcomes.map((outcome) => ({
+    platformUserId: outcome.platformUserId,
+    matchedInstance: outcome.resolution.matchedInstance,
+    reason: outcome.resolution.reason,
+    ownerType: outcome.resolution.identity?.ownerType ?? null,
+  }));
+}
+
+function uniqueCleanSlackIds(values: readonly unknown[]): string[] {
+  return Array.from(new Set(values.map(cleanSlackId).filter((value): value is string => Boolean(value))));
 }
 
 function isSlackBlockKitInteractionType(value: string | undefined): boolean {
@@ -1238,7 +1526,7 @@ export async function createSlackNativeRuntimeFromEnv(
     instanceId: credentials.instanceId,
     connection: credentials.connection,
   };
-  const routingPolicy = slackRoutingPolicyFromEnv(env);
+  const routingPolicy = slackRoutingPolicyFromChannelDefaults(options.channel?.defaults, env);
   const webClient = new SlackWebApiClient({
     appToken: credentials.appToken,
     botToken: credentials.botToken,

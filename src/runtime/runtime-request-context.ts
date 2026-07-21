@@ -433,6 +433,9 @@ function resolveActorPrincipal(actorMetadata: MessageActorMetadata | undefined):
   if (actorMetadata?.actorType === "contact" && actorMetadata.contactId) {
     return { subjectType: "contact", subjectId: actorMetadata.contactId };
   }
+  if (actorMetadata?.actorType === "agent" && actorMetadata.actorAgentId) {
+    return { subjectType: "agent", subjectId: actorMetadata.actorAgentId };
+  }
   if (actorMetadata?.actorType === "automation" && actorMetadata.automationId) {
     return { subjectType: "automation", subjectId: actorMetadata.automationId };
   }
@@ -543,7 +546,7 @@ function resolveAutomationPromptPrincipal(
     return { subjectType: "automation", subjectId: "heartbeat" };
   }
   if (prompt._daemonRestartResume) {
-    if (hasResolvedContactActor(source) || hasResolvedContactActor(context)) {
+    if (hasResolvedExternalActor(source) || hasResolvedExternalActor(context)) {
       return null;
     }
     return { subjectType: "automation", subjectId: "daemon-restart" };
@@ -551,8 +554,13 @@ function resolveAutomationPromptPrincipal(
   return null;
 }
 
-function hasResolvedContactActor(metadata: { actorType?: string; contactId?: string } | undefined): boolean {
-  return metadata?.actorType === "contact" && Boolean(cleanStringValue(metadata.contactId));
+function hasResolvedExternalActor(
+  metadata: { actorType?: string; contactId?: string; actorAgentId?: string } | undefined,
+): boolean {
+  return Boolean(
+    (metadata?.actorType === "contact" && cleanStringValue(metadata.contactId)) ||
+      (metadata?.actorType === "agent" && cleanStringValue(metadata.actorAgentId)),
+  );
 }
 
 function buildAutomationIdentityProvenance(prompt: RuntimeLaunchPrompt): Record<string, unknown> | undefined {

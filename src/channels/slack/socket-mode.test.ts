@@ -4,6 +4,7 @@ import {
   ensureContactFromInbound,
   linkContactIdentity,
   resolvePlatformIdentity,
+  upsertAgentPlatformIdentity,
 } from "../../contacts.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { canWithCapabilities } from "../../permissions/provider-runtime.js";
@@ -38,7 +39,7 @@ import {
   SlackTextDelivery,
   createSlackNativeRuntimesFromEnv,
 } from "./socket-mode.js";
-import type { SlackSocketEnvelope } from "./types.js";
+import type { SlackRoutingPolicy, SlackSocketEnvelope } from "./types.js";
 
 let stateDir: string | null = null;
 
@@ -55,12 +56,18 @@ function seedAgent(id: string, cwd: string): void {
     .run(id, id, cwd, now, now);
 }
 
-function slackChannel(input: { name: string; credentialConnection?: string; enabled?: boolean }) {
+function slackChannel(input: {
+  name: string;
+  credentialConnection?: string;
+  enabled?: boolean;
+  defaults?: Record<string, unknown>;
+}) {
   return {
     name: input.name,
     provider: "slack",
     enabled: input.enabled ?? true,
     ...(input.credentialConnection ? { credentialConnection: input.credentialConnection } : {}),
+    ...(input.defaults ? { defaults: input.defaults } : {}),
     createdAt: 1,
     updatedAt: 1,
   };
@@ -129,6 +136,41 @@ describe("Slack Socket Mode routing", () => {
     expect(resolveSecret.mock.calls.map((call) => call[0].connection)).toEqual(["hana-secret", "rbbt-secret"]);
     expect(runtimes.map((runtime) => runtime.accountId)).toEqual(["hana-slack", "ravi-rbbt-slack"]);
     expect(runtimes.map((runtime) => runtime.connection)).toEqual(["hana-secret", "rbbt-secret"]);
+  });
+
+  it("keeps bot alias defaults isolated per configured Slack account", async () => {
+    const resolveSecret = mock(async ({ connection }: { connection: string }) => ({
+      secret: JSON.stringify({ appToken: `xapp-${connection}`, botToken: `xoxb-${connection}` }),
+      connection: { connection },
+    }));
+
+    const runtimes = await createSlackNativeRuntimesFromEnv({} as NodeJS.ProcessEnv, {
+      resolveSecret,
+      channels: {
+        "ravi-rbbt-slack": slackChannel({
+          name: "ravi-rbbt-slack",
+          credentialConnection: "rbbt-secret",
+          defaults: { botMessageAliasesByChat: { CDEMO: ["Ravi"] } },
+        }),
+        "hana-slack": slackChannel({
+          name: "hana-slack",
+          credentialConnection: "hana-secret",
+          defaults: { botMessageAliasesByChat: { CDEMO: ["Hana"] } },
+        }),
+      },
+    });
+
+    const policies = Object.fromEntries(
+      runtimes.map((runtime) => [
+        runtime.accountId,
+        (runtime.socketMode as unknown as { routingPolicy: { botMessageAliasesByChat: unknown } }).routingPolicy
+          .botMessageAliasesByChat,
+      ]),
+    );
+    expect(policies).toEqual({
+      "hana-slack": { CDEMO: ["Hana"] },
+      "ravi-rbbt-slack": { CDEMO: ["Ravi"] },
+    });
   });
 
   it("routes Slack channels through group routes and attaches the source chat for output", async () => {
@@ -1194,6 +1236,929 @@ describe("Slack Socket Mode routing", () => {
       actorType: "contact",
       contactId: identity.contact!.id,
       platformIdentityId: identity.platformIdentity!.id,
+    });
+  });
+});
+
+describe("Slack Socket Mode foreign bot intake", () => {
+  const SLUG = "ravi-rbbt-slack";
+  const UUID = "0bc9635c-1ee9-42e3-9112-95be9cdb0334";
+  let stateDir: string | null = null;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-slack-foreign-bot-");
+    seedAgent("route-agent", "/tmp/route-agent");
+    seedAgent("foreign-one", "/tmp/foreign-one");
+    seedAgent("foreign-two", "/tmp/foreign-two");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  function botRouterConfig(): RouterConfig {
+    return {
+      agents: {
+        "route-agent": { id: "route-agent", cwd: "/tmp/route-agent", dmScope: "per-peer" },
+        "foreign-one": { id: "foreign-one", cwd: "/tmp/foreign-one", dmScope: "per-peer" },
+        "foreign-two": { id: "foreign-two", cwd: "/tmp/foreign-two", dmScope: "per-peer" },
+      },
+      routes: [
+        {
+          pattern: "group:C123",
+          accountId: SLUG,
+          agent: "route-agent",
+          session: "route-agent",
+          priority: 100,
+          policy: "open",
+          channel: "slack",
+        },
+      ],
+      defaultAgent: "route-agent",
+      defaultDmScope: "per-peer",
+      accountAgents: { [SLUG]: "route-agent" },
+      instanceToAccount: { [UUID]: SLUG },
+      instances: {
+        [SLUG]: {
+          name: SLUG,
+          instanceId: UUID,
+          channel: "slack",
+          dmPolicy: "open",
+          groupPolicy: "open",
+          contactIntakeMode: "off",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+    };
+  }
+
+  function botEnvelope(input: {
+    envelopeId: string;
+    ts: string;
+    text: string;
+    botId: string;
+    userId?: string;
+    channelId?: string;
+    threadTs?: string;
+    teamId?: string | null;
+    eventTeamId?: string | null;
+  }): SlackSocketEnvelope {
+    return {
+      envelope_id: input.envelopeId,
+      payload: {
+        ...(input.teamId === null ? {} : { team_id: input.teamId ?? "T1" }),
+        event_id: `Ev-${input.envelopeId}`,
+        event_time: 1_713_000_000,
+        event: {
+          type: "message",
+          subtype: "bot_message",
+          channel: input.channelId ?? "C123",
+          channel_type: "channel",
+          user: input.userId,
+          bot_id: input.botId,
+          text: input.text,
+          ts: input.ts,
+          thread_ts: input.threadTs,
+          ...(input.eventTeamId === null || input.eventTeamId === undefined ? {} : { team: input.eventTeamId }),
+        },
+      },
+    };
+  }
+
+  function humanEnvelope(input: {
+    envelopeId: string;
+    ts: string;
+    teamId?: string | null;
+    eventTeamId?: string | null;
+  }): SlackSocketEnvelope {
+    return {
+      envelope_id: input.envelopeId,
+      payload: {
+        ...(input.teamId === null ? {} : { team_id: input.teamId ?? "T1" }),
+        event_id: `Ev-${input.envelopeId}`,
+        event_time: 1_713_000_000,
+        event: {
+          type: "message",
+          channel: "C123",
+          channel_type: "channel",
+          user: "UHUMAN",
+          text: "human message",
+          ts: input.ts,
+          ...(input.eventTeamId === null || input.eventTeamId === undefined ? {} : { team: input.eventTeamId }),
+        },
+      },
+    };
+  }
+
+  function makeBotService(input: {
+    published: Array<{ sessionName: string; payload: Record<string, unknown> }>;
+    authTest: (options?: { signal?: AbortSignal }) => Promise<{
+      ok: boolean;
+      bot_id?: string;
+      user_id?: string;
+      team_id?: string;
+    }>;
+    routingPolicy?: Partial<SlackRoutingPolicy>;
+    now?: () => number;
+    authTestFailureRetryMs?: number;
+    authTestTimeoutMs?: number;
+  }): SlackSocketModeService {
+    return new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: SLUG,
+      routeAccountId: SLUG,
+      instanceId: SLUG,
+      routingPolicy: input.routingPolicy,
+      getRouterConfig: botRouterConfig,
+      publishPrompt: async (sessionName, payload) => {
+        input.published.push({ sessionName, payload });
+      },
+      webClient: { authTest: input.authTest } as never,
+      now: input.now,
+      authTestFailureRetryMs: input.authTestFailureRetryMs,
+      authTestTimeoutMs: input.authTestTimeoutMs,
+    });
+  }
+
+  it("preserves human intake without Slack team provenance and does not call auth.test", async () => {
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const authTest = mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" }));
+    const service = makeBotService({ published, authTest });
+
+    expect(
+      await service.handleEnvelope(
+        humanEnvelope({
+          envelopeId: "human-without-team",
+          ts: "1713000090.000100",
+          teamId: null,
+          eventTeamId: null,
+        }),
+      ),
+    ).toBe("processed");
+    expect(authTest).not.toHaveBeenCalled();
+    expect(published).toHaveLength(1);
+    const source = published[0]!.payload.source as MessageTarget;
+    expect(dbGetChat(source.canonicalChatId!)).toMatchObject({
+      rawProvenance: { teamId: SLUG },
+    });
+  });
+
+  it("preserves event.team precedence for conflicting human team values without calling auth.test", async () => {
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const authTest = mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" }));
+    const service = makeBotService({ published, authTest });
+
+    expect(
+      await service.handleEnvelope(
+        humanEnvelope({
+          envelopeId: "human-conflicting-team",
+          ts: "1713000091.000100",
+          teamId: "T-PAYLOAD",
+          eventTeamId: "T-EVENT",
+        }),
+      ),
+    ).toBe("processed");
+    expect(authTest).not.toHaveBeenCalled();
+    expect(published).toHaveLength(1);
+    const source = published[0]!.payload.source as MessageTarget;
+    expect(dbGetChat(source.canonicalChatId!)).toMatchObject({
+      rawProvenance: { teamId: "T-EVENT" },
+    });
+  });
+
+  it("ignores the local bot by bot and user ids while caching successful auth.test", async () => {
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const authTest = mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" }));
+    const service = makeBotService({ published, authTest });
+
+    expect(
+      await service.handleEnvelope(
+        botEnvelope({
+          envelopeId: "self-bot-id",
+          ts: "1713000100.000100",
+          text: "<@ULOCAL> loop",
+          botId: "BLOCAL",
+          userId: "UOTHER",
+        }),
+      ),
+    ).toBe("ignored");
+    expect(
+      await service.handleEnvelope(
+        botEnvelope({
+          envelopeId: "self-user-id",
+          ts: "1713000101.000100",
+          text: "<@ULOCAL> loop",
+          botId: "BOTHER",
+          userId: "ULOCAL",
+        }),
+      ),
+    ).toBe("ignored");
+    expect(
+      await service.handleEnvelope(
+        botEnvelope({
+          envelopeId: "foreign-mentioned",
+          ts: "1713000102.000100",
+          text: "oi <@ULOCAL>",
+          botId: "BFOREIGN",
+        }),
+      ),
+    ).toBe("processed");
+
+    expect(authTest).toHaveBeenCalledTimes(1);
+    expect(published).toHaveLength(1);
+  });
+
+  it("requires the envelope and auth.test to identify the same Slack team", async () => {
+    const fromEvent: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const matchingAuth = mock(async () => ({
+      ok: true,
+      bot_id: "BLOCAL",
+      user_id: "ULOCAL",
+      team_id: "T1",
+    }));
+    const matchingService = makeBotService({ published: fromEvent, authTest: matchingAuth });
+
+    expect(
+      await matchingService.handleEnvelope(
+        botEnvelope({
+          envelopeId: "team-from-event",
+          ts: "1713000102.000200",
+          text: "<@ULOCAL> status",
+          botId: "BFOREIGN",
+          teamId: null,
+          eventTeamId: "T1",
+        }),
+      ),
+    ).toBe("processed");
+    expect(fromEvent).toHaveLength(1);
+
+    const mismatched: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const mismatchedAuth = mock(async () => ({
+      ok: true,
+      bot_id: "BLOCAL",
+      user_id: "ULOCAL",
+      team_id: "T2",
+    }));
+    const mismatchedService = makeBotService({ published: mismatched, authTest: mismatchedAuth });
+    expect(
+      await mismatchedService.handleEnvelope(
+        botEnvelope({
+          envelopeId: "team-mismatch",
+          ts: "1713000102.000300",
+          text: "<@ULOCAL> status",
+          botId: "BFOREIGN",
+        }),
+      ),
+    ).toBe("ignored");
+    expect(mismatchedAuth).toHaveBeenCalledTimes(1);
+    expect(mismatched).toHaveLength(0);
+  });
+
+  it("fails closed before auth.test when Slack team provenance is absent or conflicting", async () => {
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const authTest = mock(async () => ({
+      ok: true,
+      bot_id: "BLOCAL",
+      user_id: "ULOCAL",
+      team_id: "T1",
+    }));
+    const service = makeBotService({ published, authTest });
+
+    expect(
+      await service.handleEnvelope(
+        botEnvelope({
+          envelopeId: "team-absent",
+          ts: "1713000102.000400",
+          text: "<@ULOCAL> status",
+          botId: "BFOREIGN",
+          teamId: null,
+          eventTeamId: null,
+        }),
+      ),
+    ).toBe("ignored");
+    expect(
+      await service.handleEnvelope(
+        botEnvelope({
+          envelopeId: "team-conflict",
+          ts: "1713000102.000500",
+          text: "<@ULOCAL> status",
+          botId: "BFOREIGN",
+          teamId: "T1",
+          eventTeamId: "T2",
+        }),
+      ),
+    ).toBe("ignored");
+    expect(authTest).not.toHaveBeenCalled();
+    expect(published).toHaveLength(0);
+  });
+
+  it("requires auth.test ok=true and a complete team-bound identity", async () => {
+    for (const [index, response] of [
+      { ok: false, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" },
+      { ok: true, bot_id: "BLOCAL", user_id: "ULOCAL" },
+    ].entries()) {
+      const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+      const service = makeBotService({ published, authTest: mock(async () => response) });
+      expect(
+        await service.handleEnvelope(
+          botEnvelope({
+            envelopeId: `auth-invalid-${index}`,
+            ts: `1713000102.00060${index}`,
+            text: "<@ULOCAL> status",
+            botId: "BFOREIGN",
+          }),
+        ),
+      ).toBe("ignored");
+      expect(published).toHaveLength(0);
+    }
+  });
+
+  it("rejects structurally invalid bot candidates before auth.test", async () => {
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const authTest = mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" }));
+    const service = makeBotService({ published, authTest });
+    const invalidEvents = [
+      {
+        type: "reaction_added",
+        subtype: "bot_message",
+        bot_id: "BFOREIGN",
+        channel: "C123",
+        ts: "1713000103.000100",
+      },
+      {
+        type: "message",
+        subtype: "bot_message",
+        hidden: true,
+        bot_id: "BFOREIGN",
+        channel: "C123",
+        ts: "1713000104.000100",
+      },
+      {
+        type: "message",
+        subtype: "message_changed",
+        bot_id: "BFOREIGN",
+        channel: "C123",
+        ts: "1713000105.000100",
+      },
+      {
+        type: "message",
+        subtype: "bot_message",
+        bot_id: "BFOREIGN",
+        ts: "1713000106.000100",
+      },
+      {
+        type: "message",
+        subtype: "bot_message",
+        bot_id: "BFOREIGN",
+        channel: "C123",
+      },
+    ];
+
+    for (const [index, event] of invalidEvents.entries()) {
+      expect(
+        await service.handleEnvelope({
+          envelope_id: `structurally-invalid-bot-${index}`,
+          payload: { event },
+        }),
+      ).toBe("ignored");
+    }
+
+    expect(authTest).not.toHaveBeenCalled();
+    expect(published).toHaveLength(0);
+  });
+
+  it("coalesces concurrent auth.test discovery for foreign bot messages", async () => {
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    let releaseAuth!: (value: { ok: boolean; bot_id: string; user_id: string; team_id: string }) => void;
+    const pendingAuth = new Promise<{ ok: boolean; bot_id: string; user_id: string; team_id: string }>((resolve) => {
+      releaseAuth = resolve;
+    });
+    const authTest = mock(async () => pendingAuth);
+    const service = makeBotService({ published, authTest });
+
+    const first = service.handleEnvelope(
+      botEnvelope({
+        envelopeId: "concurrent-1",
+        ts: "1713000110.000100",
+        text: "<@ULOCAL> first",
+        botId: "BFOREIGN",
+      }),
+    );
+    const second = service.handleEnvelope(
+      botEnvelope({
+        envelopeId: "concurrent-2",
+        ts: "1713000111.000100",
+        text: "<@ULOCAL> second",
+        botId: "BFOREIGN",
+      }),
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(authTest).toHaveBeenCalledTimes(1);
+    releaseAuth({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" });
+    expect(await Promise.all([first, second])).toEqual(["processed", "processed"]);
+    expect(published).toHaveLength(2);
+  });
+
+  it("fail-closes auth.test errors and retries only after the bounded failure TTL", async () => {
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    let now = 1_000;
+    let attempts = 0;
+    const authTest = mock(async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("temporary_auth_failure");
+      return { ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" };
+    });
+    const service = makeBotService({
+      published,
+      authTest,
+      now: () => now,
+      authTestFailureRetryMs: 100,
+    });
+
+    expect(
+      await service.handleEnvelope(
+        botEnvelope({
+          envelopeId: "auth-failure-1",
+          ts: "1713000120.000100",
+          text: "<@ULOCAL> first",
+          botId: "BFOREIGN",
+        }),
+      ),
+    ).toBe("ignored");
+    now = 1_050;
+    expect(
+      await service.handleEnvelope(
+        botEnvelope({
+          envelopeId: "auth-failure-2",
+          ts: "1713000121.000100",
+          text: "<@ULOCAL> second",
+          botId: "BFOREIGN",
+        }),
+      ),
+    ).toBe("ignored");
+    expect(authTest).toHaveBeenCalledTimes(1);
+
+    now = 1_100;
+    expect(
+      await service.handleEnvelope(
+        botEnvelope({
+          envelopeId: "auth-retry",
+          ts: "1713000122.000100",
+          text: "<@ULOCAL> retry",
+          botId: "BFOREIGN",
+        }),
+      ),
+    ).toBe("processed");
+    expect(authTest).toHaveBeenCalledTimes(2);
+    expect(published).toHaveLength(1);
+  });
+
+  it("does not cache an incomplete auth.test identity and retries after the failure TTL", async () => {
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    let now = 2_000;
+    let attempts = 0;
+    const authTest = mock(async () => {
+      attempts += 1;
+      if (attempts === 1) return { ok: true, bot_id: "BLOCAL" };
+      return { ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" };
+    });
+    const service = makeBotService({
+      published,
+      authTest,
+      now: () => now,
+      authTestFailureRetryMs: 100,
+    });
+
+    expect(
+      await service.handleEnvelope(
+        botEnvelope({
+          envelopeId: "auth-incomplete-1",
+          ts: "1713000125.000100",
+          text: "<@ULOCAL> first",
+          botId: "BFOREIGN",
+        }),
+      ),
+    ).toBe("ignored");
+    now = 2_050;
+    expect(
+      await service.handleEnvelope(
+        botEnvelope({
+          envelopeId: "auth-incomplete-2",
+          ts: "1713000126.000100",
+          text: "<@ULOCAL> second",
+          botId: "BFOREIGN",
+        }),
+      ),
+    ).toBe("ignored");
+    expect(authTest).toHaveBeenCalledTimes(1);
+
+    now = 2_100;
+    expect(
+      await service.handleEnvelope(
+        botEnvelope({
+          envelopeId: "auth-incomplete-retry",
+          ts: "1713000127.000100",
+          text: "<@ULOCAL> retry",
+          botId: "BFOREIGN",
+        }),
+      ),
+    ).toBe("processed");
+    expect(authTest).toHaveBeenCalledTimes(2);
+    expect(published).toHaveLength(1);
+  });
+
+  it("times out a stuck auth.test, fails closed, and permits a later retry", async () => {
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    let attempts = 0;
+    let timedOutSignal: AbortSignal | undefined;
+    const authTest = mock(async (options?: { signal?: AbortSignal }) => {
+      attempts += 1;
+      if (attempts === 1) {
+        timedOutSignal = options?.signal;
+        return new Promise<{ ok: boolean; bot_id: string; user_id: string; team_id: string }>((_, reject) => {
+          timedOutSignal?.addEventListener("abort", () => reject(timedOutSignal?.reason), { once: true });
+        });
+      }
+      return { ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" };
+    });
+    const service = makeBotService({
+      published,
+      authTest,
+      authTestFailureRetryMs: 0,
+      authTestTimeoutMs: 10,
+    });
+
+    expect(
+      await service.handleEnvelope(
+        botEnvelope({
+          envelopeId: "auth-timeout",
+          ts: "1713000128.000100",
+          text: "<@ULOCAL> first",
+          botId: "BFOREIGN",
+        }),
+      ),
+    ).toBe("ignored");
+    expect(timedOutSignal?.aborted).toBe(true);
+    expect(
+      await service.handleEnvelope(
+        botEnvelope({
+          envelopeId: "auth-timeout-retry",
+          ts: "1713000129.000100",
+          text: "<@ULOCAL> retry",
+          botId: "BFOREIGN",
+        }),
+      ),
+    ).toBe("processed");
+    expect(authTest).toHaveBeenCalledTimes(2);
+    expect(published).toHaveLength(1);
+  });
+
+  it("resolves one consistent agent across bot ids, preserves provenance, threads, and dedupe", async () => {
+    const identity = upsertAgentPlatformIdentity({
+      agentId: "foreign-one",
+      channel: "slack",
+      instanceId: UUID,
+      platformUserId: "BFOREIGN",
+      linkedBy: "test",
+      linkReason: "slack_connect_agent_interop",
+    });
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const authTest = mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" }));
+    const service = makeBotService({ published, authTest });
+    const envelope = botEnvelope({
+      envelopeId: "agent-thread",
+      ts: "1713000130.000200",
+      threadTs: "1713000130.000100",
+      text: "<@ULOCAL> consegue responder?",
+      userId: "UFOREIGN",
+      botId: "BFOREIGN",
+    });
+
+    expect(await service.handleEnvelope(envelope)).toBe("processed");
+    expect(await service.handleEnvelope(envelope)).toBe("duplicate");
+    expect(published).toHaveLength(1);
+
+    const source = published[0]!.payload.source as MessageTarget;
+    const context = published[0]!.payload.context as MessageContext;
+    expect(source).toMatchObject({
+      instanceId: UUID,
+      threadId: "1713000130.000100",
+      actorType: "agent",
+      actorAgentId: "foreign-one",
+      platformIdentityId: identity.id,
+      rawSenderId: "UFOREIGN",
+      normalizedSenderId: "BFOREIGN",
+    });
+    expect(source.identityProvenance).toMatchObject({
+      source: "platform_identities",
+      canonicalInstance: UUID,
+      matchedInstance: UUID,
+      matchedPlatformUserId: "BFOREIGN",
+      candidatePlatformUserIds: ["UFOREIGN", "BFOREIGN"],
+      botIdentityReason: "resolved_agent",
+    });
+    expect(context).toMatchObject({
+      senderId: "UFOREIGN",
+      senderName: "<@UFOREIGN>",
+      actorType: "agent",
+      actorAgentId: "foreign-one",
+    });
+
+    const canonicalChatId = source.canonicalChatId!;
+    expect(dbGetChat(canonicalChatId)).toMatchObject({
+      instanceId: UUID,
+      platformChatId: "C123#1713000130.000100",
+      chatType: "thread",
+      rawProvenance: {
+        senderKind: "bot",
+        userId: "UFOREIGN",
+        botId: "BFOREIGN",
+      },
+    });
+    expect(
+      dbFindChatMessage({
+        channel: "slack",
+        instanceId: UUID,
+        chatId: canonicalChatId,
+        providerMessageId: "1713000130.000200",
+      }),
+    ).toMatchObject({
+      actorType: "agent",
+      agentId: "foreign-one",
+      platformIdentityId: identity.id,
+      rawSenderId: "UFOREIGN",
+      normalizedSenderId: "BFOREIGN",
+      rawProvenance: {
+        senderKind: "bot",
+        userId: "UFOREIGN",
+        botId: "BFOREIGN",
+      },
+    });
+    expect(dbListChatParticipants(canonicalChatId)).toEqual([
+      expect.objectContaining({
+        agentId: "foreign-one",
+        rawPlatformUserId: "UFOREIGN",
+        normalizedPlatformUserId: "BFOREIGN",
+        metadata: expect.objectContaining({ slackSenderKind: "bot", slackBotId: "BFOREIGN" }),
+      }),
+    ]);
+
+    const session = getSessionByName(published[0]!.sessionName)!;
+    const runtimePrompt: RuntimeLaunchPrompt = { prompt: "consegue responder?", source, context };
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: session.sessionKey,
+      sessionName: published[0]!.sessionName,
+      sessionCwd: "/tmp/route-agent",
+      agent: { id: "route-agent", cwd: "/tmp/route-agent" },
+      prompt: runtimePrompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution: {
+        options: {},
+        sources: { model: null, effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      resolvedSource: source,
+    });
+    expect(runtimeContext.metadata).toMatchObject({
+      actorPrincipal: "agent:foreign-one",
+      actorResolution: "resolved",
+    });
+    expect(Number(runtimeContext.metadata?.agentIdentityCapabilityCount)).toBeGreaterThan(0);
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+  });
+
+  it("admits a bot-only alias message but keeps a contact-owned bot fail-closed", async () => {
+    const contact = ensureContactFromInbound({
+      channel: "slack",
+      instanceId: UUID,
+      platformSenderId: "BFOREIGN",
+      contactIdentity: "BFOREIGN",
+      displayName: "External integration",
+      intakeMode: "pending",
+      source: "test",
+    });
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = makeBotService({
+      published,
+      authTest: mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" })),
+      routingPolicy: { botMessageAliasesByChat: { C123: ["Hana"] } },
+    });
+
+    expect(
+      await service.handleEnvelope(
+        botEnvelope({
+          envelopeId: "bot-only-contact",
+          ts: "1713000140.000100",
+          text: "Hana—status",
+          botId: "BFOREIGN",
+        }),
+      ),
+    ).toBe("processed");
+    expect(contact.platformIdentity).not.toBeNull();
+    const source = published[0]!.payload.source as MessageTarget;
+    expect(source).toMatchObject({
+      actorType: "unknown",
+      rawSenderId: "BFOREIGN",
+      normalizedSenderId: "BFOREIGN",
+    });
+    expect(source.contactId).toBeUndefined();
+    expect(source.platformIdentityId).toBeUndefined();
+    expect(source.identityProvenance).toMatchObject({
+      senderKind: "bot",
+      botIdentityReason: "contact_identity_not_agent",
+    });
+    expect(dbGetChat(source.canonicalChatId!)).toMatchObject({
+      rawProvenance: {
+        senderKind: "bot",
+        userId: null,
+        botId: "BFOREIGN",
+      },
+    });
+    expect(
+      dbFindChatMessage({
+        channel: "slack",
+        instanceId: UUID,
+        chatId: source.canonicalChatId!,
+        providerMessageId: "1713000140.000100",
+      }),
+    ).toMatchObject({
+      rawProvenance: {
+        senderKind: "bot",
+        userId: null,
+        botId: "BFOREIGN",
+      },
+    });
+    expect(String(published[0]!.payload.prompt)).toContain("<@BFOREIGN>: Hana—status");
+  });
+
+  it("resolves bot user_id and bot_id to one agent when both identities agree", async () => {
+    upsertAgentPlatformIdentity({
+      agentId: "foreign-one",
+      channel: "slack",
+      instanceId: UUID,
+      platformUserId: "UFOREIGN",
+    });
+    upsertAgentPlatformIdentity({
+      agentId: "foreign-one",
+      channel: "slack",
+      instanceId: UUID,
+      platformUserId: "BFOREIGN",
+    });
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = makeBotService({
+      published,
+      authTest: mock(async () => ({
+        ok: true,
+        bot_id: "BLOCAL",
+        user_id: "ULOCAL",
+        team_id: "T1",
+      })),
+    });
+
+    expect(
+      await service.handleEnvelope(
+        botEnvelope({
+          envelopeId: "consistent-bot-identities",
+          ts: "1713000145.000100",
+          text: "<@ULOCAL> status",
+          userId: "UFOREIGN",
+          botId: "BFOREIGN",
+        }),
+      ),
+    ).toBe("processed");
+    const source = published[0]!.payload.source as MessageTarget;
+    expect(source).toMatchObject({
+      actorType: "agent",
+      actorAgentId: "foreign-one",
+      rawSenderId: "UFOREIGN",
+      normalizedSenderId: "UFOREIGN",
+    });
+    expect(source.identityProvenance).toMatchObject({
+      matchedPlatformUserId: "UFOREIGN",
+      candidatePlatformUserIds: ["UFOREIGN", "BFOREIGN"],
+      botIdentityReason: "resolved_agent",
+      platformIdentityCandidates: [
+        expect.objectContaining({ platformUserId: "UFOREIGN", ownerType: "agent" }),
+        expect.objectContaining({ platformUserId: "BFOREIGN", ownerType: "agent" }),
+      ],
+    });
+  });
+
+  it("fails closed when the bot user and bot ids resolve to different owners", async () => {
+    upsertAgentPlatformIdentity({
+      agentId: "foreign-one",
+      channel: "slack",
+      instanceId: UUID,
+      platformUserId: "UFOREIGN",
+    });
+    upsertAgentPlatformIdentity({
+      agentId: "foreign-two",
+      channel: "slack",
+      instanceId: UUID,
+      platformUserId: "BFOREIGN",
+    });
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = makeBotService({
+      published,
+      authTest: mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" })),
+    });
+
+    expect(
+      await service.handleEnvelope(
+        botEnvelope({
+          envelopeId: "conflicting-agents",
+          ts: "1713000150.000100",
+          text: "<@ULOCAL> status",
+          userId: "UFOREIGN",
+          botId: "BFOREIGN",
+        }),
+      ),
+    ).toBe("processed");
+    const source = published[0]!.payload.source as MessageTarget;
+    expect(source.actorType).toBe("unknown");
+    expect(source.actorAgentId).toBeUndefined();
+    expect(source.platformIdentityId).toBeUndefined();
+    expect(source.identityProvenance).toMatchObject({ botIdentityReason: "conflicting_agents" });
+  });
+
+  it("fails closed when an agent bot id conflicts with a contact-owned user id", async () => {
+    ensureContactFromInbound({
+      channel: "slack",
+      instanceId: UUID,
+      platformSenderId: "UCONTACT",
+      contactIdentity: "UCONTACT",
+      intakeMode: "pending",
+      source: "test",
+    });
+    upsertAgentPlatformIdentity({
+      agentId: "foreign-one",
+      channel: "slack",
+      instanceId: UUID,
+      platformUserId: "BAGENT",
+    });
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = makeBotService({
+      published,
+      authTest: mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" })),
+    });
+
+    await service.handleEnvelope(
+      botEnvelope({
+        envelopeId: "agent-contact-conflict",
+        ts: "1713000160.000100",
+        text: "<@ULOCAL> status",
+        userId: "UCONTACT",
+        botId: "BAGENT",
+      }),
+    );
+    const source = published[0]!.payload.source as MessageTarget;
+    expect(source.actorType).toBe("unknown");
+    expect(source.contactId).toBeUndefined();
+    expect(source.actorAgentId).toBeUndefined();
+    expect(source.identityProvenance).toMatchObject({ botIdentityReason: "conflicting_platform_owners" });
+  });
+
+  it("keeps canonical instance alias collisions fail-closed for bot identities", async () => {
+    upsertAgentPlatformIdentity({
+      agentId: "foreign-one",
+      channel: "slack",
+      instanceId: UUID,
+      platformUserId: "BFOREIGN",
+    });
+    upsertAgentPlatformIdentity({
+      agentId: "foreign-two",
+      channel: "slack",
+      instanceId: SLUG,
+      platformUserId: "BFOREIGN",
+    });
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = makeBotService({
+      published,
+      authTest: mock(async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" })),
+      routingPolicy: { botMessageAliasesByChat: { C123: ["Hana"] } },
+    });
+
+    await service.handleEnvelope(
+      botEnvelope({
+        envelopeId: "alias-owner-conflict",
+        ts: "1713000170.000100",
+        text: "Hana, status",
+        botId: "BFOREIGN",
+      }),
+    );
+    const source = published[0]!.payload.source as MessageTarget;
+    expect(source.actorType).toBe("unknown");
+    expect(source.actorAgentId).toBeUndefined();
+    expect(source.identityProvenance).toMatchObject({
+      canonicalInstance: UUID,
+      reason: "ambiguous_instance_alias",
+      botIdentityReason: "ambiguous_instance_alias",
     });
   });
 });

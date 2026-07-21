@@ -48,10 +48,64 @@ Thread replies MUST follow `channels/slack/threads`: a Slack `thread_ts` is a se
 
 The adapter MUST ignore:
 
-- bot messages;
 - hidden events;
 - non-message events;
-- unsupported subtypes except accepted thread broadcast behavior.
+- unsupported subtypes except accepted thread broadcast, file share, and
+  explicitly admitted bot-message behavior.
+
+## Foreign Bot Intake
+
+Human message admission MUST remain unchanged. Bot-authored messages MUST fail
+closed by default, but the adapter MAY admit a foreign bot so agents can
+interoperate in shared Slack channels.
+
+Before deciding whether to admit any bot-authored message, the adapter MUST use
+`auth.test` with that channel account's bot token to discover both the local
+`bot_id`, bot `user_id`, and `team_id`, and MUST require `ok=true`. It MUST
+extract the Slack team from outer `payload.team_id` and/or `event.team` without
+falling back to Ravi's logical account id. The present outer team values MUST
+identify one team and equal the authenticated `team_id`; missing or conflicting
+team provenance MUST ignore the bot message. It MUST ignore a self message when
+either raw event id matches the corresponding local id. A successful discovery MAY be cached;
+concurrent discovery MUST share one in-flight request. Missing, incomplete, or
+failed discovery MUST ignore the bot message and MAY use only a bounded failure
+backoff before retrying. Discovery itself MUST also have a bounded timeout (five
+seconds by default); the underlying HTTP request MUST receive an abort signal,
+and a timeout MUST fail closed and MUST release the in-flight slot so a later bot
+message can retry. A failure MUST NOT become a permanent cached identity.
+
+A foreign bot message MUST be admitted only when at least one of these rules
+matches:
+
+- the text contains an explicit Slack `<@local_bot_user_id>` mention; or
+- the text starts with a configured alias for that exact Slack chat id.
+
+Aliases MUST be configured per canonical Slack channel/account under
+`ChannelConfig.defaults.botMessageAliasesByChat`. They MUST NOT come from an
+environment variable or leak between channel accounts. Alias matching is
+case-insensitive and MUST require the complete alias followed by end-of-text,
+whitespace, or Unicode punctuation. Leading whitespace, middle-of-text matches,
+partial words, and aliases from another chat MUST NOT admit the message.
+
+Admitted bot messages MUST keep raw `user`, `bot_id`, team, channel, timestamp,
+and `senderKind=bot` provenance. The effective sender is raw `user` when present
+and otherwise `bot_id`. Both candidate ids MUST be resolved through the same
+canonical instance alias contract below, including collision detection and the
+exact empty legacy fallback.
+
+The actor MAY be `agent` only when every resolved candidate id belongs to one
+and the same agent. Unresolved companion ids do not conflict with that unique
+agent. Contact-only identities, an agent/contact mix, multiple agent owners, or
+an alias collision MUST resolve to `unknown` with no contact, agent, or platform
+identity authority attached. Resolution provenance MUST include the candidate
+ids, the matched candidate when successful, and a non-secret bot resolution
+reason. A resolved agent actor MUST enter the runtime as the corresponding
+`agent:<actorAgentId>` principal; it MUST NOT fall through to `missing_contact`
+or erase the executor agent's effective capabilities.
+
+Admission MUST reuse existing route, root/thread, canonical chat, persistence,
+and envelope-deduplication behavior. A duplicate Socket Mode envelope MUST still
+produce at most one prompt.
 
 ## Credentials
 
@@ -114,6 +168,9 @@ Agents and operators MUST receive typed Ravi operations such as `slack.channels.
 ## Delivery Barrier
 
 Normal inbound Slack user messages MUST publish session prompts with `deliveryBarrier=after_tool`.
+
+An admitted foreign bot message MUST use the same delivery barrier because it
+is live channel input.
 
 This classifies Slack input as live human conversation, allowing the runtime to interrupt an unrelated active text response after safe tool/compaction barriers. The adapter MUST NOT publish normal user messages as `after_response`, because that can let stale active-turn output reach Slack before the new Slack message is processed.
 

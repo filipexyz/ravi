@@ -19,6 +19,33 @@ The safer default is thread-first routing:
 
 This keeps the first Slack adapter useful for real work while preserving the Ravi principle that channels transport context and Ravi owns routing/session semantics.
 
+## Why Foreign Bots Are Explicitly Addressed
+
+Slack Connect and shared automation channels often contain messages authored by
+other bots. Ignoring every `bot_id` prevents useful agent-to-agent coordination,
+while admitting every bot message creates loops and lets ambient automation drive
+an agent. Ravi therefore discovers its own bot/user pair with `auth.test`, always
+filters self output, and admits a foreign bot only through an explicit mention or
+a chat-scoped alias at the beginning of the text.
+
+Aliases live on the channel account rather than in process environment so two
+workspaces can use different names without sharing policy. Complete-word Unicode
+boundaries make the operator-visible rule match natural text without accepting
+partial names. Authentication discovery is coalesced and successful results are
+cached, but each request has a bounded timeout and failures get only a short
+backoff: this avoids a stuck Web API call or a transient Slack failure turning
+into a daemon-lifetime outage without creating an API storm.
+
+Slack bot events may carry both a bot id and a user id. Either can be linked in
+the identity graph, so resolving only the first id loses valid agent identity;
+blindly choosing the first match can also grant the wrong authority. Resolving
+both through the canonical instance aliases and requiring one consistent agent
+owner preserves interoperability while keeping contact-only, mixed-owner, and
+ambiguous cases fail-closed. Raw ids remain provenance, not product identity.
+Once resolved, that actor is represented by its `agent:*` runtime principal;
+the session's executor keeps its own effective capabilities instead of treating
+the foreign agent like an unresolved contact.
+
 ## Why Canonicalize Instance Identity
 
 A Slack workspace can be referenced by more than one instance value over its lifetime: the

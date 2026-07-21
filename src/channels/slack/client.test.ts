@@ -3,8 +3,10 @@ import { SlackWebApiClient } from "./client.js";
 
 describe("Slack Web API client", () => {
   it("reads token scopes from auth.test response headers", async () => {
-    const fetchImpl = mock(async () =>
-      jsonResponse(
+    let requestSignal: AbortSignal | null | undefined;
+    const fetchImpl = mock(async (_url: string | URL | Request, init?: RequestInit) => {
+      requestSignal = init?.signal;
+      return jsonResponse(
         {
           ok: true,
           team: "RBBT",
@@ -17,19 +19,21 @@ describe("Slack Web API client", () => {
           "x-oauth-scopes": "channels:read,channels:manage,chat:write",
           "x-accepted-oauth-scopes": "identity.basic",
         },
-      ),
-    ) as unknown as typeof fetch;
+      );
+    }) as unknown as typeof fetch;
     const client = new SlackWebApiClient({
       appToken: "xapp-secret",
       botToken: "xoxb-secret",
       fetchImpl,
     });
 
-    await expect(client.authTest()).resolves.toMatchObject({
+    const controller = new AbortController();
+    await expect(client.authTest({ signal: controller.signal })).resolves.toMatchObject({
       team: "RBBT",
       scopes: ["channels:read", "channels:manage", "chat:write"],
       acceptedScopes: ["identity.basic"],
     });
+    expect(requestSignal).toBe(controller.signal);
   });
 
   it("lists conversations with cursor pagination", async () => {

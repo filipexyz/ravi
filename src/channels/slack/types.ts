@@ -1,11 +1,13 @@
 export type SlackSubscriptionScope = "chat" | "thread" | "chat_and_thread";
 export type SlackThreadReplyMode = "same_thread" | "channel_root" | "policy_default";
 export type SlackRootReplyMode = "channel_root" | "new_thread" | "policy_default";
+export type SlackBotMessageAliasesByChat = Readonly<Record<string, readonly string[]>>;
 
 export interface SlackRoutingPolicy {
   readonly subscriptionScope: SlackSubscriptionScope;
   readonly threadReplyMode: SlackThreadReplyMode;
   readonly rootReplyMode: SlackRootReplyMode;
+  readonly botMessageAliasesByChat: SlackBotMessageAliasesByChat;
 }
 
 export interface SlackThreadContext {
@@ -81,7 +83,12 @@ export interface SlackNormalizedMessage {
   readonly teamId: string;
   readonly channelId: string;
   readonly channelType: string;
+  /** Effective sender id: Slack `user` when present, otherwise `bot_id`. */
   readonly userId: string;
+  /** Raw Slack `user` field, kept separate when a bot-only event falls back to `bot_id`. */
+  readonly slackUserId?: string;
+  readonly botId?: string;
+  readonly senderKind: "user" | "bot";
   readonly text: string;
   readonly files: readonly SlackNormalizedFile[];
   readonly ts: string;

@@ -476,11 +476,12 @@ export class SlackWebApiClient {
     });
   }
 
-  async authTest(): Promise<SlackAuthTestResponse> {
+  async authTest(options: { signal?: AbortSignal } = {}): Promise<SlackAuthTestResponse> {
     const { payload, headers } = await this.apiRequestWithHeaders<SlackAuthTestResponse>(
       "auth.test",
       this.botToken,
       {},
+      options,
     );
     return {
       ...payload,
@@ -724,7 +725,7 @@ export class SlackWebApiClient {
     method: string,
     token: string,
     body: Record<string, unknown>,
-    options: { okErrors?: readonly string[] } = {},
+    options: { okErrors?: readonly string[]; signal?: AbortSignal } = {},
   ): Promise<T> {
     const { payload } = await this.apiRequestWithHeaders<T>(method, token, body, options);
     return payload;
@@ -760,7 +761,7 @@ export class SlackWebApiClient {
     method: string,
     token: string,
     body: Record<string, unknown>,
-    options: { okErrors?: readonly string[] } = {},
+    options: { okErrors?: readonly string[]; signal?: AbortSignal } = {},
   ): Promise<{ payload: T; headers: Headers }> {
     const res = await this.fetchImpl(`${this.apiBaseUrl}/${method}`, {
       method: "POST",
@@ -769,6 +770,7 @@ export class SlackWebApiClient {
         "content-type": "application/x-www-form-urlencoded",
       },
       body: encodeSlackFormBody(body),
+      signal: options.signal,
     });
 
     const payload = (await res.json()) as T;
