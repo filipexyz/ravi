@@ -180,6 +180,53 @@ describe("router context queries", () => {
     expect(reactionIndexes).toContain("idx_reaction_actions_source");
   });
 
+  it("scopes Console inbox item idempotency by Console and organization", () => {
+    const db = getDb();
+    const insert = db.prepare(
+      `INSERT INTO console_inbox_items (
+         console_url,
+         organization_id,
+         subscription_id,
+         item_id,
+         sequence,
+         event_type,
+         category,
+         severity,
+         dedupe_key,
+         nats_subject,
+         nats_payload_json,
+         created_at,
+         updated_at
+       ) VALUES (?, ?, ?, 'shared-item', 1, 'task.created', 'task', 'info', ?, 'ravi.console.inbox.item', '{}', 1, 1)`,
+    );
+    const insertScope = (consoleUrl: string, organizationId: string) =>
+      insert.run(
+        consoleUrl,
+        organizationId,
+        `subscription:${consoleUrl}:${organizationId}`,
+        `dedupe:${consoleUrl}:${organizationId}`,
+      );
+
+    insertScope("https://console-a.ravi.bot", "org-a");
+    insertScope("https://console-a.ravi.bot", "org-b");
+    insertScope("https://console-b.ravi.bot", "org-a");
+
+    expect(() => insertScope("https://console-a.ravi.bot", "org-a")).toThrow(/UNIQUE constraint failed/);
+    expect(
+      db
+        .prepare(
+          `SELECT console_url AS consoleUrl, organization_id AS organizationId, item_id AS itemId
+           FROM console_inbox_items
+           ORDER BY console_url, organization_id`,
+        )
+        .all(),
+    ).toEqual([
+      { consoleUrl: "https://console-a.ravi.bot", organizationId: "org-a", itemId: "shared-item" },
+      { consoleUrl: "https://console-a.ravi.bot", organizationId: "org-b", itemId: "shared-item" },
+      { consoleUrl: "https://console-b.ravi.bot", organizationId: "org-a", itemId: "shared-item" },
+    ]);
+  });
+
   it("gets reading lists by exact primary-key id without falling back to name", () => {
     const missingId = "crl_0123456789abcdef01234567";
     const list = dbCreateChatReadingList({
