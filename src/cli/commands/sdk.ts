@@ -29,6 +29,7 @@ function writeFileSafe(target: string, body: string): string {
 const DEFAULT_CLIENT_OUT_DIR = "packages/ravi-os-sdk/src";
 const DEFAULT_TYPESCRIPT_SDK_VERSION = "0.2.1";
 const DEFAULT_SWIFT_SDK_VERSION = "0.1.0";
+const DEFAULT_OPENAPI_SNAPSHOT_PATH = "docs/openapi.json";
 const GENERATED_FILES = ["client.ts", "schemas.ts", "types.ts", "version.ts", "streaming.generated.ts"] as const;
 const DEFAULT_SWIFT_OUT_DIR = "packages/ravi-os-swift-sdk/Sources/RaviSDK";
 const GENERATED_SWIFT_FILES = [
@@ -151,7 +152,11 @@ export class SdkOpenApiCommands {
   @CommandAccess({ kind: "read", resource: "sdk.openapi", action: "emit", risk: "low" })
   @Returns(openApiEmitReturnSchema)
   emit(
-    @Option({ flags: "--out <path>", description: "Write spec JSON to this path" }) out?: string,
+    @Option({
+      flags: "--out <path>",
+      description: `Write spec JSON to this path (default: ${DEFAULT_OPENAPI_SNAPSHOT_PATH})`,
+    })
+    out?: string,
     @Option({ flags: "--stdout", description: "Print spec JSON to stdout" }) toStdout?: boolean,
     @Option({ flags: "--json", description: "Print the result payload as JSON" }) asJson?: boolean,
   ) {
@@ -166,7 +171,7 @@ export class SdkOpenApiCommands {
         return { status: "stdout", bytes: json.length };
       }
 
-      const target = out?.trim() ? out : "openapi.json";
+      const target = out?.trim() ? out : DEFAULT_OPENAPI_SNAPSHOT_PATH;
       const absolute = writeFileSafe(target, `${json}\n`);
       const payload = { status: "written" as const, path: absolute, bytes: json.length };
       if (asJson) {

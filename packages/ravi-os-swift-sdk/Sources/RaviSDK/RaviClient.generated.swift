@@ -39,6 +39,10 @@ public final class RaviClient {
     CalendarsNamespace(transport: transport)
   }
 
+  public var channels: ChannelsNamespace {
+    ChannelsNamespace(transport: transport)
+  }
+
   public var chats: ChatsNamespace {
     ChatsNamespace(transport: transport)
   }
@@ -65,6 +69,10 @@ public final class RaviClient {
 
   public var costs: CostsNamespace {
     CostsNamespace(transport: transport)
+  }
+
+  public var credentials: CredentialsNamespace {
+    CredentialsNamespace(transport: transport)
   }
 
   public var crm: CrmNamespace {
@@ -195,6 +203,10 @@ public final class RaviClient {
     SkillsNamespace(transport: transport)
   }
 
+  public var slack: SlackNamespace {
+    SlackNamespace(transport: transport)
+  }
+
   public var specs: SpecsNamespace {
     SpecsNamespace(transport: transport)
   }
@@ -253,6 +265,10 @@ public final class RaviClient {
 
   public var workflows: WorkflowsNamespace {
     WorkflowsNamespace(transport: transport)
+  }
+
+  public var yt: YtNamespace {
+    YtNamespace(transport: transport)
   }
 
 }
@@ -742,6 +758,68 @@ public struct CalendarsEventsNamespace: Sendable {
   }
 }
 
+public struct ChannelsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func create(_ name: String, _ options: ChannelsCreateOptions = .init()) async throws -> ChannelsCreateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["name"] = try RaviJSON.fromEncodable(name)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["channels"], command: "create", body: requestBody, as: ChannelsCreateReturn.self)
+  }
+
+  public func list(_ options: ChannelsListOptions = .init()) async throws -> ChannelsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["channels"], command: "list", body: requestBody, as: ChannelsListReturn.self)
+  }
+
+  public func probe() async throws -> ChannelsProbeReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["channels"], command: "probe", body: requestBody, as: ChannelsProbeReturn.self)
+  }
+
+  public func restart(_ options: ChannelsRestartOptions = .init()) async throws -> ChannelsRestartReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["channels"], command: "restart", body: requestBody, as: ChannelsRestartReturn.self)
+  }
+
+  public func set(_ name: String, _ key: String, _ value: String) async throws -> ChannelsSetReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["name"] = try RaviJSON.fromEncodable(name)
+    requestBody["key"] = try RaviJSON.fromEncodable(key)
+    requestBody["value"] = try RaviJSON.fromEncodable(value)
+    return try await transport.call(groupSegments: ["channels"], command: "set", body: requestBody, as: ChannelsSetReturn.self)
+  }
+
+  public func show(_ name: String) async throws -> ChannelsShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["name"] = try RaviJSON.fromEncodable(name)
+    return try await transport.call(groupSegments: ["channels"], command: "show", body: requestBody, as: ChannelsShowReturn.self)
+  }
+
+  public func start(_ options: ChannelsStartOptions = .init()) async throws -> ChannelsStartReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["channels"], command: "start", body: requestBody, as: ChannelsStartReturn.self)
+  }
+
+  public func status() async throws -> ChannelsStatusReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["channels"], command: "status", body: requestBody, as: ChannelsStatusReturn.self)
+  }
+
+  public func stop() async throws -> ChannelsStopReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["channels"], command: "stop", body: requestBody, as: ChannelsStopReturn.self)
+  }
+}
+
 public struct ChatsNamespace: Sendable {
   private let transport: any RaviTransport
 
@@ -824,9 +902,16 @@ public struct ChatsListsNamespace: Sendable {
     return try await transport.call(groupSegments: ["chats","lists"], command: "members", body: requestBody, as: ChatsListsMembersReturn.self)
   }
 
-  public func recompute(_ list: String, _ options: ChatsListsRecomputeOptions = .init()) async throws -> ChatsListsRecomputeReturn {
+  public func preview(_ listId: String, _ options: ChatsListsPreviewOptions = .init()) async throws -> ChatsListsPreviewReturn {
     var requestBody: [String: RaviJSON] = [:]
-    requestBody["list"] = try RaviJSON.fromEncodable(list)
+    requestBody["listId"] = try RaviJSON.fromEncodable(listId)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["chats","lists"], command: "preview", body: requestBody, as: ChatsListsPreviewReturn.self)
+  }
+
+  public func recompute(_ listId: String, _ options: ChatsListsRecomputeOptions = .init()) async throws -> ChatsListsRecomputeReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["listId"] = try RaviJSON.fromEncodable(listId)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["chats","lists"], command: "recompute", body: requestBody, as: ChatsListsRecomputeReturn.self)
   }
@@ -837,6 +922,13 @@ public struct ChatsListsNamespace: Sendable {
     requestBody["chat"] = try RaviJSON.fromEncodable(chat)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["chats","lists"], command: "remove", body: requestBody, as: ChatsListsRemoveReturn.self)
+  }
+
+  public func show(_ listId: String, _ options: ChatsListsShowOptions = .init()) async throws -> ChatsListsShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["listId"] = try RaviJSON.fromEncodable(listId)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["chats","lists"], command: "show", body: requestBody, as: ChatsListsShowReturn.self)
   }
 }
 
@@ -1356,6 +1448,68 @@ public struct CostsNamespace: Sendable {
     var requestBody: [String: RaviJSON] = [:]
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["costs"], command: "top-sessions", body: requestBody, as: CostsTopSessionsReturn.self)
+  }
+}
+
+public struct CredentialsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public var connections: CredentialsConnectionsNamespace {
+    CredentialsConnectionsNamespace(transport: transport)
+  }
+
+  public var policies: CredentialsPoliciesNamespace {
+    CredentialsPoliciesNamespace(transport: transport)
+  }
+}
+
+public struct CredentialsConnectionsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func disable(_ options: CredentialsConnectionsDisableOptions = .init()) async throws -> CredentialsConnectionsDisableReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["credentials","connections"], command: "disable", body: requestBody, as: CredentialsConnectionsDisableReturn.self)
+  }
+
+  public func enable(_ options: CredentialsConnectionsEnableOptions = .init()) async throws -> CredentialsConnectionsEnableReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["credentials","connections"], command: "enable", body: requestBody, as: CredentialsConnectionsEnableReturn.self)
+  }
+
+  public func list(_ options: CredentialsConnectionsListOptions = .init()) async throws -> CredentialsConnectionsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["credentials","connections"], command: "list", body: requestBody, as: CredentialsConnectionsListReturn.self)
+  }
+
+  public func show(_ options: CredentialsConnectionsShowOptions = .init()) async throws -> CredentialsConnectionsShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["credentials","connections"], command: "show", body: requestBody, as: CredentialsConnectionsShowReturn.self)
+  }
+}
+
+public struct CredentialsPoliciesNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func explain(_ options: CredentialsPoliciesExplainOptions = .init()) async throws -> CredentialsPoliciesExplainReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["credentials","policies"], command: "explain", body: requestBody, as: CredentialsPoliciesExplainReturn.self)
   }
 }
 
@@ -2920,9 +3074,10 @@ public struct ObserversNamespace: Sendable {
     return try await transport.call(groupSegments: ["observers"], command: "list", body: requestBody, as: ObserversListReturn.self)
   }
 
-  public func refresh(_ session: String) async throws -> ObserversRefreshReturn {
+  public func refresh(_ session: String, _ options: ObserversRefreshOptions = .init()) async throws -> ObserversRefreshReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["session"] = try RaviJSON.fromEncodable(session)
+    try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["observers"], command: "refresh", body: requestBody, as: ObserversRefreshReturn.self)
   }
 
@@ -3617,6 +3772,10 @@ public struct RuntimeNamespace: Sendable {
   public var credentials: RuntimeCredentialsNamespace {
     RuntimeCredentialsNamespace(transport: transport)
   }
+
+  public var presets: RuntimePresetsNamespace {
+    RuntimePresetsNamespace(transport: transport)
+  }
 }
 
 public struct RuntimeCredentialsNamespace: Sendable {
@@ -3689,6 +3848,70 @@ public struct RuntimeCredentialsNamespace: Sendable {
       requestBody["id"] = try RaviJSON.fromEncodable(id)
     }
     return try await transport.call(groupSegments: ["runtime","credentials"], command: "status", body: requestBody, as: RuntimeCredentialsStatusReturn.self)
+  }
+}
+
+public struct RuntimePresetsNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func create(_ id: String, _ options: RuntimePresetsCreateOptions = .init()) async throws -> RuntimePresetsCreateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["runtime","presets"], command: "create", body: requestBody, as: RuntimePresetsCreateReturn.self)
+  }
+
+  public func delete(_ id: String, _ options: RuntimePresetsDeleteOptions = .init()) async throws -> RuntimePresetsDeleteReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["runtime","presets"], command: "delete", body: requestBody, as: RuntimePresetsDeleteReturn.self)
+  }
+
+  public func disable(_ id: String, _ options: RuntimePresetsDisableOptions = .init()) async throws -> RuntimePresetsDisableReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["runtime","presets"], command: "disable", body: requestBody, as: RuntimePresetsDisableReturn.self)
+  }
+
+  public func enable(_ id: String, _ options: RuntimePresetsEnableOptions = .init()) async throws -> RuntimePresetsEnableReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["runtime","presets"], command: "enable", body: requestBody, as: RuntimePresetsEnableReturn.self)
+  }
+
+  public func impact(_ id: String, _ options: RuntimePresetsImpactOptions = .init()) async throws -> RuntimePresetsImpactReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["runtime","presets"], command: "impact", body: requestBody, as: RuntimePresetsImpactReturn.self)
+  }
+
+  public func list(_ options: RuntimePresetsListOptions = .init()) async throws -> RuntimePresetsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["runtime","presets"], command: "list", body: requestBody, as: RuntimePresetsListReturn.self)
+  }
+
+  public func set(_ id: String, _ field: String, _ value: String, _ options: RuntimePresetsSetOptions = .init()) async throws -> RuntimePresetsSetReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    requestBody["field"] = try RaviJSON.fromEncodable(field)
+    requestBody["value"] = try RaviJSON.fromEncodable(value)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["runtime","presets"], command: "set", body: requestBody, as: RuntimePresetsSetReturn.self)
+  }
+
+  public func show(_ id: String) async throws -> RuntimePresetsShowReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    return try await transport.call(groupSegments: ["runtime","presets"], command: "show", body: requestBody, as: RuntimePresetsShowReturn.self)
   }
 }
 
@@ -4017,11 +4240,25 @@ public struct SessionsNamespace: Sendable {
     return try await transport.call(groupSegments: ["sessions"], command: "set-display", body: requestBody, as: SessionsSetDisplayReturn.self)
   }
 
+  public func setEffort(_ nameOrKey: String, _ level: String) async throws -> SessionsSetEffortReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
+    requestBody["level"] = try RaviJSON.fromEncodable(level)
+    return try await transport.call(groupSegments: ["sessions"], command: "set-effort", body: requestBody, as: SessionsSetEffortReturn.self)
+  }
+
   public func setModel(_ nameOrKey: String, _ model: String) async throws -> SessionsSetModelReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
     requestBody["model"] = try RaviJSON.fromEncodable(model)
     return try await transport.call(groupSegments: ["sessions"], command: "set-model", body: requestBody, as: SessionsSetModelReturn.self)
+  }
+
+  public func setProvider(_ nameOrKey: String, _ provider: String) async throws -> SessionsSetProviderReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
+    requestBody["provider"] = try RaviJSON.fromEncodable(provider)
+    return try await transport.call(groupSegments: ["sessions"], command: "set-provider", body: requestBody, as: SessionsSetProviderReturn.self)
   }
 
   public func setThinking(_ nameOrKey: String, _ level: String) async throws -> SessionsSetThinkingReturn {
@@ -4300,6 +4537,26 @@ public struct SkillsNamespace: Sendable {
     self.transport = transport
   }
 
+  public func grant(_ agent: String, _ skill: String, _ options: SkillsGrantOptions = .init()) async throws -> SkillsGrantReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["agent"] = try RaviJSON.fromEncodable(agent)
+    requestBody["skill"] = try RaviJSON.fromEncodable(skill)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["skills"], command: "grant", body: requestBody, as: SkillsGrantReturn.self)
+  }
+
+  public func grantBatch(_ options: SkillsGrantBatchOptions = .init()) async throws -> SkillsGrantBatchReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["skills"], command: "grant-batch", body: requestBody, as: SkillsGrantBatchReturn.self)
+  }
+
+  public func inspect(_ agent: String) async throws -> SkillsInspectReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["agent"] = try RaviJSON.fromEncodable(agent)
+    return try await transport.call(groupSegments: ["skills"], command: "inspect", body: requestBody, as: SkillsInspectReturn.self)
+  }
+
   public func install(_ name: String? = nil, _ options: SkillsInstallOptions = .init()) async throws -> SkillsInstallReturn {
     var requestBody: [String: RaviJSON] = [:]
     if let name {
@@ -4315,6 +4572,19 @@ public struct SkillsNamespace: Sendable {
     return try await transport.call(groupSegments: ["skills"], command: "list", body: requestBody, as: SkillsListReturn.self)
   }
 
+  public func revoke(_ agent: String, _ skill: String) async throws -> SkillsRevokeReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["agent"] = try RaviJSON.fromEncodable(agent)
+    requestBody["skill"] = try RaviJSON.fromEncodable(skill)
+    return try await transport.call(groupSegments: ["skills"], command: "revoke", body: requestBody, as: SkillsRevokeReturn.self)
+  }
+
+  public func revokeBatch(_ options: SkillsRevokeBatchOptions = .init()) async throws -> SkillsRevokeBatchReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["skills"], command: "revoke-batch", body: requestBody, as: SkillsRevokeBatchReturn.self)
+  }
+
   public func show(_ name: String, _ options: SkillsShowOptions = .init()) async throws -> SkillsShowReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["name"] = try RaviJSON.fromEncodable(name)
@@ -4325,6 +4595,286 @@ public struct SkillsNamespace: Sendable {
   public func sync() async throws -> SkillsSyncReturn {
     let requestBody: [String: RaviJSON] = [:]
     return try await transport.call(groupSegments: ["skills"], command: "sync", body: requestBody, as: SkillsSyncReturn.self)
+  }
+
+  public func who(_ skill: String? = nil, _ options: SkillsWhoOptions = .init()) async throws -> SkillsWhoReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let skill {
+      requestBody["skill"] = try RaviJSON.fromEncodable(skill)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["skills"], command: "who", body: requestBody, as: SkillsWhoReturn.self)
+  }
+}
+
+public struct SlackNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func blocksSend(_ channel: String, _ file: String, _ options: SlackBlocksSendOptions = .init()) async throws -> SlackBlocksSendReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["channel"] = try RaviJSON.fromEncodable(channel)
+    requestBody["file"] = try RaviJSON.fromEncodable(file)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "blocks-send", body: requestBody, as: SlackBlocksSendReturn.self)
+  }
+
+  public func blocksShowcase(_ channel: String, _ options: SlackBlocksShowcaseOptions = .init()) async throws -> SlackBlocksShowcaseReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["channel"] = try RaviJSON.fromEncodable(channel)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "blocks-showcase", body: requestBody, as: SlackBlocksShowcaseReturn.self)
+  }
+
+  public func blocksUpdate(_ channel: String, _ ts: String, _ file: String, _ options: SlackBlocksUpdateOptions = .init()) async throws -> SlackBlocksUpdateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["channel"] = try RaviJSON.fromEncodable(channel)
+    requestBody["ts"] = try RaviJSON.fromEncodable(ts)
+    requestBody["file"] = try RaviJSON.fromEncodable(file)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "blocks-update", body: requestBody, as: SlackBlocksUpdateReturn.self)
+  }
+
+  public func blocksValidate(_ file: String, _ options: SlackBlocksValidateOptions = .init()) async throws -> SlackBlocksValidateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["file"] = try RaviJSON.fromEncodable(file)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "blocks-validate", body: requestBody, as: SlackBlocksValidateReturn.self)
+  }
+
+  public func canvasAccessDelete(_ canvas: String, _ options: SlackCanvasAccessDeleteOptions = .init()) async throws -> SlackCanvasAccessDeleteReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["canvas"] = try RaviJSON.fromEncodable(canvas)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "canvas-access-delete", body: requestBody, as: SlackCanvasAccessDeleteReturn.self)
+  }
+
+  public func canvasAccessSet(_ canvas: String, _ access: String, _ options: SlackCanvasAccessSetOptions = .init()) async throws -> SlackCanvasAccessSetReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["canvas"] = try RaviJSON.fromEncodable(canvas)
+    requestBody["access"] = try RaviJSON.fromEncodable(access)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "canvas-access-set", body: requestBody, as: SlackCanvasAccessSetReturn.self)
+  }
+
+  public func canvasArtifactPublish(_ artifactOrFile: String, _ options: SlackCanvasArtifactPublishOptions = .init()) async throws -> SlackCanvasArtifactPublishReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["artifactOrFile"] = try RaviJSON.fromEncodable(artifactOrFile)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "canvas-artifact-publish", body: requestBody, as: SlackCanvasArtifactPublishReturn.self)
+  }
+
+  public func canvasArtifactStatus(_ artifact: String) async throws -> SlackCanvasArtifactStatusReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["artifact"] = try RaviJSON.fromEncodable(artifact)
+    return try await transport.call(groupSegments: ["slack"], command: "canvas-artifact-status", body: requestBody, as: SlackCanvasArtifactStatusReturn.self)
+  }
+
+  public func canvasChannelCreate(_ channel: String, _ options: SlackCanvasChannelCreateOptions = .init()) async throws -> SlackCanvasChannelCreateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["channel"] = try RaviJSON.fromEncodable(channel)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "canvas-channel-create", body: requestBody, as: SlackCanvasChannelCreateReturn.self)
+  }
+
+  public func canvasChannelShowcase(_ channel: String, _ options: SlackCanvasChannelShowcaseOptions = .init()) async throws -> SlackCanvasChannelShowcaseReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["channel"] = try RaviJSON.fromEncodable(channel)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "canvas-channel-showcase", body: requestBody, as: SlackCanvasChannelShowcaseReturn.self)
+  }
+
+  public func canvasCreate(_ options: SlackCanvasCreateOptions = .init()) async throws -> SlackCanvasCreateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "canvas-create", body: requestBody, as: SlackCanvasCreateReturn.self)
+  }
+
+  public func canvasDelete(_ canvas: String, _ options: SlackCanvasDeleteOptions = .init()) async throws -> SlackCanvasDeleteReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["canvas"] = try RaviJSON.fromEncodable(canvas)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "canvas-delete", body: requestBody, as: SlackCanvasDeleteReturn.self)
+  }
+
+  public func canvasEdit(_ canvas: String, _ operation: String, _ options: SlackCanvasEditOptions = .init()) async throws -> SlackCanvasEditReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["canvas"] = try RaviJSON.fromEncodable(canvas)
+    requestBody["operation"] = try RaviJSON.fromEncodable(operation)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "canvas-edit", body: requestBody, as: SlackCanvasEditReturn.self)
+  }
+
+  public func canvasSectionsLookup(_ canvas: String, _ options: SlackCanvasSectionsLookupOptions = .init()) async throws -> SlackCanvasSectionsLookupReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["canvas"] = try RaviJSON.fromEncodable(canvas)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "canvas-sections-lookup", body: requestBody, as: SlackCanvasSectionsLookupReturn.self)
+  }
+
+  public func canvasShowcase(_ canvas: String, _ options: SlackCanvasShowcaseOptions = .init()) async throws -> SlackCanvasShowcaseReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["canvas"] = try RaviJSON.fromEncodable(canvas)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "canvas-showcase", body: requestBody, as: SlackCanvasShowcaseReturn.self)
+  }
+
+  public func channelsCreate(_ name: String, _ options: SlackChannelsCreateOptions = .init()) async throws -> SlackChannelsCreateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["name"] = try RaviJSON.fromEncodable(name)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "channels-create", body: requestBody, as: SlackChannelsCreateReturn.self)
+  }
+
+  public func channelsHistory(_ channel: String, _ options: SlackChannelsHistoryOptions = .init()) async throws -> SlackChannelsHistoryReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["channel"] = try RaviJSON.fromEncodable(channel)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "channels-history", body: requestBody, as: SlackChannelsHistoryReturn.self)
+  }
+
+  public func channelsInfo(_ channel: String) async throws -> SlackChannelsInfoReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["channel"] = try RaviJSON.fromEncodable(channel)
+    return try await transport.call(groupSegments: ["slack"], command: "channels-info", body: requestBody, as: SlackChannelsInfoReturn.self)
+  }
+
+  public func channelsInvite(_ channel: String, _ users: String, _ options: SlackChannelsInviteOptions = .init()) async throws -> SlackChannelsInviteReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["channel"] = try RaviJSON.fromEncodable(channel)
+    requestBody["users"] = try RaviJSON.fromEncodable(users)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "channels-invite", body: requestBody, as: SlackChannelsInviteReturn.self)
+  }
+
+  public func channelsList(_ options: SlackChannelsListOptions = .init()) async throws -> SlackChannelsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "channels-list", body: requestBody, as: SlackChannelsListReturn.self)
+  }
+
+  public func channelsRename(_ channel: String, _ name: String, _ options: SlackChannelsRenameOptions = .init()) async throws -> SlackChannelsRenameReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["channel"] = try RaviJSON.fromEncodable(channel)
+    requestBody["name"] = try RaviJSON.fromEncodable(name)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "channels-rename", body: requestBody, as: SlackChannelsRenameReturn.self)
+  }
+
+  public func filesList(_ options: SlackFilesListOptions = .init()) async throws -> SlackFilesListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "files-list", body: requestBody, as: SlackFilesListReturn.self)
+  }
+
+  public func interactionsRespond(_ responseUrlId: String, _ file: String, _ options: SlackInteractionsRespondOptions = .init()) async throws -> SlackInteractionsRespondReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["responseUrlId"] = try RaviJSON.fromEncodable(responseUrlId)
+    requestBody["file"] = try RaviJSON.fromEncodable(file)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "interactions-respond", body: requestBody, as: SlackInteractionsRespondReturn.self)
+  }
+
+  public func membersList(_ channel: String, _ options: SlackMembersListOptions = .init()) async throws -> SlackMembersListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["channel"] = try RaviJSON.fromEncodable(channel)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "members-list", body: requestBody, as: SlackMembersListReturn.self)
+  }
+
+  public func messagesInspect(_ channel: String, _ ts: String) async throws -> SlackMessagesInspectReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["channel"] = try RaviJSON.fromEncodable(channel)
+    requestBody["ts"] = try RaviJSON.fromEncodable(ts)
+    return try await transport.call(groupSegments: ["slack"], command: "messages-inspect", body: requestBody, as: SlackMessagesInspectReturn.self)
+  }
+
+  public func messagesReplay(_ channel: String, _ ts: String, _ options: SlackMessagesReplayOptions = .init()) async throws -> SlackMessagesReplayReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["channel"] = try RaviJSON.fromEncodable(channel)
+    requestBody["ts"] = try RaviJSON.fromEncodable(ts)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "messages-replay", body: requestBody, as: SlackMessagesReplayReturn.self)
+  }
+
+  public func messagesSend(_ channel: String, _ text: String, _ options: SlackMessagesSendOptions = .init()) async throws -> SlackMessagesSendReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["channel"] = try RaviJSON.fromEncodable(channel)
+    requestBody["text"] = try RaviJSON.fromEncodable(text)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "messages-send", body: requestBody, as: SlackMessagesSendReturn.self)
+  }
+
+  public func modalsOpen(_ triggerId: String, _ file: String, _ options: SlackModalsOpenOptions = .init()) async throws -> SlackModalsOpenReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["triggerId"] = try RaviJSON.fromEncodable(triggerId)
+    requestBody["file"] = try RaviJSON.fromEncodable(file)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "modals-open", body: requestBody, as: SlackModalsOpenReturn.self)
+  }
+
+  public func modalsPush(_ triggerId: String, _ file: String, _ options: SlackModalsPushOptions = .init()) async throws -> SlackModalsPushReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["triggerId"] = try RaviJSON.fromEncodable(triggerId)
+    requestBody["file"] = try RaviJSON.fromEncodable(file)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "modals-push", body: requestBody, as: SlackModalsPushReturn.self)
+  }
+
+  public func modalsUpdate(_ view: String, _ file: String, _ options: SlackModalsUpdateOptions = .init()) async throws -> SlackModalsUpdateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["view"] = try RaviJSON.fromEncodable(view)
+    requestBody["file"] = try RaviJSON.fromEncodable(file)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "modals-update", body: requestBody, as: SlackModalsUpdateReturn.self)
+  }
+
+  public func permissionsList(_ options: SlackPermissionsListOptions = .init()) async throws -> SlackPermissionsListReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "permissions-list", body: requestBody, as: SlackPermissionsListReturn.self)
+  }
+
+  public func topology(_ options: SlackTopologyOptions = .init()) async throws -> SlackTopologyReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "topology", body: requestBody, as: SlackTopologyReturn.self)
+  }
+
+  public func workObjectsPresentDetails(_ triggerId: String, _ file: String, _ options: SlackWorkObjectsPresentDetailsOptions = .init()) async throws -> SlackWorkObjectsPresentDetailsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["triggerId"] = try RaviJSON.fromEncodable(triggerId)
+    requestBody["file"] = try RaviJSON.fromEncodable(file)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "work-objects-present-details", body: requestBody, as: SlackWorkObjectsPresentDetailsReturn.self)
+  }
+
+  public func workObjectsSend(_ channel: String, _ file: String, _ options: SlackWorkObjectsSendOptions = .init()) async throws -> SlackWorkObjectsSendReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["channel"] = try RaviJSON.fromEncodable(channel)
+    requestBody["file"] = try RaviJSON.fromEncodable(file)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "work-objects-send", body: requestBody, as: SlackWorkObjectsSendReturn.self)
+  }
+
+  public func workObjectsUnfurl(_ channel: String, _ ts: String, _ url: String, _ file: String, _ options: SlackWorkObjectsUnfurlOptions = .init()) async throws -> SlackWorkObjectsUnfurlReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["channel"] = try RaviJSON.fromEncodable(channel)
+    requestBody["ts"] = try RaviJSON.fromEncodable(ts)
+    requestBody["url"] = try RaviJSON.fromEncodable(url)
+    requestBody["file"] = try RaviJSON.fromEncodable(file)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "work-objects-unfurl", body: requestBody, as: SlackWorkObjectsUnfurlReturn.self)
+  }
+
+  public func workObjectsValidate(_ file: String, _ options: SlackWorkObjectsValidateOptions = .init()) async throws -> SlackWorkObjectsValidateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["file"] = try RaviJSON.fromEncodable(file)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["slack"], command: "work-objects-validate", body: requestBody, as: SlackWorkObjectsValidateReturn.self)
   }
 }
 
@@ -5360,5 +5910,198 @@ public struct WorkflowsSpecsNamespace: Sendable {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["specId"] = try RaviJSON.fromEncodable(specId)
     return try await transport.call(groupSegments: ["workflows","specs"], command: "show", body: requestBody, as: WorkflowsSpecsShowReturn.self)
+  }
+}
+
+public struct YtNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func analyticsCountries(_ options: YtAnalyticsCountriesOptions = .init()) async throws -> YtAnalyticsCountriesReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "analytics-countries", body: requestBody, as: YtAnalyticsCountriesReturn.self)
+  }
+
+  public func analyticsDemographics(_ options: YtAnalyticsDemographicsOptions = .init()) async throws -> YtAnalyticsDemographicsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "analytics-demographics", body: requestBody, as: YtAnalyticsDemographicsReturn.self)
+  }
+
+  public func analyticsDevices(_ options: YtAnalyticsDevicesOptions = .init()) async throws -> YtAnalyticsDevicesReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "analytics-devices", body: requestBody, as: YtAnalyticsDevicesReturn.self)
+  }
+
+  public func analyticsOverview(_ options: YtAnalyticsOverviewOptions = .init()) async throws -> YtAnalyticsOverviewReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "analytics-overview", body: requestBody, as: YtAnalyticsOverviewReturn.self)
+  }
+
+  public func analyticsSeries(_ options: YtAnalyticsSeriesOptions = .init()) async throws -> YtAnalyticsSeriesReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "analytics-series", body: requestBody, as: YtAnalyticsSeriesReturn.self)
+  }
+
+  public func analyticsTop(_ options: YtAnalyticsTopOptions = .init()) async throws -> YtAnalyticsTopReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "analytics-top", body: requestBody, as: YtAnalyticsTopReturn.self)
+  }
+
+  public func analyticsTraffic(_ options: YtAnalyticsTrafficOptions = .init()) async throws -> YtAnalyticsTrafficReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "analytics-traffic", body: requestBody, as: YtAnalyticsTrafficReturn.self)
+  }
+
+  public func captionDownload(_ captionId: String, _ options: YtCaptionDownloadOptions = .init()) async throws -> YtCaptionDownloadReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["captionId"] = try RaviJSON.fromEncodable(captionId)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "caption-download", body: requestBody, as: YtCaptionDownloadReturn.self)
+  }
+
+  public func captions(_ videoId: String, _ options: YtCaptionsOptions = .init()) async throws -> YtCaptionsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["videoId"] = try RaviJSON.fromEncodable(videoId)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "captions", body: requestBody, as: YtCaptionsReturn.self)
+  }
+
+  public func comments(_ videoId: String, _ options: YtCommentsOptions = .init()) async throws -> YtCommentsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["videoId"] = try RaviJSON.fromEncodable(videoId)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "comments", body: requestBody, as: YtCommentsReturn.self)
+  }
+
+  public func health(_ options: YtHealthOptions = .init()) async throws -> YtHealthReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "health", body: requestBody, as: YtHealthReturn.self)
+  }
+
+  public func info(_ options: YtInfoOptions = .init()) async throws -> YtInfoReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "info", body: requestBody, as: YtInfoReturn.self)
+  }
+
+  public func playlist(_ playlistId: String, _ options: YtPlaylistOptions = .init()) async throws -> YtPlaylistReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["playlistId"] = try RaviJSON.fromEncodable(playlistId)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "playlist", body: requestBody, as: YtPlaylistReturn.self)
+  }
+
+  public func playlistAdd(_ playlistId: String, _ videoId: String, _ options: YtPlaylistAddOptions = .init()) async throws -> YtPlaylistAddReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["playlistId"] = try RaviJSON.fromEncodable(playlistId)
+    requestBody["videoId"] = try RaviJSON.fromEncodable(videoId)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "playlist-add", body: requestBody, as: YtPlaylistAddReturn.self)
+  }
+
+  public func playlistCreate(_ title: String, _ options: YtPlaylistCreateOptions = .init()) async throws -> YtPlaylistCreateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["title"] = try RaviJSON.fromEncodable(title)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "playlist-create", body: requestBody, as: YtPlaylistCreateReturn.self)
+  }
+
+  public func playlistDelete(_ playlistId: String, _ options: YtPlaylistDeleteOptions = .init()) async throws -> YtPlaylistDeleteReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["playlistId"] = try RaviJSON.fromEncodable(playlistId)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "playlist-delete", body: requestBody, as: YtPlaylistDeleteReturn.self)
+  }
+
+  public func playlistRemove(_ playlistItemId: String, _ options: YtPlaylistRemoveOptions = .init()) async throws -> YtPlaylistRemoveReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["playlistItemId"] = try RaviJSON.fromEncodable(playlistItemId)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "playlist-remove", body: requestBody, as: YtPlaylistRemoveReturn.self)
+  }
+
+  public func playlists(_ options: YtPlaylistsOptions = .init()) async throws -> YtPlaylistsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "playlists", body: requestBody, as: YtPlaylistsReturn.self)
+  }
+
+  public func reply(_ commentId: String, _ text: String, _ options: YtReplyOptions = .init()) async throws -> YtReplyReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["commentId"] = try RaviJSON.fromEncodable(commentId)
+    requestBody["text"] = try RaviJSON.fromEncodable(text)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "reply", body: requestBody, as: YtReplyReturn.self)
+  }
+
+  public func search(_ query: String, _ options: YtSearchOptions = .init()) async throws -> YtSearchReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["query"] = try RaviJSON.fromEncodable(query)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "search", body: requestBody, as: YtSearchReturn.self)
+  }
+
+  public func stats(_ id: String, _ options: YtStatsOptions = .init()) async throws -> YtStatsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "stats", body: requestBody, as: YtStatsReturn.self)
+  }
+
+  public func subscriptions(_ options: YtSubscriptionsOptions = .init()) async throws -> YtSubscriptionsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "subscriptions", body: requestBody, as: YtSubscriptionsReturn.self)
+  }
+
+  public func unanswered(_ videoId: String, _ options: YtUnansweredOptions = .init()) async throws -> YtUnansweredReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["videoId"] = try RaviJSON.fromEncodable(videoId)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "unanswered", body: requestBody, as: YtUnansweredReturn.self)
+  }
+
+  public func video(_ id: String, _ options: YtVideoOptions = .init()) async throws -> YtVideoReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "video", body: requestBody, as: YtVideoReturn.self)
+  }
+
+  public func videoCategories(_ options: YtVideoCategoriesOptions = .init()) async throws -> YtVideoCategoriesReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "video-categories", body: requestBody, as: YtVideoCategoriesReturn.self)
+  }
+
+  public func videoDelete(_ id: String, _ options: YtVideoDeleteOptions = .init()) async throws -> YtVideoDeleteReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "video-delete", body: requestBody, as: YtVideoDeleteReturn.self)
+  }
+
+  public func videoUpdate(_ id: String, _ options: YtVideoUpdateOptions = .init()) async throws -> YtVideoUpdateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "video-update", body: requestBody, as: YtVideoUpdateReturn.self)
+  }
+
+  public func videos(_ options: YtVideosOptions = .init()) async throws -> YtVideosReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["yt"], command: "videos", body: requestBody, as: YtVideosReturn.self)
   }
 }

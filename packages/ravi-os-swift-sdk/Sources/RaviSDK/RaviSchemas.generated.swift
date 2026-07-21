@@ -630,6 +630,10 @@ public enum RaviSchemas {
         "description": "Runtime model selector",
         "type": "string"
       },
+      "modelPreset": {
+        "description": "Reference a runtime model preset (mutually exclusive with --model)",
+        "type": "string"
+      },
       "provider": {
         "description": "Runtime provider id",
         "type": "string"
@@ -1407,6 +1411,45 @@ public enum RaviSchemas {
       "key": {
         "type": "string"
       },
+      "sessionOverrides": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "effort": {
+              "enum": [
+                "none",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max",
+                "ultra"
+              ],
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "sessionName": {
+              "type": "string"
+            },
+            "thinking": {
+              "enum": [
+                "off",
+                "normal",
+                "verbose"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionName"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
       "value": {}
     },
     "required": [
@@ -1414,7 +1457,8 @@ public enum RaviSchemas {
       "changed",
       "agentId",
       "key",
-      "value"
+      "value",
+      "sessionOverrides"
     ],
     "type": "object"
   }
@@ -12488,6 +12532,1625 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ChannelsCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "credentialConnection": {
+        "description": "Credential Manager connection id",
+        "type": "string"
+      },
+      "name": {
+        "description": "Channel config name",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Channel provider, e.g. slack",
+        "type": "string"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChannelsCreateReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "channel": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "credentialConnection": {
+            "type": "string"
+          },
+          "defaults": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "deletedAt": {
+            "type": "number"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "provider",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "channel",
+      "changedCount"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChannelsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "limit": {
+        "description": "Page size (default: 50, max: 500)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Number of matching channels to skip (default: 0)",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Filter by provider, e.g. slack",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let ChannelsListReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "channels": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "createdAt": {
+              "type": "number"
+            },
+            "credentialConnection": {
+              "type": "string"
+            },
+            "defaults": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "deletedAt": {
+              "type": "number"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "name",
+            "provider",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "createdAt": {
+              "type": "number"
+            },
+            "credentialConnection": {
+              "type": "string"
+            },
+            "defaults": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "deletedAt": {
+              "type": "number"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "name",
+            "provider",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "channels",
+      "items"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChannelsProbeInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let ChannelsProbeReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "adapters": {
+        "items": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "outbound": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "pid": {
+        "type": "number"
+      },
+      "running": {
+        "type": "boolean"
+      },
+      "startedAt": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "running",
+      "startedAt",
+      "pid",
+      "outbound",
+      "adapters"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChannelsRestartInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "build": {
+        "description": "Use dist bundle from source repo",
+        "type": "boolean"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let ChannelsRestartReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "pm2Status": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "reason": {
+        "type": "string"
+      },
+      "runnerEnv": {
+        "additionalProperties": false,
+        "properties": {
+          "consumeOutbound": {
+            "type": "string"
+          },
+          "slackSocketMode": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "slackSocketMode",
+          "consumeOutbound"
+        ],
+        "type": "object"
+      },
+      "status": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "additionalProperties": false,
+            "properties": {
+              "cpu": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "managed": {
+                "type": "boolean"
+              },
+              "memoryBytes": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "memoryMb": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "pid": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "pmId": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "running": {
+                "type": "boolean"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "managed",
+              "running",
+              "status",
+              "pid",
+              "pmId",
+              "cpu",
+              "memoryBytes",
+              "memoryMb"
+            ],
+            "type": "object"
+          },
+          "pm2Available": {
+            "type": "boolean"
+          },
+          "processName": {
+            "type": "string"
+          },
+          "processes": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "cpu": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "managed": {
+                  "type": "boolean"
+                },
+                "memoryBytes": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "memoryMb": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "pid": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pmId": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "running": {
+                  "type": "boolean"
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "managed",
+                "running",
+                "status",
+                "pid",
+                "pmId",
+                "cpu",
+                "memoryBytes",
+                "memoryMb"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "pm2Available",
+          "processName",
+          "channels",
+          "processes"
+        ],
+        "type": "object"
+      },
+      "target": {
+        "additionalProperties": false,
+        "properties": {
+          "bundlePath": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "sourceProjectRoot": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bundlePath",
+          "cwd"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "action",
+      "changed"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChannelsSetInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "key": {
+        "description": "Property key: provider|enabled|credentialConnection|defaults",
+        "type": "string"
+      },
+      "name": {
+        "description": "Channel config name",
+        "type": "string"
+      },
+      "value": {
+        "description": "Property value, or '-' to clear nullable fields",
+        "type": "string"
+      }
+    },
+    "required": [
+      "key",
+      "name",
+      "value"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChannelsSetReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "changedCount": {
+        "type": "number"
+      },
+      "channel": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "credentialConnection": {
+            "type": "string"
+          },
+          "defaults": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "deletedAt": {
+            "type": "number"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "provider",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "status": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "channel",
+      "changedCount"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChannelsShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "description": "Channel config name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChannelsShowReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "createdAt": {
+        "type": "number"
+      },
+      "credentialConnection": {
+        "type": "string"
+      },
+      "defaults": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "deletedAt": {
+        "type": "number"
+      },
+      "enabled": {
+        "type": "boolean"
+      },
+      "name": {
+        "type": "string"
+      },
+      "provider": {
+        "type": "string"
+      },
+      "updatedAt": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "name",
+      "provider",
+      "createdAt",
+      "updatedAt"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChannelsStartInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "build": {
+        "description": "Use dist bundle from source repo",
+        "type": "boolean"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let ChannelsStartReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "pm2Status": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "reason": {
+        "type": "string"
+      },
+      "runnerEnv": {
+        "additionalProperties": false,
+        "properties": {
+          "consumeOutbound": {
+            "type": "string"
+          },
+          "slackSocketMode": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "slackSocketMode",
+          "consumeOutbound"
+        ],
+        "type": "object"
+      },
+      "status": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "additionalProperties": false,
+            "properties": {
+              "cpu": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "managed": {
+                "type": "boolean"
+              },
+              "memoryBytes": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "memoryMb": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "pid": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "pmId": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "running": {
+                "type": "boolean"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "managed",
+              "running",
+              "status",
+              "pid",
+              "pmId",
+              "cpu",
+              "memoryBytes",
+              "memoryMb"
+            ],
+            "type": "object"
+          },
+          "pm2Available": {
+            "type": "boolean"
+          },
+          "processName": {
+            "type": "string"
+          },
+          "processes": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "cpu": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "managed": {
+                  "type": "boolean"
+                },
+                "memoryBytes": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "memoryMb": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "pid": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pmId": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "running": {
+                  "type": "boolean"
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "managed",
+                "running",
+                "status",
+                "pid",
+                "pmId",
+                "cpu",
+                "memoryBytes",
+                "memoryMb"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "pm2Available",
+          "processName",
+          "channels",
+          "processes"
+        ],
+        "type": "object"
+      },
+      "target": {
+        "additionalProperties": false,
+        "properties": {
+          "bundlePath": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "sourceProjectRoot": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bundlePath",
+          "cwd"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "action",
+      "changed"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChannelsStatusInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let ChannelsStatusReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channels": {
+        "additionalProperties": false,
+        "properties": {
+          "cpu": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "managed": {
+            "type": "boolean"
+          },
+          "memoryBytes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "memoryMb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "pid": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pmId": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "managed",
+          "running",
+          "status",
+          "pid",
+          "pmId",
+          "cpu",
+          "memoryBytes",
+          "memoryMb"
+        ],
+        "type": "object"
+      },
+      "pm2Available": {
+        "type": "boolean"
+      },
+      "processName": {
+        "type": "string"
+      },
+      "processes": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "cpu": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "managed": {
+              "type": "boolean"
+            },
+            "memoryBytes": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "memoryMb": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "pid": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pmId": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "running": {
+              "type": "boolean"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "managed",
+            "running",
+            "status",
+            "pid",
+            "pmId",
+            "cpu",
+            "memoryBytes",
+            "memoryMb"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "pm2Available",
+      "processName",
+      "channels",
+      "processes"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChannelsStopInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let ChannelsStopReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "pm2Status": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "reason": {
+        "type": "string"
+      },
+      "runnerEnv": {
+        "additionalProperties": false,
+        "properties": {
+          "consumeOutbound": {
+            "type": "string"
+          },
+          "slackSocketMode": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "slackSocketMode",
+          "consumeOutbound"
+        ],
+        "type": "object"
+      },
+      "status": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "additionalProperties": false,
+            "properties": {
+              "cpu": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "managed": {
+                "type": "boolean"
+              },
+              "memoryBytes": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "memoryMb": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "pid": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "pmId": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "running": {
+                "type": "boolean"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "managed",
+              "running",
+              "status",
+              "pid",
+              "pmId",
+              "cpu",
+              "memoryBytes",
+              "memoryMb"
+            ],
+            "type": "object"
+          },
+          "pm2Available": {
+            "type": "boolean"
+          },
+          "processName": {
+            "type": "string"
+          },
+          "processes": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "cpu": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "managed": {
+                  "type": "boolean"
+                },
+                "memoryBytes": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "memoryMb": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "pid": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pmId": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "running": {
+                  "type": "boolean"
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "managed",
+                "running",
+                "status",
+                "pid",
+                "pmId",
+                "cpu",
+                "memoryBytes",
+                "memoryMb"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "pm2Available",
+          "processName",
+          "channels",
+          "processes"
+        ],
+        "type": "object"
+      },
+      "target": {
+        "additionalProperties": false,
+        "properties": {
+          "bundlePath": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "sourceProjectRoot": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bundlePath",
+          "cwd"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "action",
+      "changed"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ChatsBackfillProviderTimestampsInputSchema = #"""
   {
     "additionalProperties": false,
@@ -12854,61 +14517,29 @@ public enum RaviSchemas {
   }
   """#
 
-  public static let ChatsListsRecomputeInputSchema = #"""
+  public static let ChatsListsPreviewInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {
-      "list": {
-        "description": "List id or name",
+      "listId": {
+        "description": "Canonical reading-list id (crl_<24 hex>)",
+        "pattern": "^crl_[0-9a-f]{24}$",
         "type": "string"
       },
       "owner": {
-        "description": "Owner scope when resolving list by name",
+        "description": "Optional owner assertion for the canonical list id",
         "type": "string"
       }
     },
     "required": [
-      "list"
+      "listId"
     ],
     "type": "object"
   }
   """#
 
-  public static let ChatsListsRecomputeReturnSchema = #"""
+  public static let ChatsListsPreviewReturnSchema = #"""
   {
-    "$defs": {
-      "__schema0": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "number"
-          },
-          {
-            "type": "boolean"
-          },
-          {
-            "type": "null"
-          },
-          {
-            "items": {
-              "$ref": "#/$defs/__schema0"
-            },
-            "type": "array"
-          },
-          {
-            "additionalProperties": {
-              "$ref": "#/$defs/__schema0"
-            },
-            "propertyNames": {
-              "type": "string"
-            },
-            "type": "object"
-          }
-        ]
-      }
-    },
     "additionalProperties": false,
     "properties": {
       "list": {
@@ -12926,15 +14557,6 @@ public enum RaviSchemas {
           "id": {
             "type": "string"
           },
-          "metadata": {
-            "additionalProperties": {
-              "$ref": "#/$defs/__schema0"
-            },
-            "propertyNames": {
-              "type": "string"
-            },
-            "type": "object"
-          },
           "mode": {
             "type": "string"
           },
@@ -12947,14 +14569,299 @@ public enum RaviSchemas {
           "ownerType": {
             "type": "string"
           },
-          "selector": {
-            "additionalProperties": {
-              "$ref": "#/$defs/__schema0"
+          "updatedAt": {
+            "type": "number"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "ownerType",
+          "ownerId",
+          "visibility",
+          "mode",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "preview": {
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "additionalProperties": false,
+            "properties": {
+              "preserved": {
+                "type": "number"
+              },
+              "selector": {
+                "type": "number"
+              },
+              "total": {
+                "type": "number"
+              }
             },
-            "propertyNames": {
-              "type": "string"
-            },
+            "required": [
+              "total",
+              "selector",
+              "preserved"
+            ],
             "type": "object"
+          },
+          "diff": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "added": {
+                    "type": "number"
+                  },
+                  "eligible": {
+                    "type": "number"
+                  },
+                  "kept": {
+                    "type": "number"
+                  },
+                  "preserved": {
+                    "type": "number"
+                  },
+                  "removed": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "added",
+                  "removed",
+                  "kept",
+                  "preserved",
+                  "eligible"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dryRun": {
+            "const": true,
+            "type": "boolean"
+          },
+          "list": {
+            "additionalProperties": false,
+            "properties": {
+              "archivedAt": {
+                "type": "number"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "description": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "mode": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "ownerId": {
+                "type": "string"
+              },
+              "ownerType": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "visibility": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "ownerType",
+              "ownerId",
+              "visibility",
+              "mode",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          "validation": {
+            "additionalProperties": false,
+            "properties": {
+              "canApply": {
+                "type": "boolean"
+              },
+              "conditions": {
+                "additionalProperties": false,
+                "properties": {
+                  "negative": {
+                    "type": "number"
+                  },
+                  "positive": {
+                    "type": "number"
+                  },
+                  "supported": {
+                    "type": "number"
+                  },
+                  "total": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "total",
+                  "supported",
+                  "positive",
+                  "negative"
+                ],
+                "type": "object"
+              },
+              "issues": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "severity": {
+                      "enum": [
+                        "error",
+                        "warning"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "severity",
+                    "message"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "match": {
+                "enum": [
+                  "all",
+                  "any"
+                ],
+                "type": "string"
+              },
+              "riskLevel": {
+                "enum": [
+                  "low",
+                  "high"
+                ],
+                "type": "string"
+              },
+              "scope": {
+                "enum": [
+                  "contact",
+                  "chat"
+                ],
+                "type": "string"
+              },
+              "valid": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "valid",
+              "canApply",
+              "riskLevel",
+              "scope",
+              "match",
+              "conditions",
+              "issues"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "list",
+          "dryRun",
+          "validation",
+          "current",
+          "diff"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "list",
+      "preview"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChatsListsRecomputeInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "listId": {
+        "description": "Canonical reading-list id (crl_<24 hex>)",
+        "pattern": "^crl_[0-9a-f]{24}$",
+        "type": "string"
+      },
+      "owner": {
+        "description": "Optional owner assertion for the canonical list id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "listId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChatsListsRecomputeReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "list": {
+        "additionalProperties": false,
+        "properties": {
+          "archivedAt": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "ownerType": {
+            "type": "string"
           },
           "updatedAt": {
             "type": "number"
@@ -12981,29 +14888,11 @@ public enum RaviSchemas {
           "added": {
             "type": "number"
           },
-          "addedChatIds": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "eligible": {
             "type": "number"
           },
-          "eligibleChatIds": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "kept": {
             "type": "number"
-          },
-          "keptChatIds": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
           },
           "list": {
             "additionalProperties": false,
@@ -13020,15 +14909,6 @@ public enum RaviSchemas {
               "id": {
                 "type": "string"
               },
-              "metadata": {
-                "additionalProperties": {
-                  "$ref": "#/$defs/__schema0"
-                },
-                "propertyNames": {
-                  "type": "string"
-                },
-                "type": "object"
-              },
               "mode": {
                 "type": "string"
               },
@@ -13040,15 +14920,6 @@ public enum RaviSchemas {
               },
               "ownerType": {
                 "type": "string"
-              },
-              "selector": {
-                "additionalProperties": {
-                  "$ref": "#/$defs/__schema0"
-                },
-                "propertyNames": {
-                  "type": "string"
-                },
-                "type": "object"
               },
               "updatedAt": {
                 "type": "number"
@@ -13072,39 +14943,12 @@ public enum RaviSchemas {
           "preserved": {
             "type": "number"
           },
-          "preservedChatIds": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "removed": {
             "type": "number"
-          },
-          "removedChatIds": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "selector": {
-            "additionalProperties": {
-              "$ref": "#/$defs/__schema0"
-            },
-            "propertyNames": {
-              "type": "string"
-            },
-            "type": "object"
           }
         },
         "required": [
           "list",
-          "selector",
-          "eligibleChatIds",
-          "addedChatIds",
-          "removedChatIds",
-          "keptChatIds",
-          "preservedChatIds",
           "added",
           "removed",
           "kept",
@@ -13159,6 +15003,203 @@ public enum RaviSchemas {
   {
     "additionalProperties": {},
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let ChatsListsShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "listId": {
+        "description": "Canonical reading-list id (crl_<24 hex>)",
+        "pattern": "^crl_[0-9a-f]{24}$",
+        "type": "string"
+      },
+      "owner": {
+        "description": "Optional owner assertion for the canonical list id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "listId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChatsListsShowReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "current": {
+        "additionalProperties": false,
+        "properties": {
+          "preserved": {
+            "type": "number"
+          },
+          "selector": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "total",
+          "selector",
+          "preserved"
+        ],
+        "type": "object"
+      },
+      "list": {
+        "additionalProperties": false,
+        "properties": {
+          "archivedAt": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "ownerType": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "ownerType",
+          "ownerId",
+          "visibility",
+          "mode",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "validation": {
+        "additionalProperties": false,
+        "properties": {
+          "canApply": {
+            "type": "boolean"
+          },
+          "conditions": {
+            "additionalProperties": false,
+            "properties": {
+              "negative": {
+                "type": "number"
+              },
+              "positive": {
+                "type": "number"
+              },
+              "supported": {
+                "type": "number"
+              },
+              "total": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "total",
+              "supported",
+              "positive",
+              "negative"
+            ],
+            "type": "object"
+          },
+          "issues": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "severity": {
+                  "enum": [
+                    "error",
+                    "warning"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "severity",
+                "message"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "match": {
+            "enum": [
+              "all",
+              "any"
+            ],
+            "type": "string"
+          },
+          "riskLevel": {
+            "enum": [
+              "low",
+              "high"
+            ],
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "contact",
+              "chat"
+            ],
+            "type": "string"
+          },
+          "valid": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "valid",
+          "canApply",
+          "riskLevel",
+          "scope",
+          "match",
+          "conditions",
+          "issues"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "list",
+      "validation",
+      "current"
+    ],
     "type": "object"
   }
   """#
@@ -21104,6 +23145,537 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CredentialsConnectionsDisableInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Connection id",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Provider id",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let CredentialsConnectionsDisableReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "backend": {
+                "enum": [
+                  "keychain",
+                  "vault"
+                ],
+                "type": "string"
+              },
+              "connection": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "provider": {
+                "type": "string"
+              },
+              "scopes": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "secretRef": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "disabled"
+                ],
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "provider",
+              "connection",
+              "label",
+              "backend",
+              "secretRef",
+              "scopes",
+              "status",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "connection"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CredentialsConnectionsEnableInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Connection id",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Provider id",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let CredentialsConnectionsEnableReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "backend": {
+                "enum": [
+                  "keychain",
+                  "vault"
+                ],
+                "type": "string"
+              },
+              "connection": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "provider": {
+                "type": "string"
+              },
+              "scopes": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "secretRef": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "disabled"
+                ],
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "provider",
+              "connection",
+              "label",
+              "backend",
+              "secretRef",
+              "scopes",
+              "status",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "connection"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CredentialsConnectionsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "all": {
+        "description": "Include disabled connections",
+        "type": "boolean"
+      },
+      "limit": {
+        "default": "50",
+        "description": "Page size",
+        "type": "string"
+      },
+      "offset": {
+        "default": "0",
+        "description": "Offset",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Filter by provider, e.g. slack",
+        "type": "string"
+      },
+      "status": {
+        "description": "Filter by status: active or disabled",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let CredentialsConnectionsListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "backend": {
+              "enum": [
+                "keychain",
+                "vault"
+              ],
+              "type": "string"
+            },
+            "connection": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "provider": {
+              "type": "string"
+            },
+            "scopes": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "secretRef": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "active",
+                "disabled"
+              ],
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "provider",
+            "connection",
+            "label",
+            "backend",
+            "secretRef",
+            "scopes",
+            "status",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total"
+        ],
+        "type": "object"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "items"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CredentialsConnectionsShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Connection id, e.g. main",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Provider id, e.g. slack",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let CredentialsConnectionsShowReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "enum": [
+              "keychain",
+              "vault"
+            ],
+            "type": "string"
+          },
+          "connection": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "secretRef": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "disabled"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "connection",
+          "label",
+          "backend",
+          "secretRef",
+          "scopes",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "connection"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CredentialsPoliciesExplainInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "description": "Provider action, e.g. messages.send",
+        "type": "string"
+      },
+      "connection": {
+        "description": "Connection id",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Provider id",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let CredentialsPoliciesExplainReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "approval": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "required",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "connection": {
+        "type": "string"
+      },
+      "provider": {
+        "type": "string"
+      },
+      "requiredCapabilities": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "provider",
+      "connection",
+      "action",
+      "requiredCapabilities",
+      "approval"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CrmAccountInputSchema = #"""
   {
     "additionalProperties": false,
@@ -24057,6 +26629,10 @@ public enum RaviSchemas {
         "description": "Alias for --shell",
         "type": "string"
       },
+      "idempotencyKey": {
+        "description": "Durable create idempotency key",
+        "type": "string"
+      },
       "isolated": {
         "description": "Run in isolated session",
         "type": "boolean"
@@ -24941,7 +27517,20 @@ public enum RaviSchemas {
       },
       "self": {
         "additionalProperties": {},
-        "properties": {},
+        "properties": {
+          "org_id": {
+            "type": "string"
+          },
+          "principal_type": {
+            "type": "string"
+          },
+          "service_user_id": {
+            "type": "string"
+          },
+          "service_user_name": {
+            "type": "string"
+          }
+        },
         "type": "object"
       }
     },
@@ -24976,7 +27565,214 @@ public enum RaviSchemas {
     "properties": {
       "session": {
         "additionalProperties": {},
-        "properties": {},
+        "properties": {
+          "acusConsumed": {
+            "type": "number"
+          },
+          "devinId": {
+            "type": "string"
+          },
+          "devinMode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effectiveCreateAsUserId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "isArchived": {
+            "type": "boolean"
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxAcuLimit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxAcuLimitSource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "originId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "originType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proxRunId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resumable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "serviceUserId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusDetail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "url": {
+            "type": "string"
+          },
+          "userId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "devinId",
+          "title",
+          "status",
+          "statusDetail",
+          "url",
+          "tags",
+          "updatedAt"
+        ],
         "type": "object"
       },
       "status": {
@@ -25019,7 +27815,36 @@ public enum RaviSchemas {
       "attachments": {
         "items": {
           "additionalProperties": {},
-          "properties": {},
+          "properties": {
+            "attachmentId": {
+              "type": "string"
+            },
+            "contentType": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "attachmentId",
+            "name",
+            "source",
+            "url"
+          ],
           "type": "object"
         },
         "type": "array"
@@ -25045,11 +27870,11 @@ public enum RaviSchemas {
     "additionalProperties": false,
     "properties": {
       "advancedMode": {
-        "description": "analyze|create|improve|batch|manage",
+        "description": "Legacy: analyze|create|improve|batch|manage",
         "type": "string"
       },
       "asUser": {
-        "description": "create_as_user_id",
+        "description": "create_as_user_id (impersonate user)",
         "type": "string"
       },
       "attachmentUrl": {
@@ -25067,6 +27892,14 @@ public enum RaviSchemas {
         "description": "Child playbook ID",
         "type": "string"
       },
+      "devinId": {
+        "description": "Idempotent session creation key",
+        "type": "string"
+      },
+      "devinMode": {
+        "description": "Agent mode: normal|fast|lite|ultra",
+        "type": "string"
+      },
       "knowledge": {
         "description": "Knowledge note IDs",
         "items": {
@@ -25082,6 +27915,15 @@ public enum RaviSchemas {
         "default": true,
         "description": "Intentionally omit max_acu_limit",
         "type": "boolean"
+      },
+      "noResumable": {
+        "default": true,
+        "description": "Disposable session, do not preserve VM state",
+        "type": "boolean"
+      },
+      "platform": {
+        "description": "VM platform override (org-specific)",
+        "type": "string"
       },
       "playbook": {
         "description": "Playbook ID",
@@ -25110,8 +27952,12 @@ public enum RaviSchemas {
         },
         "type": "array"
       },
+      "resumable": {
+        "description": "Preserve VM state for resume (default: true)",
+        "type": "boolean"
+      },
       "secret": {
-        "description": "Secret IDs",
+        "description": "Secret IDs (org-level secret references)",
         "items": {
           "type": "string"
         },
@@ -25123,6 +27969,17 @@ public enum RaviSchemas {
           "type": "string"
         },
         "type": "array"
+      },
+      "sessionSecret": {
+        "description": "Inline session secrets (key=value); sensitive by default",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "structuredOutputRequired": {
+        "description": "Require structured output before turn ends",
+        "type": "boolean"
       },
       "structuredOutputSchema": {
         "description": "JSON schema for structured output",
@@ -25152,6 +28009,16 @@ public enum RaviSchemas {
   {
     "additionalProperties": {},
     "properties": {
+      "devinMode": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "maxAcuLimit": {
         "anyOf": [
           {
@@ -25165,9 +28032,236 @@ public enum RaviSchemas {
       "maxAcuLimitSource": {
         "type": "string"
       },
+      "platform": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "resumable": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "session": {
         "additionalProperties": {},
-        "properties": {},
+        "properties": {
+          "acusConsumed": {
+            "type": "number"
+          },
+          "devinId": {
+            "type": "string"
+          },
+          "devinMode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effectiveCreateAsUserId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "isArchived": {
+            "type": "boolean"
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxAcuLimit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxAcuLimitSource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "originId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "originType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proxRunId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resumable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "serviceUserId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusDetail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "url": {
+            "type": "string"
+          },
+          "userId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "devinId",
+          "title",
+          "status",
+          "statusDetail",
+          "url",
+          "tags",
+          "updatedAt"
+        ],
         "type": "object"
       },
       "status": {
@@ -25211,12 +28305,248 @@ public enum RaviSchemas {
     "properties": {
       "insights": {
         "additionalProperties": {},
-        "properties": {},
+        "properties": {
+          "analysis": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {},
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "numDevinMessages": {
+            "type": "number"
+          },
+          "numUserMessages": {
+            "type": "number"
+          },
+          "sessionSize": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
         "type": "object"
       },
       "session": {
         "additionalProperties": {},
-        "properties": {},
+        "properties": {
+          "acusConsumed": {
+            "type": "number"
+          },
+          "devinId": {
+            "type": "string"
+          },
+          "devinMode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effectiveCreateAsUserId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "isArchived": {
+            "type": "boolean"
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxAcuLimit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxAcuLimitSource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "originId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "originType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proxRunId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resumable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "serviceUserId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusDetail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "url": {
+            "type": "string"
+          },
+          "userId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "devinId",
+          "title",
+          "status",
+          "statusDetail",
+          "url",
+          "tags",
+          "updatedAt"
+        ],
         "type": "object"
       },
       "summary": {
@@ -25338,7 +28668,214 @@ public enum RaviSchemas {
       "sessions": {
         "items": {
           "additionalProperties": {},
-          "properties": {},
+          "properties": {
+            "acusConsumed": {
+              "type": "number"
+            },
+            "devinId": {
+              "type": "string"
+            },
+            "devinMode": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "effectiveCreateAsUserId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "isArchived": {
+              "type": "boolean"
+            },
+            "lastSyncedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxAcuLimit": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "maxAcuLimitSource": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "origin": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "originId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "originType": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "platform": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "projectId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "proxRunId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "resumable": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "serviceUserId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string"
+            },
+            "statusDetail": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "tags": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "taskId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedAt": {
+              "type": "number"
+            },
+            "url": {
+              "type": "string"
+            },
+            "userId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "devinId",
+            "title",
+            "status",
+            "statusDetail",
+            "url",
+            "tags",
+            "updatedAt"
+          ],
           "type": "object"
         },
         "type": "array"
@@ -25391,7 +28928,26 @@ public enum RaviSchemas {
       "messages": {
         "items": {
           "additionalProperties": {},
-          "properties": {},
+          "properties": {
+            "createdAt": {
+              "type": "number"
+            },
+            "eventId": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "eventId",
+            "createdAt",
+            "source",
+            "message"
+          ],
           "type": "object"
         },
         "type": "array"
@@ -25440,7 +28996,214 @@ public enum RaviSchemas {
     "properties": {
       "session": {
         "additionalProperties": {},
-        "properties": {},
+        "properties": {
+          "acusConsumed": {
+            "type": "number"
+          },
+          "devinId": {
+            "type": "string"
+          },
+          "devinMode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effectiveCreateAsUserId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "isArchived": {
+            "type": "boolean"
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxAcuLimit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxAcuLimitSource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "originId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "originType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proxRunId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resumable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "serviceUserId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusDetail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "url": {
+            "type": "string"
+          },
+          "userId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "devinId",
+          "title",
+          "status",
+          "statusDetail",
+          "url",
+          "tags",
+          "updatedAt"
+        ],
         "type": "object"
       },
       "status": {
@@ -25482,7 +29245,214 @@ public enum RaviSchemas {
     "properties": {
       "session": {
         "additionalProperties": {},
-        "properties": {},
+        "properties": {
+          "acusConsumed": {
+            "type": "number"
+          },
+          "devinId": {
+            "type": "string"
+          },
+          "devinMode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effectiveCreateAsUserId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "isArchived": {
+            "type": "boolean"
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxAcuLimit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxAcuLimitSource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "originId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "originType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proxRunId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resumable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "serviceUserId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusDetail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "url": {
+            "type": "string"
+          },
+          "userId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "devinId",
+          "title",
+          "status",
+          "statusDetail",
+          "url",
+          "tags",
+          "updatedAt"
+        ],
         "type": "object"
       }
     },
@@ -25547,7 +29517,214 @@ public enum RaviSchemas {
       },
       "session": {
         "additionalProperties": {},
-        "properties": {},
+        "properties": {
+          "acusConsumed": {
+            "type": "number"
+          },
+          "devinId": {
+            "type": "string"
+          },
+          "devinMode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effectiveCreateAsUserId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "isArchived": {
+            "type": "boolean"
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxAcuLimit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxAcuLimitSource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "originId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "originType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proxRunId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resumable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "serviceUserId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusDetail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "url": {
+            "type": "string"
+          },
+          "userId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "devinId",
+          "title",
+          "status",
+          "statusDetail",
+          "url",
+          "tags",
+          "updatedAt"
+        ],
         "type": "object"
       }
     },
@@ -25591,7 +29768,214 @@ public enum RaviSchemas {
       },
       "session": {
         "additionalProperties": {},
-        "properties": {},
+        "properties": {
+          "acusConsumed": {
+            "type": "number"
+          },
+          "devinId": {
+            "type": "string"
+          },
+          "devinMode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effectiveCreateAsUserId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "isArchived": {
+            "type": "boolean"
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxAcuLimit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxAcuLimitSource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "originId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "originType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proxRunId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resumable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "serviceUserId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusDetail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "url": {
+            "type": "string"
+          },
+          "userId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "devinId",
+          "title",
+          "status",
+          "statusDetail",
+          "url",
+          "tags",
+          "updatedAt"
+        ],
         "type": "object"
       },
       "status": {
@@ -38604,6 +42988,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "reconcile": {
+        "description": "attach-missing|detach-disabled|refresh-profile|full-reconcile",
+        "type": "string"
+      },
       "session": {
         "description": "Source session name or key",
         "type": "string"
@@ -38984,6 +43372,10 @@ public enum RaviSchemas {
       },
       "scope": {
         "description": "global|agent|session|task|profile|project|tag",
+        "type": "string"
+      },
+      "selector": {
+        "description": "Predicate over source.*, turn.* and event.*; use 'clear' to remove",
         "type": "string"
       },
       "sourceAgent": {
@@ -44656,6 +49048,924 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let RuntimePresetsCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "description": {
+        "description": "Human-readable description",
+        "type": "string"
+      },
+      "disabled": {
+        "description": "Create in the disabled state",
+        "type": "boolean"
+      },
+      "id": {
+        "description": "Stable preset id/slug",
+        "type": "string"
+      },
+      "model": {
+        "description": "Model selector",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Runtime provider id (immutable)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimePresetsCreateReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "enum": [
+          "create",
+          "set-model",
+          "enable",
+          "disable",
+          "delete"
+        ],
+        "type": "string"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "preset": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "model",
+          "description",
+          "enabled",
+          "version",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "action",
+      "changed",
+      "dryRun",
+      "preset"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimePresetsDeleteInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "dryRun": {
+        "description": "Preview without persisting",
+        "type": "boolean"
+      },
+      "id": {
+        "description": "Preset id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimePresetsDeleteReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "enum": [
+          "create",
+          "set-model",
+          "enable",
+          "disable",
+          "delete"
+        ],
+        "type": "string"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "preset": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "model",
+          "description",
+          "enabled",
+          "version",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "action",
+      "changed",
+      "dryRun",
+      "preset"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimePresetsDisableInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "dryRun": {
+        "description": "Preview without persisting or bumping the version",
+        "type": "boolean"
+      },
+      "id": {
+        "description": "Preset id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimePresetsDisableReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "enum": [
+          "create",
+          "set-model",
+          "enable",
+          "disable",
+          "delete"
+        ],
+        "type": "string"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "preset": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "model",
+          "description",
+          "enabled",
+          "version",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "action",
+      "changed",
+      "dryRun",
+      "preset"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimePresetsEnableInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "dryRun": {
+        "description": "Preview without persisting or bumping the version",
+        "type": "boolean"
+      },
+      "id": {
+        "description": "Preset id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimePresetsEnableReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "enum": [
+          "create",
+          "set-model",
+          "enable",
+          "disable",
+          "delete"
+        ],
+        "type": "string"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "preset": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "model",
+          "description",
+          "enabled",
+          "version",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "action",
+      "changed",
+      "dryRun",
+      "preset"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimePresetsImpactInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Preset id",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Page size (default: 50, max: 500)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Number of agents to skip (default: 0)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimePresetsImpactReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agents": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "effectiveModel": {
+              "type": "string"
+            },
+            "modelSource": {
+              "const": "agent_preset",
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "provider": {
+              "type": "string"
+            },
+            "shadowingSessions": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "agentId",
+            "name",
+            "provider",
+            "effectiveModel",
+            "modelSource",
+            "shadowingSessions"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "correctionCommand": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "enabled": {
+        "type": "boolean"
+      },
+      "limit": {
+        "type": "number"
+      },
+      "model": {
+        "type": "string"
+      },
+      "offset": {
+        "type": "number"
+      },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "presetId": {
+        "type": "string"
+      },
+      "provider": {
+        "type": "string"
+      },
+      "referenced": {
+        "type": "boolean"
+      },
+      "referencingAgentsTotal": {
+        "type": "number"
+      },
+      "shadowingSessionsTotal": {
+        "type": "number"
+      },
+      "version": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "presetId",
+      "version",
+      "provider",
+      "model",
+      "enabled",
+      "referencingAgentsTotal",
+      "shadowingSessionsTotal",
+      "agents",
+      "limit",
+      "offset",
+      "referenced",
+      "correctionCommand",
+      "pagination"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimePresetsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "disabled": {
+        "description": "Only disabled presets",
+        "type": "boolean"
+      },
+      "enabled": {
+        "description": "Only enabled presets",
+        "type": "boolean"
+      },
+      "limit": {
+        "description": "Page size (default: 50, max: 500)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Number of presets to skip (default: 0)",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Filter by provider",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimePresetsListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCommand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "offset": {
+            "type": "number"
+          },
+          "returned": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "returned",
+          "total",
+          "hasMore",
+          "nextOffset",
+          "nextCommand"
+        ],
+        "type": "object"
+      },
+      "presets": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "createdAt": {
+              "type": "number"
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "id": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            },
+            "version": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "provider",
+            "model",
+            "description",
+            "enabled",
+            "version",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "pagination",
+      "presets"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimePresetsSetInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "dryRun": {
+        "description": "Preview without persisting or bumping the version",
+        "type": "boolean"
+      },
+      "field": {
+        "description": "Field to set (model)",
+        "type": "string"
+      },
+      "id": {
+        "description": "Preset id",
+        "type": "string"
+      },
+      "value": {
+        "description": "New value",
+        "type": "string"
+      }
+    },
+    "required": [
+      "field",
+      "id",
+      "value"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimePresetsSetReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "enum": [
+          "create",
+          "set-model",
+          "enable",
+          "disable",
+          "delete"
+        ],
+        "type": "string"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "preset": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "model",
+          "description",
+          "enabled",
+          "version",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "action",
+      "changed",
+      "dryRun",
+      "preset"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimePresetsShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Preset id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let RuntimePresetsShowReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "preset": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "model",
+          "description",
+          "enabled",
+          "version",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "referencingAgentsTotal": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "preset",
+      "referencingAgentsTotal"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SdkClientCheckInputSchema = #"""
   {
     "additionalProperties": false,
@@ -44827,7 +50137,7 @@ public enum RaviSchemas {
     "additionalProperties": false,
     "properties": {
       "out": {
-        "description": "Write spec JSON to this path",
+        "description": "Write spec JSON to this path (default: docs/openapi.json)",
         "type": "string"
       },
       "stdout": {
@@ -46652,7 +51962,7 @@ public enum RaviSchemas {
     "additionalProperties": false,
     "properties": {
       "action": {
-        "description": "get|set|create|pause|resume|complete|clear|account",
+        "description": "get|set|create|pause|resume|block|complete|clear|account",
         "type": "string"
       },
       "budget": {
@@ -46669,6 +51979,10 @@ public enum RaviSchemas {
       },
       "project": {
         "description": "Optional project id link for set/create",
+        "type": "string"
+      },
+      "reason": {
+        "description": "Concrete reason for blocking",
         "type": "string"
       },
       "seconds": {
@@ -46694,8 +52008,139 @@ public enum RaviSchemas {
 
   public static let SessionsGoalReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "type": "string"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "goal": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "blockedReason": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "goalId": {
+                "type": "string"
+              },
+              "objective": {
+                "type": "string"
+              },
+              "projectId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sessionKey": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "paused",
+                  "budget_limited",
+                  "blocked",
+                  "complete"
+                ],
+                "type": "string"
+              },
+              "taskId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "timeUsedSeconds": {
+                "type": "number"
+              },
+              "tokenBudget": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tokensUsed": {
+                "type": "number"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "sessionKey",
+              "goalId",
+              "objective",
+              "status",
+              "tokenBudget",
+              "tokensUsed",
+              "timeUsedSeconds",
+              "taskId",
+              "projectId",
+              "blockedReason",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "session": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "sessionKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionKey",
+          "agentId",
+          "label"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "action",
+      "changed",
+      "session",
+      "goal"
+    ],
     "type": "object"
   }
   """#
@@ -46997,9 +52442,142 @@ public enum RaviSchemas {
 
   public static let SessionsReadReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
-    "type": "object"
+    "anyOf": [
+      {
+        "additionalProperties": {},
+        "properties": {
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "messages": {
+            "items": {
+              "anyOf": [
+                {
+                  "additionalProperties": {},
+                  "properties": {
+                    "role": {
+                      "enum": [
+                        "user",
+                        "assistant"
+                      ],
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "time": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "role",
+                    "text",
+                    "time"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": {},
+                  "properties": {
+                    "content": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "role",
+                    "content",
+                    "createdAt",
+                    "source"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "type": "array"
+          },
+          "session": {
+            "additionalProperties": {},
+            "properties": {
+              "agentId": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "sessionKey": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "sessionKey",
+              "label",
+              "agentId"
+            ],
+            "type": "object"
+          },
+          "totalMessages": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "transcript": {
+            "additionalProperties": {},
+            "properties": {
+              "available": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "available"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "session",
+          "transcript",
+          "messages"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": {},
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string"
+          },
+          "meta": {},
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "type": "object"
+      }
+    ]
   }
   """#
 
@@ -47487,7 +53065,98 @@ public enum RaviSchemas {
   public static let SessionsSendReturnSchema = #"""
   {
     "additionalProperties": {},
-    "properties": {},
+    "properties": {
+      "action": {
+        "const": "send",
+        "type": "string"
+      },
+      "createdSession": {
+        "type": "boolean"
+      },
+      "delivery": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "mode": {
+        "enum": [
+          "fire-and-forget",
+          "wait"
+        ],
+        "type": "string"
+      },
+      "promptLength": {
+        "maximum": 9007199254740991,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "published": {
+        "type": "boolean"
+      },
+      "response": {
+        "additionalProperties": false,
+        "properties": {
+          "length": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "length",
+          "text"
+        ],
+        "type": "object"
+      },
+      "session": {
+        "additionalProperties": {},
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sessionKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionKey",
+          "label",
+          "agentId"
+        ],
+        "type": "object"
+      },
+      "thread": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "action",
+      "mode",
+      "published",
+      "createdSession",
+      "session",
+      "promptLength",
+      "delivery",
+      "thread"
+    ],
     "type": "object"
   }
   """#
@@ -47521,6 +53190,474 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsSetEffortInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "level": {
+        "description": "Reasoning effort (none|minimal|low|medium|high|xhigh|max|ultra) or 'clear'",
+        "type": "string"
+      },
+      "nameOrKey": {
+        "description": "Session name or key",
+        "type": "string"
+      }
+    },
+    "required": [
+      "level",
+      "nameOrKey"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsSetEffortReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "const": "set-effort",
+        "type": "string"
+      },
+      "after": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "type": "string"
+              },
+              "effectiveModel": {
+                "type": "string"
+              },
+              "effectiveProvider": {
+                "type": "string"
+              },
+              "effortOverride": {
+                "enum": [
+                  "none",
+                  "minimal",
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max",
+                  "ultra"
+                ],
+                "type": "string"
+              },
+              "ephemeral": {
+                "type": "boolean"
+              },
+              "expiresAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "label": {
+                "type": "string"
+              },
+              "modelOverride": {
+                "type": "string"
+              },
+              "modelPresetId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "modelPresetVersion": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "modelSource": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "runtimeOptions": {
+                "additionalProperties": false,
+                "properties": {
+                  "effort": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "source": {
+                        "enum": [
+                          "session_override",
+                          "agent_default",
+                          "runtime_default"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "enum": [
+                          "none",
+                          "minimal",
+                          "low",
+                          "medium",
+                          "high",
+                          "xhigh",
+                          "max",
+                          "ultra"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "source"
+                    ],
+                    "type": "object"
+                  },
+                  "model": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "source": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "source"
+                    ],
+                    "type": "object"
+                  },
+                  "thinking": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "source": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "source"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "model",
+                  "effort",
+                  "thinking"
+                ],
+                "type": "object"
+              },
+              "sessionKey": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "sessionKey",
+              "label",
+              "agentId",
+              "effectiveProvider",
+              "effectiveModel",
+              "modelSource",
+              "modelPresetId",
+              "modelPresetVersion",
+              "ephemeral",
+              "expiresAt",
+              "runtimeOptions"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "appliesOn": {
+        "const": "next-turn-runtime-restart",
+        "type": "string"
+      },
+      "before": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "effectiveModel": {
+            "type": "string"
+          },
+          "effectiveProvider": {
+            "type": "string"
+          },
+          "effortOverride": {
+            "enum": [
+              "none",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max",
+              "ultra"
+            ],
+            "type": "string"
+          },
+          "ephemeral": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "modelOverride": {
+            "type": "string"
+          },
+          "modelPresetId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "modelPresetVersion": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "modelSource": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "runtimeOptions": {
+            "additionalProperties": false,
+            "properties": {
+              "effort": {
+                "additionalProperties": false,
+                "properties": {
+                  "source": {
+                    "enum": [
+                      "session_override",
+                      "agent_default",
+                      "runtime_default"
+                    ],
+                    "type": "string"
+                  },
+                  "value": {
+                    "enum": [
+                      "none",
+                      "minimal",
+                      "low",
+                      "medium",
+                      "high",
+                      "xhigh",
+                      "max",
+                      "ultra"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "value",
+                  "source"
+                ],
+                "type": "object"
+              },
+              "model": {
+                "additionalProperties": false,
+                "properties": {
+                  "source": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "value",
+                  "source"
+                ],
+                "type": "object"
+              },
+              "thinking": {
+                "additionalProperties": false,
+                "properties": {
+                  "source": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "value",
+                  "source"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "model",
+              "effort",
+              "thinking"
+            ],
+            "type": "object"
+          },
+          "sessionKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionKey",
+          "label",
+          "agentId",
+          "effectiveProvider",
+          "effectiveModel",
+          "modelSource",
+          "modelPresetId",
+          "modelPresetVersion",
+          "ephemeral",
+          "expiresAt",
+          "runtimeOptions"
+        ],
+        "type": "object"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "effectiveEffort": {
+        "enum": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max",
+          "ultra"
+        ],
+        "type": "string"
+      },
+      "effectiveEffortSource": {
+        "enum": [
+          "session_override",
+          "agent_default",
+          "runtime_default"
+        ],
+        "type": "string"
+      },
+      "effortOverride": {
+        "anyOf": [
+          {
+            "enum": [
+              "none",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max",
+              "ultra"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "sessionKey": {
+        "type": "string"
+      },
+      "sessionName": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "action",
+      "changed",
+      "sessionKey",
+      "sessionName",
+      "before",
+      "after",
+      "effortOverride",
+      "effectiveEffort",
+      "effectiveEffortSource",
+      "appliesOn"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SessionsSetModelInputSchema = #"""
   {
     "additionalProperties": false,
@@ -47546,6 +53683,445 @@ public enum RaviSchemas {
   {
     "additionalProperties": {},
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsSetProviderInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "nameOrKey": {
+        "description": "Session name or key",
+        "type": "string"
+      },
+      "provider": {
+        "description": "Runtime provider id (codex, claude, pi) or 'clear' to remove override",
+        "type": "string"
+      }
+    },
+    "required": [
+      "nameOrKey",
+      "provider"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsSetProviderReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "const": "set-provider",
+        "type": "string"
+      },
+      "after": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "type": "string"
+              },
+              "effectiveModel": {
+                "type": "string"
+              },
+              "effectiveProvider": {
+                "type": "string"
+              },
+              "effortOverride": {
+                "enum": [
+                  "none",
+                  "minimal",
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max",
+                  "ultra"
+                ],
+                "type": "string"
+              },
+              "ephemeral": {
+                "type": "boolean"
+              },
+              "expiresAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "label": {
+                "type": "string"
+              },
+              "modelOverride": {
+                "type": "string"
+              },
+              "modelPresetId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "modelPresetVersion": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "modelSource": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "runtimeOptions": {
+                "additionalProperties": false,
+                "properties": {
+                  "effort": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "source": {
+                        "enum": [
+                          "session_override",
+                          "agent_default",
+                          "runtime_default"
+                        ],
+                        "type": "string"
+                      },
+                      "value": {
+                        "enum": [
+                          "none",
+                          "minimal",
+                          "low",
+                          "medium",
+                          "high",
+                          "xhigh",
+                          "max",
+                          "ultra"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "source"
+                    ],
+                    "type": "object"
+                  },
+                  "model": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "source": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "source"
+                    ],
+                    "type": "object"
+                  },
+                  "thinking": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "source": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "source"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "model",
+                  "effort",
+                  "thinking"
+                ],
+                "type": "object"
+              },
+              "sessionKey": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "sessionKey",
+              "label",
+              "agentId",
+              "effectiveProvider",
+              "effectiveModel",
+              "modelSource",
+              "modelPresetId",
+              "modelPresetVersion",
+              "ephemeral",
+              "expiresAt",
+              "runtimeOptions"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "appliesOn": {
+        "const": "next-turn-runtime-restart",
+        "type": "string"
+      },
+      "before": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "effectiveModel": {
+            "type": "string"
+          },
+          "effectiveProvider": {
+            "type": "string"
+          },
+          "effortOverride": {
+            "enum": [
+              "none",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max",
+              "ultra"
+            ],
+            "type": "string"
+          },
+          "ephemeral": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "modelOverride": {
+            "type": "string"
+          },
+          "modelPresetId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "modelPresetVersion": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "modelSource": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "runtimeOptions": {
+            "additionalProperties": false,
+            "properties": {
+              "effort": {
+                "additionalProperties": false,
+                "properties": {
+                  "source": {
+                    "enum": [
+                      "session_override",
+                      "agent_default",
+                      "runtime_default"
+                    ],
+                    "type": "string"
+                  },
+                  "value": {
+                    "enum": [
+                      "none",
+                      "minimal",
+                      "low",
+                      "medium",
+                      "high",
+                      "xhigh",
+                      "max",
+                      "ultra"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "value",
+                  "source"
+                ],
+                "type": "object"
+              },
+              "model": {
+                "additionalProperties": false,
+                "properties": {
+                  "source": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "value",
+                  "source"
+                ],
+                "type": "object"
+              },
+              "thinking": {
+                "additionalProperties": false,
+                "properties": {
+                  "source": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "value",
+                  "source"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "model",
+              "effort",
+              "thinking"
+            ],
+            "type": "object"
+          },
+          "sessionKey": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionKey",
+          "label",
+          "agentId",
+          "effectiveProvider",
+          "effectiveModel",
+          "modelSource",
+          "modelPresetId",
+          "modelPresetVersion",
+          "ephemeral",
+          "expiresAt",
+          "runtimeOptions"
+        ],
+        "type": "object"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "effectiveProvider": {
+        "type": "string"
+      },
+      "runtimeProviderOverride": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "sessionKey": {
+        "type": "string"
+      },
+      "sessionName": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "action",
+      "changed",
+      "sessionKey",
+      "sessionName",
+      "before",
+      "after",
+      "runtimeProviderOverride",
+      "effectiveProvider",
+      "appliesOn"
+    ],
     "type": "object"
   }
   """#
@@ -49833,6 +56409,259 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SkillsGrantInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "Agent id (immutable)",
+        "type": "string"
+      },
+      "note": {
+        "description": "Optional operator note",
+        "type": "string"
+      },
+      "skill": {
+        "description": "Skill name (matches SKILL.md name)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "agent",
+      "skill"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SkillsGrantReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agentId": {
+        "type": "string"
+      },
+      "grant": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "grantedAt": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          },
+          "skillName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId",
+          "skillName",
+          "grantedAt"
+        ],
+        "type": "object"
+      },
+      "skillName": {
+        "type": "string"
+      },
+      "success": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "agentId",
+      "skillName"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SkillsGrantBatchInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "Target a single agent (mutually exclusive with --all-agents)",
+        "type": "string"
+      },
+      "allAgents": {
+        "description": "Target every agent in the fleet",
+        "type": "boolean"
+      },
+      "allSkills": {
+        "description": "Target every catalog + installed skill",
+        "type": "boolean"
+      },
+      "dryRun": {
+        "description": "Preview counts without writing any grant",
+        "type": "boolean"
+      },
+      "note": {
+        "description": "Optional operator note stamped on every grant",
+        "type": "string"
+      },
+      "skill": {
+        "description": "Target a single skill (mutually exclusive with --all-skills)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let SkillsGrantBatchReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agentsTargeted": {
+        "type": "number"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "errors": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "error": {
+              "type": "string"
+            },
+            "skillName": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "agentId",
+            "skillName",
+            "error"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "op": {
+        "enum": [
+          "grant",
+          "revoke"
+        ],
+        "type": "string"
+      },
+      "pairsAffected": {
+        "type": "number"
+      },
+      "pairsSkipped": {
+        "type": "number"
+      },
+      "sampleAgents": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "sampleSkills": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "skillsTargeted": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "op",
+      "dryRun",
+      "agentsTargeted",
+      "skillsTargeted",
+      "pairsAffected",
+      "pairsSkipped",
+      "errors",
+      "sampleAgents",
+      "sampleSkills"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SkillsInspectInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "Agent id (immutable)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "agent"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SkillsInspectReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agentId": {
+        "type": "string"
+      },
+      "allowlist": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "hasConfiguration": {
+        "type": "boolean"
+      },
+      "provenance": {
+        "additionalProperties": false,
+        "properties": {
+          "baseline": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "fromCapabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "fromGrants": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "baseline",
+          "fromCapabilities",
+          "fromGrants"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "agentId",
+      "hasConfiguration",
+      "allowlist",
+      "provenance"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SkillsInstallInputSchema = #"""
   {
     "additionalProperties": false,
@@ -50109,6 +56938,179 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SkillsRevokeInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "Agent id (immutable)",
+        "type": "string"
+      },
+      "skill": {
+        "description": "Skill name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "agent",
+      "skill"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SkillsRevokeReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agentId": {
+        "type": "string"
+      },
+      "grant": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "grantedAt": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          },
+          "skillName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId",
+          "skillName",
+          "grantedAt"
+        ],
+        "type": "object"
+      },
+      "skillName": {
+        "type": "string"
+      },
+      "success": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "agentId",
+      "skillName"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SkillsRevokeBatchInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "Target a single agent (mutually exclusive with --all-agents)",
+        "type": "string"
+      },
+      "allAgents": {
+        "description": "Target every agent in the fleet",
+        "type": "boolean"
+      },
+      "allSkills": {
+        "description": "Target every catalog + installed skill",
+        "type": "boolean"
+      },
+      "dryRun": {
+        "description": "Preview counts without removing any grant",
+        "type": "boolean"
+      },
+      "skill": {
+        "description": "Target a single skill (mutually exclusive with --all-skills)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let SkillsRevokeBatchReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agentsTargeted": {
+        "type": "number"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "errors": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "error": {
+              "type": "string"
+            },
+            "skillName": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "agentId",
+            "skillName",
+            "error"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "op": {
+        "enum": [
+          "grant",
+          "revoke"
+        ],
+        "type": "string"
+      },
+      "pairsAffected": {
+        "type": "number"
+      },
+      "pairsSkipped": {
+        "type": "number"
+      },
+      "sampleAgents": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "sampleSkills": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "skillsTargeted": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "op",
+      "dryRun",
+      "agentsTargeted",
+      "skillsTargeted",
+      "pairsAffected",
+      "pairsSkipped",
+      "errors",
+      "sampleAgents",
+      "sampleSkills"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SkillsShowInputSchema = #"""
   {
     "additionalProperties": false,
@@ -50225,6 +57227,4582 @@ public enum RaviSchemas {
       "success",
       "codexSynced",
       "total"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SkillsWhoInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "List grants for a specific agent instead",
+        "type": "string"
+      },
+      "skill": {
+        "description": "Skill name to look up",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let SkillsWhoReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "grants": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "grantedAt": {
+              "type": "number"
+            },
+            "note": {
+              "type": "string"
+            },
+            "skillName": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "agentId",
+            "skillName",
+            "grantedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "skillName": {
+        "type": "string"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "total",
+      "grants"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackBlocksSendInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Slack channel/conversation ID",
+        "type": "string"
+      },
+      "connection": {
+        "description": "Ravi channel config; SDK-safe alias for --channel",
+        "type": "string"
+      },
+      "ephemeralUser": {
+        "description": "Send as an ephemeral message visible only to this Slack user",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      },
+      "file": {
+        "description": "Path to a Block Kit message JSON file",
+        "type": "string"
+      },
+      "text": {
+        "description": "Top-level fallback text for notifications/accessibility",
+        "type": "string"
+      },
+      "threadTs": {
+        "description": "Send inside a Slack thread",
+        "type": "string"
+      }
+    },
+    "required": [
+      "channel",
+      "file"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackBlocksSendReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackBlocksShowcaseInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Slack channel/conversation ID",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      },
+      "threadTs": {
+        "description": "Send inside a Slack thread",
+        "type": "string"
+      }
+    },
+    "required": [
+      "channel"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackBlocksShowcaseReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackBlocksUpdateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Slack channel/conversation ID",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      },
+      "file": {
+        "description": "Path to a Block Kit message JSON file",
+        "type": "string"
+      },
+      "text": {
+        "description": "Top-level fallback text for notifications/accessibility",
+        "type": "string"
+      },
+      "ts": {
+        "description": "Slack message timestamp",
+        "type": "string"
+      }
+    },
+    "required": [
+      "channel",
+      "file",
+      "ts"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackBlocksUpdateReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackBlocksValidateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Ravi channel config",
+        "type": "string"
+      },
+      "file": {
+        "description": "Path to a Block Kit JSON file",
+        "type": "string"
+      },
+      "target": {
+        "description": "Validation target: blocks, message or view",
+        "type": "string"
+      }
+    },
+    "required": [
+      "file"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackBlocksValidateReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackCanvasAccessDeleteInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "canvas": {
+        "description": "Slack canvas ID",
+        "type": "string"
+      },
+      "channel": {
+        "description": "Ravi channel config",
+        "type": "string"
+      },
+      "channels": {
+        "description": "Comma-separated Slack channel IDs",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      },
+      "users": {
+        "description": "Comma-separated Slack user IDs",
+        "type": "string"
+      }
+    },
+    "required": [
+      "canvas"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackCanvasAccessDeleteReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackCanvasAccessSetInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "access": {
+        "description": "read|write|owner",
+        "type": "string"
+      },
+      "canvas": {
+        "description": "Slack canvas ID",
+        "type": "string"
+      },
+      "channel": {
+        "description": "Ravi channel config",
+        "type": "string"
+      },
+      "channels": {
+        "description": "Comma-separated Slack channel IDs",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      },
+      "users": {
+        "description": "Comma-separated Slack user IDs",
+        "type": "string"
+      }
+    },
+    "required": [
+      "access",
+      "canvas"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackCanvasAccessSetReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackCanvasArtifactPublishInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "artifactOrFile": {
+        "description": "Ravi artifact id or local Markdown file path",
+        "type": "string"
+      },
+      "canvas": {
+        "description": "Publish into an existing Slack canvas ID",
+        "type": "string"
+      },
+      "channel": {
+        "description": "Ravi channel config",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      },
+      "skipRefresh": {
+        "description": "Do not refresh the artifact from its source file before publishing",
+        "type": "boolean"
+      },
+      "slackChannel": {
+        "description": "Create/reuse a channel canvas for this Slack channel",
+        "type": "string"
+      },
+      "title": {
+        "description": "Canvas title",
+        "type": "string"
+      }
+    },
+    "required": [
+      "artifactOrFile"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackCanvasArtifactPublishReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackCanvasArtifactStatusInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "artifact": {
+        "description": "Ravi artifact id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "artifact"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackCanvasArtifactStatusReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "item": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "ok": {
+        "const": true,
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "item"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackCanvasChannelCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "artifact": {
+        "description": "Read initial canvas markdown from a Ravi artifact",
+        "type": "string"
+      },
+      "channel": {
+        "description": "Slack channel/conversation ID",
+        "type": "string"
+      },
+      "ensure": {
+        "description": "Return existing channel canvas when it already exists",
+        "type": "boolean"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      },
+      "markdown": {
+        "description": "Initial canvas markdown",
+        "type": "string"
+      },
+      "markdownFile": {
+        "description": "Read initial canvas markdown from a file",
+        "type": "string"
+      },
+      "skipRefresh": {
+        "description": "Do not refresh the artifact from its source file before publishing",
+        "type": "boolean"
+      },
+      "title": {
+        "description": "Canvas title",
+        "type": "string"
+      }
+    },
+    "required": [
+      "channel"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackCanvasChannelCreateReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackCanvasChannelShowcaseInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Slack channel/conversation ID",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      },
+      "title": {
+        "description": "Canvas title",
+        "type": "string"
+      }
+    },
+    "required": [
+      "channel"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackCanvasChannelShowcaseReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackCanvasCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "artifact": {
+        "description": "Read initial canvas markdown from a Ravi artifact",
+        "type": "string"
+      },
+      "channel": {
+        "description": "Ravi channel config",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      },
+      "markdown": {
+        "description": "Initial canvas markdown",
+        "type": "string"
+      },
+      "markdownFile": {
+        "description": "Read initial canvas markdown from a file",
+        "type": "string"
+      },
+      "skipRefresh": {
+        "description": "Do not refresh the artifact from its source file before publishing",
+        "type": "boolean"
+      },
+      "slackChannel": {
+        "description": "Optional Slack channel tab target",
+        "type": "string"
+      },
+      "title": {
+        "description": "Canvas title",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let SlackCanvasCreateReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackCanvasDeleteInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "canvas": {
+        "description": "Slack canvas ID",
+        "type": "string"
+      },
+      "channel": {
+        "description": "Ravi channel config",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "canvas"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackCanvasDeleteReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackCanvasEditInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "artifact": {
+        "description": "Read markdown content from a Ravi artifact",
+        "type": "string"
+      },
+      "canvas": {
+        "description": "Slack canvas ID",
+        "type": "string"
+      },
+      "channel": {
+        "description": "Ravi channel config",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      },
+      "markdown": {
+        "description": "Markdown content for insert/replace operations",
+        "type": "string"
+      },
+      "markdownFile": {
+        "description": "Read markdown content from a file",
+        "type": "string"
+      },
+      "operation": {
+        "description": "insert_after|insert_before|insert_at_start|insert_at_end|replace|delete|rename",
+        "type": "string"
+      },
+      "sectionId": {
+        "description": "Slack canvas section ID",
+        "type": "string"
+      },
+      "skipRefresh": {
+        "description": "Do not refresh the artifact from its source file before publishing",
+        "type": "boolean"
+      },
+      "title": {
+        "description": "New title for rename operation",
+        "type": "string"
+      }
+    },
+    "required": [
+      "canvas",
+      "operation"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackCanvasEditReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackCanvasSectionsLookupInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "canvas": {
+        "description": "Slack canvas ID",
+        "type": "string"
+      },
+      "channel": {
+        "description": "Ravi channel config",
+        "type": "string"
+      },
+      "containsText": {
+        "description": "Text that matching sections must contain",
+        "type": "string"
+      },
+      "sectionTypes": {
+        "default": "any_header",
+        "description": "Comma-separated section types, e.g. h1,h2,h3,any_header",
+        "type": "string"
+      }
+    },
+    "required": [
+      "canvas"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackCanvasSectionsLookupReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "items": {
+        "items": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "type": "array"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "limit",
+          "cursor",
+          "nextCursor",
+          "hasMore"
+        ],
+        "type": "object"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "items",
+      "pagination"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackCanvasShowcaseInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "canvas": {
+        "description": "Slack canvas ID",
+        "type": "string"
+      },
+      "channel": {
+        "description": "Ravi channel config",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      },
+      "slackChannel": {
+        "description": "Slack channel/conversation ID for the showcase context",
+        "type": "string"
+      },
+      "title": {
+        "description": "Canvas title",
+        "type": "string"
+      }
+    },
+    "required": [
+      "canvas"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackCanvasShowcaseReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackChannelsCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Ravi channel config",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      },
+      "name": {
+        "description": "New Slack channel name",
+        "type": "string"
+      },
+      "private": {
+        "description": "Create a private channel",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackChannelsCreateReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackChannelsHistoryInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Slack channel/conversation ID",
+        "type": "string"
+      },
+      "cursor": {
+        "description": "Slack pagination cursor",
+        "type": "string"
+      },
+      "inclusive": {
+        "description": "Include boundary timestamps",
+        "type": "boolean"
+      },
+      "latest": {
+        "description": "Latest Slack timestamp",
+        "type": "string"
+      },
+      "limit": {
+        "default": "20",
+        "description": "Page size",
+        "type": "string"
+      },
+      "oldest": {
+        "description": "Oldest Slack timestamp",
+        "type": "string"
+      }
+    },
+    "required": [
+      "channel"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackChannelsHistoryReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "items": {
+        "items": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "type": "array"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "limit",
+          "cursor",
+          "nextCursor",
+          "hasMore"
+        ],
+        "type": "object"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "items",
+      "pagination"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackChannelsInfoInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Slack channel/conversation ID",
+        "type": "string"
+      }
+    },
+    "required": [
+      "channel"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackChannelsInfoReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackChannelsInviteInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Slack channel/conversation ID",
+        "type": "string"
+      },
+      "connection": {
+        "description": "Ravi channel config; SDK-safe alias for --channel",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      },
+      "users": {
+        "description": "Comma-separated Slack user IDs",
+        "type": "string"
+      }
+    },
+    "required": [
+      "channel",
+      "users"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackChannelsInviteReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackChannelsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Ravi channel config",
+        "type": "string"
+      },
+      "cursor": {
+        "description": "Slack pagination cursor",
+        "type": "string"
+      },
+      "includeArchived": {
+        "description": "Include archived conversations",
+        "type": "boolean"
+      },
+      "limit": {
+        "default": "100",
+        "description": "Page size",
+        "type": "string"
+      },
+      "types": {
+        "default": "public_channel,private_channel,im,mpim",
+        "description": "Slack conversation types",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let SlackChannelsListReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "items": {
+        "items": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "type": "array"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "limit",
+          "cursor",
+          "nextCursor",
+          "hasMore"
+        ],
+        "type": "object"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "items",
+      "pagination"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackChannelsRenameInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Slack channel/conversation ID",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      },
+      "name": {
+        "description": "New Slack channel name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "channel",
+      "name"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackChannelsRenameReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackFilesListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Ravi channel config",
+        "type": "string"
+      },
+      "cursor": {
+        "description": "Slack pagination cursor",
+        "type": "string"
+      },
+      "limit": {
+        "default": "20",
+        "description": "Page size",
+        "type": "string"
+      },
+      "slackChannel": {
+        "description": "Restrict to a Slack channel/conversation ID",
+        "type": "string"
+      },
+      "user": {
+        "description": "Restrict to a Slack user ID",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let SlackFilesListReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "items": {
+        "items": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "type": "array"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "limit",
+          "cursor",
+          "nextCursor",
+          "hasMore"
+        ],
+        "type": "object"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "items",
+      "pagination"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackInteractionsRespondInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Ravi channel config",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      },
+      "file": {
+        "description": "Path to a JSON response payload",
+        "type": "string"
+      },
+      "responseUrlId": {
+        "description": "Opaque Slack interaction response URL handle",
+        "type": "string"
+      }
+    },
+    "required": [
+      "file",
+      "responseUrlId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackInteractionsRespondReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackMembersListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Slack channel/conversation ID",
+        "type": "string"
+      },
+      "cursor": {
+        "description": "Slack pagination cursor",
+        "type": "string"
+      },
+      "limit": {
+        "default": "100",
+        "description": "Page size",
+        "type": "string"
+      }
+    },
+    "required": [
+      "channel"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackMembersListReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "items": {
+        "items": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "type": "array"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "pagination": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "limit",
+          "cursor",
+          "nextCursor",
+          "hasMore"
+        ],
+        "type": "object"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "items",
+      "pagination"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackMessagesInspectInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Slack channel/conversation ID",
+        "type": "string"
+      },
+      "ts": {
+        "description": "Slack message timestamp",
+        "type": "string"
+      }
+    },
+    "required": [
+      "channel",
+      "ts"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackMessagesInspectReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackMessagesReplayInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Slack channel/conversation ID",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the replay; default is dry-run",
+        "type": "boolean"
+      },
+      "force": {
+        "description": "Replay even when the message is already in Ravi",
+        "type": "boolean"
+      },
+      "ts": {
+        "description": "Slack message timestamp",
+        "type": "string"
+      }
+    },
+    "required": [
+      "channel",
+      "ts"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackMessagesReplayReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackMessagesSendInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Slack channel/conversation ID",
+        "type": "string"
+      },
+      "ephemeralUser": {
+        "description": "Send as an ephemeral message visible only to this Slack user",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      },
+      "text": {
+        "description": "Message text",
+        "type": "string"
+      },
+      "threadTs": {
+        "description": "Send inside a Slack thread",
+        "type": "string"
+      }
+    },
+    "required": [
+      "channel",
+      "text"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackMessagesSendReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackModalsOpenInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Ravi channel config",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      },
+      "file": {
+        "description": "Path to a Block Kit view JSON file",
+        "type": "string"
+      },
+      "triggerId": {
+        "description": "Slack interaction trigger_id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "file",
+      "triggerId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackModalsOpenReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackModalsPushInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Ravi channel config",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      },
+      "file": {
+        "description": "Path to a Block Kit view JSON file",
+        "type": "string"
+      },
+      "triggerId": {
+        "description": "Slack interaction trigger_id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "file",
+      "triggerId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackModalsPushReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackModalsUpdateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Ravi channel config",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      },
+      "externalId": {
+        "description": "Treat <view> as an external_id instead of a view_id",
+        "type": "boolean"
+      },
+      "file": {
+        "description": "Path to a Block Kit view JSON file",
+        "type": "string"
+      },
+      "hash": {
+        "description": "Slack view.hash for optimistic concurrency control",
+        "type": "string"
+      },
+      "view": {
+        "description": "Slack view_id, or external_id when --external-id is set",
+        "type": "string"
+      }
+    },
+    "required": [
+      "file",
+      "view"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackModalsUpdateReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackPermissionsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Ravi channel config",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let SlackPermissionsListReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackTopologyInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Ravi channel config",
+        "type": "string"
+      },
+      "cursor": {
+        "description": "Slack pagination cursor",
+        "type": "string"
+      },
+      "includeArchived": {
+        "description": "Include archived conversations",
+        "type": "boolean"
+      },
+      "limit": {
+        "default": "200",
+        "description": "Conversation page size",
+        "type": "string"
+      },
+      "types": {
+        "default": "public_channel,private_channel",
+        "description": "Slack conversation types",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let SlackTopologyReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "accountId": {
+        "type": "string"
+      },
+      "capabilities": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "channels": {
+        "items": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "type": "array"
+      },
+      "connection": {
+        "type": "string"
+      },
+      "ok": {
+        "const": true,
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "source": {
+        "type": "string"
+      },
+      "ungroupedChannelIds": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "accountId",
+      "channels",
+      "ungroupedChannelIds",
+      "capabilities"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackWorkObjectsPresentDetailsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Ravi channel config",
+        "type": "string"
+      },
+      "connection": {
+        "description": "Ravi channel config; SDK-safe alias for --channel",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      },
+      "file": {
+        "description": "Path to Slack native Work Object detail metadata JSON",
+        "type": "string"
+      },
+      "triggerId": {
+        "description": "Slack entity_details_requested trigger_id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "file",
+      "triggerId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackWorkObjectsPresentDetailsReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackWorkObjectsSendInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Slack channel/conversation ID",
+        "type": "string"
+      },
+      "connection": {
+        "description": "Ravi channel config; SDK-safe alias for --channel",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      },
+      "file": {
+        "description": "Path to Slack native Work Object message JSON",
+        "type": "string"
+      },
+      "text": {
+        "description": "Top-level fallback text for notifications/accessibility",
+        "type": "string"
+      },
+      "threadTs": {
+        "description": "Send inside a Slack thread",
+        "type": "string"
+      }
+    },
+    "required": [
+      "channel",
+      "file"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackWorkObjectsSendReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackWorkObjectsUnfurlInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "description": "Slack channel/conversation ID containing the URL message",
+        "type": "string"
+      },
+      "connection": {
+        "description": "Ravi channel config; SDK-safe alias for --channel",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is dry-run",
+        "type": "boolean"
+      },
+      "file": {
+        "description": "Path to Slack native Work Object metadata JSON",
+        "type": "string"
+      },
+      "ts": {
+        "description": "Slack message timestamp containing the URL",
+        "type": "string"
+      },
+      "url": {
+        "description": "URL in the message to unfurl",
+        "type": "string"
+      }
+    },
+    "required": [
+      "channel",
+      "file",
+      "ts",
+      "url"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackWorkObjectsUnfurlReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "type": "string"
+      },
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "method": {
+        "type": "string"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      },
+      "raw": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "request": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider",
+      "connection",
+      "source",
+      "dryRun",
+      "method",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackWorkObjectsValidateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "file": {
+        "description": "Path to Slack native Work Object metadata JSON",
+        "type": "string"
+      },
+      "target": {
+        "default": "message",
+        "description": "Validation target: message or detail",
+        "type": "string"
+      }
+    },
+    "required": [
+      "file"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SlackWorkObjectsValidateReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "dryRun": {
+        "type": "boolean"
+      },
+      "item": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "ok": {
+        "const": true,
+        "type": "boolean"
+      },
+      "outputFile": {
+        "type": "string"
+      },
+      "provider": {
+        "const": "slack",
+        "type": "string"
+      }
+    },
+    "required": [
+      "ok",
+      "provider"
     ],
     "type": "object"
   }
@@ -53834,7 +65412,7 @@ public enum RaviSchemas {
         "type": "array"
       },
       "effort": {
-        "description": "Runtime effort: low|medium|high|xhigh",
+        "description": "Runtime effort: none|minimal|low|medium|high|xhigh|max|ultra",
         "type": "string"
       },
       "input": {
@@ -54243,7 +65821,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "effort": {
-        "description": "Runtime effort: low|medium|high|xhigh",
+        "description": "Runtime effort: none|minimal|low|medium|high|xhigh|max|ultra",
         "type": "string"
       },
       "model": {
@@ -56486,6 +68064,14 @@ public enum RaviSchemas {
         "description": "Cooldown between fires (e.g., 5s, 30s, 1m)",
         "type": "string"
       },
+      "envFile": {
+        "description": "Env file loaded for shell triggers",
+        "type": "string"
+      },
+      "exec": {
+        "description": "Alias for --shell",
+        "type": "string"
+      },
       "filter": {
         "description": "Filter expression (e.g. 'data.cwd == \"/path/to/workspace\"')",
         "type": "string"
@@ -56498,12 +68084,24 @@ public enum RaviSchemas {
         "description": "Trigger name",
         "type": "string"
       },
+      "onError": {
+        "description": "Error action, e.g. notify-session:<session>",
+        "type": "string"
+      },
       "replySession": {
         "description": "Override the session used for outbound delivery (defaults to caller session)",
         "type": "string"
       },
       "session": {
         "description": "Session: main or isolated (default: isolated)",
+        "type": "string"
+      },
+      "shell": {
+        "description": "Run a shell command directly without invoking an agent",
+        "type": "string"
+      },
+      "timeout": {
+        "description": "Shell timeout, e.g. 60 or 5m",
         "type": "string"
       },
       "topic": {
@@ -56860,7 +68458,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "key": {
-        "description": "Property: name, message, topic, agent, account, session, cooldown, filter, replySession",
+        "description": "Property: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, filter, replySession",
         "type": "string"
       },
       "value": {
@@ -59974,6 +71572,2203 @@ public enum RaviSchemas {
   {
     "additionalProperties": {},
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let YtAnalyticsCountriesInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "days": {
+        "description": "Recent days, 1-365 (default: 28)",
+        "pattern": "^\\d+$",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Rows, 1-200 (default: 10)",
+        "pattern": "^\\d+$",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let YtAnalyticsCountriesReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "countries": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "country": {
+              "type": "string"
+            },
+            "subscribersGained": {
+              "type": "number"
+            },
+            "views": {
+              "type": "number"
+            },
+            "watchTimeMinutes": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "country",
+            "views",
+            "watchTimeMinutes",
+            "subscribersGained"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "period": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "period",
+      "countries"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtAnalyticsDemographicsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "days": {
+        "description": "Recent days, 1-365 (default: 28)",
+        "pattern": "^\\d+$",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let YtAnalyticsDemographicsReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "demographics": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "ageGroup": {
+              "type": "string"
+            },
+            "gender": {
+              "type": "string"
+            },
+            "viewerPercentage": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "ageGroup",
+            "gender",
+            "viewerPercentage"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "period": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "period",
+      "demographics"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtAnalyticsDevicesInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "days": {
+        "description": "Recent days, 1-365 (default: 28)",
+        "pattern": "^\\d+$",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let YtAnalyticsDevicesReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "devices": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "device": {
+              "type": "string"
+            },
+            "views": {
+              "type": "number"
+            },
+            "watchTimeMinutes": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "device",
+            "views",
+            "watchTimeMinutes"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "period": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "period",
+      "devices"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtAnalyticsOverviewInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "days": {
+        "description": "Recent days, 1-365 (default: 28)",
+        "pattern": "^\\d+$",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let YtAnalyticsOverviewReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "overview": {
+        "additionalProperties": false,
+        "properties": {
+          "avgViewDurationSec": {
+            "type": "number"
+          },
+          "comments": {
+            "type": "number"
+          },
+          "dislikes": {
+            "type": "number"
+          },
+          "likes": {
+            "type": "number"
+          },
+          "netSubscribers": {
+            "type": "number"
+          },
+          "shares": {
+            "type": "number"
+          },
+          "subscribersGained": {
+            "type": "number"
+          },
+          "subscribersLost": {
+            "type": "number"
+          },
+          "views": {
+            "type": "number"
+          },
+          "watchTimeMinutes": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "views",
+          "watchTimeMinutes",
+          "avgViewDurationSec",
+          "subscribersGained",
+          "subscribersLost",
+          "netSubscribers",
+          "likes",
+          "dislikes",
+          "comments",
+          "shares"
+        ],
+        "type": "object"
+      },
+      "period": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "period",
+      "overview"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtAnalyticsSeriesInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "days": {
+        "description": "Recent days, 1-365 (default: 28)",
+        "pattern": "^\\d+$",
+        "type": "string"
+      },
+      "metric": {
+        "description": "views|estimatedMinutesWatched|averageViewDuration|subscribersGained|likes|comments|shares (default: views)",
+        "enum": [
+          "views",
+          "estimatedMinutesWatched",
+          "averageViewDuration",
+          "subscribersGained",
+          "likes",
+          "comments",
+          "shares"
+        ],
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let YtAnalyticsSeriesReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "data": {
+        "items": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "metric": {
+        "type": "string"
+      },
+      "period": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "period",
+      "metric",
+      "data"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtAnalyticsTopInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "days": {
+        "description": "Recent days, 1-365 (default: 28)",
+        "pattern": "^\\d+$",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Rows, 1-200 (default: 10)",
+        "pattern": "^\\d+$",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let YtAnalyticsTopReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "period": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "videos": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "avgViewDurationSec": {
+              "type": "number"
+            },
+            "comments": {
+              "type": "number"
+            },
+            "likes": {
+              "type": "number"
+            },
+            "title": {
+              "type": "string"
+            },
+            "videoId": {
+              "type": "string"
+            },
+            "views": {
+              "type": "number"
+            },
+            "watchTimeMinutes": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "videoId",
+            "title",
+            "views",
+            "watchTimeMinutes",
+            "avgViewDurationSec",
+            "likes",
+            "comments"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "success",
+      "period",
+      "videos"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtAnalyticsTrafficInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "days": {
+        "description": "Recent days, 1-365 (default: 28)",
+        "pattern": "^\\d+$",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let YtAnalyticsTrafficReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "period": {
+        "type": "string"
+      },
+      "sources": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "views": {
+              "type": "number"
+            },
+            "watchTimeMinutes": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "source",
+            "views",
+            "watchTimeMinutes"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "period",
+      "sources"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtCaptionDownloadInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "captionId": {
+        "description": "Caption track ID from `ravi yt captions`",
+        "minLength": 1,
+        "type": "string"
+      },
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "format": {
+        "description": "srt|vtt|ttml (default: srt)",
+        "enum": [
+          "srt",
+          "vtt",
+          "ttml"
+        ],
+        "type": "string"
+      },
+      "language": {
+        "description": "Optional ISO 639-1 translation language",
+        "type": "string"
+      }
+    },
+    "required": [
+      "captionId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtCaptionDownloadReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "captionId": {
+        "type": "string"
+      },
+      "content": {
+        "type": "string"
+      },
+      "format": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "captionId",
+      "format",
+      "content"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtCaptionsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "videoId": {
+        "description": "YouTube video ID",
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "videoId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtCaptionsReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "captions": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "captionId": {
+              "type": "string"
+            },
+            "isAutoSynced": {
+              "type": "boolean"
+            },
+            "isDraft": {
+              "type": "boolean"
+            },
+            "language": {
+              "type": "string"
+            },
+            "lastUpdated": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "trackKind": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "captionId",
+            "language",
+            "name",
+            "trackKind",
+            "isAutoSynced",
+            "isDraft",
+            "status",
+            "lastUpdated"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "totalResults": {
+        "type": "number"
+      },
+      "videoId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "success",
+      "videoId",
+      "captions",
+      "totalResults"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtCommentsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Page size, 1-100 (default: 20)",
+        "pattern": "^\\d+$",
+        "type": "string"
+      },
+      "page": {
+        "description": "Provider page token from nextPageToken",
+        "type": "string"
+      },
+      "videoId": {
+        "description": "YouTube video ID",
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "videoId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtCommentsReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "comments": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "author": {
+              "type": "string"
+            },
+            "authorChannelUrl": {
+              "type": "string"
+            },
+            "commentId": {
+              "type": "string"
+            },
+            "likeCount": {
+              "type": "number"
+            },
+            "publishedAt": {
+              "type": "string"
+            },
+            "replyCount": {
+              "type": "number"
+            },
+            "text": {
+              "type": "string"
+            },
+            "threadId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "threadId",
+            "commentId",
+            "author",
+            "authorChannelUrl",
+            "text",
+            "likeCount",
+            "publishedAt",
+            "replyCount"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "nextPageToken": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "totalResults": {
+        "type": "number"
+      },
+      "videoId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "success",
+      "videoId",
+      "comments",
+      "totalResults"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtHealthInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let YtHealthReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "app": {
+        "const": "youtube",
+        "type": "string"
+      },
+      "authenticated": {
+        "const": false,
+        "type": "boolean"
+      },
+      "connection": {
+        "type": "string"
+      },
+      "credentialConfigured": {
+        "type": "boolean"
+      },
+      "credentialStatus": {
+        "type": "string"
+      },
+      "externalCheckPerformed": {
+        "const": false,
+        "type": "boolean"
+      },
+      "message": {
+        "type": "string"
+      },
+      "ready": {
+        "type": "boolean"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "app",
+      "connection",
+      "ready",
+      "credentialConfigured",
+      "credentialStatus",
+      "authenticated",
+      "externalCheckPerformed",
+      "message"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtInfoInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let YtInfoReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "channel": {
+        "additionalProperties": false,
+        "properties": {
+          "channelId": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "subscriberCount": {
+            "type": "number"
+          },
+          "thumbnail": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "uploadsPlaylistId": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "videoCount": {
+            "type": "number"
+          },
+          "viewCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "channelId",
+          "title",
+          "description",
+          "subscriberCount",
+          "videoCount",
+          "viewCount",
+          "thumbnail",
+          "uploadsPlaylistId",
+          "url"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "channel"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtPlaylistInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Page size, 1-50 (default: 25)",
+        "pattern": "^\\d+$",
+        "type": "string"
+      },
+      "page": {
+        "description": "Provider page token from nextPageToken",
+        "type": "string"
+      },
+      "playlistId": {
+        "description": "YouTube playlist ID",
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "playlistId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtPlaylistReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "nextPageToken": {
+        "type": "string"
+      },
+      "playlistId": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "totalResults": {
+        "type": "number"
+      },
+      "videos": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "commentCount": {
+              "type": "number"
+            },
+            "description": {
+              "type": "string"
+            },
+            "duration": {
+              "type": "string"
+            },
+            "likeCount": {
+              "type": "number"
+            },
+            "playlistItemId": {
+              "type": "string"
+            },
+            "privacyStatus": {
+              "type": "string"
+            },
+            "publishedAt": {
+              "type": "string"
+            },
+            "thumbnail": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            },
+            "videoId": {
+              "type": "string"
+            },
+            "viewCount": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "videoId",
+            "title",
+            "description",
+            "publishedAt",
+            "thumbnail",
+            "viewCount",
+            "likeCount",
+            "commentCount",
+            "duration",
+            "privacyStatus",
+            "url"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "success",
+      "playlistId",
+      "videos",
+      "totalResults"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtPlaylistAddInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "playlistId": {
+        "description": "Target YouTube playlist ID",
+        "minLength": 1,
+        "type": "string"
+      },
+      "videoId": {
+        "description": "YouTube video ID",
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "playlistId",
+      "videoId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtPlaylistAddReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "item": {
+        "additionalProperties": false,
+        "properties": {
+          "playlistId": {
+            "type": "string"
+          },
+          "playlistItemId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "videoId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "playlistItemId",
+          "playlistId",
+          "videoId",
+          "title"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "item"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtPlaylistCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "description": {
+        "description": "Playlist description",
+        "type": "string"
+      },
+      "privacy": {
+        "description": "public|private|unlisted (default: private)",
+        "enum": [
+          "public",
+          "private",
+          "unlisted"
+        ],
+        "type": "string"
+      },
+      "title": {
+        "description": "Playlist title",
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "title"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtPlaylistCreateReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "playlist": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "itemCount": {
+            "type": "number"
+          },
+          "playlistId": {
+            "type": "string"
+          },
+          "privacyStatus": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "type": "string"
+          },
+          "thumbnail": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "playlistId",
+          "title",
+          "description",
+          "thumbnail",
+          "itemCount",
+          "publishedAt",
+          "privacyStatus",
+          "url"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "playlist"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtPlaylistDeleteInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "playlistId": {
+        "description": "Owned YouTube playlist ID",
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "playlistId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtPlaylistDeleteReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "deleted": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "deleted"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtPlaylistRemoveInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "playlistItemId": {
+        "description": "Playlist item ID, not video ID",
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "playlistItemId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtPlaylistRemoveReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "removed": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "removed"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtPlaylistsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Page size, 1-50 (default: 25)",
+        "pattern": "^\\d+$",
+        "type": "string"
+      },
+      "page": {
+        "description": "Provider page token from nextPageToken",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let YtPlaylistsReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "nextPageToken": {
+        "type": "string"
+      },
+      "playlists": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "itemCount": {
+              "type": "number"
+            },
+            "playlistId": {
+              "type": "string"
+            },
+            "privacyStatus": {
+              "type": "string"
+            },
+            "publishedAt": {
+              "type": "string"
+            },
+            "thumbnail": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "playlistId",
+            "title",
+            "description",
+            "thumbnail",
+            "itemCount",
+            "publishedAt",
+            "privacyStatus",
+            "url"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "totalResults": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "success",
+      "playlists",
+      "totalResults"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtReplyInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "commentId": {
+        "description": "Top-level comment ID from `ravi yt comments`",
+        "minLength": 1,
+        "type": "string"
+      },
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "text": {
+        "description": "Exact approved reply text",
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "commentId",
+      "text"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtReplyReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "replyId": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "replyId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtSearchInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Page size, 1-50 (default: 10)",
+        "pattern": "^\\d+$",
+        "type": "string"
+      },
+      "page": {
+        "description": "Provider page token from nextPageToken",
+        "type": "string"
+      },
+      "query": {
+        "description": "Search text",
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "query"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtSearchReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "nextPageToken": {
+        "type": "string"
+      },
+      "query": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "totalResults": {
+        "type": "number"
+      },
+      "videos": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "commentCount": {
+              "type": "number"
+            },
+            "description": {
+              "type": "string"
+            },
+            "duration": {
+              "type": "string"
+            },
+            "likeCount": {
+              "type": "number"
+            },
+            "playlistItemId": {
+              "type": "string"
+            },
+            "privacyStatus": {
+              "type": "string"
+            },
+            "publishedAt": {
+              "type": "string"
+            },
+            "thumbnail": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            },
+            "videoId": {
+              "type": "string"
+            },
+            "viewCount": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "videoId",
+            "title",
+            "description",
+            "publishedAt",
+            "thumbnail",
+            "viewCount",
+            "likeCount",
+            "commentCount",
+            "duration",
+            "privacyStatus",
+            "url"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "success",
+      "videos",
+      "totalResults",
+      "query"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtStatsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "id": {
+        "description": "YouTube video ID",
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtStatsReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "stats": {
+        "additionalProperties": false,
+        "properties": {
+          "commentCount": {
+            "type": "number"
+          },
+          "daysSincePublish": {
+            "type": "number"
+          },
+          "likeCount": {
+            "type": "number"
+          },
+          "publishedAt": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "videoId": {
+            "type": "string"
+          },
+          "viewCount": {
+            "type": "number"
+          },
+          "viewsPerDay": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "videoId",
+          "title",
+          "viewCount",
+          "likeCount",
+          "commentCount",
+          "publishedAt",
+          "daysSincePublish",
+          "viewsPerDay"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "stats"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtSubscriptionsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Page size, 1-50 (default: 25)",
+        "pattern": "^\\d+$",
+        "type": "string"
+      },
+      "page": {
+        "description": "Provider page token from nextPageToken",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let YtSubscriptionsReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "nextPageToken": {
+        "type": "string"
+      },
+      "subscriptions": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "channelId": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "publishedAt": {
+              "type": "string"
+            },
+            "subscriptionId": {
+              "type": "string"
+            },
+            "thumbnail": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "totalItemCount": {
+              "type": "number"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "subscriptionId",
+            "channelId",
+            "title",
+            "description",
+            "thumbnail",
+            "publishedAt",
+            "totalItemCount",
+            "url"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "totalResults": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "success",
+      "subscriptions",
+      "totalResults"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtUnansweredInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Threads inspected, 1-100 (default: 50)",
+        "pattern": "^\\d+$",
+        "type": "string"
+      },
+      "page": {
+        "description": "Provider page token from nextPageToken",
+        "type": "string"
+      },
+      "videoId": {
+        "description": "YouTube video ID",
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "videoId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtUnansweredReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "comments": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "author": {
+              "type": "string"
+            },
+            "authorChannelUrl": {
+              "type": "string"
+            },
+            "commentId": {
+              "type": "string"
+            },
+            "likeCount": {
+              "type": "number"
+            },
+            "publishedAt": {
+              "type": "string"
+            },
+            "replyCount": {
+              "type": "number"
+            },
+            "text": {
+              "type": "string"
+            },
+            "threadId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "threadId",
+            "commentId",
+            "author",
+            "authorChannelUrl",
+            "text",
+            "likeCount",
+            "publishedAt",
+            "replyCount"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "nextPageToken": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "totalUnanswered": {
+        "type": "number"
+      },
+      "videoId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "success",
+      "videoId",
+      "comments",
+      "totalUnanswered"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtVideoInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "id": {
+        "description": "YouTube video ID",
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtVideoReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "video": {
+        "additionalProperties": false,
+        "properties": {
+          "commentCount": {
+            "type": "number"
+          },
+          "description": {
+            "type": "string"
+          },
+          "duration": {
+            "type": "string"
+          },
+          "likeCount": {
+            "type": "number"
+          },
+          "playlistItemId": {
+            "type": "string"
+          },
+          "privacyStatus": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "type": "string"
+          },
+          "thumbnail": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "videoId": {
+            "type": "string"
+          },
+          "viewCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "videoId",
+          "title",
+          "description",
+          "publishedAt",
+          "thumbnail",
+          "viewCount",
+          "likeCount",
+          "commentCount",
+          "duration",
+          "privacyStatus",
+          "url"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "success",
+      "video"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtVideoCategoriesInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "region": {
+        "description": "ISO 3166-1 alpha-2 region (default: BR)",
+        "pattern": "^[A-Za-z]{2}$",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let YtVideoCategoriesReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "categories": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "assignable": {
+              "type": "boolean"
+            },
+            "categoryId": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "categoryId",
+            "title",
+            "assignable"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "region": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "totalResults": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "success",
+      "region",
+      "categories",
+      "totalResults"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtVideoDeleteInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "id": {
+        "description": "Owned YouTube video ID",
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtVideoDeleteReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "deleted": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "deleted"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtVideoUpdateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "category": {
+        "description": "Replacement category ID",
+        "type": "string"
+      },
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "description": {
+        "description": "Replacement description",
+        "type": "string"
+      },
+      "id": {
+        "description": "Owned YouTube video ID",
+        "minLength": 1,
+        "type": "string"
+      },
+      "privacy": {
+        "description": "public|private|unlisted",
+        "enum": [
+          "public",
+          "private",
+          "unlisted"
+        ],
+        "type": "string"
+      },
+      "tags": {
+        "description": "Replacement comma-separated tag list",
+        "type": "string"
+      },
+      "title": {
+        "description": "Replacement title",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtVideoUpdateReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "video": {
+        "additionalProperties": false,
+        "properties": {
+          "commentCount": {
+            "type": "number"
+          },
+          "description": {
+            "type": "string"
+          },
+          "duration": {
+            "type": "string"
+          },
+          "likeCount": {
+            "type": "number"
+          },
+          "playlistItemId": {
+            "type": "string"
+          },
+          "privacyStatus": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "type": "string"
+          },
+          "thumbnail": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "videoId": {
+            "type": "string"
+          },
+          "viewCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "videoId",
+          "title",
+          "description",
+          "publishedAt",
+          "thumbnail",
+          "viewCount",
+          "likeCount",
+          "commentCount",
+          "duration",
+          "privacyStatus",
+          "url"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "success",
+      "video"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let YtVideosInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "connection": {
+        "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Page size, 1-50 (default: 10)",
+        "pattern": "^\\d+$",
+        "type": "string"
+      },
+      "page": {
+        "description": "Provider page token from nextPageToken",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let YtVideosReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "nextPageToken": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "totalResults": {
+        "type": "number"
+      },
+      "videos": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "commentCount": {
+              "type": "number"
+            },
+            "description": {
+              "type": "string"
+            },
+            "duration": {
+              "type": "string"
+            },
+            "likeCount": {
+              "type": "number"
+            },
+            "playlistItemId": {
+              "type": "string"
+            },
+            "privacyStatus": {
+              "type": "string"
+            },
+            "publishedAt": {
+              "type": "string"
+            },
+            "thumbnail": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            },
+            "videoId": {
+              "type": "string"
+            },
+            "viewCount": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "videoId",
+            "title",
+            "description",
+            "publishedAt",
+            "thumbnail",
+            "viewCount",
+            "likeCount",
+            "commentCount",
+            "duration",
+            "privacyStatus",
+            "url"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "success",
+      "videos",
+      "totalResults"
+    ],
     "type": "object"
   }
   """#
