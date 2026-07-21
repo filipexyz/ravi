@@ -19,6 +19,8 @@
 - Context snapshots authorize only through `context-capabilities`.
 - Agent runtime config materializes through `agent-default-capabilities`.
 - Agent identity materializes through `agent-identity-permissions`.
+- Bootstrap agent and automation contexts can run the read-only Codex Bash
+  policy hook without receiving the broader context command group.
 - Contact permission tags materialize through `contact-policy-permissions`.
 - External resolved contact turns use `authorityMode=agent-identity` and do
   not require contact/surface capabilities for bootstrap tool authority.

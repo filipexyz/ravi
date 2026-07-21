@@ -134,8 +134,8 @@ describe("runtime request context authority", () => {
     expect(runtimeContext.metadata?.actorCapabilityCount).toBe(0);
     expect(runtimeContext.metadata?.surfaceCapabilityCount).toBe(0);
     expect(runtimeContext.metadata?.effectiveCapabilityCount).toBeGreaterThan(0);
-    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "context_codex-bash-hook")).toBe(true);
-    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions_info")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "read", "context", "codex-bash-hook")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions")).toBe(true);
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(true);
     expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
     expect(canWithCapabilities(runtimeContext.capabilities, "access", "session", "main")).toBe(false);
@@ -165,12 +165,19 @@ describe("runtime request context authority", () => {
     });
     expect(runtimeContext.metadata?.actorCapabilityCount).toBe(0);
     expect(runtimeContext.metadata?.effectiveCapabilityCount).toBeGreaterThan(0);
-    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions_info")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions")).toBe(true);
     expect(canWithCapabilities(runtimeContext.capabilities, "access", "session", "restricted")).toBe(false);
   });
 
   it("stores observation permission grants as turn capabilities for live agent-identity rechecks", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    dbUpdateAgent(agent.id, {
+      defaults: {
+        runtimePermissions: {
+          capabilities: ["execute:group:observer_report"],
+        },
+      },
+    });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
 
     const prompt = promptForContact("luis", "observe");
@@ -180,7 +187,7 @@ describe("runtime request context authority", () => {
       bindingId: "binding-1",
       ruleId: "rule-1",
       role: "observer",
-      mode: "observe",
+      mode: "report",
       permissionGrants: ["execute:group:observer_report"],
       eventIds: ["event-1"],
     };
@@ -214,6 +221,13 @@ describe("runtime request context authority", () => {
 
   it("expands observation CLI shortcuts to both tool and command-gate capabilities", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    dbUpdateAgent(agent.id, {
+      defaults: {
+        runtimePermissions: {
+          capabilities: ["execute:group:tasks_report"],
+        },
+      },
+    });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
 
     const prompt = promptForContact("luis", "observe");
@@ -405,7 +419,7 @@ describe("runtime request context authority", () => {
       surfacePrincipal: "chat:chat_group_1",
     });
     expect(runtimeContext.metadata?.surfaceCapabilityCount).toBe(0);
-    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions_info")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions")).toBe(true);
   });
 
   it("creates and refreshes turn-runtime authority from provider materialization", () => {
@@ -506,6 +520,13 @@ describe("runtime request context authority", () => {
 
   it("does not require admin-tagged contact authority for agent identity group turns", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    dbUpdateAgent(agent.id, {
+      defaults: {
+        runtimePermissions: {
+          capabilities: ["execute:group:pages", "execute:group:sessions_trace"],
+        },
+      },
+    });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
     const owner = createContact({
       phone: "5511988887777",

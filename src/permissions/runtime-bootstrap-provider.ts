@@ -66,6 +66,10 @@ function bootstrapCapabilitiesFor(subjectType: string): ContextCapability[] {
   return [
     { permission: "use", objectType: "tool", objectId: "*", source },
     { permission: "use", objectType: "toolgroup", objectId: "*", source },
+    // Codex invokes this read-only hook before every Bash call. Grant the exact
+    // internal operation so a bootstrap agent can enforce its own executable
+    // and command policy without opening the broader context command group.
+    { permission: "read", objectType: "context", objectId: "codex-bash-hook", source },
     // Least-privilege default (spec: skills/scoping/per-agent-visibility, decisão RM 2026-07-03):
     // agente nasce só com BASELINE_COMMAND_GROUPS (kit de skill + fabric de operação) —
     // o suficiente pra operar (falar, trabalhar, ler regras, criar skill, introspectar, checar saúde).

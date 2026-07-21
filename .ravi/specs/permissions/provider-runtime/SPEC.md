@@ -55,6 +55,9 @@ Required capability materializers:
 - Runtime code MUST call the provider-runtime facade for authorization.
 - Runtime context creation MUST materialize subject capabilities through the
   registered materializer chain.
+- Bootstrap agent and automation contexts MUST receive the exact read-only
+  `read:context:codex-bash-hook` capability so Codex can enforce Bash policy;
+  this MUST NOT grant the broader `execute:group:context` capability.
 - `ravi permissions status/check/materialize` MUST remain inspection-only.
 - `ravi permissions allow/resolve` MUST be provider-owned orchestration only:
   it may create/update permission-scoped tags, attach contact policy tags, and
