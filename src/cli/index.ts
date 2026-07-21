@@ -241,12 +241,21 @@ program
 // Parse and execute
 maybeSuggestKnownRootCommand(process.argv.slice(2), program);
 
-const handledByAppAlias = await maybeRunAppAliasRoute(process.argv.slice(2), {
-  staticRootCommands: rootCommandNames(program),
+void bootstrapCli().catch((error: unknown) => {
+  console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+  process.exitCode = 1;
 });
-if (handledByAppAlias) process.exit(process.exitCode ?? 0);
 
-program.parse();
+async function bootstrapCli(): Promise<void> {
+  const handledByAppAlias = await maybeRunAppAliasRoute(process.argv.slice(2), {
+    staticRootCommands: rootCommandNames(program),
+  });
+  if (handledByAppAlias) {
+    process.exit(process.exitCode ?? 0);
+  }
+
+  program.parse();
+}
 
 function maybeSuggestKnownRootCommand(args: string[], command: Command): void {
   const requested = args[0];

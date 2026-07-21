@@ -1,5 +1,15 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
@@ -34,6 +44,82 @@ afterAll(() => {
 });
 
 describe("daemon runtime target", () => {
+  it("builds a CLI bundle that PM2 can synchronously require under Bun", () => {
+    const tempRoot = makeTempDir("ravi-daemon-pm2-bootstrap-");
+    const bundleDir = join(tempRoot, "dist", "bundle");
+    const bundlePath = join(bundleDir, "index.js");
+    const wrapperPath = join(tempRoot, "pm2-require-wrapper.cjs");
+    const fakeBinDir = join(tempRoot, "bin");
+    const fakePm2Path = join(fakeBinDir, "pm2");
+
+    mkdirSync(bundleDir, { recursive: true });
+    mkdirSync(fakeBinDir, { recursive: true });
+    writeFileSync(join(tempRoot, "package.json"), JSON.stringify({ name: "ravi.bot", version: "test" }), "utf8");
+    symlinkSync(join(process.cwd(), "node_modules"), join(tempRoot, "node_modules"), "dir");
+    writeFileSync(
+      wrapperPath,
+      [
+        'const Module = require("node:module");',
+        "const originalRequire = Module.prototype.require;",
+        "Module.prototype.require = function patchedRequire() {",
+        "  return originalRequire.apply(this, arguments);",
+        "};",
+        "require(process.env.RAVI_TEST_BUNDLE);",
+      ].join("\n"),
+      "utf8",
+    );
+    writeFileSync(fakePm2Path, '#!/bin/sh\n[ "$1" = "jlist" ] && printf "[]"\nexit 0\n', "utf8");
+    chmodSync(fakePm2Path, 0o755);
+
+    const build = spawnSync(
+      "bun",
+      [
+        "build",
+        "src/cli/index.ts",
+        "--outdir",
+        bundleDir,
+        "--target",
+        "bun",
+        "--minify",
+        "--external",
+        "ink",
+        "--external",
+        "react",
+        "--external",
+        "@anthropic-ai/*",
+        "--external",
+        "openai",
+        "--external",
+        "@google/*",
+        "--external",
+        "nats",
+        "--external",
+        "@elevenlabs/*",
+      ],
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+      },
+    );
+    expect(build.status).toBe(0);
+    expect(build.stderr).not.toContain("error:");
+
+    const result = spawnSync("bun", [wrapperPath, "daemon", "status"], {
+      cwd: tempRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${fakeBinDir}:${process.env.PATH ?? ""}`,
+        RAVI_STATE_DIR: join(tempRoot, "state"),
+        RAVI_TEST_BUNDLE: bundlePath,
+      },
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Ravi Daemon Status");
+    expect(result.stderr).not.toContain("require() async module");
+  });
+
   it("restarts the installed runtime from any operator cwd without requiring a source project root", () => {
     const tempRoot = makeTempDir("ravi-daemon-runtime-");
     const bundlePath = join(tempRoot, "install", "global", "node_modules", "ravi.bot", "dist", "bundle", "index.js");
