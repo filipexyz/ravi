@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { configStore } from "../config-store.js";
+import { saveMessage } from "../db.js";
 import { nats } from "../nats.js";
 import { dbUpdateAgent, dbUpsertChat, dbUpsertDaemonRestartEpoch } from "../router/router-db.js";
 import { attachChatToSession, getOrCreateSession, getSession, updateRuntimeProviderState } from "../router/sessions.js";
@@ -8,11 +9,13 @@ import { listSessionEvents } from "../session-trace/session-trace-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { dbCreateTask, dbDispatchTask, dbGetTask } from "../tasks/task-db.js";
 import { RuntimeSessionDispatcher } from "./session-dispatcher.js";
+import { createClaudeRuntimeProvider } from "./claude-provider.js";
 import { createCodexRuntimeProvider } from "./codex-provider.js";
-import { createRuntimeCredential } from "./credential-store.js";
+import { createRuntimeCredential, getRuntimeCredential, resetRuntimeCredentialHealth } from "./credential-store.js";
 import { formatUserFacingTurnFailure } from "./host-event-loop.js";
 import { readLearningLoopCadenceState } from "./learning-loop-cadence.js";
 import { registerRuntimeProvider, unregisterRuntimeProvider } from "./provider-registry.js";
+import { RuntimeStartFailure } from "./runtime-request-builder.js";
 import { reconstructRuntimeTargetTurnState } from "./target-policy-trace.js";
 import type { RuntimeCapabilities, RuntimeEvent, RuntimeStartRequest, SessionRuntimeProvider } from "./types.js";
 
@@ -109,6 +112,7 @@ describe("runtime target failover E2E", () => {
   });
 
   afterEach(async () => {
+    registerRuntimeProvider("claude", createClaudeRuntimeProvider);
     unregisterRuntimeProvider(primary);
     unregisterRuntimeProvider(secondary);
     unregisterRuntimeProvider(tertiary);
@@ -116,9 +120,10 @@ describe("runtime target failover E2E", () => {
     stateDir = null;
   });
 
-  it("fails primary, starts an incompatible secondary without stale resume state, and emits exactly one response", async () => {
+  it("fails primary, starts an incompatible secondary with continuity rebase, and emits exactly one response", async () => {
     let primaryRequest: RuntimeStartRequest | undefined;
     let secondaryRequest: RuntimeStartRequest | undefined;
+    let secondaryPrompt = "";
     const codexProvider = createCodexRuntimeProvider({
       defaultModel: "gpt-5",
       transport: {
@@ -148,10 +153,17 @@ describe("runtime target failover E2E", () => {
     registerRuntimeProvider(secondary, () =>
       provider(
         secondary,
-        [
-          { type: "assistant.message", text: "completed by secondary" },
-          { type: "turn.complete", providerSessionId: "secondary-session", usage: { inputTokens: 1, outputTokens: 1 } },
-        ],
+        ({ prompt }) => {
+          secondaryPrompt = prompt;
+          return [
+            { type: "assistant.message", text: "completed by secondary" },
+            {
+              type: "turn.complete",
+              providerSessionId: "secondary-session",
+              usage: { inputTokens: 1, outputTokens: 1 },
+            },
+          ];
+        },
         (request) => {
           secondaryRequest = request;
         },
@@ -186,6 +198,8 @@ describe("runtime target failover E2E", () => {
     });
     getOrCreateSession("target-e2e", "main", stateDir ?? "/tmp", { name: "target-e2e" });
     updateRuntimeProviderState("target-e2e", primary, { providerSessionId: "primary-session" });
+    saveMessage("target-e2e", "user", "Estamos falando do contrato DMN da fila fiscal.", "primary-session");
+    saveMessage("target-e2e", "assistant", "Revisei o contrato DMN e a regra principal e2e-123.", "primary-session");
     const chat = dbUpsertChat({
       channel: "whatsapp",
       instanceId: "main",
@@ -215,6 +229,12 @@ describe("runtime target failover E2E", () => {
       expect(responses[0]?.data.response).toBe("completed by secondary");
       expect(primaryRequest?.resume).toBe("primary-session");
       expect(secondaryRequest?.resume).toBeUndefined();
+      expect(secondaryPrompt).toContain("# Runtime Continuity Rebase");
+      expect(secondaryPrompt).toContain("Reason: provider_mismatch");
+      expect(secondaryPrompt).toContain("Estamos falando do contrato DMN da fila fiscal.");
+      expect(secondaryPrompt).toContain("Revisei o contrato DMN e a regra principal e2e-123.");
+      expect(secondaryPrompt).toContain("## Current User Message(s)");
+      expect(secondaryPrompt.match(/finish this logical turn/g)).toHaveLength(1);
       expect(
         emitted.filter(
           (event) => event.topic === "ravi.session.target-e2e.runtime" && event.data.type === "turn.failed",
@@ -245,7 +265,7 @@ describe("runtime target failover E2E", () => {
     createRuntimeCredential({
       id: "rcred_target_quota_primary",
       label: "Target quota primary",
-      runtimeProvider: primary,
+      runtimeProvider: "claude",
       priority: 100,
       bindings: [
         {
@@ -261,8 +281,8 @@ describe("runtime target failover E2E", () => {
     });
     let primaryExecutions = 0;
     let secondaryExecutions = 0;
-    registerRuntimeProvider(primary, () =>
-      provider(primary, () => {
+    registerRuntimeProvider("claude", () =>
+      provider("claude", () => {
         primaryExecutions++;
         return [
           {
@@ -296,7 +316,7 @@ describe("runtime target failover E2E", () => {
         targets: [
           {
             id: "primary",
-            runtimeProvider: primary,
+            runtimeProvider: "claude",
             model: "primary-model",
             credentialRequirements: { requireManaged: true, credentialIds: ["rcred_target_quota_primary"] },
           },
@@ -359,6 +379,339 @@ describe("runtime target failover E2E", () => {
     }
   });
 
+  it("fails closed when an adapter reports a credential failure without a managed credential to refresh", async () => {
+    let primaryExecutions = 0;
+    let secondaryExecutions = 0;
+    registerRuntimeProvider(primary, () =>
+      provider(primary, () => {
+        primaryExecutions++;
+        return [
+          {
+            type: "assistant.message",
+            text: "Your organization has disabled Claude subscription access.",
+          },
+          {
+            type: "turn.failed",
+            error: "Your organization has disabled Claude subscription access.",
+            recoverable: true,
+            metadata: { failureScope: "credential" },
+          },
+        ];
+      }),
+    );
+    registerRuntimeProvider(secondary, () =>
+      provider(secondary, () => {
+        secondaryExecutions++;
+        return [
+          { type: "assistant.message", text: "credential failure recovered by secondary" },
+          { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 1 } },
+        ];
+      }),
+    );
+    const agent = configStore.getConfig().agents.main;
+    if (!agent) throw new Error("default test agent missing");
+    grantRuntimeTargets(agent);
+    agent.defaults = {
+      ...(agent.defaults ?? {}),
+      runtimeTargetPolicy: {
+        id: "adapter-credential-failure-policy",
+        strategy: "ordered",
+        maxAttemptsPerTarget: 1,
+        maxCredentialRecoveryAttemptsPerTarget: 1,
+        targets: [
+          { id: "primary", runtimeProvider: primary, model: "primary-model" },
+          { id: "secondary", runtimeProvider: secondary, model: "secondary-model" },
+        ],
+      },
+    };
+    dbUpdateAgent(agent.id, { defaults: agent.defaults });
+    const sessionName = "target-adapter-credential-failure";
+    getOrCreateSession(sessionName, "main", stateDir ?? "/tmp", { name: sessionName });
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "adapter-credential-failure@s.whatsapp.net",
+      chatType: "dm",
+      title: "runtime target adapter credential failure",
+    });
+    attachChatToSession({ sessionKey: sessionName, chatId: chat.id, setOutputTarget: true });
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic, data) => {
+      emitted.push({ topic, data: data as Record<string, unknown> });
+    });
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "adapter-credential-failure",
+      maxConcurrentSessions: 2,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      getConfigModel: () => "fallback-model",
+    });
+    try {
+      await dispatcher.startStreamingSession(sessionName, {
+        prompt: "do not recover without managed credential",
+        _agentId: "main",
+      });
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (emitted.some((event) => event.topic === `ravi.session.${sessionName}.response`)) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+
+      expect(primaryExecutions).toBe(1);
+      expect(secondaryExecutions).toBe(0);
+      expect(emitted.filter((event) => event.topic === `ravi.session.${sessionName}.response`)).toHaveLength(1);
+      const targetEvents = listSessionEvents(sessionName);
+      expect(targetEvents.some((event) => event.eventType === "runtime.target.switch_requested")).toBe(false);
+      expect(
+        targetEvents.some(
+          (event) => event.eventType === "runtime.target.credential_recovery" && event.status === "recovering",
+        ),
+      ).toBe(false);
+    } finally {
+      dispatcher.shutdownAll();
+      emitSpy.mockRestore();
+    }
+  });
+
+  it("fails closed when startup reports a credential failure without a managed credential to refresh", async () => {
+    let primaryStarts = 0;
+    let secondaryStarts = 0;
+    registerRuntimeProvider(primary, () => ({
+      id: primary,
+      getCapabilities: () => capabilities,
+      startSession: () => {
+        primaryStarts++;
+        throw new RuntimeStartFailure("credential unavailable during startup", "credential");
+      },
+    }));
+    registerRuntimeProvider(secondary, () =>
+      provider(secondary, () => {
+        secondaryStarts++;
+        return [
+          { type: "assistant.message", text: "startup credential failure recovered by secondary" },
+          { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 1 } },
+        ];
+      }),
+    );
+    const agent = configStore.getConfig().agents.main;
+    if (!agent) throw new Error("default test agent missing");
+    grantRuntimeTargets(agent);
+    agent.defaults = {
+      ...(agent.defaults ?? {}),
+      runtimeTargetPolicy: {
+        id: "startup-credential-failure-policy",
+        strategy: "ordered",
+        maxAttemptsPerTarget: 1,
+        maxCredentialRecoveryAttemptsPerTarget: 1,
+        targets: [
+          { id: "primary", runtimeProvider: primary, model: "primary-model" },
+          { id: "secondary", runtimeProvider: secondary, model: "secondary-model" },
+        ],
+      },
+    };
+    dbUpdateAgent(agent.id, { defaults: agent.defaults });
+    const sessionName = "target-startup-credential-failure";
+    getOrCreateSession(sessionName, "main", stateDir ?? "/tmp", { name: sessionName });
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "startup-credential-failure@s.whatsapp.net",
+      chatType: "dm",
+      title: "runtime target startup credential failure",
+    });
+    attachChatToSession({ sessionKey: sessionName, chatId: chat.id, setOutputTarget: true });
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic, data) => {
+      emitted.push({ topic, data: data as Record<string, unknown> });
+    });
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "startup-credential-failure",
+      maxConcurrentSessions: 2,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      getConfigModel: () => "fallback-model",
+    });
+    try {
+      await dispatcher.startStreamingSession(sessionName, {
+        prompt: "do not recover startup failure",
+        _agentId: "main",
+      });
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (emitted.some((event) => event.topic === `ravi.session.${sessionName}.response`)) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+
+      expect(primaryStarts).toBe(1);
+      expect(secondaryStarts).toBe(0);
+      expect(emitted.filter((event) => event.topic === `ravi.session.${sessionName}.response`)).toHaveLength(0);
+      const targetEvents = listSessionEvents(sessionName);
+      expect(targetEvents.some((event) => event.eventType === "runtime.target.switch_requested")).toBe(false);
+      expect(
+        targetEvents.some(
+          (event) => event.eventType === "runtime.target.credential_recovery" && event.status === "recovering",
+        ),
+      ).toBe(false);
+    } finally {
+      dispatcher.shutdownAll();
+      emitSpy.mockRestore();
+    }
+  });
+
+  it("switches provider after Claude exhausts one credential and the next credential is disabled", async () => {
+    const firstCredentialEnv = "RAVI_TEST_CLAUDE_TOKEN_ONE";
+    const secondCredentialEnv = "RAVI_TEST_CLAUDE_TOKEN_TWO";
+    const previousFirstCredential = process.env[firstCredentialEnv];
+    const previousSecondCredential = process.env[secondCredentialEnv];
+    process.env[firstCredentialEnv] = "claude-token-one";
+    process.env[secondCredentialEnv] = "claude-token-two";
+    createRuntimeCredential({
+      id: "rcred_claude_quota_first",
+      label: "Claude quota first",
+      runtimeProvider: "claude",
+      upstreamProvider: "anthropic",
+      priority: 200,
+      bindings: [
+        {
+          sourceKind: "env",
+          targetKind: "env",
+          targetName: "SYNTHETIC_API_KEY",
+          secretRef: `env:${firstCredentialEnv}`,
+          sourceHint: firstCredentialEnv,
+          sensitive: true,
+          remoteForward: false,
+        },
+      ],
+    });
+    createRuntimeCredential({
+      id: "rcred_claude_disabled_second",
+      label: "Claude disabled second",
+      runtimeProvider: "claude",
+      upstreamProvider: "anthropic",
+      priority: 100,
+      bindings: [
+        {
+          sourceKind: "env",
+          targetKind: "env",
+          targetName: "SYNTHETIC_API_KEY",
+          secretRef: `env:${secondCredentialEnv}`,
+          sourceHint: secondCredentialEnv,
+          sensitive: true,
+          remoteForward: false,
+        },
+      ],
+    });
+    const primaryCredentialsSeen: string[] = [];
+    let secondaryExecutions = 0;
+    registerRuntimeProvider("claude", () =>
+      provider("claude", ({ request }) => {
+        const selectedCredential = request.env?.SYNTHETIC_API_KEY ?? "";
+        primaryCredentialsSeen.push(selectedCredential);
+        if (selectedCredential === "claude-token-one") {
+          return [
+            {
+              type: "turn.failed",
+              error: "You've hit your session limit - resets 12:30am (UTC)",
+              recoverable: true,
+              rawEvent: { status: 429, type: "error" },
+            },
+          ];
+        }
+        return [
+          {
+            type: "assistant.message",
+            text: "Your organization has disabled Claude subscription access.",
+          },
+          {
+            type: "turn.failed",
+            error: "Your organization has disabled Claude subscription access.",
+            recoverable: true,
+            metadata: { failureScope: "credential" },
+          },
+        ];
+      }),
+    );
+    registerRuntimeProvider(secondary, () =>
+      provider(secondary, () => {
+        secondaryExecutions++;
+        return [
+          { type: "assistant.message", text: "incident recovered by Codex target" },
+          { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 1 } },
+        ];
+      }),
+    );
+    const agent = configStore.getConfig().agents.main;
+    if (!agent) throw new Error("default test agent missing");
+    grantRuntimeTargets(agent);
+    agent.defaults = {
+      ...(agent.defaults ?? {}),
+      runtimeTargetPolicy: {
+        id: "claude-credential-chain-policy",
+        strategy: "ordered",
+        maxAttemptsPerTarget: 1,
+        maxCredentialRecoveryAttemptsPerTarget: 1,
+        targets: [
+          {
+            id: "claude",
+            runtimeProvider: "claude",
+            model: "anthropic/primary-model",
+            credentialRequirements: { requireManaged: true },
+          },
+          { id: "codex", runtimeProvider: secondary, model: "secondary-model" },
+        ],
+      },
+    };
+    dbUpdateAgent(agent.id, { defaults: agent.defaults });
+    const sessionName = "target-claude-token-chain";
+    getOrCreateSession(sessionName, "main", stateDir ?? "/tmp", { name: sessionName });
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "claude-token-chain@s.whatsapp.net",
+      chatType: "dm",
+      title: "runtime target claude credential chain",
+    });
+    attachChatToSession({ sessionKey: sessionName, chatId: chat.id, setOutputTarget: true });
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic, data) => {
+      emitted.push({ topic, data: data as Record<string, unknown> });
+    });
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "claude-token-chain",
+      maxConcurrentSessions: 2,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      getConfigModel: () => "fallback-model",
+    });
+    try {
+      await dispatcher.startStreamingSession(sessionName, {
+        prompt: "recover Claude credential chain",
+        _agentId: "main",
+      });
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (emitted.some((event) => event.topic === `ravi.session.${sessionName}.response`)) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+
+      expect(primaryCredentialsSeen).toEqual(["claude-token-one", "claude-token-two"]);
+      expect(secondaryExecutions).toBe(1);
+      expect(emitted.filter((event) => event.topic === `ravi.session.${sessionName}.response`)).toHaveLength(1);
+      expect(emitted.find((event) => event.topic === `ravi.session.${sessionName}.response`)?.data.response).toBe(
+        "incident recovered by Codex target",
+      );
+      expect(getRuntimeCredential("rcred_claude_quota_first")?.status).toBe("exhausted");
+      expect(getRuntimeCredential("rcred_claude_disabled_second")?.status).toBe("invalid");
+      const targetEvents = listSessionEvents(sessionName);
+      expect(targetEvents.filter((event) => event.eventType === "runtime.target.selected")).toHaveLength(3);
+      expect(targetEvents.some((event) => event.eventType === "runtime.target.switch_requested")).toBe(true);
+    } finally {
+      dispatcher.shutdownAll();
+      emitSpy.mockRestore();
+      if (previousFirstCredential === undefined) delete process.env[firstCredentialEnv];
+      else process.env[firstCredentialEnv] = previousFirstCredential;
+      if (previousSecondCredential === undefined) delete process.env[secondCredentialEnv];
+      else process.env[secondCredentialEnv] = previousSecondCredential;
+    }
+  });
+
   it("preserves startup quota through exhaustion and clears it after successful failover", async () => {
     const credentialSecretEnv = "RAVI_TEST_STARTUP_QUOTA_KEY";
     const previousCredentialSecret = process.env[credentialSecretEnv];
@@ -366,7 +719,7 @@ describe("runtime target failover E2E", () => {
     createRuntimeCredential({
       id: "rcred_startup_quota_primary",
       label: "Startup quota primary",
-      runtimeProvider: primary,
+      runtimeProvider: "claude",
       priority: 100,
       bindings: [
         {
@@ -382,8 +735,8 @@ describe("runtime target failover E2E", () => {
     });
     let primaryStarts = 0;
     let secondaryStarts = 0;
-    registerRuntimeProvider(primary, () => ({
-      id: primary,
+    registerRuntimeProvider("claude", () => ({
+      id: "claude",
       getCapabilities: () => capabilities,
       startSession: () => {
         primaryStarts++;
@@ -411,7 +764,7 @@ describe("runtime target failover E2E", () => {
         targets: [
           {
             id: "primary",
-            runtimeProvider: primary,
+            runtimeProvider: "claude",
             model: "primary-model",
             credentialRequirements: { requireManaged: true, credentialIds: ["rcred_startup_quota_primary"] },
           },
@@ -458,6 +811,7 @@ describe("runtime target failover E2E", () => {
       expect(dbGetTask(created.task.id)?.status).toBe("blocked");
       expect(readLearningLoopCadenceState(getSession(sessionName)?.runtimeSessionParams)?.terminalTurnCount).toBe(1);
 
+      resetRuntimeCredentialHealth("rcred_startup_quota_primary");
       primaryStarts = 0;
       secondaryStarts = 0;
       registerRuntimeProvider(secondary, () =>
@@ -529,7 +883,7 @@ describe("runtime target failover E2E", () => {
       await dispatcher.startStreamingSession(noPolicySessionName, {
         prompt: "block startup quota immediately",
         _agentId: "main",
-        _runtimeProviderId: primary,
+        _runtimeProviderId: "claude",
         taskBarrierTaskId: noPolicyTask.task.id,
         source: {
           channel: "whatsapp",
@@ -797,14 +1151,34 @@ describe("runtime target failover E2E", () => {
   });
 
   it("honors the credential recovery budget when startup fails before switching targets", async () => {
+    const credentialSecretEnv = "RAVI_TEST_STARTUP_CREDENTIAL_BUDGET_KEY";
+    const previousCredentialSecret = process.env[credentialSecretEnv];
+    process.env[credentialSecretEnv] = "sk-test_startup_credential_budget_secret";
+    createRuntimeCredential({
+      id: "rcred_startup_credential_budget",
+      label: "Startup credential budget",
+      runtimeProvider: "claude",
+      priority: 100,
+      bindings: [
+        {
+          sourceKind: "env",
+          targetKind: "env",
+          targetName: "SYNTHETIC_API_KEY",
+          secretRef: `env:${credentialSecretEnv}`,
+          sourceHint: credentialSecretEnv,
+          sensitive: true,
+          remoteForward: false,
+        },
+      ],
+    });
     let primaryStarts = 0;
     let secondaryStarts = 0;
-    registerRuntimeProvider(primary, () => ({
-      id: primary,
+    registerRuntimeProvider("claude", () => ({
+      id: "claude",
       getCapabilities: () => capabilities,
       startSession: () => {
         primaryStarts++;
-        throw Object.assign(new Error("runtime credential expired during startup"), { status: 401 });
+        throw new RuntimeStartFailure("runtime credential expired during startup", "credential");
       },
     }));
     registerRuntimeProvider(secondary, () =>
@@ -830,7 +1204,12 @@ describe("runtime target failover E2E", () => {
         maxAttemptsPerTarget: 1,
         maxCredentialRecoveryAttemptsPerTarget: 1,
         targets: [
-          { id: "primary", runtimeProvider: primary, model: "primary-model" },
+          {
+            id: "primary",
+            runtimeProvider: "claude",
+            model: "primary-model",
+            credentialRequirements: { requireManaged: true, credentialIds: ["rcred_startup_credential_budget"] },
+          },
           { id: "secondary", runtimeProvider: secondary, model: "secondary-model" },
         ],
       },
@@ -869,6 +1248,8 @@ describe("runtime target failover E2E", () => {
     } finally {
       dispatcher.shutdownAll();
       emitSpy.mockRestore();
+      if (previousCredentialSecret === undefined) delete process.env[credentialSecretEnv];
+      else process.env[credentialSecretEnv] = previousCredentialSecret;
     }
   });
 
@@ -1164,9 +1545,29 @@ describe("runtime target failover E2E", () => {
   });
 
   it("recovers a credential on the same target without consuming failover budget", async () => {
+    const credentialSecretEnv = "RAVI_TEST_TARGET_CREDENTIAL_RECOVERY_KEY";
+    const previousCredentialSecret = process.env[credentialSecretEnv];
+    process.env[credentialSecretEnv] = "sk-test_target_credential_recovery_secret";
+    createRuntimeCredential({
+      id: "rcred_target_credential_recovery",
+      label: "Target credential recovery",
+      runtimeProvider: "claude",
+      priority: 100,
+      bindings: [
+        {
+          sourceKind: "env",
+          targetKind: "env",
+          targetName: "SYNTHETIC_API_KEY",
+          secretRef: `env:${credentialSecretEnv}`,
+          sourceHint: credentialSecretEnv,
+          sensitive: true,
+          remoteForward: false,
+        },
+      ],
+    });
     let executions = 0;
-    registerRuntimeProvider(primary, () =>
-      provider(primary, () => {
+    registerRuntimeProvider("claude", () =>
+      provider("claude", () => {
         executions++;
         return executions === 1
           ? [
@@ -1192,7 +1593,14 @@ describe("runtime target failover E2E", () => {
         id: "credential-policy",
         strategy: "ordered",
         maxAttemptsPerTarget: 1,
-        targets: [{ id: "primary", runtimeProvider: primary, model: "primary-model" }],
+        targets: [
+          {
+            id: "primary",
+            runtimeProvider: "claude",
+            model: "primary-model",
+            credentialRequirements: { requireManaged: true, credentialIds: ["rcred_target_credential_recovery"] },
+          },
+        ],
       },
     };
     dbUpdateAgent(agent.id, { defaults: agent.defaults });
@@ -1230,6 +1638,8 @@ describe("runtime target failover E2E", () => {
     } finally {
       dispatcher.shutdownAll();
       emitSpy.mockRestore();
+      if (previousCredentialSecret === undefined) delete process.env[credentialSecretEnv];
+      else process.env[credentialSecretEnv] = previousCredentialSecret;
     }
   });
 
@@ -1287,9 +1697,29 @@ describe("runtime target failover E2E", () => {
   });
 
   it("limits repeated credential recovery and terminates exactly once", async () => {
+    const credentialSecretEnv = "RAVI_TEST_TARGET_CREDENTIAL_BUDGET_KEY";
+    const previousCredentialSecret = process.env[credentialSecretEnv];
+    process.env[credentialSecretEnv] = "sk-test_target_credential_budget_secret";
+    createRuntimeCredential({
+      id: "rcred_target_credential_budget",
+      label: "Target credential budget",
+      runtimeProvider: "claude",
+      priority: 100,
+      bindings: [
+        {
+          sourceKind: "env",
+          targetKind: "env",
+          targetName: "SYNTHETIC_API_KEY",
+          secretRef: `env:${credentialSecretEnv}`,
+          sourceHint: credentialSecretEnv,
+          sensitive: true,
+          remoteForward: false,
+        },
+      ],
+    });
     let executions = 0;
-    registerRuntimeProvider(primary, () =>
-      provider(primary, () => {
+    registerRuntimeProvider("claude", () =>
+      provider("claude", () => {
         executions++;
         return [
           {
@@ -1311,7 +1741,14 @@ describe("runtime target failover E2E", () => {
         strategy: "ordered",
         maxAttemptsPerTarget: 1,
         maxCredentialRecoveryAttemptsPerTarget: 1,
-        targets: [{ id: "primary", runtimeProvider: primary, model: "primary-model" }],
+        targets: [
+          {
+            id: "primary",
+            runtimeProvider: "claude",
+            model: "primary-model",
+            credentialRequirements: { requireManaged: true, credentialIds: ["rcred_target_credential_budget"] },
+          },
+        ],
       },
     };
     dbUpdateAgent(agent.id, { defaults: agent.defaults });
@@ -1352,6 +1789,8 @@ describe("runtime target failover E2E", () => {
     } finally {
       dispatcher.shutdownAll();
       emitSpy.mockRestore();
+      if (previousCredentialSecret === undefined) delete process.env[credentialSecretEnv];
+      else process.env[credentialSecretEnv] = previousCredentialSecret;
     }
   });
 

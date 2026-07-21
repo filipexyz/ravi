@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   classifyRuntimeTargetFailure,
   decideRuntimeTargetFailure,
+  isRuntimeTargetAutoRollbackEligible,
   selectRuntimeTarget,
   type RuntimeTargetPolicy,
   type RuntimeTargetTurnState,
@@ -233,6 +234,7 @@ describe("runtime target policy", () => {
         sideEffectBoundaryCrossed: false,
         attemptsOnTarget: 0,
         maxAttemptsPerTarget: 2,
+        credentialRecoveryEligible: true,
         credentialRecoveriesOnTarget: 0,
         maxCredentialRecoveryAttemptsPerTarget: 1,
       }),
@@ -245,6 +247,7 @@ describe("runtime target policy", () => {
         sideEffectBoundaryCrossed: false,
         attemptsOnTarget: 1,
         maxAttemptsPerTarget: 2,
+        credentialRecoveryEligible: true,
         credentialRecoveriesOnTarget: 1,
         maxCredentialRecoveryAttemptsPerTarget: 1,
       }),
@@ -277,6 +280,45 @@ describe("runtime target policy", () => {
         sideEffectBoundaryCrossed: false,
         attemptsOnTarget: 0,
         maxAttemptsPerTarget: 2,
+      }),
+    ).toBe("terminate");
+  });
+
+  it("only allows same-target credential rollback for Claude with a healthy managed credential", () => {
+    expect(
+      isRuntimeTargetAutoRollbackEligible({
+        runtimeProvider: "claude",
+        managedCredentialId: "rcred_claude",
+        managedCredentialStatus: "healthy",
+      }),
+    ).toBe(true);
+    expect(isRuntimeTargetAutoRollbackEligible({ runtimeProvider: "claude", managedCredentialId: null })).toBe(false);
+    expect(
+      isRuntimeTargetAutoRollbackEligible({
+        runtimeProvider: "claude",
+        managedCredentialId: "rcred_claude",
+        managedCredentialStatus: "cooldown",
+      }),
+    ).toBe(false);
+    for (const runtimeProvider of ["codex", "pi", "trace-provider"]) {
+      expect(
+        isRuntimeTargetAutoRollbackEligible({
+          runtimeProvider,
+          managedCredentialId: `rcred_${runtimeProvider}`,
+          managedCredentialStatus: "healthy",
+        }),
+      ).toBe(false);
+    }
+    expect(
+      decideRuntimeTargetFailure({
+        recoverable: true,
+        replayEligible: true,
+        scope: "credential",
+        sideEffectBoundaryCrossed: false,
+        attemptsOnTarget: 0,
+        maxAttemptsPerTarget: 2,
+        credentialRecoveriesOnTarget: 0,
+        maxCredentialRecoveryAttemptsPerTarget: 1,
       }),
     ).toBe("terminate");
   });

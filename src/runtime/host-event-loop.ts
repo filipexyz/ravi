@@ -36,6 +36,7 @@ import { mergeRuntimeCredentialSessionMetadata } from "./credential-resolver.js"
 import { refreshRuntimeCredential } from "./credential-refresh.js";
 import {
   completeRuntimeCredentialAttempt,
+  getRuntimeCredential,
   recordRuntimeCredentialFailure,
   recordRuntimeCredentialSuccess,
 } from "./credential-store.js";
@@ -43,6 +44,7 @@ import type { RuntimeCredentialFailureSignal } from "./credential-types.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import {
   LEGACY_RUNTIME_PROVIDER_ID,
+  type RuntimeActiveToolState,
   shutdownRuntimeStreamingSession,
   stashCurrentTurnRuntimeMessages,
   stashPendingRuntimeMessages,
@@ -55,6 +57,7 @@ import {
   classifyRuntimeTargetFailure,
   decideRuntimeTargetFailure,
   getRuntimeTargetCredentialRecoveryCount,
+  isRuntimeTargetAutoRollbackEligible,
   recordRuntimeTargetCredentialRecovery,
 } from "./target-policy.js";
 import { resolveRuntimeIdleSessionTtlMs } from "./session-pool.js";
@@ -63,6 +66,13 @@ import { preserveMemoryCurationState } from "../memory/curation-state.js";
 import { preserveSkillCurationState } from "../skills/skill-curation-state.js";
 import { noteTerminalTurnForLearningLoop, preserveLearningLoopCadenceState } from "./learning-loop-cadence.js";
 import { blockTaskForProviderQuota } from "./provider-quota-task.js";
+import {
+  extractRuntimeLimitResetDescriptor,
+  firstNonEmptyRuntimeLimitLine,
+  normalizeRuntimeLimitText,
+  parseRuntimeLimitResetDescriptorTime,
+  RUNTIME_LIMIT_RESET_GRACE_MS,
+} from "./reset-descriptor.js";
 import {
   createObservationEvent,
   deliverObservationEvents,
@@ -97,7 +107,7 @@ const IDLE_SESSION_TTL_REASON = "idle_session_ttl";
 const RUNTIME_SESSION_CLOSE_TIMEOUT_MS = 5_000;
 const USER_FACING_LIMIT_SUPPRESSION_DEFAULT_MS = 60 * 60_000;
 const USER_FACING_LIMIT_SUPPRESSION_MAX_MS = 24 * 60 * 60_000;
-const USER_FACING_LIMIT_SUPPRESSION_RESET_GRACE_MS = 60_000;
+const USER_FACING_LIMIT_SUPPRESSION_RESET_GRACE_MS = RUNTIME_LIMIT_RESET_GRACE_MS;
 
 const userFacingRuntimeLimitSuppressions = new Map<string, number>();
 
@@ -422,67 +432,24 @@ type UserFacingRuntimeLimitSuppressionDecision =
       previousExpiresAt: number;
     };
 
-function firstNonEmptyLine(value: string): string {
-  return (
-    value
-      .split("\n")
-      .map((line) => line.trim())
-      .find(Boolean) ?? ""
-  );
-}
-
-function normalizeSuppressionText(value: string): string {
-  return value.replace(/\s+/g, " ").trim().toLowerCase();
-}
-
-function extractSessionLimitResetDescriptor(error: string): string | undefined {
-  const firstLine = firstNonEmptyLine(error);
-  const match = firstLine.match(/\breset(?:s|ting)?\s+(.+?)(?:$|[.;])/i);
-  const raw = match?.[1]?.trim();
-  if (!raw) return undefined;
-  return normalizeSuppressionText(raw.replace(/^at\s+/i, "")).slice(0, 120);
-}
-
-function parseResetDescriptorTime(descriptor: string, now: number): number | undefined {
-  const match = descriptor.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
-  if (!match) return undefined;
-
-  let hour = Number(match[1]);
-  const minute = match[2] === undefined ? 0 : Number(match[2]);
-  const meridiem = match[3]?.toLowerCase();
-  if (!Number.isInteger(hour) || hour < 0 || hour > 23 || !Number.isInteger(minute) || minute < 0 || minute > 59) {
-    return undefined;
-  }
-
-  if (meridiem === "pm" && hour < 12) hour += 12;
-  if (meridiem === "am" && hour === 12) hour = 0;
-
-  const resetAt = new Date(now);
-  resetAt.setHours(hour, minute, 0, 0);
-  if (resetAt.getTime() <= now - USER_FACING_LIMIT_SUPPRESSION_RESET_GRACE_MS) {
-    resetAt.setDate(resetAt.getDate() + 1);
-  }
-  return resetAt.getTime();
-}
-
 export function classifyUserFacingRuntimeLimitFailure(
   error: string,
   now = Date.now(),
 ): UserFacingRuntimeLimitFailure | undefined {
-  const normalized = normalizeSuppressionText(error);
+  const normalized = normalizeRuntimeLimitText(error);
   const isExactAccountLimit = /you['’]?ve hit your (?:weekly|session|usage) limit/i.test(error);
   const isGenericAccountLimitWithReset =
     /\b(?:weekly|session|usage) (?:quota|limit)\b/i.test(error) && /\breset(?:s|ting)?\b/i.test(error);
   if (!isExactAccountLimit && !isGenericAccountLimitWithReset) return undefined;
 
-  const resetDescriptor = extractSessionLimitResetDescriptor(error);
-  const resetAt = resetDescriptor ? parseResetDescriptorTime(resetDescriptor, now) : undefined;
+  const resetDescriptor = extractRuntimeLimitResetDescriptor(error);
+  const resetAt = resetDescriptor ? parseRuntimeLimitResetDescriptorTime(resetDescriptor, now) : undefined;
   const expiresAt = resetAt
     ? Math.min(resetAt + USER_FACING_LIMIT_SUPPRESSION_RESET_GRACE_MS, now + USER_FACING_LIMIT_SUPPRESSION_MAX_MS)
     : now + USER_FACING_LIMIT_SUPPRESSION_DEFAULT_MS;
   const windowKey = resetDescriptor
     ? `reset:${resetDescriptor}`
-    : `message:${firstNonEmptyLine(normalized).slice(0, 160)}`;
+    : `message:${firstNonEmptyRuntimeLimitLine(normalized).slice(0, 160)}`;
 
   return {
     kind: "session_limit",
@@ -896,12 +863,29 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       clearTimeout(toolStuckTimer);
       toolStuckTimer = undefined;
     }
+    streaming.activeTools?.clear();
     streaming.toolRunning = false;
     streaming.currentToolId = undefined;
     streaming.currentToolName = undefined;
     streaming.currentToolInput = undefined;
     streaming.toolStartTime = undefined;
     streaming.currentToolSafety = null;
+  };
+  const setCurrentToolState = (tool: RuntimeActiveToolState): void => {
+    streaming.toolRunning = true;
+    streaming.currentToolId = tool.id;
+    streaming.currentToolName = tool.name;
+    streaming.currentToolInput = tool.input;
+    streaming.toolStartTime = tool.startedAt;
+    streaming.currentToolSafety = tool.safety;
+  };
+  const refreshCurrentToolState = (): void => {
+    const activeTool = streaming.activeTools ? Array.from(streaming.activeTools.values()).at(-1) : undefined;
+    if (!activeTool) {
+      clearActiveToolState();
+      return;
+    }
+    setCurrentToolState(activeTool);
   };
   const signalTurnComplete = () => {
     clearProviderInactivityWatch();
@@ -1541,11 +1525,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
         streaming.lastToolFailure = undefined;
         streaming.currentTurnToolStarted = true;
-        streaming.toolRunning = true;
-        streaming.currentToolId = event.toolUse.id;
-        streaming.currentToolName = event.toolUse.name;
-        streaming.currentToolInput = event.toolUse.input;
-        streaming.toolStartTime = Date.now();
+        const activeTool: RuntimeActiveToolState = {
+          id: event.toolUse.id,
+          name: event.toolUse.name,
+          input: event.toolUse.input,
+          safety: toolSafety,
+          startedAt: Date.now(),
+        };
+        (streaming.activeTools ??= new Map()).set(activeTool.id, activeTool);
+        setCurrentToolState(activeTool);
         log.info("Tool started", {
           sessionName,
           tool: event.toolUse.name,
@@ -1636,7 +1624,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               provider: runtimeSession.provider,
             });
           } else {
-            responseText += messageText;
             ensureCurrentTurnUserObservation();
             pushObservationEvent("message.assistant", {
               preview: truncateObservationPreview(messageText),
@@ -1702,6 +1689,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 source: streaming.currentSource,
               });
               if (streaming.runtimeTargetPolicy) {
+                responseText = messageText;
                 bufferedResponseMetadata = event.metadata;
                 log.info("Buffering target response until terminal success", {
                   sessionName,
@@ -1709,6 +1697,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                   textLen: messageText.length,
                 });
               } else {
+                responseText += messageText;
                 await emitResponse(messageText, event.metadata);
               }
             }
@@ -1731,10 +1720,21 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
 
       if (event.type === "tool.completed") {
-        const durationMs = streaming.toolStartTime ? Date.now() - streaming.toolStartTime : undefined;
-        const toolId = streaming.currentToolId ?? event.toolUseId ?? "unknown";
-        const toolName = streaming.currentToolName ?? event.toolName ?? "unknown";
-        const toolInput = streaming.currentToolInput;
+        const activeTool = event.toolUseId ? streaming.activeTools?.get(event.toolUseId) : undefined;
+        const fallbackCurrentTool =
+          streaming.currentToolId && (!event.toolUseId || event.toolUseId === streaming.currentToolId)
+            ? {
+                id: streaming.currentToolId,
+                name: streaming.currentToolName ?? event.toolName ?? "unknown",
+                input: streaming.currentToolInput,
+                startedAt: streaming.toolStartTime,
+              }
+            : null;
+        const toolId = event.toolUseId ?? activeTool?.id ?? fallbackCurrentTool?.id ?? "unknown";
+        const toolName = activeTool?.name ?? event.toolName ?? fallbackCurrentTool?.name ?? "unknown";
+        const toolInput = activeTool?.input ?? fallbackCurrentTool?.input;
+        const toolStartedAt = activeTool?.startedAt ?? fallbackCurrentTool?.startedAt;
+        const durationMs = toolStartedAt ? Date.now() - toolStartedAt : undefined;
         const output = truncateOutput(event.content);
         ensureCurrentTurnUserObservation();
         pushObservationEvent("tool.end", {
@@ -1847,7 +1847,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               metadata: event.metadata,
             }
           : undefined;
-        clearActiveToolState();
+        if (toolId !== "unknown") {
+          streaming.activeTools?.delete(toolId);
+        }
+        refreshCurrentToolState();
 
         // Execute deferred abort now that unsafe tool has completed
         if (streaming.pendingAbort) {
@@ -2204,6 +2207,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const suppressedRecoverable = interruptedRecoverable || internalRecoverable;
         const rawEventSummary = summarizeRuntimeFailureRawEvent(event.rawEvent);
         const currentTurnHadToolStarted = streaming.currentTurnToolStarted === true;
+        const preFailureCredentialStatus = streaming.currentRuntimeCredential?.credentialId
+          ? getRuntimeCredential(streaming.currentRuntimeCredential.credentialId)?.status
+          : undefined;
         const credentialFailureSignal = !suppressedRecoverable
           ? classifyRuntimeCredentialTurnFailure({
               streaming,
@@ -2223,6 +2229,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 source: "sdk-error",
               })
             : undefined);
+        const adapterCredentialFailure =
+          event.metadata?.failureScope === "credential" && event.recoverable === true && event.caughtException !== true;
+        const retryableCredentialFailure =
+          credentialFailureSignal?.retryableByCredential === true ||
+          (adapterCredentialFailure && credentialFailureSignal !== undefined);
         const taskBoundQuota =
           runtimeFailureSignal?.kind === "quota_exhausted" && Boolean(streaming.currentTaskBarrierTaskId);
         const classifiedRuntimeTargetFailure =
@@ -2234,7 +2245,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 recoverable: event.recoverable,
                 rawEvent: event.rawEvent,
                 metadata: event.metadata,
-                credentialFailure: credentialFailureSignal?.retryableByCredential === true,
+                credentialFailure: retryableCredentialFailure,
                 targetFailure: event.targetFailure === true,
               })
             : undefined;
@@ -2322,7 +2333,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           break;
         }
 
-        if (credentialFailureSignal?.retryableByCredential && !taskBoundQuota && !streaming.runtimeTargetPolicy) {
+        if (retryableCredentialFailure && !taskBoundQuota && !streaming.runtimeTargetPolicy) {
           const restartReason = `runtime_credential_${credentialFailureSignal.kind}`;
           if (currentTurnHadToolStarted) {
             log.info("Skipping runtime credential retry after tool activity", {
@@ -2531,7 +2542,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               recoverable: event.recoverable,
               rawEvent: event.rawEvent,
               metadata: event.metadata,
-              credentialFailure: credentialFailureSignal?.retryableByCredential === true,
+              credentialFailure: retryableCredentialFailure,
               targetFailure: event.targetFailure === true,
             });
           const attemptsOnTarget = state.attempts.filter(
@@ -2548,6 +2559,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             sideEffectBoundaryCrossed: currentTurnHadToolStarted,
             attemptsOnTarget,
             maxAttemptsPerTarget: streaming.runtimeTargetPolicy.maxAttemptsPerTarget,
+            credentialRecoveryEligible: isRuntimeTargetAutoRollbackEligible({
+              runtimeProvider: streaming.runtimeTarget.runtimeProvider,
+              managedCredentialId: streaming.currentRuntimeCredential?.credentialId,
+              managedCredentialStatus: preFailureCredentialStatus,
+            }),
             credentialRecoveriesOnTarget,
             maxCredentialRecoveryAttemptsPerTarget:
               streaming.runtimeTargetPolicy.maxCredentialRecoveryAttemptsPerTarget,
@@ -2556,9 +2572,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           let credentialRefreshAction: string | undefined;
           let credentialRefreshError: string | undefined;
           if (failureAction === "recover_credential") {
-            credentialRecoveryAttempt = recordRuntimeTargetCredentialRecovery(state, streaming.runtimeTarget.id);
             const credentialId = streaming.currentRuntimeCredential?.credentialId;
-            if (credentialId) {
+            if (!credentialId) {
+              failureAction = "switch_target";
+              credentialRefreshError = "no managed credential available for recovery";
+            } else {
+              credentialRecoveryAttempt = recordRuntimeTargetCredentialRecovery(state, streaming.runtimeTarget.id);
               try {
                 const refresh = await refreshRuntimeCredential(credentialId, { reason: "retryable_failure" });
                 credentialRefreshAction = refresh.action;

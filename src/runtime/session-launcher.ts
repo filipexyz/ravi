@@ -15,7 +15,11 @@ import {
 } from "../session-trace/runtime-trace.js";
 import { logger } from "../utils/logger.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID, assertRuntimeCompatibility } from "./provider-registry.js";
-import { completeRuntimeCredentialAttempt, markRuntimeCredentialAttemptStarted } from "./credential-store.js";
+import {
+  completeRuntimeCredentialAttempt,
+  getRuntimeCredential,
+  markRuntimeCredentialAttemptStarted,
+} from "./credential-store.js";
 import { classifyRuntimeCredentialFailure } from "./credential-classifier.js";
 import { refreshRuntimeCredential } from "./credential-refresh.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
@@ -43,12 +47,13 @@ import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./tas
 import { updateRuntimeLiveState } from "./live-state.js";
 import { ensureObserverBindingsForSession } from "./observation-plane.js";
 import { noteTerminalTurnForLearningLoop } from "./learning-loop-cadence.js";
-import { blockTaskForProviderQuota } from "./provider-quota-task.js";
+import { blockTaskForProviderQuota, failTaskForRuntimeStartFailure } from "./provider-quota-task.js";
 import { resolveSessionOutputTarget } from "./session-output-target.js";
 import {
   classifyRuntimeTargetFailure,
   decideRuntimeTargetFailure,
   getRuntimeTargetCredentialRecoveryCount,
+  isRuntimeTargetAutoRollbackEligible,
   recordRuntimeTargetCredentialRecovery,
 } from "./target-policy.js";
 
@@ -123,14 +128,20 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     const errorMessage = error instanceof Error ? error.message : String(error);
     const exhaustedTurnState = prompt._runtimeTargetState;
     const exhaustedPolicy = prompt._runtimeTargetPolicy;
+    const runtimeTargetPolicyExhausted = isRuntimeTargetPolicyExhausted(errorMessage);
     let discardedStashedMessages = 0;
-    if (resumeStashedMessages && exhaustedTurnState) {
-      exhaustedTurnState.terminal = true;
-      discardedStashedMessages = discardStashedLogicalTurnMessages(
-        stashedMessages,
-        sessionName,
-        exhaustedTurnState.logicalTurnId,
-      );
+    if (resumeStashedMessages && runtimeTargetPolicyExhausted) {
+      if (exhaustedTurnState) {
+        exhaustedTurnState.terminal = true;
+        discardedStashedMessages = discardStashedLogicalTurnMessages(
+          stashedMessages,
+          sessionName,
+          exhaustedTurnState.logicalTurnId,
+        );
+      }
+      if (discardedStashedMessages === 0) {
+        discardedStashedMessages = discardAllStashedSessionMessages(stashedMessages, sessionName);
+      }
     }
     log.warn("Runtime target resolution failed", { sessionName, error: errorMessage });
     const failedSession = getSessionByName(sessionName);
@@ -188,7 +199,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       });
     }
     drainPendingStarts();
-    if ((stashedMessages.get(sessionName)?.length ?? 0) > 0 && restartStashedSession) {
+    if (!runtimeTargetPolicyExhausted && (stashedMessages.get(sessionName)?.length ?? 0) > 0 && restartStashedSession) {
       await restartStashedSession({ sessionName, reason: "runtime_target_exhausted" });
     }
     return;
@@ -482,6 +493,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       storedRuntimeSessionParams,
       storedProviderSessionId,
       canResumeStoredSession,
+      resumeDecision,
       resolvedSource,
       approvalSource,
       streamingSession,
@@ -560,6 +572,9 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       causeRecord?.statusCode,
     );
     const normalizedFailureScope = err instanceof RuntimeStartFailure ? err.failureScope : undefined;
+    const preFailureCredentialStatus = runtimeCredentialAttempt?.credentialId
+      ? getRuntimeCredential(runtimeCredentialAttempt.credentialId)?.status
+      : undefined;
     const credentialSignal = classifyRuntimeCredentialFailure({
       runtimeProvider: runtimeProviderId,
       upstreamProvider: runtimeCredentialAttempt?.upstreamProvider,
@@ -577,6 +592,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       normalizedFailureScope === "target" || (failureStatus !== undefined && failureStatus >= 500);
     const taskBoundQuota =
       credentialSignal.kind === "quota_exhausted" && Boolean(streamingSession.currentTaskBarrierTaskId);
+    let terminalTaskHandled = false;
     if (taskBoundQuota && streamingSession.currentTaskBarrierTaskId) {
       if (runtimeTargetPolicy && runtimeTargetState && runtimeTarget) {
         runtimeTargetState.pendingTaskQuota = {
@@ -584,7 +600,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
           error: errorMessage,
         };
       } else {
-        await blockTaskForProviderQuota({
+        terminalTaskHandled = await blockTaskForProviderQuota({
           taskId: streamingSession.currentTaskBarrierTaskId,
           agentId: agent.id,
           sessionName,
@@ -618,23 +634,36 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
             sideEffectBoundaryCrossed: false,
             attemptsOnTarget: runtimeTargetState.attempts.filter((item) => item.targetId === runtimeTarget.id).length,
             maxAttemptsPerTarget: runtimeTargetPolicy.maxAttemptsPerTarget,
+            credentialRecoveryEligible: isRuntimeTargetAutoRollbackEligible({
+              runtimeProvider: runtimeTarget.runtimeProvider,
+              managedCredentialId: runtimeCredentialAttempt?.credentialId,
+              managedCredentialStatus: preFailureCredentialStatus,
+            }),
             credentialRecoveriesOnTarget: getRuntimeTargetCredentialRecoveryCount(runtimeTargetState, runtimeTarget.id),
             maxCredentialRecoveryAttemptsPerTarget: runtimeTargetPolicy.maxCredentialRecoveryAttemptsPerTarget,
           })
         : "terminate";
     let credentialRecoveryAttempt: number | undefined;
     let credentialRefreshAction: string | undefined;
+    let credentialRefreshError: string | undefined;
     if (startFailureAction === "recover_credential" && runtimeTargetPolicy && runtimeTargetState && runtimeTarget) {
-      credentialRecoveryAttempt = recordRuntimeTargetCredentialRecovery(runtimeTargetState, runtimeTarget.id);
-      if (runtimeCredentialAttempt?.credentialId) {
+      if (!runtimeCredentialAttempt?.credentialId) {
+        startFailureAction = "switch_target";
+        credentialRefreshError = "no managed credential available for recovery";
+      } else {
+        credentialRecoveryAttempt = recordRuntimeTargetCredentialRecovery(runtimeTargetState, runtimeTarget.id);
         try {
           const refresh = await refreshRuntimeCredential(runtimeCredentialAttempt.credentialId, {
             reason: "retryable_failure",
           });
           credentialRefreshAction = refresh.action;
-          if (refresh.action === "failed") startFailureAction = "switch_target";
+          if (refresh.action === "failed") {
+            startFailureAction = "switch_target";
+            credentialRefreshError = "credential refresh reported failure";
+          }
         } catch (refreshError) {
           startFailureAction = "switch_target";
+          credentialRefreshError = "runtime credential refresh failed";
           log.warn("Runtime credential refresh failed during startup recovery", {
             sessionName,
             provider: runtimeProviderId,
@@ -696,6 +725,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
           logicalTurnId: runtimeTargetState.logicalTurnId,
           credentialRecoveryAttempt: credentialRecoveryAttempt ?? null,
           credentialRefreshAction: credentialRefreshAction ?? null,
+          credentialRefreshError: credentialRefreshError ?? null,
           taskQuotaTaskId: runtimeTargetState.pendingTaskQuota?.taskId ?? null,
         },
       });
@@ -719,6 +749,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
           failureAction: startFailureAction,
           credentialRecoveryAttempt: credentialRecoveryAttempt ?? null,
           credentialRefreshAction: credentialRefreshAction ?? null,
+          credentialRefreshError: credentialRefreshError ?? null,
           phase: "runtime.start",
         },
       });
@@ -764,7 +795,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       }
       runtimeTargetState.terminal = true;
       if (runtimeTargetState.pendingTaskQuota) {
-        await blockTaskForProviderQuota({
+        terminalTaskHandled = await blockTaskForProviderQuota({
           taskId: runtimeTargetState.pendingTaskQuota.taskId,
           agentId: agent.id,
           sessionName,
@@ -802,6 +833,15 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       agentId: agent.id,
       agentCwd: agent.cwd,
     });
+
+    if (streamingSession.currentTaskBarrierTaskId && !terminalTaskHandled) {
+      await failTaskForRuntimeStartFailure({
+        taskId: streamingSession.currentTaskBarrierTaskId,
+        agentId: agent.id,
+        sessionName,
+        error: errorMessage,
+      });
+    }
 
     log.error("Failed to start streaming session", {
       sessionName,
@@ -879,6 +919,19 @@ function discardStashedLogicalTurnMessages(
   if (remaining.length > 0) stashedMessages.set(sessionName, remaining);
   else stashedMessages.delete(sessionName);
   return discarded;
+}
+
+function discardAllStashedSessionMessages(
+  stashedMessages: Map<string, RuntimeUserMessage[]>,
+  sessionName: string,
+): number {
+  const discarded = stashedMessages.get(sessionName)?.length ?? 0;
+  stashedMessages.delete(sessionName);
+  return discarded;
+}
+
+function isRuntimeTargetPolicyExhausted(errorMessage: string): boolean {
+  return /runtime target policy ['"].+['"] is exhausted/i.test(errorMessage);
 }
 
 function asRuntimeFailureRecord(value: unknown): Record<string, unknown> | undefined {

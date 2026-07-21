@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { configStore } from "../config-store.js";
 import { saveMessage } from "../db.js";
 import { nats } from "../nats.js";
 import { attachChatToSession } from "../router/sessions.js";
@@ -25,6 +26,7 @@ import {
   markRuntimeCredentialAttemptStarted,
   reserveRuntimeCredentialAttempt,
 } from "./credential-store.js";
+import type { RuntimeCredentialStatus } from "./credential-types.js";
 import { registerRuntimeCredentialRefreshHook, unregisterRuntimeCredentialRefreshHook } from "./credential-refresh.js";
 import { RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON } from "./context-window-recovery.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
@@ -238,12 +240,17 @@ function makeLoadedRaviTaskSkillVisibility(): RuntimeSkillVisibilitySnapshot {
   };
 }
 
-function seedRuntimeCredentialAttempt(id: string) {
+function seedRuntimeCredentialAttempt(
+  id: string,
+  provider: RuntimeProviderId = PROVIDER,
+  status: RuntimeCredentialStatus = "healthy",
+) {
   const credential = createRuntimeCredential({
     id,
     label: `Credential ${id}`,
-    runtimeProvider: PROVIDER,
-    upstreamProvider: "openai",
+    runtimeProvider: provider,
+    upstreamProvider: provider === "claude" ? "anthropic" : "openai",
+    status,
     authMethod: "api-key",
     bindings: [
       {
@@ -348,14 +355,17 @@ async function runTraceLoop(
 describe("runtime session trace instrumentation", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-runtime-trace-test-");
+    configStore.refresh();
     getOrCreateSession(SESSION_KEY, AGENT_ID, stateDir ?? "/tmp", { name: SESSION_NAME });
     resetUserFacingRuntimeLimitSuppressionsForTest();
   });
 
   afterEach(async () => {
     unregisterRuntimeCredentialRefreshHook(PROVIDER);
+    unregisterRuntimeCredentialRefreshHook("claude");
     resetUserFacingRuntimeLimitSuppressionsForTest();
     await cleanupIsolatedRaviState(stateDir);
+    configStore.refresh();
     stateDir = null;
   });
 
@@ -493,6 +503,91 @@ describe("runtime session trace instrumentation", () => {
           sha256: expect.any(String),
         }),
       ]),
+    });
+  });
+
+  it("rebases recent session history on provider cold start without duplicating the current message", async () => {
+    saveMessage(SESSION_NAME, "user", "Estamos falando do DMN e do profile metodologico.");
+    saveMessage(SESSION_NAME, "assistant", "Revisei o profile DMN: nao devemos pedir para carregar skill tal.");
+    saveMessage(SESSION_NAME, "user", "Ouviu?");
+
+    const streaming = makeStreamingSession({
+      pendingMessages: [createQueuedRuntimeUserMessage({ prompt: "Ouviu?", deliveryBarrier: "after_tool" })],
+    });
+    const provider: SessionRuntimeProvider = {
+      id: PROVIDER,
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-build-continuity-rebase",
+      sessionName: SESSION_NAME,
+      prompt: {
+        prompt: "Ouviu?",
+        source,
+        deliveryBarrier: "after_tool",
+      },
+      session: makeSession(),
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default", effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resumeDecision: {
+        hadStoredProviderSessionId: true,
+        storedRuntimeProvider: "codex",
+        requestedRuntimeProvider: PROVIDER,
+        supportsSessionResume: true,
+        providerMatches: false,
+        sessionStateValid: true,
+        canResume: false,
+        reason: "provider_mismatch",
+        staleCleared: true,
+      },
+      resolvedSource: source,
+      streamingSession: streaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+    });
+
+    const yielded = await runtimeRequest.prompt.next();
+    const content = yielded.value?.message.content ?? "";
+
+    expect(content).toContain("# Runtime Continuity Rebase");
+    expect(content).toContain("Reason: provider_mismatch");
+    expect(content).toContain("Estamos falando do DMN");
+    expect(content).toContain("nao devemos pedir para carregar skill tal");
+    expect(content.match(/Ouviu\\?/g)).toHaveLength(1);
+
+    streaming.done = true;
+    streaming.onTurnComplete?.();
+    await runtimeRequest.prompt.return?.(undefined);
+
+    const turn = getSessionTurn(streaming.currentTraceTurnId ?? "");
+    const tracedPrompt = getSessionTraceBlob(turn?.userPromptSha256 ?? "")?.contentText;
+    expect(tracedPrompt).toContain("# Runtime Continuity Rebase");
+    expect(tracedPrompt).toContain("## Current User Message(s)");
+
+    const rebaseEvent = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "runtime.context.rebased");
+    expect(rebaseEvent).toMatchObject({
+      eventGroup: "runtime_context",
+      status: "applied",
+      provider: PROVIDER,
+    });
+    expect(rebaseEvent?.payloadJson).toMatchObject({
+      reason: "provider_mismatch",
+      messageCount: 2,
+      truncated: false,
     });
   });
 
@@ -780,6 +875,122 @@ describe("runtime session trace instrumentation", () => {
       contactId: "contact_1",
     });
     expect(streaming.currentTraceTurnId).toBeUndefined();
+  });
+
+  it("matches overlapping tool completions by toolUseId", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming);
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "tool.started",
+          toolUse: { id: "tool-bash", name: "Bash", input: { cmd: "ravi tasks show task-1" } },
+        },
+        {
+          type: "tool.started",
+          toolUse: { id: "tool-read", name: "Read", input: { file_path: "/tmp/report.md" } },
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "tool-bash",
+          toolName: "Bash",
+          content: "bash ok",
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "tool-read",
+          toolName: "Read",
+          content: "read ok",
+        },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          usage: { inputTokens: 10, outputTokens: 4 },
+        },
+      ]),
+    );
+
+    const toolEnds = listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "tool.end");
+    expect(toolEnds.map((event) => event.payloadJson)).toEqual([
+      expect.objectContaining({ toolId: "tool-bash", toolName: "Bash", output: "bash ok" }),
+      expect.objectContaining({ toolId: "tool-read", toolName: "Read", output: "read ok" }),
+    ]);
+    expect(streaming.currentTraceTurnId).toBeUndefined();
+  });
+
+  it("emits only the final buffered assistant message after a target-policy turn succeeds", async () => {
+    const policy: RuntimeTargetPolicy = {
+      id: "buffer-final-response",
+      strategy: "ordered",
+      maxAttemptsPerTarget: 1,
+      targets: [{ id: "primary", runtimeProvider: PROVIDER, model: MODEL }],
+    };
+    const state: RuntimeTargetTurnState = {
+      logicalTurnId: "logical-buffer-final-response",
+      attempts: [{ targetId: "primary", attempt: 1, startedAt: Date.now() }],
+      sideEffectBoundaryCrossed: false,
+      terminal: false,
+    };
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "run with progress chatter",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+      _runtimeTargetPolicy: policy,
+      _runtimeTargetState: state,
+    });
+    const outputChat = dbUpsertChat({
+      channel: source.channel,
+      instanceId: source.accountId,
+      platformChatId: source.chatId,
+      chatType: "dm",
+      title: "target buffer response",
+    });
+    attachChatToSession({ sessionKey: SESSION_KEY, chatId: outputChat.id, setOutputTarget: true });
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      runtimeTargetPolicy: policy,
+      runtimeTarget: policy.targets[0],
+      runtimeTargetState: state,
+    });
+    seedAdapterTrace(streaming, "turn-target-buffer-final");
+    const responses: string[] = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
+      if (topic !== `ravi.session.${SESSION_NAME}.response` || !data || typeof data !== "object") return;
+      const response = (data as { response?: unknown }).response;
+      if (typeof response === "string") responses.push(response);
+    });
+
+    try {
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          { type: "assistant.message", text: "I will inspect the file first." },
+          { type: "tool.started", toolUse: { id: "tool-read", name: "Read", input: { file_path: "/tmp/a.md" } } },
+          { type: "tool.completed", toolUseId: "tool-read", toolName: "Read", content: "file content" },
+          { type: "assistant.message", text: "Final result only." },
+          {
+            type: "turn.complete",
+            providerSessionId: "provider-after",
+            usage: { inputTokens: 10, outputTokens: 4 },
+          },
+        ]),
+      );
+    } finally {
+      emitSpy.mockRestore();
+    }
+
+    expect(responses).toEqual(["Final result only."]);
+    const targetSucceeded = listSessionEvents(SESSION_KEY).find(
+      (event) => event.eventType === "runtime.target.succeeded",
+    );
+    expect(targetSucceeded?.payloadJson).toMatchObject({
+      responseOutbox: { response: "Final result only." },
+    });
   });
 
   it("marks the active credential attempt succeeded on a successful terminal turn", async () => {
@@ -1688,7 +1899,7 @@ describe("runtime session trace instrumentation", () => {
       maxAttemptsPerTarget: 1,
       maxCredentialRecoveryAttemptsPerTarget: 1,
       targets: [
-        { id: "primary", runtimeProvider: PROVIDER, model: MODEL },
+        { id: "primary", runtimeProvider: "claude", model: "sonnet" },
         { id: "secondary", runtimeProvider: "trace-secondary", model: "trace-secondary-model" },
       ],
     };
@@ -1710,13 +1921,13 @@ describe("runtime session trace instrumentation", () => {
     const streaming = makeStreamingSession({
       pendingMessages: [queued],
       currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
-      currentRuntimeCredential: seedRuntimeCredentialAttempt("rcred_refresh_failure"),
+      currentRuntimeCredential: seedRuntimeCredentialAttempt("rcred_refresh_failure", "claude"),
       runtimeTargetPolicy: policy,
       runtimeTarget: policy.targets[0],
       runtimeTargetState: state,
     });
     seedAdapterTrace(streaming, "turn-credential-refresh-failure");
-    registerRuntimeCredentialRefreshHook(PROVIDER, async () => {
+    registerRuntimeCredentialRefreshHook("claude", async () => {
       throw new Error("sensitive upstream refresh detail");
     });
     const stashedMessages = new Map<string, RuntimeUserMessage[]>();
@@ -1753,6 +1964,142 @@ describe("runtime session trace instrumentation", () => {
     expect(recovery?.error).not.toContain("sensitive upstream refresh detail");
   });
 
+  it("fails closed instead of auto-rollback for non-Claude managed credential failures", async () => {
+    const policy: RuntimeTargetPolicy = {
+      id: "non-claude-credential-fail-closed",
+      strategy: "ordered",
+      maxAttemptsPerTarget: 1,
+      maxCredentialRecoveryAttemptsPerTarget: 1,
+      targets: [
+        { id: "primary", runtimeProvider: "codex", model: "gpt-5" },
+        { id: "secondary", runtimeProvider: "trace-secondary", model: "trace-secondary-model" },
+      ],
+    };
+    const state: RuntimeTargetTurnState = {
+      logicalTurnId: "logical-non-claude-credential",
+      attempts: [{ targetId: "primary", attempt: 1, startedAt: Date.now() }],
+      credentialRecoveries: {},
+      sideEffectBoundaryCrossed: false,
+      terminal: false,
+    };
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "do not auto rollback non-Claude credential failure",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+      _runtimeTargetPolicy: policy,
+      _runtimeTargetState: state,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      currentRuntimeCredential: seedRuntimeCredentialAttempt("rcred_non_claude_rollback", "codex"),
+      runtimeTargetPolicy: policy,
+      runtimeTarget: policy.targets[0],
+      runtimeTargetState: state,
+    });
+    seedAdapterTrace(streaming, "turn-non-claude-credential");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error: "rate limited",
+          recoverable: true,
+          rawEvent: { type: "error", status: 429, headers: { "retry-after": "2" } },
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(restartRequests).toEqual([]);
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(state).toMatchObject({
+      terminal: true,
+      credentialRecoveries: {},
+      attempts: [{ targetId: "primary", outcome: "terminal_failure", failureKind: "credential" }],
+    });
+    expect(
+      listSessionEvents(SESSION_KEY).find((event) => event.eventType === "runtime.target.replay_blocked")?.payloadJson,
+    ).toMatchObject({ targetId: "primary", failureAction: "terminate", failureScope: "credential" });
+  });
+
+  it("fails closed instead of auto-rollback for unhealthy Claude managed credentials", async () => {
+    const policy: RuntimeTargetPolicy = {
+      id: "unhealthy-claude-credential-fail-closed",
+      strategy: "ordered",
+      maxAttemptsPerTarget: 1,
+      maxCredentialRecoveryAttemptsPerTarget: 1,
+      targets: [
+        { id: "primary", runtimeProvider: "claude", model: "sonnet" },
+        { id: "secondary", runtimeProvider: "trace-secondary", model: "trace-secondary-model" },
+      ],
+    };
+    const state: RuntimeTargetTurnState = {
+      logicalTurnId: "logical-unhealthy-claude-credential",
+      attempts: [{ targetId: "primary", attempt: 1, startedAt: Date.now() }],
+      credentialRecoveries: {},
+      sideEffectBoundaryCrossed: false,
+      terminal: false,
+    };
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "do not auto rollback unhealthy Claude credential failure",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+      _runtimeTargetPolicy: policy,
+      _runtimeTargetState: state,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      currentRuntimeCredential: seedRuntimeCredentialAttempt("rcred_unhealthy_claude_rollback", "claude", "cooldown"),
+      runtimeTargetPolicy: policy,
+      runtimeTarget: policy.targets[0],
+      runtimeTargetState: state,
+    });
+    seedAdapterTrace(streaming, "turn-unhealthy-claude-credential");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error: "rate limited",
+          recoverable: true,
+          rawEvent: { type: "error", status: 429, headers: { "retry-after": "2" } },
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(restartRequests).toEqual([]);
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(state).toMatchObject({
+      terminal: true,
+      credentialRecoveries: {},
+      attempts: [{ targetId: "primary", outcome: "terminal_failure", failureKind: "credential" }],
+    });
+    expect(
+      listSessionEvents(SESSION_KEY).find((event) => event.eventType === "runtime.target.replay_blocked")?.payloadJson,
+    ).toMatchObject({ targetId: "primary", failureAction: "terminate", failureScope: "credential" });
+  });
+
   it("defers a task-bound quota block until authorized target failover finishes", async () => {
     const task = dbCreateTask({
       title: "Quota-bound target task",
@@ -1767,7 +2114,7 @@ describe("runtime session trace instrumentation", () => {
       maxAttemptsPerTarget: 1,
       maxCredentialRecoveryAttemptsPerTarget: 0,
       targets: [
-        { id: "primary", runtimeProvider: PROVIDER, model: MODEL },
+        { id: "primary", runtimeProvider: "claude", model: "sonnet" },
         { id: "secondary", runtimeProvider: "trace-secondary", model: "trace-secondary-model" },
       ],
     };
@@ -1791,7 +2138,7 @@ describe("runtime session trace instrumentation", () => {
       pendingMessages: [queued],
       currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
       currentTaskBarrierTaskId: task.id,
-      currentRuntimeCredential: seedRuntimeCredentialAttempt("rcred_task_quota"),
+      currentRuntimeCredential: seedRuntimeCredentialAttempt("rcred_task_quota", "claude"),
       runtimeTargetPolicy: policy,
       runtimeTarget: policy.targets[0],
       runtimeTargetState: state,
@@ -1926,6 +2273,61 @@ describe("runtime session trace instrumentation", () => {
     expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
     expect(runtimeEvents).toEqual([expect.objectContaining({ type: "turn.failed", recoverable: false })]);
     expect(readLearningLoopCadenceState(getSession(SESSION_KEY)?.runtimeSessionParams)?.terminalTurnCount).toBe(1);
+  });
+
+  it("does not restart stale stashed messages when target policy resolution is exhausted", async () => {
+    const policy: RuntimeTargetPolicy = {
+      id: "stale-stash-exhausted",
+      strategy: "ordered",
+      maxAttemptsPerTarget: 1,
+      targets: [{ id: "primary", runtimeProvider: PROVIDER, model: MODEL }],
+    };
+    const state: RuntimeTargetTurnState = {
+      logicalTurnId: "logical-stale-stash-exhausted",
+      attempts: [{ targetId: "primary", attempt: 1, startedAt: Date.now(), outcome: "recoverable_failure" }],
+      credentialRecoveries: {},
+      sideEffectBoundaryCrossed: false,
+      terminal: false,
+    };
+    const staleQueued = createQueuedRuntimeUserMessage({
+      prompt: "stale queued cron turn",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>([[SESSION_NAME, [staleQueued]]]);
+    const runtimeEvents: Array<Record<string, unknown>> = [];
+    const restartRequests: string[] = [];
+
+    await startRuntimeSession({
+      sessionName: SESSION_NAME,
+      prompt: {
+        prompt: "stale queued cron turn",
+        source,
+        _agentId: AGENT_ID,
+        _resumeStashedMessages: true,
+        _runtimeTargetPolicy: policy,
+        _runtimeTargetState: state,
+      },
+      configModel: MODEL,
+      instanceId: "test",
+      streamingSessions: new Map(),
+      stashedMessages,
+      safeEmit: async (_topic, data) => {
+        runtimeEvents.push(data);
+      },
+      drainPendingStarts: () => {},
+      restartStashedSession: async ({ reason }) => {
+        restartRequests.push(reason);
+      },
+      runtimeResolution: { ok: false, error: new Error(`Runtime target policy '${policy.id}' is exhausted.`) },
+    });
+
+    expect(state.terminal).toBe(true);
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(restartRequests).toEqual([]);
+    expect(runtimeEvents).toEqual([expect.objectContaining({ type: "turn.failed", recoverable: false })]);
+    const exhausted = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "runtime.target.exhausted");
+    expect(exhausted?.payloadJson).toMatchObject({ discardedStashedMessages: 1 });
   });
 
   it("does not let credential heuristics override an explicit non-replayable failure scope", async () => {

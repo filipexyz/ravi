@@ -1,3 +1,4 @@
+import type { RuntimeCredentialStatus } from "./credential-types.js";
 import type { RuntimeEffort, RuntimeProviderId, RuntimeThinking } from "./types.js";
 
 export interface RuntimeTarget {
@@ -177,6 +178,7 @@ export interface RuntimeTargetFailureDecisionInput {
   sideEffectBoundaryCrossed: boolean;
   attemptsOnTarget: number;
   maxAttemptsPerTarget: number;
+  credentialRecoveryEligible?: boolean;
   credentialRecoveriesOnTarget?: number;
   maxCredentialRecoveryAttemptsPerTarget?: number;
 }
@@ -270,6 +272,7 @@ export function decideRuntimeTargetFailure(input: RuntimeTargetFailureDecisionIn
   if (!input.recoverable || !input.replayEligible || input.sideEffectBoundaryCrossed) return "terminate";
   if (input.scope === "request" || input.scope === "session" || input.scope === "unknown") return "terminate";
   if (input.scope === "credential") {
+    if (!input.credentialRecoveryEligible) return "terminate";
     const recoveries = input.credentialRecoveriesOnTarget ?? 0;
     const maxRecoveries = input.maxCredentialRecoveryAttemptsPerTarget ?? 1;
     return recoveries < maxRecoveries ? "recover_credential" : "switch_target";
@@ -286,6 +289,18 @@ export function recordRuntimeTargetCredentialRecovery(state: RuntimeTargetTurnSt
   const next = getRuntimeTargetCredentialRecoveryCount(state, targetId) + 1;
   state.credentialRecoveries = { ...(state.credentialRecoveries ?? {}), [targetId]: next };
   return next;
+}
+
+export function isRuntimeTargetAutoRollbackEligible(input: {
+  runtimeProvider: RuntimeProviderId;
+  managedCredentialId?: string | null;
+  managedCredentialStatus?: RuntimeCredentialStatus | null;
+}): boolean {
+  return (
+    input.runtimeProvider === "claude" &&
+    Boolean(input.managedCredentialId?.trim()) &&
+    input.managedCredentialStatus === "healthy"
+  );
 }
 
 /** Convert the provider capability matrix into stable dotted names used by policy constraints. */
