@@ -6,9 +6,9 @@
  *   2. Upsert the global subscription on Console.
  *   3. Cheap pulse with conditional headers. 304/204 -> sleep.
  *   4. On generation change, lease a batch via `/api/cli/inbox/poll`.
- *   5. Persist each item locally, publish `ravi.console.inbox.item` to NATS,
- *      then ack delivered. Local persistence happens before publish so a crash
- *      between publish and ack still leaves the durable mirror.
+ *   5. Persist each item locally, publish its canonical and normalized watch
+ *      subjects, flush NATS, then ack delivered. Local persistence happens
+ *      before publish so a crash between publish and ack leaves the mirror.
  *   6. Apply backoff on transport/auth errors. AUTH_REQUIRED /
  *      INSTALLATION_REVOKED parks the subscription until `ravi login` runs.
  *
@@ -16,6 +16,7 @@
  * `.ravi/specs/watch/SPEC.md`.
  */
 
+import { randomUUID } from "node:crypto";
 import { ConsoleApiClient, refreshCredentialsForStore } from "../cloud-auth/client.js";
 import { isCloudAuthError } from "../cloud-auth/errors.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../cloud-auth/storage.js";
@@ -25,7 +26,7 @@ import {
   annotateConsoleMailPayloadWithLocalIngest,
   ingestConsoleMailReceivedEvent,
 } from "../mailbox/console-ingest.js";
-import { publish } from "../nats.js";
+import { flushNats, publish } from "../nats.js";
 import { logger } from "../utils/logger.js";
 import { watchEventFromInboxPayload } from "../watch/events.js";
 import {
@@ -35,14 +36,19 @@ import {
   upsertGlobalInboxSubscription,
 } from "./inbox-client.js";
 import {
+  acquireInboxPollLock,
   countPendingItems,
   ensureSubscriptionRow,
   getItemByItemId,
   getSubscriptionByOrg,
+  inboxPollLockKey,
   listSubscriptions,
   markItemAcked,
   markItemDelivered,
   markSubscriptionPolled,
+  reconcileDeliveredItemsAckedThroughSequence,
+  releaseInboxPollLock,
+  renewInboxPollLock,
   setSubscriptionEnabled,
   updateSubscriptionRemoteId,
   upsertDeliveredItem,
@@ -66,9 +72,31 @@ const PAUSED_RECHECK_MS = 60_000;
 const POLL_BATCH_LIMIT = 25;
 const MAIL_ENRICHMENT_ATTEMPTS = 5;
 const MAIL_ENRICHMENT_INITIAL_DELAY_MS = 500;
+const POLL_LOCK_TTL_MS = 120_000;
+const POLL_LOCK_RENEW_MS = 30_000;
 
 interface RunnerOptions {
   intervalMs?: number;
+  nats?: InboxNatsPublishDependencies;
+}
+
+interface InboxNatsPublishDependencies {
+  publish: (subject: string, payload: Record<string, unknown>) => Promise<void>;
+  flush: () => Promise<void>;
+}
+
+class InboxPollLeaseLostError extends Error {
+  constructor(message = "Inbox poll lease was lost.", options?: ErrorOptions) {
+    super(message, options);
+    this.name = "InboxPollLeaseLostError";
+  }
+}
+
+class IncompleteInboxAckError extends Error {
+  constructor(requested: number, acked: number) {
+    super(`Console acknowledged ${acked} of ${requested} inbox items.`);
+    this.name = "IncompleteInboxAckError";
+  }
 }
 
 interface OrgState {
@@ -81,15 +109,19 @@ interface OrgState {
   lastEtag: string | null;
 }
 
-class InboxRunner {
+export class InboxRunner {
   private running = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private states = new Map<string, OrgState>();
   private intervalMs: number;
   private currentBackoffMs = 0;
+  private readonly lockOwnerId = randomUUID();
+  private readonly natsDependencies: InboxNatsPublishDependencies;
+  private tickInFlight: Promise<void> | null = null;
 
   constructor(options: RunnerOptions = {}) {
     this.intervalMs = options.intervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+    this.natsDependencies = options.nats ?? { publish, flush: flushNats };
   }
 
   async start(): Promise<void> {
@@ -111,7 +143,21 @@ class InboxRunner {
 
   /** Foreground one-shot. Returns when a single tick completes. */
   async tickOnce(): Promise<void> {
-    await this.tick();
+    await this.runTick();
+  }
+
+  /** Coalesce overlapping timer/foreground calls on this runner instance. */
+  private runTick(): Promise<void> {
+    if (this.tickInFlight) return this.tickInFlight;
+    const current = (async () => {
+      try {
+        await this.tick();
+      } finally {
+        this.tickInFlight = null;
+      }
+    })();
+    this.tickInFlight = current;
+    return current;
   }
 
   private scheduleTick(delay: number): void {
@@ -119,7 +165,7 @@ class InboxRunner {
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => {
       this.timer = null;
-      this.tick().catch((err) => {
+      this.runTick().catch((err) => {
         log.error("Inbox runner tick failed", { error: errMessage(err) });
       });
     }, delay);
@@ -127,6 +173,10 @@ class InboxRunner {
 
   private async tick(): Promise<void> {
     let nextDelay = this.intervalMs;
+    let activeLockKey: string | null = null;
+    let lockRenewalTimer: ReturnType<typeof setInterval> | null = null;
+    let pollLockLost = false;
+    let invalidateEtagOnError: OrgState | null = null;
 
     try {
       const credentials = readCloudCredentials();
@@ -153,10 +203,76 @@ class InboxRunner {
         organizationId,
         installationId: credentials.installationId,
       });
-      if (!row.enabled || row.status === "paused") {
+      if (!row.enabled) {
         nextDelay = PAUSED_RECHECK_MS;
         return;
       }
+
+      activeLockKey = inboxPollLockKey(row.consoleUrl, row.organizationId);
+      if (
+        !acquireInboxPollLock({
+          lockKey: activeLockKey,
+          ownerId: this.lockOwnerId,
+          ttlMs: POLL_LOCK_TTL_MS,
+        })
+      ) {
+        log.debug("Skipping inbox tick: another process owns the poll lease", {
+          consoleUrl: row.consoleUrl,
+          organizationId: row.organizationId,
+        });
+        activeLockKey = null;
+        return;
+      }
+
+      const requirePollLock = (): void => {
+        if (pollLockLost || !activeLockKey) {
+          throw new InboxPollLeaseLostError();
+        }
+        try {
+          if (
+            !renewInboxPollLock({
+              lockKey: activeLockKey,
+              ownerId: this.lockOwnerId,
+              ttlMs: POLL_LOCK_TTL_MS,
+            })
+          ) {
+            pollLockLost = true;
+            throw new InboxPollLeaseLostError();
+          }
+        } catch (error) {
+          pollLockLost = true;
+          if (error instanceof InboxPollLeaseLostError) throw error;
+          throw new InboxPollLeaseLostError("Inbox poll lease renewal failed.", { cause: error });
+        }
+      };
+      lockRenewalTimer = setInterval(() => {
+        if (pollLockLost || !activeLockKey) return;
+        try {
+          if (
+            !renewInboxPollLock({
+              lockKey: activeLockKey,
+              ownerId: this.lockOwnerId,
+              ttlMs: POLL_LOCK_TTL_MS,
+            })
+          ) {
+            pollLockLost = true;
+          }
+        } catch (error) {
+          pollLockLost = true;
+          log.warn("Inbox poll lease renewal errored", {
+            consoleUrl: row.consoleUrl,
+            organizationId: row.organizationId,
+            error: errMessage(error),
+          });
+        }
+        if (pollLockLost) {
+          log.warn("Inbox poll lease renewal failed", {
+            consoleUrl: row.consoleUrl,
+            organizationId: row.organizationId,
+          });
+        }
+      }, POLL_LOCK_RENEW_MS);
+      lockRenewalTimer.unref?.();
 
       const state =
         this.states.get(row.id) ??
@@ -178,6 +294,20 @@ class InboxRunner {
       this.states.set(row.id, state);
 
       const client = new ConsoleApiClient({ consoleUrl: row.consoleUrl });
+      let effectiveLastSequence = row.lastSequence ?? 0;
+
+      const adoptRemoteSubscription = (
+        subscriptionId: string | null,
+        options: { resetCursor: boolean; resetEtag: boolean },
+      ): void => {
+        requirePollLock();
+        state.remoteId = subscriptionId;
+        if (options.resetEtag) state.lastEtag = null;
+        updateSubscriptionRemoteId(row.id, subscriptionId, {
+          resetCursor: options.resetCursor,
+        });
+        if (options.resetCursor) effectiveLastSequence = 0;
+      };
 
       if (!state.remoteId) {
         const { subscription } = await this.withAutoRefresh(client, credentials, (token) =>
@@ -185,10 +315,10 @@ class InboxRunner {
             installationName: credentials.installationId,
           }),
         );
-        state.remoteId = subscription?.id ?? null;
-        if (state.remoteId) {
-          updateSubscriptionRemoteId(row.id, state.remoteId);
-        }
+        adoptRemoteSubscription(subscription?.id ?? null, {
+          resetCursor: false,
+          resetEtag: false,
+        });
       }
 
       const pulse = await this.withAutoRefresh(client, credentials, (token) =>
@@ -199,7 +329,16 @@ class InboxRunner {
         }),
       );
 
-      if (pulse.etag) state.lastEtag = pulse.etag;
+      // Once a fresh pulse has returned, every downstream failure must force a
+      // fresh pulse on the next tick. Keeping its ETag after an incomplete
+      // poll/publish/ack cycle can turn the retry into an endless 304 loop.
+      if (pulse.pulse) invalidateEtagOnError = state;
+      requirePollLock();
+      if (pulse.pulse) {
+        state.lastEtag = pulse.etag;
+      } else if (pulse.etag) {
+        state.lastEtag = pulse.etag;
+      }
 
       if (pulse.status === 304 || pulse.status === 204) {
         markSubscriptionPolled(row.id, { success: true, status: "active" });
@@ -228,14 +367,17 @@ class InboxRunner {
           }),
         );
         activeSubscription = subscription ?? null;
-        state.remoteId = activeSubscription?.id ?? null;
-        state.lastEtag = null;
-        if (state.remoteId) updateSubscriptionRemoteId(row.id, state.remoteId);
+        adoptRemoteSubscription(activeSubscription?.id ?? null, {
+          resetCursor: true,
+          resetEtag: true,
+        });
       }
 
       if (!state.remoteId && activeSubscription?.id) {
-        state.remoteId = activeSubscription.id;
-        updateSubscriptionRemoteId(row.id, state.remoteId);
+        adoptRemoteSubscription(activeSubscription.id, {
+          resetCursor: false,
+          resetEtag: false,
+        });
       } else if (state.remoteId && activeSubscription?.id && activeSubscription.id !== state.remoteId) {
         // Server returned a different active subscription than the one
         // we have locally. Happens after a CLI re-login that rotated the
@@ -246,13 +388,9 @@ class InboxRunner {
           previousSubscriptionId: state.remoteId,
           nextSubscriptionId: activeSubscription.id,
         });
-        state.remoteId = activeSubscription.id;
-        state.lastEtag = null;
-        updateSubscriptionRemoteId(row.id, state.remoteId);
-        markSubscriptionPolled(row.id, {
-          success: true,
-          status: "active",
-          generation: payload.watermark.generation,
+        adoptRemoteSubscription(activeSubscription.id, {
+          resetCursor: true,
+          resetEtag: true,
         });
       }
 
@@ -261,10 +399,24 @@ class InboxRunner {
         subscriptionCursor !== null && subscriptionCursor < payload.watermark.latestSequence;
 
       // Adopt cursor when Console reports we are ahead of our local record.
-      const cursorUpdate =
-        subscriptionCursor !== null && subscriptionCursor > (row.lastSequence ?? 0)
-          ? { lastSequence: subscriptionCursor }
-          : {};
+      const remoteCursorIsAhead = subscriptionCursor !== null && subscriptionCursor > effectiveLastSequence;
+      const cursorUpdate = remoteCursorIsAhead ? { lastSequence: subscriptionCursor } : {};
+      if (subscriptionCursor !== null) {
+        requirePollLock();
+        const reconciled = reconcileDeliveredItemsAckedThroughSequence({
+          consoleUrl: row.consoleUrl,
+          organizationId: row.organizationId,
+          sequence: subscriptionCursor,
+        });
+        if (reconciled > 0) {
+          log.info("Reconciled locally delivered inbox items from Console cursor", {
+            consoleUrl: row.consoleUrl,
+            organizationId: row.organizationId,
+            subscriptionCursor,
+            reconciled,
+          });
+        }
+      }
 
       if (!payload.changed && !hasPendingRemoteItems) {
         // Caught up: it's safe to mark generation locally because there
@@ -295,16 +447,18 @@ class InboxRunner {
           subscriptionId: state.remoteId,
         }),
       );
+      requirePollLock();
 
       const acks: Array<{
         itemId: string;
         status: "delivered";
         leaseId?: string;
       }> = [];
-      const baseSequence = subscriptionCursor ?? row.lastSequence ?? 0;
+      const baseSequence = subscriptionCursor ?? effectiveLastSequence;
       const deliveryResults: Array<{ sequence: number; delivered: boolean }> = [];
 
       for (const item of poll.items) {
+        requirePollLock();
         const handled = await this.handleItem({
           consoleUrl: row.consoleUrl,
           organizationId: row.organizationId,
@@ -314,6 +468,7 @@ class InboxRunner {
           pollId: poll.pollId,
           client,
           credentials,
+          assertPollLock: requirePollLock,
         });
         if (handled.delivered) {
           acks.push({
@@ -325,40 +480,75 @@ class InboxRunner {
         deliveryResults.push({ sequence: item.sequence, delivered: handled.delivered });
       }
 
+      // An empty poll does not mean completion when the pulse still reports a
+      // remote cursor behind the watermark (for example, another lease has not
+      // expired yet). Keep generation/ETag retryable in that case.
+      let remoteAckSucceeded = poll.items.length === 0 && !hasPendingRemoteItems;
       if (acks.length > 0) {
         try {
-          await this.withAutoRefresh(client, credentials, (token) =>
+          requirePollLock();
+          const ackResult = await this.withAutoRefresh(client, credentials, (token) =>
             ackInboxItemsRemote(client, token, {
               acks,
               subscriptionId: state.remoteId,
             }),
           );
+          if (!isCompleteInboxAck(ackResult, acks.length)) {
+            throw new IncompleteInboxAckError(acks.length, ackResult.acked);
+          }
+          // Do not commit local ack/cursor state after another owner has taken over.
+          requirePollLock();
           const ackedAt = Date.now();
           for (const ack of acks) {
             const localItem = getItemByItemId(row.consoleUrl, row.organizationId, ack.itemId);
             if (localItem) markItemAcked(localItem.id, ackedAt);
           }
+          remoteAckSucceeded = true;
         } catch (error) {
+          if (error instanceof InboxPollLeaseLostError) throw error;
           log.warn("Inbox ack failed; will retry on next tick", { error: errMessage(error) });
         }
       }
 
-      const deliveryProgress = computeInboxDeliveryProgress(baseSequence, deliveryResults);
+      const deliveryProgress = computeInboxDeliveryProgress(baseSequence, deliveryResults, remoteAckSucceeded);
+      requirePollLock();
+      const lastSequence = Math.max(deliveryProgress.lastSequence, effectiveLastSequence);
+      const needsContinuation = poll.hasMore || lastSequence < payload.watermark.latestSequence;
+      const deliveryIncomplete = deliveryProgress.hadDeliveryFailure || needsContinuation;
+      if (deliveryIncomplete) {
+        state.lastEtag = null;
+      }
       markSubscriptionPolled(row.id, {
-        ...(deliveryProgress.hadDeliveryFailure ? {} : { generation }),
-        lastSequence: Math.max(deliveryProgress.lastSequence, row.lastSequence ?? 0),
+        ...(deliveryIncomplete ? {} : { generation }),
+        lastSequence,
         success: true,
         status: "active",
       });
 
       this.currentBackoffMs = 0;
+      // `hasMore` guarantees another page is immediately available. A cursor
+      // still behind the watermark with no page can mean another lease is
+      // active, so keep it retryable without a zero-delay Console hot loop.
       if (poll.hasMore) {
         nextDelay = 0;
       }
     } catch (error) {
-      nextDelay = this.handleError(error);
+      if (invalidateEtagOnError) invalidateEtagOnError.lastEtag = null;
+      if (error instanceof InboxPollLeaseLostError) {
+        log.warn("Inbox poll lease lost; another runner may continue delivery", { error: error.message });
+        nextDelay = this.intervalMs;
+      } else {
+        nextDelay = this.handleError(error);
+      }
     } finally {
-      if (this.running) this.scheduleTick(nextDelay);
+      if (lockRenewalTimer) clearInterval(lockRenewalTimer);
+      try {
+        if (activeLockKey) releaseInboxPollLock(activeLockKey, this.lockOwnerId);
+      } catch (error) {
+        log.warn("Inbox poll lease release failed", { error: errMessage(error) });
+      } finally {
+        if (this.running) this.scheduleTick(nextDelay);
+      }
     }
   }
 
@@ -371,7 +561,21 @@ class InboxRunner {
     pollId: string;
     client: ConsoleApiClient;
     credentials: CloudCredentials;
+    assertPollLock: () => void;
   }): Promise<{ delivered: boolean }> {
+    input.assertPollLock();
+    const alreadyDelivered = getItemByItemId(input.consoleUrl, input.organizationId, input.item.itemId);
+    if (alreadyDelivered && alreadyDelivered.deliveredAt !== null) {
+      // Console is retrying only the ack. Preserve and reuse the exact durable
+      // envelope already flushed locally; enrichment and ingestion can have
+      // side effects and must not run again for an ack-only retry.
+      log.debug("Retrying only the Console ack for an already-delivered inbox item", {
+        itemId: input.item.itemId,
+        sequence: input.item.sequence,
+      });
+      return { delivered: true };
+    }
+
     const localDeliveredAt = new Date().toISOString();
     const natsPayload: InboxNatsPayload = {
       version: 1,
@@ -403,6 +607,7 @@ class InboxRunner {
     };
 
     const enrichedNatsPayload = await this.enrichLocalPayload(input, natsPayload);
+    input.assertPollLock();
 
     // 1. Persist locally before publish so a crash leaves a durable replay row.
     const { row: localItem, created } = upsertDeliveredItem({
@@ -433,15 +638,18 @@ class InboxRunner {
       return { delivered: true };
     }
 
-    const watchEvent = watchEventFromInboxPayload(enrichedNatsPayload, { inboxItemId: localItem.id });
-
-    // 2. Publish to NATS.
+    // 2. Publish every local subject and wait for server confirmation.
     try {
-      await publish(INBOX_NATS_SUBJECT, enrichedNatsPayload as unknown as Record<string, unknown>);
-      if (watchEvent) {
-        await publish(watchEvent.subject, watchEvent as unknown as Record<string, unknown>);
-      }
+      await publishInboxNatsEvents(
+        {
+          payload: enrichedNatsPayload,
+          inboxItemId: localItem.id,
+          beforePublish: input.assertPollLock,
+        },
+        this.natsDependencies,
+      );
     } catch (error) {
+      if (error instanceof InboxPollLeaseLostError) throw error;
       log.error("Failed to publish inbox event to NATS", {
         itemId: input.item.itemId,
         error: errMessage(error),
@@ -450,6 +658,7 @@ class InboxRunner {
     }
 
     // 3. Mark delivered locally so we can ack to Console.
+    input.assertPollLock();
     markItemDelivered(localItem.id, Date.now());
     return { delivered: true };
   }
@@ -582,19 +791,59 @@ function errMessage(error: unknown): string {
 export function computeInboxDeliveryProgress(
   baseSequence: number,
   items: Array<{ sequence: number; delivered: boolean }>,
+  remoteAckSucceeded = true,
 ): { lastSequence: number; hadDeliveryFailure: boolean } {
+  if (!remoteAckSucceeded) {
+    return { lastSequence: baseSequence, hadDeliveryFailure: true };
+  }
+
   let lastSequence = baseSequence;
   let blockedByFailure = false;
-  for (const item of items) {
-    if (!item.delivered) {
+
+  const ordered = [...items].sort((left, right) => left.sequence - right.sequence);
+  for (const item of ordered) {
+    // A stale duplicate at or behind the authoritative cursor cannot move it.
+    if (item.sequence <= lastSequence) continue;
+
+    const isNextSequence = item.sequence === lastSequence + 1;
+    if (blockedByFailure || !item.delivered || !isNextSequence) {
       blockedByFailure = true;
       continue;
     }
-    if (!blockedByFailure && item.sequence > lastSequence) {
-      lastSequence = item.sequence;
-    }
+    lastSequence = item.sequence;
   }
   return { lastSequence, hadDeliveryFailure: blockedByFailure };
+}
+
+export function isCompleteInboxAck(result: { acked: number }, requested: number): boolean {
+  return Number.isInteger(result.acked) && requested > 0 && result.acked === requested;
+}
+
+export async function publishInboxNatsEvents(
+  input: {
+    payload: InboxNatsPayload;
+    inboxItemId?: number | string | null;
+    canonicalSubject?: string;
+    beforePublish?: () => void | Promise<void>;
+  },
+  dependencies: InboxNatsPublishDependencies = { publish, flush: flushNats },
+): Promise<string[]> {
+  const subjects: string[] = [];
+  const canonicalSubject = input.canonicalSubject?.trim() || INBOX_NATS_SUBJECT;
+
+  await input.beforePublish?.();
+  await dependencies.publish(canonicalSubject, input.payload as unknown as Record<string, unknown>);
+  subjects.push(canonicalSubject);
+
+  const watchEvent = watchEventFromInboxPayload(input.payload, { inboxItemId: input.inboxItemId });
+  if (watchEvent) {
+    await input.beforePublish?.();
+    await dependencies.publish(watchEvent.subject, watchEvent as unknown as Record<string, unknown>);
+    subjects.push(watchEvent.subject);
+  }
+
+  await dependencies.flush();
+  return subjects;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -643,7 +892,8 @@ export function setEnabledForCurrentOrg(enabled: boolean): { changed: boolean } 
     });
     return { changed: true };
   }
-  if (row.enabled === enabled) return { changed: false };
+  const needsResume = enabled && (row.status !== "active" || row.lastErrorCode !== null || row.lastErrorAt !== null);
+  if (row.enabled === enabled && !needsResume) return { changed: false };
   setSubscriptionEnabled(row.id, enabled);
   return { changed: true };
 }
@@ -653,7 +903,10 @@ export function getStatusSnapshot() {
   const credentials = readCloudCredentials();
   const subscriptions = listSubscriptions().map((sub) => ({
     ...sub,
-    pending: countPendingItems(sub.id),
+    pending: countPendingItems({
+      consoleUrl: sub.consoleUrl,
+      organizationId: sub.organizationId,
+    }),
   }));
   return {
     credentialsPresent: Boolean(credentials),

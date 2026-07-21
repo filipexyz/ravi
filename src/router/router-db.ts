@@ -1828,6 +1828,64 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_session_trace_blobs_created
       ON session_trace_blobs(created_at);
 
+    -- Console delivery bridge: durable local mirror and per-org poll lease.
+    CREATE TABLE IF NOT EXISTS console_inbox_subscriptions (
+      id              TEXT PRIMARY KEY,
+      console_url     TEXT NOT NULL,
+      organization_id TEXT NOT NULL,
+      subscription_id TEXT,
+      installation_id TEXT NOT NULL,
+      status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','paused','errored')),
+      enabled         INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+      last_generation INTEGER,
+      last_sequence   INTEGER,
+      last_poll_at    INTEGER,
+      last_success_at INTEGER,
+      last_error_code TEXT,
+      last_error_at   INTEGER,
+      created_at      INTEGER NOT NULL,
+      updated_at      INTEGER NOT NULL,
+      UNIQUE(console_url, organization_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_console_inbox_subs_enabled
+      ON console_inbox_subscriptions(enabled, status);
+
+    CREATE TABLE IF NOT EXISTS console_inbox_items (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      console_url        TEXT NOT NULL,
+      organization_id    TEXT NOT NULL,
+      subscription_id    TEXT NOT NULL,
+      item_id            TEXT NOT NULL,
+      sequence           INTEGER NOT NULL,
+      event_type         TEXT NOT NULL,
+      category           TEXT NOT NULL,
+      severity           TEXT NOT NULL,
+      dedupe_key         TEXT NOT NULL,
+      nats_subject       TEXT NOT NULL,
+      nats_payload_json  TEXT NOT NULL,
+      delivered_at       INTEGER,
+      acked_at           INTEGER,
+      replay_count       INTEGER NOT NULL DEFAULT 0,
+      created_at         INTEGER NOT NULL,
+      updated_at         INTEGER NOT NULL,
+      UNIQUE(console_url, organization_id, item_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_console_inbox_items_sub
+      ON console_inbox_items(subscription_id, sequence);
+    CREATE INDEX IF NOT EXISTS idx_console_inbox_items_seq
+      ON console_inbox_items(console_url, organization_id, sequence DESC);
+    CREATE INDEX IF NOT EXISTS idx_console_inbox_items_dedupe
+      ON console_inbox_items(dedupe_key);
+
+    CREATE TABLE IF NOT EXISTS console_inbox_poll_locks (
+      lock_key    TEXT PRIMARY KEY,
+      owner_id    TEXT NOT NULL,
+      acquired_at INTEGER NOT NULL,
+      expires_at  INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_console_inbox_poll_locks_expiry
+      ON console_inbox_poll_locks(expires_at);
+
     -- Local-first sync: optional, best-effort replication ledger.
     -- SQLite remains the local source of truth; these tables are durable queues
     -- for remote bridge delivery and cursor-based remote intake.
