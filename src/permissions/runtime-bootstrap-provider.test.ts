@@ -36,6 +36,8 @@ describe("runtimeBootstrapProvider — least-privilege default", () => {
       caps.some((c) => c.permission === permission && c.objectType === objectType && c.objectId === objectId);
     expect(has("use", "tool", "*")).toBe(true);
     expect(has("use", "toolgroup", "*")).toBe(true);
+    expect(has("read", "context", "codex-bash-hook")).toBe(true);
+    expect(has("execute", "group", "context")).toBe(false);
     expect(has("execute", "executable", "ravi")).toBe(true);
     expect(has("read_own_contacts", "system", "*")).toBe(true);
   });

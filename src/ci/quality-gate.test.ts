@@ -304,6 +304,18 @@ describe("runCoverageGate", () => {
     expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
   });
 
+  it("passes when the runtime request context focused test is in the diff", () => {
+    const cwd = makeWorkspace();
+
+    const result = runCoverageGate(
+      ["src/runtime/runtime-request-context.ts", "src/runtime/runtime-request-context.test.ts"],
+      cwd,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
+  });
+
   it("fails for runtime change without focused test", () => {
     const cwd = makeWorkspace();
 
