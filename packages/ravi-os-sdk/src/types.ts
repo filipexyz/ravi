@@ -8278,8 +8278,11 @@ export type ObserversRefreshInput = {
 export type ObserversRefreshReturn = {
   bindings: Array<Record<string, unknown>>;
   created: Array<Record<string, unknown>>;
+  disabled: Array<Record<string, unknown>>;
+  mode: "attach-missing" | "detach-disabled" | "refresh-profile" | "full-reconcile";
+  refreshedProfiles: Array<Record<string, unknown>>;
   skipped: Array<Record<string, unknown>>;
-  source: Record<string, unknown>;
+  source: (Record<string, unknown>) | null;
   total: number;
   [k: string]: unknown;
 };

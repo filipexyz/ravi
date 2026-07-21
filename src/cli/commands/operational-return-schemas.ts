@@ -2173,9 +2173,12 @@ export const observerBindingShowReturnSchema = z
 
 export const observerRefreshReturnSchema = z
   .object({
-    source: looseObjectSchema,
+    source: looseObjectSchema.nullable(),
+    mode: z.enum(["attach-missing", "detach-disabled", "refresh-profile", "full-reconcile"]),
     total: z.number(),
     created: z.array(observerBindingReturnSchema),
+    disabled: z.array(observerBindingReturnSchema),
+    refreshedProfiles: z.array(observerBindingReturnSchema),
     bindings: z.array(observerBindingReturnSchema),
     skipped: z.array(looseObjectSchema),
   })

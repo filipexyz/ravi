@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { dbCreateAgent, dbUpsertSessionParticipant } from "../router/router-db.js";
+import { dbCreateAgent, dbUpsertSessionParticipant, getDb } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/index.js";
 import { dbCreateTagDefinition, dbUpsertTagBinding } from "../tags/index.js";
 import {
@@ -15,6 +15,7 @@ import {
   getObservationDebounceMs,
   reconcileObserverBindingsForSession,
   setObservationPromptPublisherForTests,
+  validateObserverRules,
 } from "./observation-plane.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 
@@ -164,6 +165,83 @@ describe("Observation Plane", () => {
     expect(result.skipped[0]?.reason).toBe("excluded_source_session_key_fragment");
   });
 
+  it("rejects unknown sourceExclusions keys and fails closed for persisted legacy metadata", async () => {
+    expect(() =>
+      dbUpsertObserverRule({
+        id: "unknown-source-exclusion",
+        observerAgentId: "observer",
+        metadata: { sourceExclusions: { sessionKeyPrefixes: ["agent:worker:"] } },
+      }),
+    ).toThrow("Observer metadata.sourceExclusions.sessionKeyPrefixes is not supported");
+
+    dbUpsertObserverRule({
+      id: "persisted-unknown-source-exclusion",
+      observerAgentId: "observer",
+    });
+    getDb()
+      .prepare("UPDATE observer_rules SET metadata_json = ? WHERE id = ?")
+      .run(
+        JSON.stringify({ sourceExclusions: { sessionKeyPrefixes: ["agent:worker:"] } }),
+        "persisted-unknown-source-exclusion",
+      );
+
+    const validation = validateObserverRules();
+    expect(validation.ok).toBe(false);
+    expect(validation.errors).toContainEqual({
+      ruleId: "persisted-unknown-source-exclusion",
+      message: expect.stringContaining("Observer metadata.sourceExclusions.sessionKeyPrefixes is not supported"),
+    });
+
+    const session = getOrCreateSession("invalid-exclusions-source", "worker", "/tmp/worker", {
+      name: "invalid-exclusions-source",
+    });
+    const reconcile = ensureObserverBindingsForSession({
+      sessionName: "invalid-exclusions-source",
+      session,
+    });
+    expect(reconcile.created).toHaveLength(0);
+    expect(reconcile.skipped).toContainEqual({
+      ruleId: "persisted-unknown-source-exclusion",
+      reason: "invalid_source_exclusions",
+    });
+
+    dbUpsertObserverRule({
+      id: "legacy-binding-exclusions",
+      scope: "session",
+      sourceSession: "invalid-exclusions-source",
+      observerAgentId: "observer",
+      observerRole: "legacy-binding-exclusions",
+      eventTypes: ["turn.complete"],
+    });
+    const binding = ensureObserverBindingsForSession({
+      sessionName: "invalid-exclusions-source",
+      session,
+    }).created[0];
+    expect(binding).toBeDefined();
+    getDb()
+      .prepare("UPDATE observer_bindings SET metadata_json = ? WHERE id = ?")
+      .run(JSON.stringify({ sourceExclusions: { sessionKeyPrefixes: ["agent:worker:"] } }), binding!.id);
+
+    const delivery = await deliverObservationEvents({
+      sourceSessionName: "invalid-exclusions-source",
+      sourceSession: session,
+      agentId: "worker",
+      events: [
+        createObservationEvent({
+          runId: "run-invalid-source-exclusions",
+          sequence: 1,
+          type: "turn.complete",
+        }),
+      ],
+    });
+    expect(delivery.delivered).toHaveLength(0);
+    expect(delivery.skipped).toContainEqual({
+      bindingId: binding!.id,
+      reason: "invalid_source_exclusions",
+    });
+    expect(publishedPrompts).toHaveLength(0);
+  });
+
   it("rejects invalid or out-of-bound observer selectors", () => {
     expect(() =>
       dbUpsertObserverRule({
@@ -200,6 +278,39 @@ describe("Observation Plane", () => {
     expect(result.bindings).toHaveLength(0);
     expect(result.disabled).toHaveLength(1);
     expect(dbListObserverBindings({ sourceSessionKey: session.sessionKey })[0]?.enabled).toBe(false);
+  });
+
+  it("refreshes a binding to the default profile after the rule clears its explicit profile", () => {
+    const session = getOrCreateSession("profile-clear-source", "worker", "/tmp/worker", {
+      name: "profile-clear-source",
+    });
+    dbUpsertObserverRule({
+      id: "profile-clear-rule",
+      scope: "session",
+      sourceSession: "profile-clear-source",
+      observerAgentId: "observer",
+      observerRole: "profile-clear",
+      observerProfileId: "tasks",
+    });
+    ensureObserverBindingsForSession({ sessionName: "profile-clear-source", session });
+    expect(dbListObserverBindings({ sourceSessionKey: session.sessionKey })[0]?.observerProfileId).toBe("tasks");
+
+    const updatedRule = dbUpsertObserverRule({
+      id: "profile-clear-rule",
+      observerAgentId: "observer",
+      observerProfileId: null,
+    });
+    expect(updatedRule.observerProfileId).toBeUndefined();
+
+    const result = reconcileObserverBindingsForSession({
+      sessionName: "profile-clear-source",
+      session,
+      mode: "refresh-profile",
+    });
+
+    expect(result.refreshedProfiles).toHaveLength(1);
+    expect(result.refreshedProfiles[0]?.observerProfileId).toBe("default");
+    expect(dbListObserverBindings({ sourceSessionKey: session.sessionKey })[0]?.observerProfileId).toBe("default");
   });
 
   it("matches contact-tagged observer rules via session participants", () => {

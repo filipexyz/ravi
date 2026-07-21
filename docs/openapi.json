@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "8330fb46ed5b1d1f"
+    "version": "158b551afc15f7da"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -52539,6 +52539,31 @@
                       },
                       "type": "array"
                     },
+                    "disabled": {
+                      "items": {
+                        "additionalProperties": {},
+                        "properties": {},
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "mode": {
+                      "enum": [
+                        "attach-missing",
+                        "detach-disabled",
+                        "refresh-profile",
+                        "full-reconcile"
+                      ],
+                      "type": "string"
+                    },
+                    "refreshedProfiles": {
+                      "items": {
+                        "additionalProperties": {},
+                        "properties": {},
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
                     "skipped": {
                       "items": {
                         "additionalProperties": {},
@@ -52548,9 +52573,16 @@
                       "type": "array"
                     },
                     "source": {
-                      "additionalProperties": {},
-                      "properties": {},
-                      "type": "object"
+                      "anyOf": [
+                        {
+                          "additionalProperties": {},
+                          "properties": {},
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "total": {
                       "type": "number"
@@ -52558,8 +52590,11 @@
                   },
                   "required": [
                     "source",
+                    "mode",
                     "total",
                     "created",
+                    "disabled",
+                    "refreshedProfiles",
                     "bindings",
                     "skipped"
                   ],
