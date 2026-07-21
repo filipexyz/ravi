@@ -562,6 +562,58 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     expect(restartPrompt?.prompt).toContain("Daemon reiniciou");
   });
 
+  it("selects the stashed agent envelope when daemon restart metadata is appended", () => {
+    const original = createQueuedRuntimeUserMessage({
+      prompt: "continue agent handoff",
+      source: {
+        channel: "slack",
+        accountId: "ravi-slack",
+        chatId: "C123",
+        canonicalChatId: "chat_slack",
+        sourceMessageId: "1713000130.000200",
+        actorType: "agent",
+        actorAgentId: "foreign-agent",
+      },
+      context: {
+        channelId: "slack",
+        channelName: "Slack",
+        accountId: "ravi-slack",
+        chatId: "C123",
+        canonicalChatId: "chat_slack",
+        messageId: "1713000130.000200",
+        senderId: "UFOREIGN",
+        isGroup: true,
+        timestamp: Date.now(),
+        actorType: "agent",
+        actorAgentId: "foreign-agent",
+      },
+    });
+    const resume = createQueuedRuntimeUserMessage({
+      prompt: "[System] Daemon reiniciou (test). Continue de onde parou.",
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
+      _daemonRestartResume: {
+        restartEpoch: "restart-agent-test",
+        sessionKey: "agent:dev:slack:ravi-slack:group:C123",
+      },
+    });
+
+    const restartPrompt = buildStashedRestartPrompt([original, resume]);
+
+    expect(restartPrompt?.source).toMatchObject({
+      channel: "slack",
+      canonicalChatId: "chat_slack",
+      actorType: "agent",
+      actorAgentId: "foreign-agent",
+    });
+    expect(restartPrompt?.context).toMatchObject({
+      actorType: "agent",
+      actorAgentId: "foreign-agent",
+      senderId: "UFOREIGN",
+    });
+    expect(restartPrompt?._resumeStashedMessages).toBe(true);
+  });
+
   it("does not replace the active turn source when an after_response session followup is queued", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-followup-source-");
     try {

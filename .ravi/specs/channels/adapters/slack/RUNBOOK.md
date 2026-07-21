@@ -12,6 +12,22 @@
 4. Send a DM or channel message to the Slack app.
 5. Confirm the Ravi session responds in Slack.
 
+## Foreign Bot Interop
+
+Foreign bots are mention-only by default. To add an alias for a specific chat,
+store it on that Slack channel account (not in the environment):
+
+```bash
+ravi channels set <slack-channel> defaults '{"botMessageAliasesByChat":{"C123":["Ravi"]}}'
+```
+
+Restart the channel runner after changing defaults. Then verify all four cases:
+
+1. `<@local_bot_user_id> status` from the foreign bot is admitted;
+2. `Ravi—status` is admitted only in `C123`;
+3. `oi Ravi`, `Ravinder`, and the same alias in another chat/account are ignored;
+4. a message emitted by the local bot itself is ignored even if it mentions or aliases itself.
+
 ## Debug
 
 - No connection: check `ravi channels show <slack-channel>` and
@@ -19,6 +35,21 @@
 - No inbound: check Socket Mode logs and Slack app event subscriptions.
 - Wrong thread: check `RAVI_SLACK_SUBSCRIPTION_SCOPE`, `RAVI_SLACK_THREAD_REPLY_MODE`, `RAVI_SLACK_ROOT_REPLY_MODE`.
 - Duplicate response: check duplicate runner processes and Socket Mode lock.
+- All bot messages ignored: inspect the `auth.test` warning. Ravi requires `ok=true`
+  with a complete local `bot_id` + `user_id` + `team_id`, and requires outer
+  `payload.team_id` / `event.team` to identify that same team. Missing or conflicting
+  team provenance fails closed; Ravi never substitutes the logical channel account id.
+  Discovery is aborted after its five-second timeout, uses a bounded retry backoff,
+  and retries on a later bot message instead of caching failure permanently.
+- Foreign bot admitted but actor is unknown: inspect `identityProvenance.botIdentityReason`.
+  `contact_identity_not_agent`, `conflicting_platform_owners`, `conflicting_agents`,
+  and `ambiguous_instance_alias` are intentional fail-closed results. Link both Slack
+  bot/user ids only when they represent the same agent; do not convert a bot identity
+  into a contact to grant authority.
+- Alias not matching: confirm it is under the active Slack channel account's
+  `defaults.botMessageAliasesByChat`, keyed by the raw Slack chat id. Aliases are not
+  loaded from env and must start the text as a complete word with a Unicode
+  whitespace/punctuation boundary.
 - Known contact treated as unknown / false permission denial:
   1. Compare the `instance_id` the runtime addresses (account slug) against the
      `instanceId` stored on the workspace's platform identities (often the configured UUID)
@@ -42,4 +73,5 @@
   agent-identity/effective capabilities across turns and turn-context rotations. If a later
   turn drops to `missing_contact` or zero capabilities for an unchanged agent, inspect the
   turn's `identityProvenance` and confirm no conflicting alias identity was introduced
-  between turns.
+  between turns. A consistent bot identity should report `actorPrincipal=agent:<agentId>`;
+  `missing_contact` for that actor indicates the actor principal was not propagated.

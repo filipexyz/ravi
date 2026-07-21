@@ -3,7 +3,20 @@
 - [ ] Inbound channel message MUST persist chat, message and participant records.
 - [ ] Thread reply MUST include the Slack thread target.
 - [ ] Outbound response MUST use Slack native delivery.
-- [ ] Bot and self messages MUST be ignored.
+- [ ] Human message admission MUST remain unchanged.
+- [ ] The local bot MUST be ignored when either event `bot_id` or `user` matches `auth.test`.
+- [ ] Foreign bot messages MUST fail closed unless `auth.test` returns `ok=true` with complete `bot_id`, `user_id`, and `team_id`.
+- [ ] Outer `payload.team_id` / `event.team` MUST identify one Slack team equal to authenticated `team_id`; absence, conflict, or logical-account fallback MUST fail closed.
+- [ ] Successful `auth.test` discovery MUST be cached, concurrent calls coalesced, and failures retried only after a bounded backoff.
+- [ ] A stuck `auth.test` MUST receive an abort signal, time out, fail closed, release the shared in-flight slot, and permit a later retry.
+- [ ] A foreign bot MUST require an explicit local-user mention or a chat-scoped alias at the beginning with a Unicode whitespace/punctuation boundary.
+- [ ] Aliases MUST come only from the current channel account's `defaults.botMessageAliasesByChat`; wrong-chat, wrong-account, middle, partial-word, and env aliases MUST be rejected.
+- [ ] Raw bot/user ids and `senderKind=bot` MUST survive chat, message, participant, source, and context provenance.
+- [ ] Bot/user candidate identities MAY produce `actorType=agent` only when all resolved ids identify one consistent agent; contact-only and owner conflicts MUST be unknown with no authority.
+- [ ] A resolved bot agent MUST become runtime principal `agent:<actorAgentId>` without stripping the executor agent's effective capabilities.
+- [ ] Daemon-restart resume MUST select stashed agent actor metadata and preserve its `agent:<actorAgentId>` authority principal.
+- [ ] Bot actor lookup MUST preserve canonical UUID/slug aliases, exact-empty fallback, cross-workspace isolation, and alias-collision fail-closed behavior.
+- [ ] Admitted bot messages MUST preserve root/thread routing and duplicate-envelope suppression.
 - [ ] Missing credentials MUST disable the adapter.
 - [ ] Env fallback MUST be opt-in.
 - [ ] Tests MUST cover routing policy and native delivery.

@@ -667,6 +667,38 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
   });
 
+  it("resolves a verified external agent actor without stripping executor capabilities", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    dbCreateAgent({ id: "foreign-agent", cwd: "/tmp/foreign-agent" });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt = promptForContact("", "agent interop");
+    for (const actor of [prompt.source!, prompt.context!]) {
+      actor.actorType = "agent";
+      actor.actorAgentId = "foreign-agent";
+      delete actor.contactId;
+    }
+
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      actorPrincipal: "agent:foreign-agent",
+      actorResolution: "resolved",
+    });
+    expect(Number(runtimeContext.metadata?.agentIdentityCapabilityCount)).toBeGreaterThan(0);
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+  });
+
   it("does not require chat delegation overrides in the agent identity model", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
@@ -942,6 +974,54 @@ describe("runtime request context authority", () => {
       actor: {
         actorType: "contact",
         contactId: "luis",
+        canonicalChatId: "chat_group_1",
+      },
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
+  });
+
+  it("preserves the agent principal for daemon restart resume prompts with an agent snapshot source", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    dbCreateAgent({ id: "foreign-agent", cwd: "/tmp/foreign-agent" });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt: RuntimeLaunchPrompt = {
+      prompt: "[System] Daemon reiniciou (test). Continue de onde parou.",
+      source: {
+        channel: "slack",
+        accountId: "ravi-slack",
+        chatId: "C123",
+        canonicalChatId: "chat_group_1",
+        actorType: "agent",
+        actorAgentId: "foreign-agent",
+      },
+      _daemonRestartResume: {
+        restartEpoch: "restart-agent-test",
+        sessionKey,
+      },
+    };
+
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "agent-identity",
+      actorPrincipal: "agent:foreign-agent",
+      actorResolution: "resolved",
+      surfacePrincipal: "chat:chat_group_1",
+      actor: {
+        actorType: "agent",
+        actorAgentId: "foreign-agent",
         canonicalChatId: "chat_group_1",
       },
     });

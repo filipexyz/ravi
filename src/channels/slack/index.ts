@@ -49,11 +49,14 @@ export {
   DEFAULT_SLACK_ROUTING_POLICY,
   cleanSlackId,
   envelopeEvent,
+  isSlackMessageEventStructurallyEligible,
   normalizeSlackRoutingPolicy,
   resolveSlackThreadContext,
   shouldIgnoreSlackMessageEvent,
   slackPeerKindForChannelType,
+  slackRoutingPolicyFromChannelDefaults,
   slackRoutingPolicyFromEnv,
+  slackSenderIdForEvent,
   slackTsToMs,
 } from "./routing.js";
 export {
@@ -67,6 +70,7 @@ export {
 } from "./socket-mode.js";
 export type { SlackNativeRuntime, SlackSocketModeServiceOptions, SlackTargetScope } from "./socket-mode.js";
 export type {
+  SlackBotMessageAliasesByChat,
   SlackEventPayload,
   SlackEventsApiPayload,
   SlackFilePayload,

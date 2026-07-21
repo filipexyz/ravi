@@ -1873,12 +1873,14 @@ function hasResolvedActorMetadata(
     | {
         actorType?: string;
         contactId?: string;
+        actorAgentId?: string;
         automationId?: string;
       }
     | undefined,
 ): boolean {
   return Boolean(
     (metadata?.actorType === "contact" && metadata.contactId) ||
+      (metadata?.actorType === "agent" && metadata.actorAgentId) ||
       (metadata?.actorType === "automation" && metadata.automationId),
   );
 }
