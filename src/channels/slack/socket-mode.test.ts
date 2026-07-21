@@ -38,6 +38,7 @@ import {
   SlackSocketModeService,
   SlackTextDelivery,
   createSlackNativeRuntimesFromEnv,
+  slackClientMessageId,
 } from "./socket-mode.js";
 import type { SlackRoutingPolicy, SlackSocketEnvelope } from "./types.js";
 
@@ -108,6 +109,48 @@ describe("Slack Socket Mode routing", () => {
         chatId: "C456",
       }),
     ).toBe(false);
+  });
+
+  it("uses a stable UUID client_msg_id and preserves Slack's provider timestamp", async () => {
+    const postMessage = mock(async () => ({
+      channel: "C123",
+      ts: "1713000000.000100",
+      messageId: "slack:C123:1713000000.000100",
+      raw: { ok: true },
+    }));
+    const delivery = new SlackTextDelivery({ postMessage } as never, { threadReplyMode: "thread" } as never);
+    const idempotencyKey = "runtime:ravi-channels:emit_1:slack:T1:C123:thread";
+
+    const result = await delivery.deliverText({
+      sessionName: "ravi-channels",
+      emitId: "emit_1",
+      idempotencyKey,
+      target: {
+        channel: "slack",
+        accountId: "T1",
+        chatId: "C123",
+        threadId: "1712999999.000010",
+      },
+      text: "hello Slack",
+    });
+
+    const clientMsgId = slackClientMessageId(idempotencyKey);
+    expect(clientMsgId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(slackClientMessageId(idempotencyKey)).toBe(clientMsgId);
+    expect(slackClientMessageId(`${idempotencyKey}:other`)).not.toBe(clientMsgId);
+    expect(postMessage).toHaveBeenCalledWith({
+      channel: "C123",
+      text: "hello Slack",
+      threadTs: "1712999999.000010",
+      clientMsgId,
+    });
+    expect(result).toEqual({
+      provider: "slack",
+      messageId: "slack:C123:1713000000.000100",
+      platformMessageId: "1713000000.000100",
+      providerTimestamp: 1_713_000_000_000,
+      raw: { ok: true },
+    });
   });
 
   it("discovers all configured Slack channels without connection env overrides", async () => {

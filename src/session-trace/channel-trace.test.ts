@@ -89,7 +89,17 @@ describe("channel session trace", () => {
       sessionName,
       response,
       timestamp: 14,
-      delivery: { status: "delivered", messageId: "outbound-1", target: response.target, emitId: "emit-1" },
+      delivery: {
+        status: "delivered",
+        messageId: "slack:C123:1713000000.000100",
+        canonicalMessageId: "cm_123",
+        platformMessageId: "1713000000.000100",
+        providerMessageId: "1713000000.000100",
+        providerTimestamp: 1_713_000_000_000,
+        idempotencyKey: "runtime:main:emit-1:slack:T1:C123:thread",
+        target: response.target,
+        emitId: "emit-1",
+      },
     });
     recordDeliveryTrace({
       sessionName,
@@ -147,7 +157,12 @@ describe("channel session trace", () => {
 
     const delivered = events.find((event) => event.eventType === "delivery.delivered");
     expect(delivered?.payloadJson).toMatchObject({
-      deliveryMessageId: "outbound-1",
+      deliveryMessageId: "slack:C123:1713000000.000100",
+      canonicalMessageId: "cm_123",
+      platformMessageId: "1713000000.000100",
+      providerMessageId: "1713000000.000100",
+      providerTimestamp: 1_713_000_000_000,
+      idempotencyKey: "runtime:main:emit-1:slack:T1:C123:thread",
       emitId: "emit-1",
       status: "delivered",
     });

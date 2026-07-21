@@ -5,6 +5,11 @@ import { logger } from "../utils/logger.js";
 import type { NativePresenceDelivery, NativeTextDelivery } from "./native/types.js";
 import { ChannelOutboundConsumer } from "./outbound-consumer.js";
 import {
+  CHANNEL_OUTBOUND_RECEIPT_RETENTION_MS,
+  type ChannelOutboundReceiptStore,
+  sqliteChannelOutboundReceiptStore,
+} from "./outbound-receipts.js";
+import {
   CHANNEL_OUTBOUND_CONSUMER,
   CHANNEL_OUTBOUND_STREAM,
   ensureChannelOutboundInfrastructure,
@@ -13,6 +18,18 @@ import { ChannelPresenceConsumer } from "./presence-consumer.js";
 import { createSlackNativeRuntimesFromEnv, type SlackNativeRuntime } from "./slack/index.js";
 
 const log = logger.child("channels:runner");
+
+export const CHANNEL_OUTBOUND_RECEIPT_PRUNE_INTERVAL_MS = 6 * 60 * 60 * 1_000;
+
+type ReceiptPruneTimer = ReturnType<typeof setInterval>;
+
+export interface ChannelOutboundReceiptPrunerOptions {
+  intervalMs?: number;
+  now?: () => number;
+  store?: Pick<ChannelOutboundReceiptStore, "pruneExpired">;
+  setInterval?: (callback: () => void, intervalMs: number) => ReceiptPruneTimer;
+  clearInterval?: (timer: ReceiptPruneTimer) => void;
+}
 
 export interface ChannelRunnerOptions {
   natsUrl?: string;
@@ -55,6 +72,7 @@ export class ChannelRunner {
   private presenceDeliveries: NativePresenceDelivery[] = [];
   private slackRuntimes: SlackNativeRuntime[] = [];
   private adapterStatuses = new Map<string, AdapterStatus>();
+  private stopReceiptPruner: (() => void) | null = null;
 
   constructor(private readonly options: ChannelRunnerOptions = {}) {}
 
@@ -71,6 +89,15 @@ export class ChannelRunner {
     });
     await configStore.startRefresh();
     await ensureChannelOutboundInfrastructure();
+    try {
+      const prunedReceipts = pruneChannelOutboundReceiptLedger();
+      if (prunedReceipts > 0) {
+        log.info("Pruned expired channel outbound receipts", { count: prunedReceipts });
+      }
+    } catch (error) {
+      log.warn("Failed to prune expired channel outbound receipts", { error });
+    }
+    this.stopReceiptPruner = startChannelOutboundReceiptPruner();
 
     this.outboundInfrastructureReady = true;
     this.running = true;
@@ -104,6 +131,8 @@ export class ChannelRunner {
   async stop(): Promise<void> {
     if (!this.running) return;
     this.running = false;
+    this.stopReceiptPruner?.();
+    this.stopReceiptPruner = null;
     log.info("Stopping channel runner", { pid: process.pid });
     await this.outboundConsumer?.stop();
     this.outboundConsumer = null;
@@ -168,6 +197,38 @@ export class ChannelRunner {
       ...(reason ? { reason } : {}),
     });
   }
+}
+
+export function pruneChannelOutboundReceiptLedger(
+  now = Date.now(),
+  store: Pick<ChannelOutboundReceiptStore, "pruneExpired"> = sqliteChannelOutboundReceiptStore,
+): number {
+  return store.pruneExpired(now - CHANNEL_OUTBOUND_RECEIPT_RETENTION_MS, now);
+}
+
+export function startChannelOutboundReceiptPruner(options: ChannelOutboundReceiptPrunerOptions = {}): () => void {
+  const intervalMs = options.intervalMs ?? CHANNEL_OUTBOUND_RECEIPT_PRUNE_INTERVAL_MS;
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+    throw new Error("Channel outbound receipt prune interval must be greater than zero");
+  }
+
+  const now = options.now ?? Date.now;
+  const store = options.store ?? sqliteChannelOutboundReceiptStore;
+  const scheduleInterval = options.setInterval ?? setInterval;
+  const cancelInterval = options.clearInterval ?? clearInterval;
+  const timer = scheduleInterval(() => {
+    try {
+      const prunedReceipts = pruneChannelOutboundReceiptLedger(now(), store);
+      if (prunedReceipts > 0) {
+        log.info("Pruned expired channel outbound receipts", { count: prunedReceipts });
+      }
+    } catch (error) {
+      log.warn("Failed to prune expired channel outbound receipts", { error });
+    }
+  }, intervalMs);
+  timer.unref?.();
+
+  return () => cancelInterval(timer);
 }
 
 export async function startChannelRunner(options: ChannelRunnerOptions = {}): Promise<ChannelRunner> {

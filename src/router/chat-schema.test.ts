@@ -202,12 +202,18 @@ describe("identity chat schema", () => {
       platformIdentityId: "pi_contact_1",
       messageType: "text",
       content: { type: "text", text: "oi atualizado" },
-      providerTimestamp: 1_700_000_000_000,
+      providerTimestamp: 1_700_000_000_999,
       ingestedAt: 1_700_000_000_200,
     });
 
     expect(first.created).toBe(true);
     expect(repeated.created).toBe(false);
+    expect(first.canonicalMessageId).toBe(first.message.id);
+    expect(first.providerMessageId).toBe("wamid-1");
+    expect(first.providerTimestamp).toBe(1_700_000_000_000);
+    expect(repeated.canonicalMessageId).toBe(first.canonicalMessageId);
+    expect(repeated.providerMessageId).toBe("wamid-1");
+    expect(repeated.providerTimestamp).toBe(1_700_000_000_999);
     expect(repeated.message.id).toBe(first.message.id);
     expect(repeated.message.content).toMatchObject({ text: "oi atualizado" });
     expect(

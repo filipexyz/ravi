@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { configStore } from "../../config-store.js";
 import { resolvePlatformIdentity, type PlatformIdentity } from "../../contacts.js";
 import { publish } from "../../nats.js";
@@ -190,15 +191,28 @@ export class SlackTextDelivery implements NativeTextDelivery {
     const result = await this.webClient.postMessage({
       channel: request.target.chatId,
       text: request.text,
+      clientMsgId: slackClientMessageId(request.idempotencyKey),
       ...(threadTs ? { threadTs } : {}),
     });
     return {
       provider: "slack",
       messageId: result.messageId,
       platformMessageId: result.ts,
+      providerTimestamp: slackTsToMs(result.ts),
       raw: result.raw,
     };
   }
+}
+
+/** Stable UUID token for Slack's client_msg_id duplicate-suppression support. */
+export function slackClientMessageId(idempotencyKey: string): string {
+  const namespace = Buffer.from("6ba7b8119dad11d180b400c04fd430c8", "hex");
+  const digest = createHash("sha1").update(namespace).update(`ravi:${idempotencyKey}`, "utf8").digest();
+  const bytes = Buffer.from(digest.subarray(0, 16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 export class SlackAssistantThreadPresence implements NativePresenceDelivery {

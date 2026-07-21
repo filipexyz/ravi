@@ -682,6 +682,9 @@ export interface UpsertChatMessageInput {
 export interface UpsertChatMessageResult {
   message: ChatMessageRecord;
   created: boolean;
+  canonicalMessageId: string;
+  providerMessageId: string;
+  providerTimestamp?: number;
 }
 
 export type ChatReadingListOwnerType = "user" | "agent" | "team" | "system" | "workflow" | string;
@@ -2022,6 +2025,11 @@ function getDb(): Database {
     );
   `);
 
+  // This table changed shape while outbound delivery was being hardened. Reconcile
+  // it before creating indexes so existing databases never reference a column that
+  // has not been added yet (notably claim_expires_at).
+  ensureChannelOutboundReceiptSchema(db);
+
   // Migration: add matrix_account column to agents if not exists
   const agentColumns = db.prepare("PRAGMA table_info(agents)").all() as Array<{
     name: string;
@@ -2742,6 +2750,187 @@ function uniqueId(prefix: string): string {
 function tableHasColumn(database: Database, table: string, column: string): boolean {
   const columns = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
   return columns.some((c) => c.name === column);
+}
+
+const CHANNEL_OUTBOUND_RECEIPT_COLUMNS = [
+  "idempotency_key",
+  "request_fingerprint",
+  "job_id",
+  "request_id",
+  "session_name",
+  "state",
+  "provider",
+  "delivery_message_id",
+  "platform_message_id",
+  "provider_timestamp",
+  "canonical_message_id",
+  "claim_owner",
+  "claim_expires_at",
+  "sent_at",
+  "persisted_at",
+  "trace_recorded_at",
+  "completed_at",
+  "last_error_phase",
+  "last_error_message",
+  "last_error_at",
+  "created_at",
+  "updated_at",
+] as const;
+
+type ChannelOutboundReceiptTable = "channel_outbound_receipts" | "channel_outbound_receipts_next";
+
+function createChannelOutboundReceiptTable(database: Database, table: ChannelOutboundReceiptTable): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS ${table} (
+      idempotency_key       TEXT PRIMARY KEY,
+      request_fingerprint   TEXT NOT NULL,
+      job_id                TEXT NOT NULL,
+      request_id            TEXT NOT NULL,
+      session_name          TEXT NOT NULL,
+      state                 TEXT NOT NULL CHECK(state IN ('claimed','sent','persisted','complete')),
+      provider              TEXT NOT NULL,
+      delivery_message_id   TEXT,
+      platform_message_id   TEXT,
+      provider_timestamp    INTEGER,
+      canonical_message_id  TEXT,
+      claim_owner           TEXT,
+      claim_expires_at      INTEGER,
+      sent_at               INTEGER,
+      persisted_at          INTEGER,
+      trace_recorded_at     INTEGER,
+      completed_at          INTEGER,
+      last_error_phase      TEXT,
+      last_error_message    TEXT,
+      last_error_at         INTEGER,
+      created_at            INTEGER NOT NULL,
+      updated_at            INTEGER NOT NULL
+    )
+  `);
+}
+
+function ensureChannelOutboundReceiptSchema(database: Database): void {
+  // Acquire the write lock before inspecting the schema. A daemon and CLI can
+  // initialize the same database concurrently; reading metadata before this
+  // lock would let the loser rebuild from stale PRAGMA results after the winner
+  // has already committed the migration.
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const tableRow = database
+      .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'channel_outbound_receipts'")
+      .get() as { sql: string | null } | undefined;
+
+    if (!tableRow) {
+      createChannelOutboundReceiptTable(database, "channel_outbound_receipts");
+    } else {
+      const columns = new Set(
+        (database.prepare("PRAGMA table_info(channel_outbound_receipts)").all() as Array<{ name: string }>).map(
+          ({ name }) => name,
+        ),
+      );
+      const missingColumns = CHANNEL_OUTBOUND_RECEIPT_COLUMNS.filter((column) => !columns.has(column));
+      const legacyColumns = ["provider_raw_json", "telemetry_emitted_at"].filter((column) => columns.has(column));
+      const acceptsClaimedState = tableRow.sql?.includes("'claimed'") === true;
+
+      if (missingColumns.length > 0 || legacyColumns.length > 0 || !acceptsClaimedState) {
+        migrateChannelOutboundReceiptSchema(database, columns, missingColumns, legacyColumns);
+      }
+    }
+
+    // Indexes are deliberately installed only after every referenced column has
+    // been reconciled. CREATE TABLE IF NOT EXISTS does not update old tables.
+    database.exec(`
+      CREATE INDEX IF NOT EXISTS idx_channel_outbound_receipts_state
+        ON channel_outbound_receipts(state, updated_at);
+      CREATE INDEX IF NOT EXISTS idx_channel_outbound_receipts_updated
+        ON channel_outbound_receipts(updated_at);
+      CREATE INDEX IF NOT EXISTS idx_channel_outbound_receipts_claim
+        ON channel_outbound_receipts(state, claim_expires_at);
+      CREATE INDEX IF NOT EXISTS idx_channel_outbound_receipts_job
+        ON channel_outbound_receipts(job_id)
+    `);
+    database.exec("COMMIT");
+  } catch (error) {
+    try {
+      database.exec("ROLLBACK");
+    } catch {
+      // SQLite may already have rolled the transaction back. Preserve the
+      // migration error because it is the actionable failure.
+    }
+    throw error;
+  }
+}
+
+function migrateChannelOutboundReceiptSchema(
+  database: Database,
+  columns: ReadonlySet<string>,
+  missingColumns: readonly string[],
+  legacyColumns: readonly string[],
+): void {
+  if (!columns.has("idempotency_key")) {
+    throw new Error("Cannot migrate channel_outbound_receipts without idempotency_key");
+  }
+
+  const nullable = (column: string): string => (columns.has(column) ? column : "NULL");
+  const nonEmptyText = (column: string, fallback: string): string =>
+    columns.has(column) ? `COALESCE(NULLIF(TRIM(CAST(${column} AS TEXT)), ''), ${fallback})` : fallback;
+  const coalesce = (candidates: string[], fallback: string): string => {
+    const present = candidates.filter((column) => columns.has(column));
+    return present.length > 0 ? `COALESCE(${present.join(", ")}, ${fallback})` : fallback;
+  };
+  const now = Date.now();
+  const idempotencyKey = "CAST(idempotency_key AS TEXT)";
+  const legacyFingerprint = `'legacy:' || ${idempotencyKey}`;
+  const state = columns.has("state")
+    ? "CASE WHEN state IN ('claimed','sent','persisted','complete') THEN state ELSE 'sent' END"
+    : "'sent'";
+  const createdAt = coalesce(["created_at", "sent_at", "updated_at"], String(now));
+  const updatedAt = coalesce(["updated_at", "created_at", "sent_at"], String(now));
+
+  database.exec("DROP TABLE IF EXISTS channel_outbound_receipts_next");
+  createChannelOutboundReceiptTable(database, "channel_outbound_receipts_next");
+  const migratedRows = database
+    .prepare(
+      `INSERT INTO channel_outbound_receipts_next (
+           idempotency_key, request_fingerprint, job_id, request_id, session_name,
+           state, provider, delivery_message_id, platform_message_id, provider_timestamp,
+           canonical_message_id, claim_owner, claim_expires_at, sent_at, persisted_at,
+           trace_recorded_at, completed_at, last_error_phase, last_error_message,
+           last_error_at, created_at, updated_at
+         )
+         SELECT
+           ${idempotencyKey},
+           ${nonEmptyText("request_fingerprint", legacyFingerprint)},
+           ${nonEmptyText("job_id", idempotencyKey)},
+           ${nonEmptyText("request_id", idempotencyKey)},
+           ${nonEmptyText("session_name", "'legacy'")},
+           ${state},
+           ${nonEmptyText("provider", "'unknown'")},
+           ${nullable("delivery_message_id")},
+           ${nullable("platform_message_id")},
+           ${nullable("provider_timestamp")},
+           ${nullable("canonical_message_id")},
+           ${nullable("claim_owner")},
+           ${nullable("claim_expires_at")},
+           ${nullable("sent_at")},
+           ${nullable("persisted_at")},
+           ${nullable("trace_recorded_at")},
+           ${nullable("completed_at")},
+           ${nullable("last_error_phase")},
+           ${nullable("last_error_message")},
+           ${nullable("last_error_at")},
+           ${createdAt},
+           ${updatedAt}
+         FROM channel_outbound_receipts`,
+    )
+    .run().changes;
+  database.exec("DROP TABLE channel_outbound_receipts");
+  database.exec("ALTER TABLE channel_outbound_receipts_next RENAME TO channel_outbound_receipts");
+
+  log.info("Migrated channel outbound receipt schema", {
+    rows: migratedRows,
+    missingColumns,
+    removedLegacyColumns: legacyColumns,
+  });
 }
 
 function ensureColumn(database: Database, table: string, column: string, definition: string): void {
@@ -4181,7 +4370,14 @@ function upsertChatMessage(database: Database, input: UpsertChatMessageInput): U
     );
 
   const row = database.prepare("SELECT * FROM chat_messages WHERE id = ?").get(id) as ChatMessageRow;
-  return { message: rowToChatMessage(row), created: !existing };
+  const message = rowToChatMessage(row);
+  return {
+    message,
+    created: !existing,
+    canonicalMessageId: message.id,
+    providerMessageId: message.providerMessageId,
+    ...(message.providerTimestamp !== undefined ? { providerTimestamp: message.providerTimestamp } : {}),
+  };
 }
 
 function bindSessionToChat(

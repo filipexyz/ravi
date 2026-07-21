@@ -1,8 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { getOrCreateSession, updateSessionName } from "../router/sessions.js";
+import { recordDeliveryTrace } from "./channel-trace.js";
 import { querySessionTrace } from "./query.js";
 import { recordAdapterRequestTrace } from "./runtime-trace.js";
-import { getSessionTraceBlob, listRecentSessionEventsByType, recordSessionEvent } from "./session-trace-db.js";
+import {
+  getSessionTraceBlob,
+  listRecentSessionEventsByType,
+  listSessionEvents,
+  recordSessionEvent,
+} from "./session-trace-db.js";
 
 let stateDir: string | null = null;
 
@@ -123,6 +130,38 @@ describe("session trace query", () => {
       effort_source: "agent_default",
       thinking_source: "runtime_default",
       turn_provenance: { origin: "cron", background: true, automationId: "cron:job-1" },
+    });
+  });
+
+  it("records canonical and provider delivery receipt identity", () => {
+    const sessionKey = "agent:main:delivery-receipt";
+    const sessionName = "main-delivery-receipt";
+    getOrCreateSession(sessionKey, "main", "/tmp/ravi-agent");
+    updateSessionName(sessionKey, sessionName);
+
+    recordDeliveryTrace({
+      sessionName,
+      timestamp: 1_713_000_000_100,
+      delivery: {
+        status: "delivered",
+        messageId: "slack:C123:1713000000.000100",
+        canonicalMessageId: "cm_123",
+        platformMessageId: "1713000000.000100",
+        providerMessageId: "1713000000.000100",
+        providerTimestamp: 1_713_000_000_000,
+        idempotencyKey: "runtime:main:emit-1:slack:T1:C123:thread",
+        target: { channel: "slack", accountId: "T1", chatId: "C123" },
+        emitId: "emit-1",
+      },
+    });
+
+    expect(listSessionEvents(sessionKey)[0]?.payloadJson).toMatchObject({
+      deliveryMessageId: "slack:C123:1713000000.000100",
+      canonicalMessageId: "cm_123",
+      platformMessageId: "1713000000.000100",
+      providerMessageId: "1713000000.000100",
+      providerTimestamp: 1_713_000_000_000,
+      idempotencyKey: "runtime:main:emit-1:slack:T1:C123:thread",
     });
   });
 });
