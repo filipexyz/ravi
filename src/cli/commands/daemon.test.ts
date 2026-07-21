@@ -1,7 +1,8 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { DaemonCommands, findSourceProjectRoot, resolveDaemonRuntimeTarget } from "./daemon.js";
 
 const tempDirs: string[] = [];
@@ -127,5 +128,53 @@ describe("DaemonCommands --json", () => {
     );
     expect(payload.stdout).toBeUndefined();
     expect(payload.stderr).toBeUndefined();
+  });
+});
+
+describe("DaemonCommands init-admin-key negated storage", () => {
+  let stateDir: string | null = null;
+  let previousCredentialsPath: string | undefined;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-daemon-admin-key-");
+    previousCredentialsPath = process.env.RAVI_CREDENTIALS_PATH;
+    process.env.RAVI_CREDENTIALS_PATH = join(stateDir, "credentials.json");
+  });
+
+  afterEach(async () => {
+    if (previousCredentialsPath === undefined) delete process.env.RAVI_CREDENTIALS_PATH;
+    else process.env.RAVI_CREDENTIALS_PATH = previousCredentialsPath;
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  async function issueAdminKey(noStore: boolean) {
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      return new DaemonCommands().initAdminKey("test", false, noStore, false, true);
+    } finally {
+      console.log = originalLog;
+    }
+  }
+
+  it("persists credentials by default", async () => {
+    const result = await issueAdminKey(false);
+
+    expect("persisted" in result).toBe(true);
+    if (!("persisted" in result)) throw new Error("expected a newly issued admin key");
+    expect(result.persisted).toBe(true);
+    expect(result.credentialsPath).toBe(process.env.RAVI_CREDENTIALS_PATH!);
+    expect(existsSync(process.env.RAVI_CREDENTIALS_PATH!)).toBe(true);
+  });
+
+  it("does not persist credentials when --no-store is present", async () => {
+    const result = await issueAdminKey(true);
+
+    expect("persisted" in result).toBe(true);
+    if (!("persisted" in result)) throw new Error("expected a newly issued admin key");
+    expect(result.persisted).toBe(false);
+    expect(result.credentialsPath).toBeNull();
+    expect(existsSync(process.env.RAVI_CREDENTIALS_PATH!)).toBe(false);
   });
 });

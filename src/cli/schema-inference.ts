@@ -14,7 +14,7 @@ import { extractOptionName } from "./utils.js";
  * Kinds of option flags inferred from the DSL.
  *
  * - boolean         — bare flag, `--json`
- * - negated-boolean — `--no-color`; semantically defaults to `true`
+ * - negated-boolean — `--no-color`; public `noColor` presence defaults to `false`
  * - required-value  — `--limit <n>`; commander always passes a string
  * - optional-value  — `--tag [name]`; value optional, still string when present
  * - variadic        — `--items <a...>` / `[a...]`; collected into an array
@@ -87,7 +87,7 @@ export interface InferredOptionSchema {
  * picked to match commander.js runtime values):
  *
  *   --json                                  -> z.boolean().optional()
- *   --no-color                              -> z.boolean().default(true)
+ *   --no-color                              -> z.boolean().default(false)
  *   --limit <n>                             -> z.string().optional()
  *   --limit <n> defaultValue: "10"          -> z.string().default("10")
  *   --tag [name]                            -> z.string().optional()
@@ -108,7 +108,7 @@ export function inferOptionSchema(opt: OptionMetadata): InferredOptionSchema {
     }
     case "negated-boolean": {
       const base = z.boolean();
-      schema = opt.defaultValue !== undefined ? base.default(Boolean(opt.defaultValue)) : base.default(true);
+      schema = opt.defaultValue !== undefined ? base.default(Boolean(opt.defaultValue)) : base.default(false);
       break;
     }
     case "required-value":

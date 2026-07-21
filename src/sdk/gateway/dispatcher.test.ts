@@ -11,6 +11,13 @@ import { dispatch, type AuditEvent } from "./dispatcher.js";
 
 @Group({ name: "demo", description: "Gateway demo commands", scope: "open" })
 class GatewayDemoCommands {
+  @Command({ name: "negated", description: "Expose negated flag presence" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "negated", risk: "low", input: ["noCache"] })
+  @Returns(z.object({ noCache: z.boolean() }))
+  negated(@Option({ flags: "--no-cache", description: "Disable cache" }) noCache = false) {
+    return { noCache };
+  }
+
   @Command({ name: "echo", description: "Echo a name" })
   @CommandAccess({ kind: "read", resource: "demo", action: "echo", risk: "low", input: ["name", "limit"] })
   @Returns(
@@ -265,6 +272,34 @@ describe("dispatch — body shape (flat-only)", () => {
 });
 
 describe("dispatch — validation", () => {
+  it("defaults negated flags to false and honors explicit true over the gateway", async () => {
+    const audits = captureAudits();
+
+    const defaultResult = await dispatch(
+      findCmd("demo.negated"),
+      {},
+      {},
+      {
+        contextRecord: demoContext,
+        emitAudit: audits.emit,
+      },
+    );
+    const disabledResult = await dispatch(
+      findCmd("demo.negated"),
+      { noCache: true },
+      {},
+      {
+        contextRecord: demoContext,
+        emitAudit: audits.emit,
+      },
+    );
+
+    expect(defaultResult.response.status).toBe(200);
+    expect(disabledResult.response.status).toBe(200);
+    expect(await defaultResult.response.json()).toEqual({ noCache: false });
+    expect(await disabledResult.response.json()).toEqual({ noCache: true });
+  });
+
   it("returns 400 ValidationError when required arg is missing", async () => {
     const audits = captureAudits();
     const result = await dispatch(findCmd("demo.echo"), {}, {}, { emitAudit: audits.emit });

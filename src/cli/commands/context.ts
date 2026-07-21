@@ -372,16 +372,17 @@ export class ContextCommands {
       flags: "--no-cascade",
       description: "Do not revoke descendant contexts (use only for narrow rotation; emits a loud warning)",
     })
-    cascade = true,
+    noCascade = false,
     @Option({ flags: "--reason <text>", description: "Reason recorded in metadata for audit and forensics" })
     reason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
-    if (cascade === false) {
+    if (noCascade) {
       console.error(
         "WARNING: --no-cascade leaves descendant contexts active. Workers using child rctx_* keys will keep auth.",
       );
     }
+    const cascade = !noCascade;
     const result = revokeRuntimeContext(contextId, { cascade, reason });
     const payload = this.serializeRevokeResult(result.context, result.cascaded, result.revokedAt);
     this.printPayload(payload, asJson, () =>

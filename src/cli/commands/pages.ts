@@ -189,7 +189,7 @@ export class PagesCommands {
     @Option({ flags: "--replace-release", description: "Replace the full active route map instead of merging" })
     replaceRelease?: boolean,
     @Option({ flags: "--no-activate", description: "Create publish records without activating a site release" })
-    activate?: boolean,
+    noActivate?: boolean,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--site <site>", description: "Legacy site slug/id; defaults to the project Pages host" })
@@ -216,7 +216,7 @@ export class PagesCommands {
           idempotencyKey,
           reason,
           replaceRelease,
-          activate,
+          activate: !noActivate,
           console: consoleUrl,
           tool: "ravi pages publish",
           publishToPages: true,

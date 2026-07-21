@@ -201,9 +201,10 @@ function registerCommand(
       const optAtIndex = optionsMeta.find((o) => o.index === i);
       if (optAtIndex) {
         const optName = extractOptionName(optAtIndex.flags);
-        finalArgs.push(options[optName]);
-        if (options[optName] !== undefined) {
-          input[optName] = options[optName];
+        const optionValue = resolveOptionValue(options, optAtIndex.flags, optionsMeta, cmd);
+        finalArgs.push(optionValue);
+        if (optionValue !== undefined) {
+          input[optName] = optionValue;
         }
       }
     }
@@ -270,6 +271,35 @@ function registerCommand(
 
     if (isError) process.exit(1);
   });
+}
+
+function resolveOptionValue(
+  options: Record<string, unknown>,
+  flags: string,
+  commandOptions: Array<{ flags: string }>,
+  command: CommanderCommand,
+): unknown {
+  const optionName = extractOptionName(flags);
+  const longFlag = flags.match(/--([a-zA-Z-]+)/)?.[1];
+  if (!longFlag?.startsWith("no-")) {
+    const value = options[optionName];
+    const hasNegatedPair = commandOptions.some(
+      (option) => option.flags.match(/--([a-zA-Z-]+)/)?.[1] === `no-${longFlag}`,
+    );
+    // Commander stores a paired `--foo`/`--no-foo` under the positive key.
+    // A false value therefore means the positive flag was not present.
+    if (hasNegatedPair && (value === false || command.getOptionValueSource(optionName) !== "cli")) {
+      return undefined;
+    }
+    return value;
+  }
+
+  // Commander exposes `--no-foo` as the positive `foo` option (true when
+  // omitted, false when present). Decorated methods and the generated command
+  // contract expose `noFoo`, so convert Commander's state to flag presence.
+  const positiveName = longFlag.slice(3).replace(/-([a-z])/g, (_, character: string) => character.toUpperCase());
+  const positiveValue = options[positiveName];
+  return typeof positiveValue === "boolean" ? !positiveValue : undefined;
 }
 
 interface DispatchRemoteCommandInput {

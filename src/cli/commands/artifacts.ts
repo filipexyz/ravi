@@ -837,7 +837,7 @@ export class ArtifactsCommands {
     @Option({ flags: "--replace-release", description: "Replace the full active route map instead of merging" })
     replaceRelease?: boolean,
     @Option({ flags: "--no-activate", description: "Create publish records without activating a site release" })
-    activate?: boolean,
+    noActivate?: boolean,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
@@ -859,7 +859,7 @@ export class ArtifactsCommands {
         idempotencyKey,
         reason,
         replaceRelease,
-        activate,
+        activate: !noActivate,
         console: consoleUrl,
         json: asJson,
       });
