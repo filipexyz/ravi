@@ -12,6 +12,7 @@ export interface SlackPostMessageInput {
   readonly channel: string;
   readonly text: string;
   readonly threadTs?: string;
+  readonly clientMsgId?: string;
   readonly blocks?: readonly SlackBlockKitBlock[];
   readonly metadata?: Record<string, unknown>;
 }
@@ -333,6 +334,9 @@ export class SlackWebApiClient {
     };
     if (input.threadTs) {
       body.thread_ts = input.threadTs;
+    }
+    if (input.clientMsgId) {
+      body.client_msg_id = input.clientMsgId;
     }
     if (input.blocks) {
       body.blocks = JSON.stringify(input.blocks);

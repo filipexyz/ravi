@@ -17,6 +17,8 @@ import {
   dbUpdateAgent,
   dbUpdateChannel,
   dbUpsertChannel,
+  dbUpsertChat,
+  dbUpsertChatMessage,
   dbUpsertInstance,
   closeRouterDb,
   getDb,
@@ -397,5 +399,53 @@ describe("agent model preset persistence", () => {
     const afterPreset = dbGetAgent("dev");
     expect(afterPreset?.modelPresetId).toBe("fast-sonnet");
     expect(afterPreset?.model).toBeUndefined();
+  });
+});
+
+describe("canonical message receipts", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-router-message-receipt-test-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("returns stable canonical identity and the latest supplied provider timestamp", () => {
+    const chat = dbUpsertChat({
+      channel: "slack",
+      instanceId: "slack-main",
+      platformChatId: "C123",
+      chatType: "group",
+    });
+    const input = {
+      chatId: chat.id,
+      channel: "slack",
+      instanceId: "slack-main",
+      providerMessageId: "1713000000.000100",
+      rawChatId: "C123",
+      actorType: "agent",
+      agentId: "main",
+      messageType: "text",
+      content: { type: "text", text: "hello" },
+      providerTimestamp: 1_713_000_000_000,
+    } as const;
+
+    const first = dbUpsertChatMessage(input);
+    const repeated = dbUpsertChatMessage({ ...input, providerTimestamp: 1_713_000_000_999 });
+
+    expect(first).toMatchObject({
+      created: true,
+      canonicalMessageId: first.message.id,
+      providerMessageId: "1713000000.000100",
+      providerTimestamp: 1_713_000_000_000,
+    });
+    expect(repeated).toMatchObject({
+      created: false,
+      canonicalMessageId: first.message.id,
+      providerMessageId: "1713000000.000100",
+      providerTimestamp: 1_713_000_000_999,
+    });
   });
 });

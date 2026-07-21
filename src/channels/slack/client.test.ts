@@ -199,7 +199,14 @@ describe("Slack Web API client", () => {
     ];
 
     await expect(client.blocksValidate({ message: { text: "Fallback", blocks } })).resolves.toEqual({ ok: true });
-    await expect(client.postMessage({ channel: "C123", text: "Fallback", blocks })).resolves.toMatchObject({
+    await expect(
+      client.postMessage({
+        channel: "C123",
+        text: "Fallback",
+        clientMsgId: "20570eae-66a6-5c2f-b377-478f15978161",
+        blocks,
+      }),
+    ).resolves.toMatchObject({
       channel: "C123",
       ts: "1713000000.000100",
     });
@@ -228,6 +235,7 @@ describe("Slack Web API client", () => {
     expect(formBody(calls[1]?.init.body)).toEqual({
       channel: "C123",
       text: "Fallback",
+      client_msg_id: "20570eae-66a6-5c2f-b377-478f15978161",
       blocks: JSON.stringify(blocks),
     });
     expect(formBody(calls[2]?.init.body)).toEqual({

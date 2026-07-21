@@ -3,6 +3,7 @@ import type { MessageTarget } from "../../runtime/message-types.js";
 export interface NativeTextDeliveryRequest {
   readonly sessionName: string;
   readonly emitId?: string;
+  readonly idempotencyKey: string;
   readonly target: MessageTarget;
   readonly text: string;
 }
@@ -11,6 +12,7 @@ export interface NativeTextDeliveryResult {
   readonly provider: string;
   readonly messageId?: string;
   readonly platformMessageId?: string;
+  readonly providerTimestamp?: number;
   readonly raw?: Record<string, unknown>;
 }
 
