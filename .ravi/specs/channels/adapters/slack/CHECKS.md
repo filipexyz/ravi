@@ -6,7 +6,11 @@
 - [ ] Human message admission MUST remain unchanged.
 - [ ] The local bot MUST be ignored when either event `bot_id` or `user` matches `auth.test`.
 - [ ] Foreign bot messages MUST fail closed unless `auth.test` returns `ok=true` with complete `bot_id`, `user_id`, and `team_id`.
-- [ ] Outer `payload.team_id` / `event.team` MUST identify one Slack team equal to authenticated `team_id`; absence, conflict, or logical-account fallback MUST fail closed.
+- [ ] When `authorizations` is present, it MUST be a usable array with a `team_id` matching the authenticated local team; empty, malformed, team-less, non-matching, or truncated values without that match MUST fail closed.
+- [ ] The received authorization list MUST NOT be treated as complete; supporting a truncated non-match requires `apps.event.authorizations.list`, not legacy fallback.
+- [ ] Only when `authorizations` is absent MAY outer `payload.team_id` / inner `event.team` prove the installation; they MUST identify one team equal to authenticated `team_id`, without logical-account fallback.
+- [ ] `source_team` MUST define message origin when present; otherwise outer/inner team values MUST identify one origin. Missing origin or conflicting outer/inner origin MUST fail closed.
+- [ ] Resolved origin, `source_team`, `user_team`, `event.team`, `payload.team_id`, received authorization team ids, and local authenticated team MUST remain separate provenance fields.
 - [ ] Successful `auth.test` discovery MUST be cached, concurrent calls coalesced, and failures retried only after a bounded backoff.
 - [ ] A stuck `auth.test` MUST receive an abort signal, time out, fail closed, release the shared in-flight slot, and permit a later retry.
 - [ ] A foreign bot MUST require an explicit local-user mention or a chat-scoped alias at the beginning with a Unicode whitespace/punctuation boundary.

@@ -62,11 +62,30 @@ interoperate in shared Slack channels.
 Before deciding whether to admit any bot-authored message, the adapter MUST use
 `auth.test` with that channel account's bot token to discover both the local
 `bot_id`, bot `user_id`, and `team_id`, and MUST require `ok=true`. It MUST
-extract the Slack team from outer `payload.team_id` and/or `event.team` without
-falling back to Ravi's logical account id. The present outer team values MUST
-identify one team and equal the authenticated `team_id`; missing or conflicting
-team provenance MUST ignore the bot message. It MUST ignore a self message when
-either raw event id matches the corresponding local id. A successful discovery MAY be cached;
+prove that the event is visible to that local installation. A matching
+`authorizations[].team_id` is positive proof. When the `authorizations` key is
+present, it MUST be an array containing at least one clean team id and one value
+MUST equal the authenticated `team_id`; empty, malformed, team-less, or
+non-matching values MUST fail closed. Slack may truncate the received array to
+one representative installation, so a non-match can be a deliberate false
+negative. Supporting that case requires full resolution through
+`apps.event.authorizations.list`; the adapter MUST NOT treat the received list
+as complete or silently fall back. Only when the `authorizations` key is absent
+MAY the adapter use the legacy installation proof: the present outer
+`payload.team_id` and inner `event.team` values MUST identify one team equal to
+the authenticated `team_id`. Missing, conflicting, or mismatched legacy values
+MUST fail closed; Ravi's logical account id MUST NOT be substituted as proof.
+
+Resolved origin, `event.source_team`, `event.user_team`, `event.team`,
+`payload.team_id`, received authorization team ids, and the local authenticated
+team MUST be preserved as separate provenance. `source_team` is the preferred
+message-origin value when present;
+without it, the present `event.team` / `payload.team_id` values MUST identify one
+origin. A bot message with no resolvable origin MUST fail closed. A matching
+authorization MAY prove visibility when those outer/inner values differ only if
+`source_team` explicitly preserves the origin. It MUST ignore a self message
+when either raw event id matches the corresponding local id. A successful
+discovery MAY be cached;
 concurrent discovery MUST share one in-flight request. Missing, incomplete, or
 failed discovery MUST ignore the bot message and MAY use only a bounded failure
 backoff before retrying. Discovery itself MUST also have a bounded timeout (five

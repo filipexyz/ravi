@@ -1347,11 +1347,15 @@ describe("Slack Socket Mode foreign bot intake", () => {
     threadTs?: string;
     teamId?: string | null;
     eventTeamId?: string | null;
+    sourceTeamId?: string | null;
+    userTeamId?: string | null;
+    authorizations?: unknown;
   }): SlackSocketEnvelope {
     return {
       envelope_id: input.envelopeId,
       payload: {
         ...(input.teamId === null ? {} : { team_id: input.teamId ?? "T1" }),
+        ...(input.authorizations === undefined ? {} : { authorizations: input.authorizations }),
         event_id: `Ev-${input.envelopeId}`,
         event_time: 1_713_000_000,
         event: {
@@ -1365,6 +1369,10 @@ describe("Slack Socket Mode foreign bot intake", () => {
           ts: input.ts,
           thread_ts: input.threadTs,
           ...(input.eventTeamId === null || input.eventTeamId === undefined ? {} : { team: input.eventTeamId }),
+          ...(input.sourceTeamId === null || input.sourceTeamId === undefined
+            ? {}
+            : { source_team: input.sourceTeamId }),
+          ...(input.userTeamId === null || input.userTeamId === undefined ? {} : { user_team: input.userTeamId }),
         },
       },
     };
@@ -1375,11 +1383,15 @@ describe("Slack Socket Mode foreign bot intake", () => {
     ts: string;
     teamId?: string | null;
     eventTeamId?: string | null;
+    sourceTeamId?: string | null;
+    userTeamId?: string | null;
+    authorizations?: unknown;
   }): SlackSocketEnvelope {
     return {
       envelope_id: input.envelopeId,
       payload: {
         ...(input.teamId === null ? {} : { team_id: input.teamId ?? "T1" }),
+        ...(input.authorizations === undefined ? {} : { authorizations: input.authorizations }),
         event_id: `Ev-${input.envelopeId}`,
         event_time: 1_713_000_000,
         event: {
@@ -1390,6 +1402,10 @@ describe("Slack Socket Mode foreign bot intake", () => {
           text: "human message",
           ts: input.ts,
           ...(input.eventTeamId === null || input.eventTeamId === undefined ? {} : { team: input.eventTeamId }),
+          ...(input.sourceTeamId === null || input.sourceTeamId === undefined
+            ? {}
+            : { source_team: input.sourceTeamId }),
+          ...(input.userTeamId === null || input.userTeamId === undefined ? {} : { user_team: input.userTeamId }),
         },
       },
     };
@@ -1461,6 +1477,9 @@ describe("Slack Socket Mode foreign bot intake", () => {
           ts: "1713000091.000100",
           teamId: "T-PAYLOAD",
           eventTeamId: "T-EVENT",
+          sourceTeamId: "T-SOURCE",
+          userTeamId: "T-USER",
+          authorizations: "malformed",
         }),
       ),
     ).toBe("processed");
@@ -1468,7 +1487,16 @@ describe("Slack Socket Mode foreign bot intake", () => {
     expect(published).toHaveLength(1);
     const source = published[0]!.payload.source as MessageTarget;
     expect(dbGetChat(source.canonicalChatId!)).toMatchObject({
-      rawProvenance: { teamId: "T-EVENT" },
+      rawProvenance: {
+        teamId: "T-EVENT",
+        originTeamId: "T-SOURCE",
+        sourceTeamId: "T-SOURCE",
+        userTeamId: "T-USER",
+        eventTeamId: "T-EVENT",
+        payloadTeamId: "T-PAYLOAD",
+        authorizedTeamIds: [],
+        localTeamId: null,
+      },
     });
   });
 
@@ -1514,38 +1542,195 @@ describe("Slack Socket Mode foreign bot intake", () => {
     expect(published).toHaveLength(1);
   });
 
-  it("requires the envelope and auth.test to identify the same Slack team", async () => {
-    const fromEvent: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
-    const matchingAuth = mock(async () => ({
+  it("uses the authorized installation while preserving a distinct Slack Connect origin", async () => {
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const authTest = mock(async () => ({
       ok: true,
       bot_id: "BLOCAL",
       user_id: "ULOCAL",
-      team_id: "T1",
+      team_id: "T222",
     }));
-    const matchingService = makeBotService({ published: fromEvent, authTest: matchingAuth });
+    const service = makeBotService({ published, authTest });
 
     expect(
-      await matchingService.handleEnvelope(
+      await service.handleEnvelope(
         botEnvelope({
-          envelopeId: "team-from-event",
+          envelopeId: "slack-connect-authorized-installation",
           ts: "1713000102.000200",
           text: "<@ULOCAL> status",
           botId: "BFOREIGN",
-          teamId: null,
-          eventTeamId: "T1",
+          teamId: "T111",
+          eventTeamId: "T111",
+          sourceTeamId: "T111",
+          userTeamId: "T111",
+          authorizations: [{ team_id: "T222" }],
         }),
       ),
     ).toBe("processed");
-    expect(fromEvent).toHaveLength(1);
+    expect(authTest).toHaveBeenCalledTimes(1);
+    expect(published).toHaveLength(1);
 
+    const source = published[0]!.payload.source as MessageTarget;
+    const provenance = {
+      teamId: "T111",
+      originTeamId: "T111",
+      sourceTeamId: "T111",
+      userTeamId: "T111",
+      eventTeamId: "T111",
+      payloadTeamId: "T111",
+      authorizedTeamIds: ["T222"],
+      localTeamId: "T222",
+    };
+    expect(dbGetChat(source.canonicalChatId!)).toMatchObject({ rawProvenance: provenance });
+    expect(
+      dbFindChatMessage({
+        channel: "slack",
+        instanceId: UUID,
+        chatId: source.canonicalChatId!,
+        providerMessageId: "1713000102.000200",
+      }),
+    ).toMatchObject({ rawProvenance: provenance });
+    expect(dbListChatParticipants(source.canonicalChatId!)[0]?.metadata).toMatchObject({
+      slackTeamId: "T111",
+      slackOriginTeamId: "T111",
+      slackSourceTeamId: "T111",
+      slackUserTeamId: "T111",
+      slackEventTeamId: "T111",
+      slackPayloadTeamId: "T111",
+      slackAuthorizedTeamIds: ["T222"],
+      slackLocalTeamId: "T222",
+    });
+  });
+
+  it("accepts any matching authorization but fails closed when the truncated value omits the local team", async () => {
+    const authorized: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const authorizedService = makeBotService({
+      published: authorized,
+      authTest: mock(async () => ({
+        ok: true,
+        bot_id: "BLOCAL",
+        user_id: "ULOCAL",
+        team_id: "T222",
+      })),
+    });
+    expect(
+      await authorizedService.handleEnvelope(
+        botEnvelope({
+          envelopeId: "one-of-several-authorizations",
+          ts: "1713000102.000250",
+          text: "<@ULOCAL> status",
+          botId: "BFOREIGN",
+          teamId: "T111",
+          eventTeamId: "T333",
+          sourceTeamId: "T111",
+          authorizations: [{ team_id: "T333" }, { team_id: "T222" }],
+        }),
+      ),
+    ).toBe("processed");
+    expect(authorized).toHaveLength(1);
+    const authorizedSource = authorized[0]!.payload.source as MessageTarget;
+    expect(dbGetChat(authorizedSource.canonicalChatId!)).toMatchObject({
+      rawProvenance: {
+        teamId: "T333",
+        originTeamId: "T111",
+        sourceTeamId: "T111",
+        userTeamId: null,
+        eventTeamId: "T333",
+        payloadTeamId: "T111",
+        authorizedTeamIds: ["T333", "T222"],
+        localTeamId: "T222",
+      },
+    });
+
+    const truncated: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const truncatedService = makeBotService({
+      published: truncated,
+      authTest: mock(async () => ({
+        ok: true,
+        bot_id: "BLOCAL",
+        user_id: "ULOCAL",
+        team_id: "T222",
+      })),
+    });
+    expect(
+      await truncatedService.handleEnvelope(
+        botEnvelope({
+          envelopeId: "truncated-authorization-legacy-proof",
+          ts: "1713000102.000275",
+          text: "<@ULOCAL> status",
+          botId: "BFOREIGN",
+          teamId: "T222",
+          eventTeamId: "T222",
+          sourceTeamId: "T111",
+          authorizations: [{ team_id: "T333" }],
+        }),
+      ),
+    ).toBe("ignored");
+    expect(truncated).toHaveLength(0);
+
+    const withoutOrigin: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const withoutOriginService = makeBotService({
+      published: withoutOrigin,
+      authTest: mock(async () => ({
+        ok: true,
+        bot_id: "BLOCAL",
+        user_id: "ULOCAL",
+        team_id: "T222",
+      })),
+    });
+    expect(
+      await withoutOriginService.handleEnvelope(
+        botEnvelope({
+          envelopeId: "authorization-proof-without-origin",
+          ts: "1713000102.000290",
+          text: "<@ULOCAL> status",
+          botId: "BFOREIGN",
+          teamId: null,
+          eventTeamId: null,
+          sourceTeamId: null,
+          authorizations: [{ team_id: "T222" }],
+        }),
+      ),
+    ).toBe("ignored");
+    expect(withoutOrigin).toHaveLength(0);
+
+    const conflictingWithoutSource: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const conflictingWithoutSourceService = makeBotService({
+      published: conflictingWithoutSource,
+      authTest: mock(async () => ({
+        ok: true,
+        bot_id: "BLOCAL",
+        user_id: "ULOCAL",
+        team_id: "T222",
+      })),
+    });
+    expect(
+      await conflictingWithoutSourceService.handleEnvelope(
+        botEnvelope({
+          envelopeId: "authorization-proof-with-conflicting-implicit-origin",
+          ts: "1713000102.000295",
+          text: "<@ULOCAL> status",
+          botId: "BFOREIGN",
+          teamId: "T111",
+          eventTeamId: "T333",
+          sourceTeamId: null,
+          authorizations: [{ team_id: "T222" }],
+        }),
+      ),
+    ).toBe("ignored");
+    expect(conflictingWithoutSource).toHaveLength(0);
+  });
+
+  it("fails closed when neither authorization nor legacy team fields prove the installation", async () => {
     const mismatched: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
     const mismatchedAuth = mock(async () => ({
       ok: true,
       bot_id: "BLOCAL",
       user_id: "ULOCAL",
-      team_id: "T2",
+      team_id: "T222",
     }));
     const mismatchedService = makeBotService({ published: mismatched, authTest: mismatchedAuth });
+
     expect(
       await mismatchedService.handleEnvelope(
         botEnvelope({
@@ -1553,11 +1738,70 @@ describe("Slack Socket Mode foreign bot intake", () => {
           ts: "1713000102.000300",
           text: "<@ULOCAL> status",
           botId: "BFOREIGN",
+          teamId: "T111",
+          eventTeamId: "T111",
+          sourceTeamId: "T111",
+          authorizations: [{ team_id: "T333" }],
         }),
       ),
     ).toBe("ignored");
     expect(mismatchedAuth).toHaveBeenCalledTimes(1);
     expect(mismatched).toHaveLength(0);
+  });
+
+  it("uses the strict legacy proof only when authorizations is absent", async () => {
+    const legacyPublished: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const legacyService = makeBotService({
+      published: legacyPublished,
+      authTest: mock(async () => ({
+        ok: true,
+        bot_id: "BLOCAL",
+        user_id: "ULOCAL",
+        team_id: "T1",
+      })),
+    });
+    expect(
+      await legacyService.handleEnvelope(
+        botEnvelope({
+          envelopeId: "legacy-authorization-fallback",
+          ts: "1713000102.000310",
+          text: "<@ULOCAL> status",
+          botId: "BFOREIGN",
+          teamId: "T1",
+          eventTeamId: "T1",
+        }),
+      ),
+    ).toBe("processed");
+    expect(legacyPublished).toHaveLength(1);
+
+    for (const [index, authorizations] of [[], "malformed", [null], [{}], [{ team_id: " " }]].entries()) {
+      const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+      const authTest = mock(async () => ({
+        ok: true,
+        bot_id: "BLOCAL",
+        user_id: "ULOCAL",
+        team_id: "T1",
+      }));
+      const service = makeBotService({
+        published,
+        authTest,
+      });
+      expect(
+        await service.handleEnvelope(
+          botEnvelope({
+            envelopeId: `invalid-authorizations-${index}`,
+            ts: `1713000102.00032${index}`,
+            text: "<@ULOCAL> status",
+            botId: "BFOREIGN",
+            teamId: "T1",
+            eventTeamId: "T1",
+            authorizations,
+          }),
+        ),
+      ).toBe("ignored");
+      expect(authTest).not.toHaveBeenCalled();
+      expect(published).toHaveLength(0);
+    }
   });
 
   it("fails closed before auth.test when Slack team provenance is absent or conflicting", async () => {

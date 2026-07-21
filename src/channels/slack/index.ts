@@ -71,6 +71,7 @@ export {
 export type { SlackNativeRuntime, SlackSocketModeServiceOptions, SlackTargetScope } from "./socket-mode.js";
 export type {
   SlackBotMessageAliasesByChat,
+  SlackEventAuthorization,
   SlackEventPayload,
   SlackEventsApiPayload,
   SlackFilePayload,
