@@ -59,6 +59,39 @@ describe("runtime credential classifier", () => {
     expect(signal.retryableByCredential).toBe(false);
   });
 
+  it("classifies the real Kimi 403 billing-cycle usage limit as exhausted quota", () => {
+    const signal = classifyRuntimeCredentialFailure({
+      runtimeProvider: "pi",
+      upstreamProvider: "kimi-coding",
+      model: "kimi-coding/kimi-k3",
+      httpStatus: 403,
+      providerType: "permission_error",
+      message:
+        '403 {"error":{"type":"permission_error","message":"You\'ve reached your usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan: https://www.kimi.com/code/#pricing"},"type":"error"}',
+    });
+
+    expect(signal.kind).toBe("quota_exhausted");
+    expect(signal.confidence).toBe("high");
+    expect(signal.scope).toBe("account");
+    expect(signal.retryableByCredential).toBe(true);
+  });
+
+  it("keeps non-quota 403 permission errors classified as permission denied", () => {
+    const signal = classifyRuntimeCredentialFailure({
+      runtimeProvider: "pi",
+      upstreamProvider: "kimi-coding",
+      model: "kimi-coding/kimi-k3",
+      httpStatus: 403,
+      providerType: "permission_error",
+      message: "You do not have permission to access this model in your region.",
+    });
+
+    expect(signal.kind).toBe("permission_denied");
+    expect(signal.confidence).toBe("medium");
+    expect(signal.scope).toBe("request");
+    expect(signal.retryableByCredential).toBe(false);
+  });
+
   it("classifies Codex context window exhaustion as a request context limit", () => {
     const signal = classifyRuntimeCredentialFailure({
       runtimeProvider: "codex",

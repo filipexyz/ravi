@@ -51,7 +51,14 @@ export function classifyRuntimeCredentialFailure(
   const limitDimensions = extractLimitDimensions(headers);
   const rawHeaders = redactHeaders(headers);
 
-  const classified = classifyKind({ status, providerCode, providerType, text });
+  const classified = classifyKind({
+    status,
+    providerCode,
+    providerType,
+    text,
+    runtimeProvider: input.runtimeProvider,
+    model: input.model,
+  });
   return {
     kind: classified.kind,
     confidence: classified.confidence,
@@ -107,7 +114,14 @@ export function evaluateCredentialLimitPressure(
   };
 }
 
-function classifyKind(input: { status?: number; providerCode?: string; providerType?: string; text: string }): {
+function classifyKind(input: {
+  status?: number;
+  providerCode?: string;
+  providerType?: string;
+  text: string;
+  runtimeProvider: RuntimeProviderId;
+  model?: string;
+}): {
   kind: RuntimeCredentialFailureKind;
   confidence: RuntimeCredentialFailureConfidence;
   scope: RuntimeCredentialFailureScope;
@@ -132,6 +146,9 @@ function classifyKind(input: { status?: number; providerCode?: string; providerT
       return { kind: "quota_exhausted", confidence: "high", scope: "account" };
     }
     return { kind: "rate_limited", confidence: "high", scope: inferLimitScope(text) };
+  }
+  if (isKimiBillingCycleQuota403(input)) {
+    return { kind: "quota_exhausted", confidence: "high", scope: "account" };
   }
   if (input.status === 403 || code === "permission_error" || type === "permission_error") {
     return { kind: "permission_denied", confidence: "medium", scope: inferPermissionScope(text) };
@@ -158,6 +175,29 @@ function classifyKind(input: { status?: number; providerCode?: string; providerT
   }
 
   return { kind: "unknown", confidence: "low", scope: "unknown" };
+}
+
+function isKimiBillingCycleQuota403(input: {
+  status?: number;
+  providerCode?: string;
+  providerType?: string;
+  text: string;
+  runtimeProvider: RuntimeProviderId;
+  model?: string;
+}): boolean {
+  if (input.runtimeProvider !== "pi") return false;
+  if (input.status !== 403) return false;
+  if (
+    normalizeToken(input.providerCode) !== "permission_error" &&
+    normalizeToken(input.providerType) !== "permission_error"
+  ) {
+    return false;
+  }
+  if (!input.model?.startsWith("kimi-coding/")) return false;
+  return (
+    input.text.includes("reached your usage limit for this billing cycle") &&
+    input.text.includes("quota will be refreshed in the next cycle")
+  );
 }
 
 function isRetryableByCredential(kind: RuntimeCredentialFailureKind, scope: RuntimeCredentialFailureScope): boolean {
