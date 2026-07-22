@@ -2,7 +2,7 @@
 
 ## Why Reset Provider State Only
 
-The exhausted resource is the provider thread context, not the Ravi session. Deleting the Ravi session would also risk losing route bindings, chat participation, trace continuity, task state, and local history needed to resume safely.
+The unavailable resource is provider-owned thread state, whether it was exhausted or deleted from local provider storage. It is not the Ravi session. Deleting the Ravi session would also risk losing route bindings, chat participation, trace continuity, task state, and local history needed to resume safely.
 
 `resetSession` is the right primitive because it clears provider ids, runtime params, token counters, compaction counters, and system-sent state while preserving the local session identity.
 
@@ -16,6 +16,10 @@ The recovery prompt is consumed by a model as the first message in a fresh provi
 
 ## Why Keep This Provider-Agnostic
 
-Codex exposed the bug first, but context-window exhaustion is a general provider failure class. The host runtime should recover from the classification, while adapters and classifiers normalize each provider's native wording into that class.
+Codex first exposed context-window exhaustion; Claude exposed missing provider-native state. The host runtime should recover from either classification, while adapters and classifiers normalize each provider's native wording.
 
 Provider-native compaction remains useful. This feature is the fallback after compaction fails, does not happen, or the provider reports a hard context-window failure.
+
+## Why Missing-Session Recovery Is Bounded
+
+`No conversation found` is recoverable only when Ravi actually supplied stored provider state. Clearing that state changes the next start to `resume=false`, so one retry is enough. If a fresh start reports the same error, Ravi surfaces the failure normally rather than repeatedly recreating the session.

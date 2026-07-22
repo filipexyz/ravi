@@ -23,7 +23,10 @@ import {
   markRuntimeCredentialAttemptStarted,
   reserveRuntimeCredentialAttempt,
 } from "./credential-store.js";
-import { RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON } from "./context-window-recovery.js";
+import {
+  RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
+  RUNTIME_PROVIDER_SESSION_MISSING_RECOVERY_REASON,
+} from "./context-window-recovery.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import type { RuntimeHostStreamingSession, RuntimeMessageTarget, RuntimeUserMessage } from "./host-session.js";
 import {
@@ -1584,6 +1587,136 @@ describe("runtime session trace instrumentation", () => {
     expect(eventTypes).toContain("turn.failed");
     expect(eventTypes).toContain("session.context_window_exhausted");
     expect(getSessionTurn("turn-context-limit")?.status).toBe("failed");
+  });
+
+  it("recreates a missing provider session from durable local history", async () => {
+    const missingSessionId = "b8714bf7-9907-4306-9f7c-1af04d0cd0b4";
+    saveMessage(SESSION_NAME, "user", "investiga a falha de deploy", missingSessionId, {
+      agentId: AGENT_ID,
+      channel: source.channel,
+      accountId: source.accountId,
+      chatId: source.chatId,
+      sourceMessageId: "wamid-old",
+    });
+    saveMessage(SESSION_NAME, "assistant", "Vou conferir os logs.", missingSessionId, {
+      agentId: AGENT_ID,
+      channel: source.channel,
+      accountId: source.accountId,
+      chatId: source.chatId,
+    });
+    saveMessage(SESSION_NAME, "user", "continua de onde parou", missingSessionId, {
+      agentId: AGENT_ID,
+      channel: source.channel,
+      accountId: source.accountId,
+      chatId: source.chatId,
+      sourceMessageId: "wamid-latest",
+    });
+    updateRuntimeProviderState(SESSION_KEY, PROVIDER, {
+      providerSessionId: missingSessionId,
+      runtimeSessionDisplayId: missingSessionId,
+      runtimeSessionParams: { sessionId: missingSessionId },
+    });
+
+    const session = makeSession();
+    session.runtimeProvider = PROVIDER;
+    session.providerSessionId = missingSessionId;
+    session.sdkSessionId = missingSessionId;
+    session.runtimeSessionDisplayId = missingSessionId;
+    session.runtimeSessionParams = { sessionId: missingSessionId };
+
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "continua de onde parou",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-provider-session-missing");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error: `No conversation found with session ID: ${missingSessionId}`,
+          recoverable: true,
+        },
+      ]),
+      {
+        session,
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    expect(emitted.map((event) => event.data.type)).not.toContain("turn.failed");
+    expect(restartRequests).toEqual([
+      { sessionName: SESSION_NAME, reason: RUNTIME_PROVIDER_SESSION_MISSING_RECOVERY_REASON },
+    ]);
+
+    const stashed = stashedMessages.get(SESSION_NAME);
+    expect(stashed).toHaveLength(1);
+    expect(stashed?.[0]?.message.content).toContain("could not find the previous conversation");
+    expect(stashed?.[0]?.message.content).toContain("continua de onde parou");
+    expect(stashed?.[0]?.message.content).not.toContain(missingSessionId);
+
+    const persisted = getSession(SESSION_KEY);
+    expect(persisted?.providerSessionId).toBeUndefined();
+    expect(persisted?.runtimeProvider).toBeUndefined();
+    expect(persisted?.runtimeSessionParams).toBeUndefined();
+
+    const events = listSessionEvents(SESSION_KEY);
+    expect(events.map((event) => event.eventType)).toContain("session.provider_session_missing");
+    expect(getSessionTurn("turn-provider-session-missing")).toMatchObject({
+      status: "failed",
+      abortReason: RUNTIME_PROVIDER_SESSION_MISSING_RECOVERY_REASON,
+    });
+  });
+
+  it("does not retry a missing provider session error when no stored session was resumed", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-provider-session-missing-without-resume");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.failed",
+          error: "No conversation found with session ID: already-cleared",
+          recoverable: true,
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    expect(restartRequests).toEqual([]);
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(emitted.map((event) => event.data.type)).toContain("turn.failed");
+    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).not.toContain(
+      "session.provider_session_missing",
+    );
   });
 
   it("does not auto-replay retryable credential failures after a tool started", async () => {
