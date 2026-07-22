@@ -295,6 +295,15 @@ describe("runCoverageGate", () => {
     expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
   });
 
+  it("passes when the Claude provider focused test is in the diff", () => {
+    const cwd = makeWorkspace();
+
+    const result = runCoverageGate(["src/runtime/claude-provider.ts", "src/runtime/claude-provider.test.ts"], cwd);
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
+  });
+
   it("passes when the observation plane focused test is in the diff", () => {
     const cwd = makeWorkspace();
 
