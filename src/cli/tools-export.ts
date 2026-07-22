@@ -17,8 +17,7 @@ import {
 import { extractOptionName, inferOptionType } from "./utils.js";
 import { nats } from "../nats.js";
 import { getContext } from "./context.js";
-import { enforceCliCommandAccess } from "./command-access.js";
-import { enforceScopeCheck } from "../permissions/scope.js";
+import { enforceCliCommandAuthorization } from "./command-access.js";
 import { resolveCommandSkillGate, type SkillGateMetadata } from "./skill-gates.js";
 
 // ============================================================================
@@ -201,25 +200,17 @@ function buildHandler(
   access: CommandAccessOptions | undefined,
 ): (args: Record<string, unknown>) => Promise<ToolResult> {
   return async (toolArgs: Record<string, unknown>): Promise<ToolResult> => {
-    const accessResult = enforceCliCommandAccess({
+    const accessResult = enforceCliCommandAuthorization({
       group,
       command,
       access,
       input: toolArgs,
       source: "tool",
+      scope,
     });
     if (!accessResult.allowed) {
       return {
         content: [{ type: "text", text: accessResult.errorMessage }],
-        isError: true,
-      };
-    }
-
-    // Scope enforcement (before method execution)
-    const scopeResult = enforceScopeCheck(scope, group, command);
-    if (!scopeResult.allowed) {
-      return {
-        content: [{ type: "text", text: scopeResult.errorMessage }],
         isError: true,
       };
     }

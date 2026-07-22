@@ -20,13 +20,16 @@ const CLI_ONLY_KEY = Symbol("cli:cliOnly");
 // Types
 
 /**
- * Scope types for command access control.
+ * Legacy scope classifications retained for registry compatibility.
  *
- * - "superadmin"    — Only superadmin (admin relation on system:*). Auto-enforced.
- * - "admin"         — Only agents with execute relation on the group. Auto-enforced.
- * - "writeContacts" — Only agents with contactScope "all". Auto-enforced.
+ * Decorated commands authorize through @CommandAccess. Only "superadmin"
+ * remains an additional command-pipeline boundary.
+ *
+ * - "superadmin"    — Requires admin relation on system:* in addition to command access.
+ * - "admin"         — Legacy group-execution classification.
+ * - "writeContacts" — Legacy contact-write classification.
  * - "resource"      — Marker only; method must check canAccessResource() inline.
- * - "open"          — No restrictions.
+ * - "open"          — Legacy open classification.
  */
 export type ScopeType = "superadmin" | "admin" | "writeContacts" | "resource" | "open";
 export type CommandAccessKind = "read" | "mutate";

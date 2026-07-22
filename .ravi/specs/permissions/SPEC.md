@@ -106,6 +106,9 @@ Agents MUST be guided toward explainable least-privilege requests.
 
 - Permission denials MUST expose the canonical missing capability in
   `<permission>:<objectType>:<objectId>` form.
+- Applying the canonical capability recommended by a command denial MUST be
+  sufficient to retry that exact command. Ravi MUST NOT then request a legacy
+  `execute:group:*` capability for the same operation.
 - Permission denials, approval prompts, and CLI JSON outputs SHOULD use the
   shared authorization guidance envelope instead of hand-written local hints.
   The envelope MUST include:

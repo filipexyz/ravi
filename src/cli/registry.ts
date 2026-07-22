@@ -17,8 +17,7 @@ import {
   type ScopeType,
 } from "./decorators.js";
 import { extractOptionName } from "./utils.js";
-import { enforceCliCommandAccess } from "./command-access.js";
-import { enforceScopeCheck } from "../permissions/scope.js";
+import { enforceCliCommandAuthorization } from "./command-access.js";
 import { emitCliAuditEvent } from "./audit.js";
 import {
   dispatchRemote,
@@ -209,12 +208,13 @@ function registerCommand(
       }
     }
 
-    const accessResult = enforceCliCommandAccess({
+    const accessResult = enforceCliCommandAuthorization({
       group: groupName,
       command: cmdMeta.name,
       access,
       input,
       source: "cli",
+      scope,
     });
     if (!accessResult.allowed) {
       console.error(accessResult.errorMessage);
@@ -234,15 +234,6 @@ function registerCommand(
         input,
       });
       return;
-    }
-
-    // Scope enforcement (before method execution).
-    const scopeResult = enforceScopeCheck(scope, groupName, cmdMeta.name);
-    if (!scopeResult.allowed) {
-      console.error(scopeResult.errorMessage);
-      // Drain NATS before exiting so audit events are flushed
-      const { flushAuditAndExit } = await import("../permissions/scope.js");
-      await flushAuditAndExit(1);
     }
 
     // Execute and emit single event with input + output

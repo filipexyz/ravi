@@ -4,6 +4,7 @@ import { Command as CommanderCommand } from "commander";
 import { runWithContext } from "./context.js";
 import { Arg, Command, CommandAccess, Group, Option } from "./decorators.js";
 import { registerCommands } from "./registry.js";
+import type { ContextRecord } from "../router/router-db.js";
 
 @Group({ name: "demo.child", description: "Nested child", scope: "open" })
 class NestedChildCommands {
@@ -42,6 +43,15 @@ const capturedDirect: CapturedCall[] = [];
 const capturedNested: CapturedCall[] = [];
 const capturedNegated: boolean[] = [];
 const capturedPaired: Array<{ resumable: boolean | undefined; noResumable: boolean }> = [];
+
+const semanticOnlyContext: ContextRecord = {
+  contextId: "ctx_registry_semantic_only",
+  contextKey: "rctx_registry_semantic_only",
+  kind: "test-runtime",
+  agentId: "registry-test",
+  capabilities: [{ permission: "read", objectType: "negative", objectId: "run", source: "test" }],
+  createdAt: Date.now(),
+};
 
 @Group({ name: "shadow", description: "Direct command + nested group with --json", scope: "open" })
 class ShadowDirectCommands {
@@ -121,6 +131,26 @@ describe("registerCommands", () => {
       { resumable: true, noResumable: false },
       { resumable: undefined, noResumable: true },
     ]);
+  });
+
+  it("executes a CLI command with its semantic capability and no legacy group grant", async () => {
+    capturedNegated.length = 0;
+    const program = new CommanderCommand();
+    program.exitOverride();
+    registerCommands(program, [NegatedOptionCommands]);
+
+    const previousNoAudit = process.env.RAVI_NO_AUDIT;
+    process.env.RAVI_NO_AUDIT = "1";
+    try {
+      await runWithContext({ agentId: semanticOnlyContext.agentId, context: semanticOnlyContext }, () =>
+        program.parseAsync(["node", "test", "negative", "run"]),
+      );
+    } finally {
+      if (previousNoAudit === undefined) delete process.env.RAVI_NO_AUDIT;
+      else process.env.RAVI_NO_AUDIT = previousNoAudit;
+    }
+
+    expect(capturedNegated).toEqual([false]);
   });
 
   it("reuses existing nested command nodes for direct commands with subcommands", () => {
