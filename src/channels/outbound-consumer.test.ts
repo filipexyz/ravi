@@ -3,7 +3,9 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import type { NativeTextDelivery } from "./native/types.js";
 import {
   type ChannelOutboundConsumerOptions,
+  acknowledgeChannelOutboundMessage,
   channelOutboundRequestFingerprint,
+  missingAdapterRetryDelayMs,
   persistDeliveredMessage,
   processChannelOutboundJob as processChannelOutboundJobWithNats,
 } from "./outbound-consumer.js";
@@ -69,26 +71,71 @@ describe("channel outbound consumer", () => {
     );
   });
 
-  it("acks terminal missing-adapter failures", async () => {
+  it("naks missing-adapter failures with bounded backoff instead of acknowledging terminal loss", async () => {
     const emitEvent = mock(async () => {});
     const result = await processChannelOutboundJob(makeJob(), {
       deliveries: [],
       emitEvent,
       persistDelivery: false,
+      deliveryAttempt: 2,
     });
 
     expect(result).toMatchObject({
-      disposition: "ack",
+      disposition: "nak",
       status: "failed",
-      retryable: false,
+      retryable: true,
+      phase: "adapter_lookup",
+      nakDelayMs: 60_000,
     });
     expect(emitEvent).toHaveBeenCalledWith(
       "ravi.session.ravi-channels.delivery",
       expect.objectContaining({
         status: "failed",
         reason: "missing_adapter",
+        retryable: true,
+        retryDelayMs: 60_000,
+        deliveryAttempt: 2,
       }),
     );
+  });
+
+  it("recovers a missing-adapter redelivery when the matching adapter appears later", async () => {
+    const emitEvent = mock(async () => {});
+    const missing = await processChannelOutboundJob(makeJob(), {
+      deliveries: [],
+      emitEvent,
+      persistDelivery: false,
+      deliveryAttempt: 1,
+    });
+    const delivery = makeDelivery();
+    const delivered = await processChannelOutboundJob(makeJob(), {
+      deliveries: [delivery],
+      emitEvent,
+      persistDelivery: false,
+      deliveryAttempt: 2,
+    });
+
+    expect(missing).toMatchObject({
+      disposition: "nak",
+      retryable: true,
+      nakDelayMs: 30_000,
+    });
+    expect(delivered).toEqual({ disposition: "ack", status: "delivered", retryable: false });
+    expect(delivery.deliverText).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies the retry delay to JetStream NAKs", () => {
+    const ack = mock(() => {});
+    const nak = mock((_delayMs?: number) => {});
+
+    acknowledgeChannelOutboundMessage(
+      { ack, nak },
+      { disposition: "nak", status: "failed", retryable: true, nakDelayMs: 120_000 },
+    );
+
+    expect(ack).not.toHaveBeenCalled();
+    expect(nak).toHaveBeenCalledWith(120_000);
+    expect(missingAdapterRetryDelayMs(10)).toBe(300_000);
   });
 
   it("naks retryable adapter send failures", async () => {

@@ -170,6 +170,7 @@ export interface SlackTargetScope {
   readonly routeAccountId?: string;
   readonly instanceId?: string;
   readonly connection?: string;
+  readonly instanceAliases?: readonly string[];
 }
 
 class RecentIdCache {
@@ -198,8 +199,15 @@ function supportsSlackTarget(target: MessageTarget, scope?: SlackTargetScope): b
   if (!scope) return true;
 
   const targetIds = normalizeSlackTargetIds([target.accountId, target.instanceId]);
-  const scopeIds = normalizeSlackTargetIds([scope.accountId, scope.routeAccountId, scope.instanceId, scope.connection]);
-  return targetIds.some((id) => scopeIds.includes(id));
+  const scopeIds = normalizeSlackTargetIds([
+    scope.accountId,
+    scope.routeAccountId,
+    scope.instanceId,
+    scope.connection,
+    ...(scope.instanceAliases ?? []),
+  ]);
+  if (targetIds.length === 0 || scopeIds.length === 0) return false;
+  return targetIds.every((id) => scopeIds.includes(id));
 }
 
 function normalizeSlackTargetIds(values: Array<string | undefined>): string[] {
@@ -1841,9 +1849,11 @@ export async function createSlackNativeRuntimeFromEnv(
     channel?: ChannelConfig;
     channels?: Record<string, ChannelConfig>;
     resolveSecret?: SlackCredentialResolver;
+    onRuntimeDisabled?: (channel: ChannelConfig, reason: "missing_credentials") => void;
   } = {},
 ): Promise<SlackNativeRuntime | null> {
-  const channels = options.channels ?? configStore.getConfig().channels ?? {};
+  const routerConfig = configStore.getConfig();
+  const channels = options.channels ?? routerConfig.channels ?? {};
   const credentials = await resolveSlackCredentialConfigFromEnv(env, {
     channels,
     channel: options.channel,
@@ -1851,14 +1861,17 @@ export async function createSlackNativeRuntimeFromEnv(
   });
   if (!credentials) {
     log.warn("Slack native runtime disabled: configure a Slack channel with brokered credentials");
+    if (options.channel) options.onRuntimeDisabled?.(options.channel, "missing_credentials");
     return null;
   }
 
+  const instanceAliases = resolveSlackInstanceAliases(routerConfig, credentials.instanceId);
   const scope: SlackTargetScope = {
     accountId: credentials.accountId,
     routeAccountId: credentials.routeAccountId,
     instanceId: credentials.instanceId,
     connection: credentials.connection,
+    instanceAliases: instanceAliases.scopedAliases,
   };
   const routingPolicy = slackRoutingPolicyFromChannelDefaults(options.channel?.defaults, env);
   const webClient = new SlackWebApiClient({
@@ -1921,18 +1934,25 @@ export async function createSlackNativeRuntimesFromEnv(
   options: {
     channels?: Record<string, ChannelConfig>;
     resolveSecret?: SlackCredentialResolver;
+    onRuntimeDisabled?: (channel: ChannelConfig, reason: "missing_credentials") => void;
+    onRuntimeError?: (channel: ChannelConfig, error: unknown) => void;
   } = {},
 ): Promise<SlackNativeRuntime[]> {
   const channels = options.channels ?? configStore.getConfig().channels ?? {};
   const configuredChannels = enabledSlackChannels(channels);
   const runtimes: SlackNativeRuntime[] = [];
   for (const channel of configuredChannels) {
-    const runtime = await createSlackNativeRuntimeFromEnv(env, {
-      channels,
-      channel,
-      resolveSecret: options.resolveSecret,
-    });
-    if (runtime) runtimes.push(runtime);
+    try {
+      const runtime = await createSlackNativeRuntimeFromEnv(env, {
+        channels,
+        channel,
+        resolveSecret: options.resolveSecret,
+        onRuntimeDisabled: options.onRuntimeDisabled,
+      });
+      if (runtime) runtimes.push(runtime);
+    } catch (error) {
+      options.onRuntimeError?.(channel, error);
+    }
   }
   return runtimes;
 }

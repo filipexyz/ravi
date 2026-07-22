@@ -28,15 +28,19 @@ import {
 const log = logger.child("channels:outbound-consumer");
 const sc = StringCodec();
 const CONSUMER_RETRY_DELAY_MS = 2_000;
+export const CHANNEL_OUTBOUND_MISSING_ADAPTER_RETRY_BASE_MS = 30_000;
+export const CHANNEL_OUTBOUND_MISSING_ADAPTER_RETRY_MAX_MS = 5 * 60_000;
 
 export type ChannelOutboundJobDisposition = "ack" | "nak";
+export type ChannelOutboundProcessingPhase = ChannelOutboundReceiptErrorPhase | "adapter_lookup" | "send";
 
 export interface ChannelOutboundProcessingResult {
   disposition: ChannelOutboundJobDisposition;
   status: "delivered" | "failed" | "dropped";
   retryable: boolean;
   error?: string;
-  phase?: ChannelOutboundReceiptErrorPhase | "send";
+  phase?: ChannelOutboundProcessingPhase;
+  nakDelayMs?: number;
 }
 
 export interface PersistedOutboundMessage {
@@ -56,6 +60,7 @@ export interface ChannelOutboundConsumerOptions {
   emitEvent?: typeof nats.emit;
   flushNats?: typeof flushNatsConnection;
   isRunning?: () => boolean;
+  deliveryAttempt?: number;
   persistDelivery?: boolean;
   receiptStore?: ChannelOutboundReceiptStore;
   persistDeliveredMessage?: PersistDeliveredMessage;
@@ -63,9 +68,25 @@ export interface ChannelOutboundConsumerOptions {
   claimLeaseMs?: number;
 }
 
+export interface ChannelOutboundConsumerRuntimeStatus {
+  lastMessageAt?: number;
+  lastError?: {
+    phase: "consume_loop";
+    message: string;
+    at: number;
+  };
+}
+
+export interface AckableChannelOutboundMessage {
+  ack(): void;
+  nak(delayMs?: number): void;
+}
+
 export class ChannelOutboundConsumer {
   private running = false;
   private loopPromise: Promise<void> | null = null;
+  private lastMessageAt: number | undefined;
+  private lastError: ChannelOutboundConsumerRuntimeStatus["lastError"] | undefined;
 
   constructor(private readonly options: ChannelOutboundConsumerOptions) {}
 
@@ -87,6 +108,13 @@ export class ChannelOutboundConsumer {
     return this.running;
   }
 
+  status(): ChannelOutboundConsumerRuntimeStatus {
+    return {
+      ...(this.lastMessageAt !== undefined ? { lastMessageAt: this.lastMessageAt } : {}),
+      ...(this.lastError ? { lastError: { ...this.lastError } } : {}),
+    };
+  }
+
   private shouldContinue(): boolean {
     return this.running && (this.options.isRunning?.() ?? true);
   }
@@ -102,12 +130,14 @@ export class ChannelOutboundConsumer {
           expires: 2_000,
           abort_on_missing_resource: true,
         });
+        this.lastError = undefined;
 
         for await (const msg of messages) {
           if (!this.shouldContinue()) {
-            msg.nak();
+            msg.nak(CONSUMER_RETRY_DELAY_MS);
             break;
           }
+          this.lastMessageAt = Date.now();
 
           let job: ChannelOutboundJob;
           try {
@@ -118,17 +148,35 @@ export class ChannelOutboundConsumer {
             continue;
           }
 
-          const result = await processChannelOutboundJob(job, this.options);
-          if (result.disposition === "ack") msg.ack();
-          else msg.nak();
+          const result = await processChannelOutboundJob(job, {
+            ...this.options,
+            deliveryAttempt: msg.info.deliveryCount,
+          });
+          acknowledgeChannelOutboundMessage(msg, result);
         }
       } catch (error) {
         if (!this.shouldContinue()) break;
+        this.lastError = {
+          phase: "consume_loop",
+          message: errorMessage(error),
+          at: Date.now(),
+        };
         log.warn("Channel outbound consume loop failed; retrying", { error });
         await delay(CONSUMER_RETRY_DELAY_MS);
       }
     }
   }
+}
+
+export function acknowledgeChannelOutboundMessage(
+  msg: AckableChannelOutboundMessage,
+  result: ChannelOutboundProcessingResult,
+): void {
+  if (result.disposition === "ack") {
+    msg.ack();
+    return;
+  }
+  msg.nak(result.retryable ? (result.nakDelayMs ?? missingAdapterRetryDelayMs(undefined)) : result.nakDelayMs);
 }
 
 export async function processChannelOutboundJob(
@@ -143,6 +191,7 @@ export async function processChannelOutboundJob(
   const emitId = job.request.origin.emitId;
   const target = job.request.target;
   const text = job.request.content.text;
+  const deliveryAttempt = options.deliveryAttempt;
 
   if (job.request.content.type !== "text") {
     const error = `Unsupported outbound content type: ${job.request.content.type}`;
@@ -161,7 +210,7 @@ export async function processChannelOutboundJob(
 
   const adapter = options.deliveries.find((candidate) => candidate.supports(target));
   if (options.persistDelivery === false) {
-    if (!adapter) return emitMissingAdapter(emitEvent, recordTrace, job, t0);
+    if (!adapter) return emitMissingAdapter(emitEvent, recordTrace, job, t0, deliveryAttempt);
     return processWithoutReceiptLedger(job, adapter, emitEvent, recordTrace, t0);
   }
 
@@ -199,13 +248,27 @@ export async function processChannelOutboundJob(
   let claimOwner: string | undefined;
   if (!receipt || receipt.state === "claimed") {
     if (!adapter) {
-      if (!receipt) return emitMissingAdapter(emitEvent, recordTrace, job, t0);
+      if (!receipt) return emitMissingAdapter(emitEvent, recordTrace, job, t0, deliveryAttempt);
+      const delayMs = missingAdapterRetryDelayMs(deliveryAttempt);
+      try {
+        receiptStore.recordError(
+          job.request.idempotencyKey,
+          "adapter_lookup",
+          `No native delivery adapter registered for claimed channel: ${job.request.channelId}`,
+        );
+      } catch (error) {
+        log.warn("Failed to record missing adapter against native outbound receipt", {
+          jobId: job.jobId,
+          error: errorMessage(error),
+        });
+      }
       return {
         disposition: "nak",
         status: "failed",
         retryable: true,
         error: `No native delivery adapter registered for claimed channel: ${job.request.channelId}`,
-        phase: "receipt_claim",
+        phase: "adapter_lookup",
+        nakDelayMs: delayMs,
       };
     }
 
@@ -595,19 +658,43 @@ async function emitMissingAdapter(
   recordTrace: typeof recordDeliveryTrace,
   job: ChannelOutboundJob,
   t0: number,
+  deliveryAttempt?: number,
 ): Promise<ChannelOutboundProcessingResult> {
   const error = `No native delivery adapter registered for channel: ${job.request.channelId}`;
+  const retryDelayMs = missingAdapterRetryDelayMs(deliveryAttempt);
   await emitDelivery(emitEvent, recordTrace, job, {
     status: "failed",
     reason: "missing_adapter",
     error,
+    retryable: true,
+    retryDelayMs,
+    ...(deliveryAttempt !== undefined ? { deliveryAttempt } : {}),
     target: job.request.target,
     emitId: job.request.origin.emitId,
     idempotencyKey: job.request.idempotencyKey,
     textLen: job.request.content.text.length,
     durationMs: Date.now() - t0,
   });
-  return { disposition: "ack", status: "failed", retryable: false, error };
+  return {
+    disposition: "nak",
+    status: "failed",
+    retryable: true,
+    error,
+    phase: "adapter_lookup",
+    nakDelayMs: retryDelayMs,
+  };
+}
+
+export function missingAdapterRetryDelayMs(deliveryAttempt: number | undefined): number {
+  const attempt =
+    typeof deliveryAttempt === "number" && Number.isSafeInteger(deliveryAttempt) && deliveryAttempt > 0
+      ? deliveryAttempt
+      : 1;
+  const exponent = Math.min(attempt - 1, 4);
+  return Math.min(
+    CHANNEL_OUTBOUND_MISSING_ADAPTER_RETRY_BASE_MS * 2 ** exponent,
+    CHANNEL_OUTBOUND_MISSING_ADAPTER_RETRY_MAX_MS,
+  );
 }
 
 function deliveryResultFromReceipt(receipt: ChannelOutboundReceipt): NativeTextDeliveryResult {

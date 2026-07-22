@@ -7,6 +7,7 @@ export const CHANNEL_OUTBOUND_RECEIPT_RETENTION_MS = 14 * DAY_MS;
 
 export type ChannelOutboundReceiptState = "claimed" | "sent" | "persisted" | "complete";
 export type ChannelOutboundReceiptErrorPhase =
+  | "adapter_lookup"
   | "send"
   | "receipt_read"
   | "receipt_claim"

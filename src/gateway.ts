@@ -31,7 +31,8 @@ import type { OmniSender } from "./omni/sender.js";
 import type { OmniConsumer } from "./omni/consumer.js";
 import { getAgentPlatformIdentity, recordOutbound } from "./contacts.js";
 import { assertChannelSupportsStickers } from "./channels/capabilities.js";
-import { buildChannelOutboundJobFromResponse, publishChannelOutboundJob } from "./channels/outbound-stream.js";
+import { publishChannelOutboundJobDurably } from "./channels/outbound-publish-outbox.js";
+import { buildChannelOutboundJobFromResponse } from "./channels/outbound-stream.js";
 import { subjectForChannelPresence } from "./channels/presence-consumer.js";
 import type { StickerSendEvent } from "./stickers/send.js";
 import { getSessionByName } from "./router/index.js";
@@ -883,21 +884,36 @@ export class Gateway {
         return;
       }
       try {
-        await publishChannelOutboundJob(built.job);
-        await emitDelivery({
-          status: "queued",
-          reason: "native_channel_outbound",
-          jobId: built.job.jobId,
-          target,
-          textLen: text.length,
-        });
+        const published = await publishChannelOutboundJobDurably(built.job);
+        if (published.ok) {
+          await emitDelivery({
+            status: "queued",
+            reason: "native_channel_outbound",
+            jobId: built.job.jobId,
+            target,
+            textLen: text.length,
+          });
+        } else {
+          await emitDelivery({
+            status: "failed",
+            reason: "queue_error",
+            jobId: built.job.jobId,
+            target,
+            textLen: text.length,
+            error: published.error instanceof Error ? published.error.message : String(published.error),
+            retryable: true,
+            nextAttemptAt: published.nextAttemptAt,
+          });
+        }
       } catch (error) {
         await emitDelivery({
           status: "failed",
-          reason: "queue_error",
+          reason: "local_outbox_error",
+          jobId: built.job.jobId,
           target,
           textLen: text.length,
           error: error instanceof Error ? error.message : String(error),
+          retryable: false,
         });
       }
       return;

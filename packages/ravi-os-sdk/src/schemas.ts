@@ -13171,6 +13171,69 @@ export const ChannelsRestartReturnSchema = {
                     "infrastructureReady": {
                       "type": "boolean"
                     },
+                    "lastError": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "type": "number"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "phase": {
+                          "const": "consume_loop",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "phase",
+                        "message",
+                        "at"
+                      ],
+                      "type": "object"
+                    },
+                    "lastMessageAt": {
+                      "type": "number"
+                    },
+                    "publishOutbox": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "lastError": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "at": {
+                              "type": "number"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "message",
+                            "at"
+                          ],
+                          "type": "object"
+                        },
+                        "lastPublishedAt": {
+                          "type": "number"
+                        },
+                        "nextAttemptAt": {
+                          "type": "number"
+                        },
+                        "oldestPendingAt": {
+                          "type": "number"
+                        },
+                        "pendingCount": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "pendingCount"
+                      ],
+                      "type": "object"
+                    },
                     "stream": {
                       "type": "string"
                     }
@@ -13798,6 +13861,69 @@ export const ChannelsStartReturnSchema = {
                     "infrastructureReady": {
                       "type": "boolean"
                     },
+                    "lastError": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "type": "number"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "phase": {
+                          "const": "consume_loop",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "phase",
+                        "message",
+                        "at"
+                      ],
+                      "type": "object"
+                    },
+                    "lastMessageAt": {
+                      "type": "number"
+                    },
+                    "publishOutbox": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "lastError": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "at": {
+                              "type": "number"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "message",
+                            "at"
+                          ],
+                          "type": "object"
+                        },
+                        "lastPublishedAt": {
+                          "type": "number"
+                        },
+                        "nextAttemptAt": {
+                          "type": "number"
+                        },
+                        "oldestPendingAt": {
+                          "type": "number"
+                        },
+                        "pendingCount": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "pendingCount"
+                      ],
+                      "type": "object"
+                    },
                     "stream": {
                       "type": "string"
                     }
@@ -14162,6 +14288,69 @@ export const ChannelsStatusReturnSchema = {
                 },
                 "infrastructureReady": {
                   "type": "boolean"
+                },
+                "lastError": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": {
+                      "type": "number"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "phase": {
+                      "const": "consume_loop",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "phase",
+                    "message",
+                    "at"
+                  ],
+                  "type": "object"
+                },
+                "lastMessageAt": {
+                  "type": "number"
+                },
+                "publishOutbox": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "lastError": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "type": "number"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message",
+                        "at"
+                      ],
+                      "type": "object"
+                    },
+                    "lastPublishedAt": {
+                      "type": "number"
+                    },
+                    "nextAttemptAt": {
+                      "type": "number"
+                    },
+                    "oldestPendingAt": {
+                      "type": "number"
+                    },
+                    "pendingCount": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "pendingCount"
+                  ],
+                  "type": "object"
                 },
                 "stream": {
                   "type": "string"
@@ -14539,6 +14728,69 @@ export const ChannelsStopReturnSchema = {
                     },
                     "infrastructureReady": {
                       "type": "boolean"
+                    },
+                    "lastError": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "type": "number"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "phase": {
+                          "const": "consume_loop",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "phase",
+                        "message",
+                        "at"
+                      ],
+                      "type": "object"
+                    },
+                    "lastMessageAt": {
+                      "type": "number"
+                    },
+                    "publishOutbox": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "lastError": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "at": {
+                              "type": "number"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "message",
+                            "at"
+                          ],
+                          "type": "object"
+                        },
+                        "lastPublishedAt": {
+                          "type": "number"
+                        },
+                        "nextAttemptAt": {
+                          "type": "number"
+                        },
+                        "oldestPendingAt": {
+                          "type": "number"
+                        },
+                        "pendingCount": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "pendingCount"
+                      ],
+                      "type": "object"
                     },
                     "stream": {
                       "type": "string"
