@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { EventEmitter } from "node:events";
 import {
   createContact,
   ensureContactFromInbound,
@@ -41,6 +42,77 @@ import {
   slackClientMessageId,
 } from "./socket-mode.js";
 import type { SlackRoutingPolicy, SlackSocketEnvelope } from "./types.js";
+
+class FakeSlackWebSocket extends EventEmitter {
+  readyState = 0;
+  readonly ping = mock(() => {});
+  readonly send = mock((_data: string) => {});
+  readonly terminate = mock(() => {
+    this.readyState = 3;
+  });
+
+  open(): void {
+    this.readyState = 1;
+    this.emit("open");
+  }
+
+  receive(payload: Record<string, unknown>): void {
+    this.emit("message", Buffer.from(JSON.stringify(payload)));
+  }
+
+  receivePong(): void {
+    this.emit("pong");
+  }
+
+  fail(): void {
+    this.emit("error", new Error("fake socket failure"));
+  }
+
+  closeFromPeer(): void {
+    this.readyState = 3;
+    this.emit("close", 1006, Buffer.alloc(0));
+  }
+}
+
+async function waitForCondition(predicate: () => boolean, timeoutMs = 500): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("Timed out waiting for condition");
+    await sleep(1);
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function createSocketLifecycleHarness(
+  overrides: {
+    reconnectDelayMs?: number;
+    heartbeatIntervalMs?: number;
+    pongTimeoutMs?: number;
+    helloTimeoutMs?: number;
+  } = {},
+) {
+  const sockets: FakeSlackWebSocket[] = [];
+  const openSocketConnection = mock(async () => `wss://socket-${sockets.length + 1}.example.test`);
+  const service = new SlackSocketModeService({
+    appToken: "xapp-test",
+    botToken: "xoxb-test",
+    accountId: "test-slack",
+    webClient: { openSocketConnection } as never,
+    openWebSocket: () => {
+      const socket = new FakeSlackWebSocket();
+      sockets.push(socket);
+      return socket as never;
+    },
+    reconnectDelayMs: overrides.reconnectDelayMs ?? 2,
+    heartbeatIntervalMs: overrides.heartbeatIntervalMs ?? 30,
+    pongTimeoutMs: overrides.pongTimeoutMs ?? 15,
+    helloTimeoutMs: overrides.helloTimeoutMs ?? 50,
+  });
+  return { service, sockets, openSocketConnection };
+}
 
 let stateDir: string | null = null;
 
@@ -1280,6 +1352,217 @@ describe("Slack Socket Mode routing", () => {
       contactId: identity.contact!.id,
       platformIdentityId: identity.platformIdentity!.id,
     });
+  });
+});
+
+describe("Slack Socket Mode connection liveness", () => {
+  it("reports connected only after Slack hello", async () => {
+    const { service, sockets } = createSocketLifecycleHarness();
+
+    service.start();
+    await waitForCondition(() => sockets.length === 1);
+    expect(service.status()).toMatchObject({ state: "connecting", reason: "opening_socket" });
+
+    sockets[0]!.open();
+    expect(service.status()).toMatchObject({ state: "connecting", reason: "awaiting_hello" });
+    expect(service.status().connectedAt).toBeUndefined();
+    sockets[0]!.receivePong();
+
+    sockets[0]!.receive({ type: "hello", num_connections: 1 });
+    await waitForCondition(() => service.status().state === "connected");
+    expect(service.status().reason).toBeUndefined();
+    expect(service.status().connectedAt).toBeNumber();
+
+    await service.stop();
+    expect(service.status()).toMatchObject({ state: "stopped", reason: "stopped" });
+  });
+
+  it("terminates a half-open socket and reconnects without waiting for close", async () => {
+    const { service, sockets, openSocketConnection } = createSocketLifecycleHarness({
+      pongTimeoutMs: 8,
+      helloTimeoutMs: 100,
+    });
+
+    service.start();
+    await waitForCondition(() => sockets.length === 1);
+    sockets[0]!.open();
+    sockets[0]!.receive({ type: "hello" });
+
+    await waitForCondition(() => sockets.length === 2);
+    expect(sockets[0]!.terminate).toHaveBeenCalledTimes(1);
+    expect(openSocketConnection).toHaveBeenCalledTimes(2);
+    expect(service.status()).toMatchObject({ state: "reconnecting", reconnectCount: 1 });
+
+    await service.stop();
+  });
+
+  it("keeps a quiet workspace healthy when heartbeat pongs continue", async () => {
+    const { service, sockets } = createSocketLifecycleHarness({
+      heartbeatIntervalMs: 8,
+      pongTimeoutMs: 12,
+      helloTimeoutMs: 100,
+    });
+
+    service.start();
+    await waitForCondition(() => sockets.length === 1);
+    const socket = sockets[0]!;
+    socket.open();
+    socket.receive({ type: "hello" });
+    socket.receivePong();
+    await waitForCondition(() => service.status().state === "connected");
+    await waitForCondition(() => socket.ping.mock.calls.length >= 2);
+    socket.receivePong();
+    await sleep(3);
+
+    expect(service.status().state).toBe("connected");
+    expect(service.status().lastPongAt).toBeNumber();
+    expect(socket.terminate).not.toHaveBeenCalled();
+
+    await service.stop();
+  });
+
+  it("reconnects when an open socket never receives hello", async () => {
+    const { service, sockets } = createSocketLifecycleHarness({
+      heartbeatIntervalMs: 100,
+      pongTimeoutMs: 80,
+      helloTimeoutMs: 8,
+    });
+
+    service.start();
+    await waitForCondition(() => sockets.length === 1);
+    sockets[0]!.open();
+    sockets[0]!.receivePong();
+
+    await waitForCondition(() => sockets.length === 2);
+    expect(sockets[0]!.terminate).toHaveBeenCalledTimes(1);
+    expect(service.status()).toMatchObject({ state: "reconnecting", reconnectCount: 1 });
+
+    await service.stop();
+  });
+
+  it("reconnects immediately when Slack requests connection refresh", async () => {
+    const { service, sockets } = createSocketLifecycleHarness({ reconnectDelayMs: 1_000 });
+
+    service.start();
+    await waitForCondition(() => sockets.length === 1);
+    sockets[0]!.open();
+    sockets[0]!.receivePong();
+    sockets[0]!.receive({ type: "hello" });
+    await waitForCondition(() => service.status().state === "connected");
+
+    sockets[0]!.receive({ type: "disconnect", reason: "refresh_requested" });
+    await waitForCondition(() => sockets.length === 2);
+    expect(sockets[0]!.terminate).toHaveBeenCalledTimes(1);
+    expect(service.status().reconnectCount).toBe(1);
+
+    await service.stop();
+  });
+
+  it("coalesces error and close into one reconnect", async () => {
+    const { service, sockets, openSocketConnection } = createSocketLifecycleHarness();
+
+    service.start();
+    await waitForCondition(() => sockets.length === 1);
+    sockets[0]!.open();
+    sockets[0]!.receivePong();
+    sockets[0]!.fail();
+    sockets[0]!.closeFromPeer();
+
+    await waitForCondition(() => sockets.length === 2);
+    await sleep(10);
+    expect(sockets[0]!.terminate).toHaveBeenCalledTimes(1);
+    expect(openSocketConnection).toHaveBeenCalledTimes(2);
+    expect(service.status().reconnectCount).toBe(1);
+
+    await service.stop();
+  });
+
+  it("ignores late callbacks from a replaced socket", async () => {
+    const { service, sockets, openSocketConnection } = createSocketLifecycleHarness({
+      heartbeatIntervalMs: 100,
+      pongTimeoutMs: 80,
+      helloTimeoutMs: 100,
+    });
+
+    service.start();
+    await waitForCondition(() => sockets.length === 1);
+    const staleSocket = sockets[0]!;
+    staleSocket.open();
+    staleSocket.receivePong();
+    staleSocket.fail();
+    await waitForCondition(() => sockets.length === 2);
+
+    const currentSocket = sockets[1]!;
+    currentSocket.open();
+    currentSocket.receivePong();
+    currentSocket.receive({ type: "hello" });
+    await waitForCondition(() => service.status().state === "connected");
+
+    staleSocket.receivePong();
+    staleSocket.receive({ type: "disconnect", reason: "refresh_requested" });
+    staleSocket.fail();
+    await sleep(5);
+
+    expect(service.status().state).toBe("connected");
+    expect(currentSocket.terminate).not.toHaveBeenCalled();
+    expect(openSocketConnection).toHaveBeenCalledTimes(2);
+
+    await service.stop();
+  });
+
+  it("stops promptly while apps.connections.open is still pending", async () => {
+    let resolveOpen: ((url: string) => void) | undefined;
+    const openSocketConnection = mock(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveOpen = resolve;
+        }),
+    );
+    const openWebSocket = mock((_url: string) => new FakeSlackWebSocket() as never);
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "test-slack",
+      webClient: { openSocketConnection } as never,
+      openWebSocket,
+    });
+
+    service.start();
+    await waitForCondition(() => openSocketConnection.mock.calls.length === 1);
+    await Promise.race([
+      service.stop(),
+      sleep(500).then(() => {
+        throw new Error("stop waited for apps.connections.open");
+      }),
+    ]);
+
+    resolveOpen?.("wss://late.example.test");
+    await sleep(5);
+    expect(openWebSocket).not.toHaveBeenCalled();
+    expect(service.status().state).toBe("stopped");
+  });
+
+  it("stops promptly on a half-open socket and does not reconnect", async () => {
+    const { service, sockets, openSocketConnection } = createSocketLifecycleHarness({
+      pongTimeoutMs: 100,
+      helloTimeoutMs: 100,
+    });
+
+    service.start();
+    await waitForCondition(() => sockets.length === 1);
+    sockets[0]!.open();
+
+    await Promise.race([
+      service.stop(),
+      sleep(500).then(() => {
+        throw new Error("stop did not settle promptly");
+      }),
+    ]);
+    await sleep(10);
+
+    expect(sockets[0]!.terminate).toHaveBeenCalledTimes(1);
+    expect(openSocketConnection).toHaveBeenCalledTimes(1);
+    expect(service.status().state).toBe("stopped");
   });
 });
 

@@ -139,6 +139,16 @@ describe("findTriggeredPrefixes", () => {
     expect(findTriggeredPrefixes(files)).toEqual(["src/devin/", "src/omni/"]);
   });
 
+  it("identifies native channel runner and adapter changes", () => {
+    const files = ["src/channels/runner.ts", "src/channels/slack/socket-mode.ts"];
+
+    expect(findTriggeredPrefixes(files)).toEqual([
+      "src/channels/",
+      "src/channels/runner.ts",
+      "src/channels/slack/socket-mode.ts",
+    ]);
+  });
+
   it("excludes test files from triggering", () => {
     const files = ["src/omni/consumer-context.test.ts"];
     expect(findTriggeredPrefixes(files)).toEqual([]);
@@ -267,6 +277,19 @@ describe("runCoverageGate", () => {
     const result = runCoverageGate(["src/omni/consumer.ts", "src/omni/consumer-context.test.ts"], cwd);
 
     expect(result.ok).toBe(true);
+  });
+
+  it("requires a focused native channel test in the diff", () => {
+    const missing = runCoverageGate(["src/channels/slack/socket-mode.ts"]);
+    const covered = runCoverageGate(["src/channels/slack/socket-mode.ts", "src/channels/slack/socket-mode.test.ts"]);
+    const healthCovered = runCoverageGate(["src/channels/health.ts", "src/channels/health.test.ts"]);
+
+    expect(missing.ok).toBe(false);
+    expect(missing.triggeredPrefixes).toEqual(["src/channels/", "src/channels/slack/socket-mode.ts"]);
+    expect(missing.errors[0]?.message).toContain("src/channels/");
+    expect(covered.ok).toBe(true);
+    expect(covered.triggeredPrefixes).toEqual(["src/channels/", "src/channels/slack/socket-mode.ts"]);
+    expect(healthCovered.ok).toBe(true);
   });
 
   it("passes when the session stream focused test is in the diff", () => {

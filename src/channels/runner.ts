@@ -1,7 +1,13 @@
 import { closeAllRaviDbs } from "../db/close-all.js";
-import { closeNats, connectNats } from "../nats.js";
+import { closeNats, connectNats, getNats } from "../nats.js";
 import { configStore } from "../config-store.js";
 import { logger } from "../utils/logger.js";
+import {
+  startChannelRunnerHealthResponder,
+  type ChannelAdapterHealth,
+  type ChannelRunnerHealthResponder,
+  type ChannelRunnerRuntimeStatus,
+} from "./health.js";
 import type { NativePresenceDelivery, NativeTextDelivery } from "./native/types.js";
 import { ChannelOutboundConsumer } from "./outbound-consumer.js";
 import {
@@ -15,7 +21,11 @@ import {
   ensureChannelOutboundInfrastructure,
 } from "./outbound-stream.js";
 import { ChannelPresenceConsumer } from "./presence-consumer.js";
-import { createSlackNativeRuntimesFromEnv, type SlackNativeRuntime } from "./slack/index.js";
+import {
+  createSlackNativeRuntimesFromEnv,
+  type SlackNativeRuntime,
+  type SlackSocketModeStatus,
+} from "./slack/index.js";
 
 const log = logger.child("channels:runner");
 
@@ -37,30 +47,9 @@ export interface ChannelRunnerOptions {
   env?: NodeJS.ProcessEnv;
 }
 
-export interface ChannelRunnerStatus {
-  running: boolean;
-  startedAt: number | null;
-  pid: number;
-  outbound: {
-    stream: string;
-    consumer: string;
-    infrastructureReady: boolean;
-    consuming: boolean;
-  };
-  adapters: Array<{
-    id: string;
-    channelId: string;
-    status: "disabled" | "starting" | "connected" | "degraded" | "reconnecting" | "disconnected" | "failed";
-    reason?: string;
-  }>;
-}
+export type ChannelRunnerStatus = ChannelRunnerRuntimeStatus;
 
-interface AdapterStatus {
-  id: string;
-  channelId: string;
-  status: ChannelRunnerStatus["adapters"][number]["status"];
-  reason?: string;
-}
+type AdapterStatus = ChannelAdapterHealth;
 
 export class ChannelRunner {
   private running = false;
@@ -73,6 +62,7 @@ export class ChannelRunner {
   private slackRuntimes: SlackNativeRuntime[] = [];
   private adapterStatuses = new Map<string, AdapterStatus>();
   private stopReceiptPruner: (() => void) | null = null;
+  private healthResponder: ChannelRunnerHealthResponder | null = null;
 
   constructor(private readonly options: ChannelRunnerOptions = {}) {}
 
@@ -81,6 +71,10 @@ export class ChannelRunner {
       log.warn("Channel runner already started");
       return;
     }
+
+    this.startedAt = null;
+    this.outboundInfrastructureReady = false;
+    this.adapterStatuses.clear();
 
     const env = this.options.env ?? process.env;
     await connectNats(this.options.natsUrl ?? env.NATS_URL ?? "nats://127.0.0.1:4222", {
@@ -102,6 +96,11 @@ export class ChannelRunner {
     this.outboundInfrastructureReady = true;
     this.running = true;
     this.startedAt = Date.now();
+    this.healthResponder = startChannelRunnerHealthResponder({
+      pid: process.pid,
+      getStatus: () => this.status(),
+      connection: getNats(),
+    });
 
     await this.startSlack(env);
 
@@ -131,6 +130,8 @@ export class ChannelRunner {
   async stop(): Promise<void> {
     if (!this.running) return;
     this.running = false;
+    await this.healthResponder?.stop();
+    this.healthResponder = null;
     this.stopReceiptPruner?.();
     this.stopReceiptPruner = null;
     log.info("Stopping channel runner", { pid: process.pid });
@@ -145,6 +146,8 @@ export class ChannelRunner {
     this.slackRuntimes = [];
     this.deliveries = [];
     this.presenceDeliveries = [];
+    this.outboundInfrastructureReady = false;
+    this.startedAt = null;
     configStore.stop();
     closeAllRaviDbs();
     await closeNats({ drainTimeoutMs: 2_000 });
@@ -159,10 +162,11 @@ export class ChannelRunner {
       outbound: {
         stream: CHANNEL_OUTBOUND_STREAM,
         consumer: CHANNEL_OUTBOUND_CONSUMER,
+        enabled: this.options.consumeOutbound !== false,
         infrastructureReady: this.outboundInfrastructureReady,
         consuming: this.outboundConsumer?.isConsuming() ?? false,
       },
-      adapters: Array.from(this.adapterStatuses.values()).sort((a, b) => a.id.localeCompare(b.id)),
+      adapters: this.currentAdapterStatuses(),
     };
   }
 
@@ -181,12 +185,21 @@ export class ChannelRunner {
         this.deliveries.push(runtime.delivery);
         this.presenceDeliveries.push(runtime.presence);
         runtime.socketMode.start();
-        this.markAdapter(`slack:${runtime.accountId}`, "slack", "connected");
+        this.markAdapter(`slack:${runtime.accountId}`, "slack", "starting", "opening_socket");
       }
     } catch (error) {
-      this.markAdapter("slack", "slack", "failed", error instanceof Error ? error.message : String(error));
+      this.markAdapter("slack", "slack", "failed", "startup_failed");
       log.error("Failed to start Slack native runtime", { error });
     }
+  }
+
+  private currentAdapterStatuses(): AdapterStatus[] {
+    const statuses = new Map(this.adapterStatuses);
+    for (const runtime of this.slackRuntimes) {
+      const socketStatus = runtime.socketMode.status();
+      statuses.set(`slack:${runtime.accountId}`, slackAdapterHealth(runtime.accountId, socketStatus));
+    }
+    return Array.from(statuses.values()).sort((a, b) => a.id.localeCompare(b.id));
   }
 
   private markAdapter(id: string, channelId: string, status: AdapterStatus["status"], reason?: string): void {
@@ -197,6 +210,26 @@ export class ChannelRunner {
       ...(reason ? { reason } : {}),
     });
   }
+}
+
+export function slackAdapterHealth(accountId: string, status: SlackSocketModeStatus): ChannelAdapterHealth {
+  const adapterStatus: ChannelAdapterHealth["status"] =
+    status.state === "stopped"
+      ? "disconnected"
+      : status.state === "connecting"
+        ? "starting"
+        : status.state === "reconnecting"
+          ? "reconnecting"
+          : "connected";
+  return {
+    id: `slack:${accountId}`,
+    channelId: "slack",
+    status: adapterStatus,
+    ...(status.reason ? { reason: status.reason } : {}),
+    ...(status.connectedAt !== undefined ? { connectedAt: status.connectedAt } : {}),
+    ...(status.lastPongAt !== undefined ? { lastPongAt: status.lastPongAt } : {}),
+    reconnectCount: status.reconnectCount,
+  };
 }
 
 export function pruneChannelOutboundReceiptLedger(

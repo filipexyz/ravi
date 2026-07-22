@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { WebSocket as NodeWebSocket } from "ws";
 import { configStore } from "../../config-store.js";
 import { resolvePlatformIdentity, type PlatformIdentity } from "../../contacts.js";
 import { publish } from "../../nats.js";
@@ -70,10 +71,35 @@ const log = logger.child("channels:slack");
 const SLACK_THREAD_CREATED_TOPIC = "ravi.inbound.thread.created";
 const DEFAULT_SLACK_AUTH_TEST_FAILURE_RETRY_MS = 5_000;
 const DEFAULT_SLACK_AUTH_TEST_TIMEOUT_MS = 5_000;
+const DEFAULT_SLACK_HEARTBEAT_INTERVAL_MS = 10_000;
+const DEFAULT_SLACK_PONG_TIMEOUT_MS = 5_000;
+const DEFAULT_SLACK_HELLO_TIMEOUT_MS = 10_000;
 
 type PublishPrompt = typeof publishSessionPrompt;
 type PublishInteraction = (topic: string, payload: Record<string, unknown>) => Promise<void>;
-type WebSocketFactory = (url: string) => WebSocket;
+type WebSocketFactory = (url: string) => NodeWebSocket;
+type SocketTimer = ReturnType<typeof setTimeout>;
+
+export type SlackSocketModeState = "stopped" | "connecting" | "connected" | "reconnecting";
+
+export type SlackSocketModeReason =
+  | "stopped"
+  | "opening_socket"
+  | "awaiting_hello"
+  | "open_failed"
+  | "hello_timeout"
+  | "heartbeat_timeout"
+  | "socket_error"
+  | "socket_closed"
+  | "slack_disconnect";
+
+export interface SlackSocketModeStatus {
+  readonly state: SlackSocketModeState;
+  readonly connectedAt?: number;
+  readonly lastPongAt?: number;
+  readonly reconnectCount: number;
+  readonly reason?: SlackSocketModeReason;
+}
 
 interface ProcessedSlackFile extends SlackNormalizedFile {
   readonly localPath?: string;
@@ -112,6 +138,15 @@ export interface SlackSocketModeServiceOptions {
   readonly publishInteraction?: PublishInteraction;
   readonly openWebSocket?: WebSocketFactory;
   readonly reconnectDelayMs?: number;
+  /** Interval between successful heartbeat round-trips. */
+  readonly heartbeatIntervalMs?: number;
+  /** Maximum time to wait for a pong after each ping. */
+  readonly pongTimeoutMs?: number;
+  /** Maximum time an open transport may wait for Slack's hello envelope. */
+  readonly helloTimeoutMs?: number;
+  /** Timer injection for deterministic Socket Mode lifecycle tests. */
+  readonly setTimeout?: typeof setTimeout;
+  readonly clearTimeout?: typeof clearTimeout;
   /** Negative-cache backoff for failed auth.test calls. Successful identities remain cached. */
   readonly authTestFailureRetryMs?: number;
   /** Maximum time bot intake waits for Slack auth.test before failing closed. */
@@ -419,6 +454,11 @@ export class SlackSocketModeService {
   private readonly openWebSocket: WebSocketFactory;
   private readonly routingPolicy: SlackRoutingPolicy;
   private readonly reconnectDelayMs: number;
+  private readonly heartbeatIntervalMs: number;
+  private readonly pongTimeoutMs: number;
+  private readonly helloTimeoutMs: number;
+  private readonly scheduleTimeout: typeof setTimeout;
+  private readonly cancelTimeout: typeof clearTimeout;
   private readonly authTestFailureRetryMs: number;
   private readonly authTestTimeoutMs: number;
   private readonly now: () => number;
@@ -427,8 +467,17 @@ export class SlackSocketModeService {
   private localBotIdentityInFlight: Promise<SlackLocalBotIdentity | null> | null = null;
   private nextLocalBotIdentityAttemptAt = 0;
   private running = false;
-  private socket: WebSocket | null = null;
+  private socket: NodeWebSocket | null = null;
   private loopPromise: Promise<void> | null = null;
+  private socketGeneration = 0;
+  private settleCurrentSocket: (() => void) | null = null;
+  private interruptConnectionOpen: (() => void) | null = null;
+  private interruptReconnectDelay: (() => void) | null = null;
+  private lifecycleState: SlackSocketModeState = "stopped";
+  private lifecycleReason: SlackSocketModeReason | undefined = "stopped";
+  private connectedAt: number | undefined;
+  private lastPongAt: number | undefined;
+  private reconnectCount = 0;
 
   constructor(private readonly options: SlackSocketModeServiceOptions) {
     this.routingPolicy = normalizeSlackRoutingPolicy({
@@ -444,8 +493,13 @@ export class SlackSocketModeService {
     this.getRouterConfig = options.getRouterConfig ?? (() => configStore.getConfig());
     this.publishPrompt = options.publishPrompt ?? publishSessionPrompt;
     this.publishInteraction = options.publishInteraction ?? publish;
-    this.openWebSocket = options.openWebSocket ?? ((url) => new WebSocket(url));
+    this.openWebSocket = options.openWebSocket ?? ((url) => new NodeWebSocket(url));
     this.reconnectDelayMs = options.reconnectDelayMs ?? 5_000;
+    this.heartbeatIntervalMs = positiveDuration(options.heartbeatIntervalMs, DEFAULT_SLACK_HEARTBEAT_INTERVAL_MS);
+    this.pongTimeoutMs = positiveDuration(options.pongTimeoutMs, DEFAULT_SLACK_PONG_TIMEOUT_MS);
+    this.helloTimeoutMs = positiveDuration(options.helloTimeoutMs, DEFAULT_SLACK_HELLO_TIMEOUT_MS);
+    this.scheduleTimeout = options.setTimeout ?? setTimeout;
+    this.cancelTimeout = options.clearTimeout ?? clearTimeout;
     this.authTestFailureRetryMs = Math.max(
       0,
       Number.isFinite(options.authTestFailureRetryMs)
@@ -464,15 +518,36 @@ export class SlackSocketModeService {
   start(): void {
     if (this.running) return;
     this.running = true;
+    this.connectedAt = undefined;
+    this.reconnectCount = 0;
+    this.setLifecycle("connecting", "opening_socket");
     this.loopPromise = this.runLoop();
   }
 
   async stop(): Promise<void> {
     this.running = false;
-    this.socket?.close();
+    this.interruptConnectionOpen?.();
+    this.interruptConnectionOpen = null;
+    this.interruptReconnectDelay?.();
+    this.interruptReconnectDelay = null;
+    this.settleCurrentSocket?.();
+    this.settleCurrentSocket = null;
+    this.terminateSocket(this.socket);
     this.socket = null;
     await this.loopPromise?.catch(() => {});
     this.loopPromise = null;
+    this.connectedAt = undefined;
+    this.setLifecycle("stopped", "stopped");
+  }
+
+  status(): SlackSocketModeStatus {
+    return {
+      state: this.lifecycleState,
+      ...(this.connectedAt !== undefined ? { connectedAt: this.connectedAt } : {}),
+      ...(this.lastPongAt !== undefined ? { lastPongAt: this.lastPongAt } : {}),
+      reconnectCount: this.reconnectCount,
+      ...(this.lifecycleReason ? { reason: this.lifecycleReason } : {}),
+    };
   }
 
   async handleEnvelope(
@@ -509,48 +584,206 @@ export class SlackSocketModeService {
   }
 
   private async runLoop(): Promise<void> {
+    let attemptedConnection = false;
     while (this.running) {
+      if (attemptedConnection) {
+        this.reconnectCount += 1;
+        this.setLifecycle("reconnecting", "opening_socket");
+      }
       try {
-        const url = await this.webClient.openSocketConnection();
-        await this.runSocket(url);
+        const url = await this.openSocketConnectionUntilStopped();
+        if (!url || !this.running) return;
+        const ended = await this.runSocket(url);
+        attemptedConnection = true;
+        if (!this.running) return;
+        if (ended !== "slack_disconnect") {
+          await this.waitForReconnectDelay();
+        }
       } catch (error) {
         if (!this.running) return;
+        attemptedConnection = true;
+        this.connectedAt = undefined;
+        this.setLifecycle("reconnecting", "open_failed");
         log.warn("Slack Socket Mode loop failed; reconnecting", { error });
-        await delay(this.reconnectDelayMs);
+        await this.waitForReconnectDelay();
       }
     }
   }
 
-  private runSocket(url: string): Promise<void> {
+  private runSocket(
+    url: string,
+  ): Promise<Exclude<SlackSocketModeReason, "stopped" | "opening_socket" | "open_failed">> {
     return new Promise((resolve) => {
       const socket = this.openWebSocket(url);
+      const generation = ++this.socketGeneration;
       this.socket = socket;
+      let settled = false;
+      let helloTimer: SocketTimer | null = null;
+      let heartbeatTimer: SocketTimer | null = null;
+      let pongTimer: SocketTimer | null = null;
 
-      socket.onopen = () => {
-        log.info("Slack Socket Mode connected", { accountId: this.options.accountId });
+      const isCurrent = () => this.running && this.socket === socket && this.socketGeneration === generation;
+      const clearTimer = (timer: SocketTimer | null) => {
+        if (timer) this.cancelTimeout(timer);
       };
-      socket.onmessage = (event) => {
-        this.handleSocketMessage(event.data, socket).catch((error) => {
-          log.error("Failed to handle Slack Socket Mode message", { error });
-        });
+      const clearSocketTimers = () => {
+        clearTimer(helloTimer);
+        clearTimer(heartbeatTimer);
+        clearTimer(pongTimer);
+        helloTimer = null;
+        heartbeatTimer = null;
+        pongTimer = null;
       };
-      socket.onerror = (event) => {
-        log.warn("Slack Socket Mode socket error", { event });
-      };
-      socket.onclose = () => {
+      const finish = (
+        reason: Exclude<SlackSocketModeReason, "stopped" | "opening_socket" | "open_failed">,
+        force: boolean,
+      ) => {
+        if (settled) return;
+        settled = true;
+        clearSocketTimers();
+        if (this.settleCurrentSocket === settleForStop) this.settleCurrentSocket = null;
         if (this.socket === socket) this.socket = null;
-        log.info("Slack Socket Mode disconnected", { accountId: this.options.accountId });
-        resolve();
+        if (this.running) {
+          this.connectedAt = undefined;
+          this.setLifecycle("reconnecting", reason);
+        }
+        if (force) this.terminateSocket(socket);
+        log.info("Slack Socket Mode disconnected", { accountId: this.options.accountId, reason });
+        resolve(reason);
       };
+      const settleForStop = () => {
+        if (settled) return;
+        settled = true;
+        clearSocketTimers();
+        if (this.socket === socket) this.socket = null;
+        this.terminateSocket(socket);
+        resolve("socket_closed");
+      };
+      const armPongDeadline = () => {
+        clearTimer(pongTimer);
+        pongTimer = this.timeout(() => {
+          if (!isCurrent()) return;
+          log.warn("Slack Socket Mode heartbeat timed out", { accountId: this.options.accountId });
+          finish("heartbeat_timeout", true);
+        }, this.pongTimeoutMs);
+      };
+      const sendPing = () => {
+        if (!isCurrent() || socket.readyState !== NodeWebSocket.OPEN) return;
+        try {
+          socket.ping();
+          armPongDeadline();
+        } catch (error) {
+          log.warn("Slack Socket Mode heartbeat failed", { accountId: this.options.accountId, error });
+          finish("socket_error", true);
+        }
+      };
+
+      this.settleCurrentSocket = settleForStop;
+
+      socket.on("open", () => {
+        if (!isCurrent()) return;
+        this.setLifecycle(this.reconnectCount > 0 ? "reconnecting" : "connecting", "awaiting_hello");
+        helloTimer = this.timeout(() => {
+          if (!isCurrent()) return;
+          log.warn("Slack Socket Mode hello timed out", { accountId: this.options.accountId });
+          finish("hello_timeout", true);
+        }, this.helloTimeoutMs);
+        sendPing();
+      });
+      socket.on("pong", () => {
+        if (!isCurrent()) return;
+        this.lastPongAt = this.now();
+        clearTimer(pongTimer);
+        pongTimer = null;
+        clearTimer(heartbeatTimer);
+        heartbeatTimer = this.timeout(sendPing, this.heartbeatIntervalMs);
+      });
+      socket.on("message", (data) => {
+        this.handleSocketMessage(data, socket)
+          .then((control) => {
+            if (!isCurrent()) return;
+            if (control === "hello") {
+              clearTimer(helloTimer);
+              helloTimer = null;
+              this.connectedAt = this.now();
+              this.setLifecycle("connected");
+              log.info("Slack Socket Mode connected", { accountId: this.options.accountId });
+            } else if (control === "disconnect") {
+              finish("slack_disconnect", true);
+            }
+          })
+          .catch((error) => {
+            log.error("Failed to handle Slack Socket Mode message", { error });
+          });
+      });
+      socket.on("error", (event) => {
+        if (!isCurrent()) return;
+        log.warn("Slack Socket Mode socket error", { event });
+        finish("socket_error", true);
+      });
+      socket.on("close", () => finish("socket_closed", false));
     });
   }
 
-  private async handleSocketMessage(raw: unknown, socket: WebSocket): Promise<void> {
+  private async handleSocketMessage(raw: unknown, socket: NodeWebSocket): Promise<"hello" | "disconnect" | null> {
     const text = typeof raw === "string" ? raw : raw instanceof Buffer ? raw.toString("utf-8") : String(raw);
     const envelope = JSON.parse(text) as SlackSocketEnvelope;
+    if (envelope.type === "hello") return "hello";
+    if (envelope.type === "disconnect") return "disconnect";
     await this.handleEnvelope(envelope, async (envelopeId) => {
       socket.send(JSON.stringify({ envelope_id: envelopeId }));
     });
+    return null;
+  }
+
+  private setLifecycle(state: SlackSocketModeState, reason?: SlackSocketModeReason): void {
+    this.lifecycleState = state;
+    this.lifecycleReason = reason;
+  }
+
+  private async openSocketConnectionUntilStopped(): Promise<string | null> {
+    let resolveStop: ((value: null) => void) | undefined;
+    const stopped = new Promise<null>((resolve) => {
+      resolveStop = resolve;
+    });
+    const interrupt = () => resolveStop?.(null);
+    this.interruptConnectionOpen = interrupt;
+    try {
+      return await Promise.race([this.webClient.openSocketConnection(), stopped]);
+    } finally {
+      if (this.interruptConnectionOpen === interrupt) this.interruptConnectionOpen = null;
+    }
+  }
+
+  private timeout(callback: () => void, ms: number): SocketTimer {
+    const timer = this.scheduleTimeout(callback, ms);
+    timer.unref?.();
+    return timer;
+  }
+
+  private waitForReconnectDelay(): Promise<void> {
+    if (!this.running || this.reconnectDelayMs <= 0) return Promise.resolve();
+    return new Promise((resolve) => {
+      let settled = false;
+      const complete = () => {
+        if (settled) return;
+        settled = true;
+        this.cancelTimeout(timer);
+        if (this.interruptReconnectDelay === complete) this.interruptReconnectDelay = null;
+        resolve();
+      };
+      const timer = this.timeout(complete, this.reconnectDelayMs);
+      this.interruptReconnectDelay = complete;
+    });
+  }
+
+  private terminateSocket(socket: NodeWebSocket | null): void {
+    if (!socket) return;
+    try {
+      socket.terminate();
+    } catch (error) {
+      log.debug("Slack Socket Mode terminate failed", { accountId: this.options.accountId, error });
+    }
   }
 
   private async normalizeEnvelope(envelope: SlackSocketEnvelope): Promise<SlackNormalizedMessage | null> {
@@ -1754,8 +1987,8 @@ function formatSlackPrompt(message: SlackNormalizedMessage, files: readonly Proc
   return `[${parts.join(" ")}]\n<@${message.userId}>: ${formatSlackMessageBody(message, files)}`;
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function positiveDuration(value: number | undefined, fallback: number): number {
+  return value !== undefined && Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
 function normalizeSlackFiles(value: unknown): SlackNormalizedFile[] {
