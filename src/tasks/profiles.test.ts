@@ -17,6 +17,7 @@ mock.module("../plugins/index.js", () => ({
 
 const {
   createTask,
+  dbDispatchTask,
   dbDeleteTask,
   getTaskDetails,
   initTaskProfileScaffold,
@@ -669,10 +670,20 @@ describe("task profile catalog", () => {
     expect(validation[0]?.valid).toBeTrue();
   });
 
-  it("keeps the expected built-in task profiles available", () => {
+  it("keeps the expected built-in task profiles available", async () => {
+    await createIsolatedRaviState("ravi-task-profiles-builtins-");
+    const workspaceDir = makeTempDir("ravi-task-profiles-builtins-workspace-");
+    process.chdir(workspaceDir);
+    invalidateTaskProfileCatalogCache();
+
     const profiles = listTaskProfiles().filter((profile) => profile.sourceKind === "system");
 
-    expect(profiles.map((profile) => profile.id)).toEqual(["default", "observed-task"]);
+    expect(profiles.map((profile) => profile.id)).toEqual([
+      "curador-memoria",
+      "curador-skills",
+      "default",
+      "observed-task",
+    ]);
 
     const preview = previewTaskProfile("default", {
       title: "Default profile preview",
@@ -688,6 +699,86 @@ describe("task profile catalog", () => {
 
     expect(observedPreview.rendered.dispatch).toContain("sidecar observer is responsible");
     expect(observedPreview.rendered.dispatch).toContain("do not call `ravi tasks report`");
+
+    const memoryPreview = previewTaskProfile("curador-memoria", {
+      title: "Memory curator preview",
+      input: {
+        agent_id: "agent-a",
+        transcript_path: "/tmp/transcript.md",
+        since_message_id: "1",
+        highest_message_id: "2",
+        memory_path: "/tmp/agent-a/MEMORY.md",
+        memory_dir: "/tmp/agent-a/memory",
+        cadence_turn: "10",
+        originator: "runtime-memory-nudge",
+        originator_session: "origin",
+        originator_session_key: "origin-key",
+      },
+    });
+    expect(memoryPreview.rendered.dispatch).toContain("ravi memory guard");
+    const memoryTask = createTask({
+      title: "Memory curator cold start",
+      instructions: "cold start",
+      profileId: "curador-memoria",
+      createdBy: "test",
+      createdByAgentId: "main",
+      createdBySessionName: "test",
+      profileInput: {
+        agent_id: "main",
+        transcript_path: "/tmp/transcript.md",
+        since_message_id: "1",
+        highest_message_id: "2",
+        memory_path: "/tmp/main/MEMORY.md",
+        memory_dir: "/tmp/main/memory",
+        cadence_turn: "10",
+        originator: "runtime-memory-nudge",
+        originator_session: "origin",
+        originator_session_key: "origin-key",
+      },
+    }).task;
+    createdTaskIds.push(memoryTask.id);
+    expect(
+      dbDispatchTask(memoryTask.id, { agentId: "main", sessionName: "memory-curator", assignedBy: "test" }).task.status,
+    ).toBe("dispatched");
+
+    const skillsPreview = previewTaskProfile("curador-skills", {
+      title: "Skill curator preview",
+      input: {
+        agent_id: "agent-a",
+        transcript_path: "/tmp/transcript.md",
+        since_message_id: "1",
+        highest_message_id: "2",
+        cadence_turn: "10",
+        skills_in_play: "[]",
+        originator: "runtime-skill-nudge",
+        originator_session: "origin",
+        originator_session_key: "origin-key",
+      },
+    });
+    expect(skillsPreview.rendered.dispatch).toContain("ravi skills guard");
+    const skillsTask = createTask({
+      title: "Skill curator cold start",
+      instructions: "cold start",
+      profileId: "curador-skills",
+      createdBy: "test",
+      createdByAgentId: "main",
+      createdBySessionName: "test",
+      profileInput: {
+        agent_id: "main",
+        transcript_path: "/tmp/transcript.md",
+        since_message_id: "1",
+        highest_message_id: "2",
+        cadence_turn: "10",
+        skills_in_play: "[]",
+        originator: "runtime-skill-nudge",
+        originator_session: "origin",
+        originator_session_key: "origin-key",
+      },
+    }).task;
+    createdTaskIds.push(skillsTask.id);
+    expect(
+      dbDispatchTask(skillsTask.id, { agentId: "main", sessionName: "skill-curator", assignedBy: "test" }).task.status,
+    ).toBe("dispatched");
   });
 });
 afterAll(() => mock.restore());

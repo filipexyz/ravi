@@ -1,0 +1,18 @@
+{
+  "id": "r20-skill-candidate",
+  "invariant": "R20",
+  "description": "Reusable cross-task procedure MUST route to a skill (R5), not persist in memory as a howto entry.",
+  "transcript_excerpt": "user: pra rodar meu benchmark, sempre seta RAVI_EVAL_MODE=full, roda `bun run bench:e2e`, valida %error < 1%, aí commita",
+  "candidate": {
+    "title": "Benchmark procedure",
+    "content": "To run the full benchmark: 1) `export RAVI_EVAL_MODE=full`; 2) `bun run bench:e2e`; 3) validate error rate < 1%; 4) commit.",
+    "type": "project",
+    "identity_key": "benchmark-procedure"
+  },
+  "existing_entry": null,
+  "expected": {
+    "action": "skip",
+    "reason": "R20:skill-candidate",
+    "note": "Cross-task reusable procedure → skill. Curator signals the sessions originator (R5-skill-candidate) but does NOT persist it in MEMORY.md."
+  }
+}
