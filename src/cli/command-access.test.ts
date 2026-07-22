@@ -1,8 +1,9 @@
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import { runWithContext } from "./context.js";
-import { buildCliCommandOperation, enforceCliCommandAccess } from "./command-access.js";
+import { buildCliCommandOperation, enforceCliCommandAccess, enforceCliCommandAuthorization } from "./command-access.js";
 import type { CommandAccessOptions } from "./decorators.js";
 import { createRuntimeContext } from "../runtime/context-registry.js";
 import { emptyCredentialsFile, upsertCredentialsEntry, writeCredentialsFile } from "../runtime/credentials-store.js";
@@ -257,6 +258,50 @@ describe("CLI command access enforcement", () => {
     expect(result.decision?.objectType).toBe("demo.items");
     expect(result.decision?.objectId).toBe("create");
     expect(result.attempted).toHaveLength(1);
+  });
+
+  it("treats a semantic provider-runtime decision as final for normal legacy scopes", () => {
+    const record = context([{ permission: "mutate", objectType: "media", objectId: "send" }]);
+    const result = runWithContext({ agentId: "dev", context: record }, () =>
+      enforceCliCommandAuthorization({
+        group: "media",
+        command: "send",
+        access: { kind: "mutate", resource: "media", action: "send", risk: "high" },
+        source: "tool",
+        scope: "open",
+      }),
+    );
+
+    expect(result.allowed).toBe(true);
+    expect(result.attempted).toHaveLength(1);
+    expect(result.decision).toMatchObject({ permission: "mutate", objectType: "media", objectId: "send" });
+  });
+
+  it("retains the explicit superadmin boundary after semantic authorization", () => {
+    const semanticOnly = context([{ permission: "read", objectType: "secret", objectId: "show" }]);
+    const denied = runWithContext({ agentId: "dev", context: semanticOnly }, () =>
+      enforceCliCommandAuthorization({
+        group: "secret",
+        command: "show",
+        access: { kind: "read", resource: "secret", action: "show", risk: "low" },
+        source: "gateway",
+        scope: "superadmin",
+      }),
+    );
+    expect(denied.allowed).toBe(false);
+    expect(denied.errorMessage).toContain("requires admin on system:*");
+
+    const breakGlass = context([{ permission: "admin", objectType: "system", objectId: "*" }]);
+    const allowed = runWithContext({ agentId: "dev", context: breakGlass }, () =>
+      enforceCliCommandAuthorization({
+        group: "secret",
+        command: "show",
+        access: { kind: "read", resource: "secret", action: "show", risk: "low" },
+        source: "gateway",
+        scope: "superadmin",
+      }),
+    );
+    expect(allowed.allowed).toBe(true);
   });
 
   it("allows semantic resource wildcard command capabilities", () => {
@@ -557,5 +602,15 @@ describe("CLI command access enforcement", () => {
         notifiedAt: expect.any(Number),
       }),
     );
+  });
+});
+
+describe("CLI command authorization call-site policy", () => {
+  it("keeps CLI, tools, and gateway on the shared authorization pipeline", () => {
+    for (const relativePath of ["src/cli/registry.ts", "src/cli/tools-export.ts", "src/sdk/gateway/dispatcher.ts"]) {
+      const contents = readFileSync(join(process.cwd(), relativePath), "utf8");
+      expect(contents).toContain("enforceCliCommandAuthorization");
+      expect(contents).not.toContain("enforceScopeCheck");
+    }
   });
 });

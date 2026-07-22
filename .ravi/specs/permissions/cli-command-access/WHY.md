@@ -45,10 +45,15 @@ This also lets doctor and codegen validate the same source of truth.
 
 ## Compatibility
 
-`@Scope` may remain temporarily as a compatibility guard, but it must stop
-being the authorization model. A command can be open for direct local terminal
-use while still requiring provider authorization when executed by an agent,
-SDK gateway, app runtime, automation, or delegated context.
+`@Scope` may remain temporarily as compatibility metadata, but it must stop
+being a second authorization model. Legacy `execute:group` capabilities can be
+accepted by the Permission Provider Runtime during migration; requiring one
+after a semantic capability already succeeded creates contradictory denials and
+makes least-privilege guidance unusable.
+
+The only retained serial boundary is `superadmin`, because it explicitly marks
+operations that must remain behind system-wide break-glass authority even when
+their semantic operation is known.
 
 The migration is intentionally incremental: first make intent explicit, then
 make provider-runtime enforcement strict.

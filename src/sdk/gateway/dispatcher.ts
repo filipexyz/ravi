@@ -1,7 +1,7 @@
 /**
  * Generic dispatcher for the SDK gateway.
  *
- * Pipeline: parse flat body → validate via Zod → scope check → invoke handler →
+ * Pipeline: parse flat body → validate via Zod → command authorization → invoke handler →
  * optionally validate return shape → emit audit when useful → return JSON.
  *
  * Body shape: flat-only. Args and options are merged into top-level keys
@@ -22,8 +22,7 @@
 import { ZodError, type ZodTypeAny, type ZodIssue } from "zod";
 import type { CommandRegistryEntry } from "../../cli/registry-snapshot.js";
 import { runWithContext, type ToolContext } from "../../cli/context.js";
-import { enforceCliCommandAccess } from "../../cli/command-access.js";
-import { enforceScopeCheck } from "../../permissions/scope.js";
+import { enforceCliCommandAuthorization } from "../../cli/command-access.js";
 import { emitCliAuditEvent } from "../../cli/audit.js";
 import type { ScopeContext } from "../../permissions/scope.js";
 import type { ContextRecord } from "../../router/router-db.js";
@@ -116,12 +115,13 @@ export async function dispatch(
   const toolContext = asToolContext(scopeContext, opts.contextRecord ?? null);
   const group = cmd.groupSegments.join("_");
   const accessResult = runWithContext(toolContext, () =>
-    enforceCliCommandAccess({
+    enforceCliCommandAuthorization({
       group,
       command: cmd.command,
       access: cmd.access,
       input: validation.inputForAudit,
       source: "gateway",
+      scope: cmd.scope,
     }),
   );
   if (!accessResult.allowed) {
@@ -129,16 +129,6 @@ export async function dispatch(
     const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, true, startedAt, lineage);
     const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
     return { response, audit: auditEmitted ? audit : null };
-  }
-
-  if (cmd.scope === "superadmin") {
-    const scopeResult = runWithContext(toolContext, () => enforceScopeCheck(cmd.scope, group, cmd.command));
-    if (!scopeResult.allowed) {
-      const response = permissionDenied(scopeResult.errorMessage);
-      const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, true, startedAt, lineage);
-      const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
-      return { response, audit: auditEmitted ? audit : null };
-    }
   }
 
   let isError = false;

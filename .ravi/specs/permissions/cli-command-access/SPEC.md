@@ -94,8 +94,15 @@ Rules:
   MUST still use `@CommandAccess` to describe the operation.
 - New public CLI commands MUST declare `@CommandAccess` before they are
   exposed to SDK, tools, or gateway surfaces.
-- Existing `@Scope` checks MAY remain during migration only as a compatibility
-  guard. They MUST NOT bypass the Permission Provider Runtime.
+- For a command with `@CommandAccess`, a successful Permission Provider Runtime
+  decision MUST be final for normal `open`, `admin`, `writeContacts`, and
+  `resource` scopes. Those legacy scopes MUST NOT run as a second serial gate.
+- `superadmin` MAY remain as an explicit hard boundary in addition to command
+  access. A single `admin:system:*` break-glass capability MUST satisfy both
+  the semantic request and that boundary.
+- Existing `@Scope` metadata MAY remain during migration for compatibility,
+  registry projection, and `superadmin`. It MUST NOT make an operator grant a
+  second capability after the canonical command capability was accepted.
 
 ## Registry Contract
 
@@ -175,10 +182,27 @@ Rules:
 - During migration only, `<kind>:<resource>.<action>:*` MAY be accepted as a
   compatibility alias for agents that produced dotted action resource ids.
 - Legacy `execute:group:<group>_<command>` and `execute:group:<group>` MAY
-  remain as fallback compatibility. They MUST NOT be the preferred grant shape
-  for newly generated instructions.
+  remain as fallback candidates inside the same provider-runtime decision.
+  They MUST NOT be the preferred grant shape for newly generated instructions
+  and MUST NOT be required in addition to a semantic capability.
 - `read:<resource>.<action>:*` MUST NOT be documented as the canonical shape.
   The canonical shape is `read:<resource>:<action>`.
+
+## Single Decision And Retry Contract
+
+Every decorated command invocation MUST have one authorization result across
+direct CLI, exported tools, and SDK gateway execution.
+
+- The canonical capability named in a denial MUST be sufficient to retry that
+  exact command after the provider-owned profile is applied.
+- A successful semantic decision MUST NOT be followed by a denial for
+  `execute:group:<group>_<command>` or `execute:group:<group>`.
+- Accepting a legacy group capability as a compatibility candidate is one
+  provider-runtime decision, not an additional gate.
+- Granting one semantic action MUST NOT authorize a neighboring action in the
+  same command group.
+- A retry MAY still fail for a different external or resource condition, but it
+  MUST NOT reveal another hidden CLI authorization layer for the same action.
 
 ## Local Operator
 
@@ -251,6 +275,9 @@ lacks `@CommandAccess` MUST fail the relevant quality gate.
 - CLI command authorization accepts semantic `read/mutate` capabilities derived
   from `@CommandAccess` and uses legacy `execute:group` capabilities only as a
   compatibility fallback.
+- One semantic grant authorizes the same decorated command on CLI, tool, and
+  gateway surfaces without a follow-up legacy group grant.
+- `superadmin` remains fail-closed behind `admin:system:*`.
 - Direct local CLI without principal uses explicit operator-control mode only.
 - `ravi doctor --domain permissions` reports missing command access metadata
   and can distinguish missing metadata from intentionally read-only commands.

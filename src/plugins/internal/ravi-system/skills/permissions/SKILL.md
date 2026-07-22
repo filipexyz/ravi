@@ -112,6 +112,9 @@ CLI command capabilities:
   `read:tasks.profiles:list`, `read:tasks.profiles:*`, `read:cron:show`.
 - `execute:group:<group>` e `execute:group:<group>_<command>` existem como
   compatibilidade, mas não são o formato recomendado para novas instruções.
+- A capability canônica indicada pelo denial deve bastar para repetir o mesmo
+  comando. Nunca peça `execute:group:*` depois que o grant semântico já foi
+  aplicado; isso indica regressão no pipeline de autorização.
 - Evite formato com `resource` e `action` fundidos por ponto. O formato
   canônico separa a action no terceiro segmento, como `read:skills:show`.
 

@@ -32,6 +32,12 @@ capability: cli-command-access
 - Legacy `execute:group:<group>_<command>` and `execute:group:<group>` MUST
   remain covered by tests while migration is active, but new docs and agent
   recommendations SHOULD use semantic `read/mutate` capabilities.
+- A semantic grant MUST be sufficient by itself for the exact decorated
+  command on CLI, exported tool, and gateway surfaces. No surface may run a
+  normal legacy `@Scope` gate after provider-runtime authorization succeeds.
+- A semantic grant for one action MUST leave neighboring actions denied.
+- `superadmin` commands MUST still require the explicit superadmin exposure
+  boundary and `admin:system:*` authority.
 - Missing subject/context MUST deny unless `localOperator=true`.
 - Runtime execution MUST NOT use direct local operator fallback.
 - Provider requests generated from CLI commands MUST include command group,
@@ -70,5 +76,11 @@ permissions.command_access.open_high_risk = 0
 - Add command-access tests proving semantic `read/mutate` capabilities allow,
   semantic resource wildcard allows, dotted transition alias allows, and legacy
   `execute:group` fallback still works.
+- Add a regression matching `mutate:media:send` that has no
+  `execute:group:media_send` capability and still executes, while another media
+  mutation remains denied.
+- Add a call-site policy regression that keeps CLI, tool export, and gateway on
+  the same command authorization function and prevents direct normal-scope
+  enforcement from returning.
 - Add operator-control tests proving direct terminal mode is explicit and never
   used for runtime contexts.

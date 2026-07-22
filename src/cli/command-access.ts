@@ -1,8 +1,9 @@
 import { getContext } from "./context.js";
-import type { CommandAccessOptions } from "./decorators.js";
+import type { CommandAccessOptions, ScopeType } from "./decorators.js";
 import { authorizePermission, type PermissionProviderDecision } from "../permissions/provider-runtime.js";
 import { buildAuditContextProvenance } from "../permissions/audit-provenance.js";
 import { recordAndEmitPermissionDenial } from "../permissions/denials.js";
+import { enforceScopeCheck } from "../permissions/scope.js";
 import {
   buildAuthorizationGuidance,
   formatAuthorizationGuidanceLines,
@@ -31,6 +32,25 @@ export interface CliCommandAccessResult {
   errorMessage: string;
   decision?: PermissionProviderDecision;
   attempted: PermissionProviderDecision[];
+}
+
+export interface CliCommandAuthorizationInput extends CliCommandAccessInput {
+  scope: ScopeType;
+}
+
+export function enforceCliCommandAuthorization(input: CliCommandAuthorizationInput): CliCommandAccessResult {
+  const accessResult = enforceCliCommandAccess(input);
+  if (!accessResult.allowed || input.scope !== "superadmin") return accessResult;
+
+  const boundary = enforceScopeCheck("superadmin", input.group, input.command);
+  if (boundary.allowed) return accessResult;
+
+  return {
+    allowed: false,
+    errorMessage: boundary.errorMessage,
+    decision: accessResult.decision,
+    attempted: accessResult.attempted,
+  };
 }
 
 export function enforceCliCommandAccess(input: CliCommandAccessInput): CliCommandAccessResult {
