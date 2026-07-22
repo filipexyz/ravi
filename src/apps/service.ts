@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { Ajv2020 } from "ajv/dist/2020.js";
+import * as addFormatsModule from "ajv-formats";
 import { loadInternalPlugins } from "../plugins/internal-loader.js";
 import { discoverPlugins } from "../plugins/index.js";
 import { getRaviStateDir } from "../utils/paths.js";
@@ -21,6 +23,8 @@ export const RAVI_APP_MANIFEST_FILE = "ravi.app.json";
 export const RAVI_APP_MANIFEST_SCHEMA = "ravi.app/v1";
 export const RAVI_APP_PERMISSION_PROVIDER_MAX_TIMEOUT_MS = 5_000;
 export const RAVI_APP_PERMISSION_PROVIDER_MAX_CACHE_TTL_SEC = 300;
+export const RAVI_APP_OPERATION_MAX_TIMEOUT_MS = 120_000;
+export const RAVI_APP_OPERATION_MAX_ATTEMPTS = 3;
 
 const APP_ID_PATTERN = /^[a-z][a-z0-9-]*(\/[a-z][a-z0-9-]*)*$/;
 const APP_LOCAL_ID_PATTERN = /^[a-z][a-z0-9-]*$/;
@@ -32,6 +36,7 @@ export const RAVI_APP_BUILTIN_OPERATION_HANDLERS = new Set([
   "apps.help",
   "apps.manifest.show",
   "apps.manifest.check",
+  "apps.readiness",
   "apps.stub.list",
 ]);
 
@@ -77,6 +82,7 @@ const SECRET_VALUE_PATTERNS = [
   /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}/i,
   /\bsk-[A-Za-z0-9_-]{16,}/,
 ];
+const addFormats = (addFormatsModule.default ?? addFormatsModule) as unknown as (ajv: Ajv2020) => Ajv2020;
 
 const DIRECTORY_SKIPLIST = new Set([".git", "node_modules", "dist", "coverage", ".next"]);
 const STATIC_APP_ROOT_EXCEPTIONS = new Set(["apps"]);
@@ -112,8 +118,56 @@ export function discoverAppManifests(options: RaviAppListOptions = {}): RaviAppM
     .map(([filePath, root]) => readManifestRecord(filePath, root))
     .sort((left, right) => left.id.localeCompare(right.id) || left.path.localeCompare(right.path));
 
-  markDuplicateIds(records);
-  return records;
+  const visibleRecords = shadowLegacyStateCopies(records, options);
+  markDuplicateIds(visibleRecords);
+  return visibleRecords;
+}
+
+function shadowLegacyStateCopies(
+  records: RaviAppManifestRecord[],
+  options: RaviAppListOptions,
+): RaviAppManifestRecord[] {
+  if (options.source) return records;
+
+  const cwd = resolve(options.cwd ?? process.cwd());
+  const repoRoot = findRepoRoot(cwd);
+  const homeDir = options.env?.HOME?.trim() || homedir();
+  const internalPluginNames = new Set(loadInternalPlugins().map((plugin) => plugin.name));
+  const managedRecords = records.filter(
+    (record) =>
+      record.source === "repo" || isInternalPluginAppRoot(record.rootPath, repoRoot, homeDir, internalPluginNames),
+  );
+  const managedIds = new Set(managedRecords.map((record) => record.id));
+  const shadowed = records.filter((record) => record.source === "state" && managedIds.has(record.id));
+
+  for (const managed of managedRecords) {
+    const legacyCopies = shadowed.filter((record) => record.id === managed.id);
+    if (legacyCopies.length === 0) continue;
+    managed.warnings.push(
+      `Ignored ${legacyCopies.length} legacy state copy/copies because the managed app "${managed.id}" is authoritative.`,
+    );
+  }
+
+  return records.filter((record) => !shadowed.includes(record));
+}
+
+function isInternalPluginAppRoot(
+  rootPath: string,
+  repoRoot: string,
+  homeDir: string,
+  internalPluginNames: Set<string>,
+): boolean {
+  const pluginRoot = dirname(rootPath);
+  const pluginName = basename(pluginRoot);
+  if (!internalPluginNames.has(pluginName)) return false;
+
+  const sourceInternalRoot = resolve(repoRoot, "src", "plugins", "internal");
+  const cacheInternalRoot = resolve(homeDir, ".cache", "ravi", "plugins");
+  const resolvedPluginRoot = resolve(pluginRoot);
+  return (
+    resolvedPluginRoot.startsWith(`${sourceInternalRoot}${sep}`) ||
+    resolvedPluginRoot.startsWith(`${cacheInternalRoot}${sep}`)
+  );
 }
 
 export function getAppManifest(id: string, options: RaviAppDiscoveryOptions = {}): RaviAppManifestRecord {
@@ -327,7 +381,7 @@ function validateManifest(
     validateInterfaceBlocks(manifest, operationIds, errors, warnings);
   }
 
-  validateOperations(manifest.operations, manifest.interfaces, manifest.id, errors, warnings);
+  validateOperations(manifest.operations, manifest.interfaces, manifest.id, dirname(path), errors, warnings);
 
   if (manifest.permissions !== undefined && !isObject(manifest.permissions)) {
     errors.push("permissions must be an object when present.");
@@ -404,6 +458,7 @@ function validateOperations(
   value: unknown,
   interfaces: unknown,
   appId: unknown,
+  appRoot: string,
   errors: string[],
   warnings: string[],
 ): void {
@@ -452,10 +507,85 @@ function validateOperations(
       warnings.push(`${path} is mutating and should declare permission or permissions.`);
     }
 
+    validateOperationSafety(operation.safety, operation, `${path}.safety`, errors, warnings);
+    validateOperationReliability(operation.reliability, operation, `${path}.reliability`, errors);
+
     validateOperationTarget(operation, path, typeof appId === "string" ? appId.trim() : "", errors, warnings);
     validateOperationSchemaReference(operation.inputSchema, `${path}.inputSchema`, errors);
     validateOperationSchemaReference(operation.outputSchema, `${path}.outputSchema`, errors);
+    validateOperationOutputSchema(operation.outputSchema, `${path}.outputSchema`, appRoot, errors);
     validateOperationAuthorization(operation.authorization, `${path}.authorization`, errors);
+  }
+}
+
+function validateOperationSafety(
+  value: unknown,
+  operation: Record<string, unknown>,
+  path: string,
+  errors: string[],
+  warnings: string[],
+): void {
+  if (value === undefined) {
+    if (operation.mutating === true) warnings.push(`${path} should be declared for fail-closed mutation execution.`);
+    return;
+  }
+  if (!isObject(value)) {
+    errors.push(`${path} must be an object when present.`);
+    return;
+  }
+  for (const field of ["idempotent", "dryRunSupported", "confirmationRequired"] as const) {
+    if (typeof value[field] !== "boolean") errors.push(`${path}.${field} must be a boolean.`);
+  }
+  for (const field of ["hitlRequired", "liveExecution"] as const) {
+    if (value[field] !== undefined && typeof value[field] !== "boolean") {
+      errors.push(`${path}.${field} must be a boolean when present.`);
+    }
+  }
+  if (
+    value.risk !== undefined &&
+    value.risk !== "low" &&
+    value.risk !== "medium" &&
+    value.risk !== "high" &&
+    value.risk !== "destructive"
+  ) {
+    errors.push(`${path}.risk must be low|medium|high|destructive when present.`);
+  }
+  if (operation.mutating === true) {
+    if (value.idempotent === true)
+      warnings.push(`${path}.idempotent=true requires an adapter-level reconciliation proof.`);
+    if (value.confirmationRequired !== true)
+      errors.push(`${path}.confirmationRequired must be true for mutating operations.`);
+  }
+}
+
+function validateOperationReliability(
+  value: unknown,
+  operation: Record<string, unknown>,
+  path: string,
+  errors: string[],
+): void {
+  if (value === undefined) return;
+  if (!isObject(value)) {
+    errors.push(`${path} must be an object when present.`);
+    return;
+  }
+  if (
+    value.timeoutMs !== undefined &&
+    (!isPositiveInteger(value.timeoutMs) || value.timeoutMs > RAVI_APP_OPERATION_MAX_TIMEOUT_MS)
+  ) {
+    errors.push(`${path}.timeoutMs must be an integer from 1 to ${RAVI_APP_OPERATION_MAX_TIMEOUT_MS}.`);
+  }
+  if (
+    value.maxAttempts !== undefined &&
+    (!isPositiveInteger(value.maxAttempts) || value.maxAttempts > RAVI_APP_OPERATION_MAX_ATTEMPTS)
+  ) {
+    errors.push(`${path}.maxAttempts must be an integer from 1 to ${RAVI_APP_OPERATION_MAX_ATTEMPTS}.`);
+  }
+  if (value.baseDelayMs !== undefined && (!isNonNegativeInteger(value.baseDelayMs) || value.baseDelayMs > 30_000)) {
+    errors.push(`${path}.baseDelayMs must be an integer from 0 to 30000.`);
+  }
+  if (operation.mutating === true && typeof value.maxAttempts === "number" && value.maxAttempts > 1) {
+    errors.push(`${path}.maxAttempts must be 1 for mutating operations.`);
   }
 }
 
@@ -575,12 +705,48 @@ function validateHealth(value: Record<string, unknown>, appId: unknown, errors: 
       warnings.push(`health.checks[${index}] should be an object.`);
       return;
     }
-    if (check.type === "cli" && typeof check.command === "string") {
+    if (!isNonEmptyString(check.id)) {
+      if (check.id === undefined) warnings.push(`health.checks[${index}].id should be declared for readiness.`);
+      else errors.push(`health.checks[${index}].id must be a non-empty string.`);
+    }
+    if (typeof check.required !== "boolean") {
+      if (check.required === undefined)
+        warnings.push(`health.checks[${index}].required should be declared for readiness.`);
+      else errors.push(`health.checks[${index}].required must be a boolean.`);
+    }
+    if (check.sideEffectFree !== true) {
+      if (check.sideEffectFree === undefined) {
+        warnings.push(`health.checks[${index}].sideEffectFree should be true for readiness execution.`);
+      } else {
+        errors.push(`health.checks[${index}].sideEffectFree must be true.`);
+      }
+    }
+    if (check.type === "builtin") {
+      if (check.handler !== "apps.manifest.check") {
+        errors.push(`health.checks[${index}].handler must be apps.manifest.check for builtin readiness checks.`);
+      }
+      return;
+    }
+    if (check.type === "cli") {
+      if (typeof check.command !== "string" || !check.command.trim()) {
+        errors.push(`health.checks[${index}].command is required for cli readiness checks.`);
+        return;
+      }
       const id = typeof appId === "string" ? appId.trim() : "";
       if (isRecursiveDynamicAppCommand(id, check.command) && !isRouterHealthCommand(id, check.command)) {
         errors.push(`health.checks[${index}].command must not recursively invoke ravi ${id.split("/").join(" ")}.`);
       }
+      if (
+        check.timeoutMs !== undefined &&
+        (!isPositiveInteger(check.timeoutMs) || check.timeoutMs > RAVI_APP_OPERATION_MAX_TIMEOUT_MS)
+      ) {
+        errors.push(
+          `health.checks[${index}].timeoutMs must be an integer from 1 to ${RAVI_APP_OPERATION_MAX_TIMEOUT_MS}.`,
+        );
+      }
+      return;
     }
+    errors.push(`health.checks[${index}].type must be builtin|cli.`);
   });
 }
 
@@ -592,6 +758,27 @@ function validateOperationSchemaReference(value: unknown, path: string, errors: 
   }
   if (!isObject(value)) {
     errors.push(`${path} must be a string schema reference or object schema when present.`);
+  }
+}
+
+function validateOperationOutputSchema(value: unknown, path: string, appRoot: string, errors: string[]): void {
+  if (value === undefined) return;
+  try {
+    let schema: unknown = value;
+    if (typeof value === "string") {
+      if (!value.trim()) return;
+      const normalizedRoot = resolve(appRoot);
+      const schemaPath = resolve(normalizedRoot, value);
+      if (schemaPath !== normalizedRoot && !schemaPath.startsWith(`${normalizedRoot}${sep}`)) {
+        throw new Error("reference escapes the app root");
+      }
+      if (!existsSync(schemaPath)) throw new Error(`file not found: ${value}`);
+      schema = JSON.parse(readFileSync(schemaPath, "utf8")) as unknown;
+    }
+    if (!isObject(schema)) throw new Error("schema must be a JSON object");
+    addFormats(new Ajv2020({ allErrors: true, strict: true })).compile(schema);
+  } catch (error) {
+    errors.push(`${path} is unavailable or invalid: ${formatError(error)}.`);
   }
 }
 

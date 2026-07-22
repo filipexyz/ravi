@@ -1,0 +1,424 @@
+{
+  "schema": "ravi.app.sde-read-baseline/v1",
+  "appId": "tiny",
+  "waveId": "read-wave-1",
+  "sanitized": true,
+  "source": {
+    "kind": "immutable-sde-git-snapshot",
+    "repository": "/home/ravi/sde",
+    "version": "1.0.0",
+    "commit": "bb1ba78598910b5abab51af896415cc38bf2aaa3",
+    "tree": "3730ec5bb33aa16a4ae7424ddff56977759c680a",
+    "capturedAt": "2026-07-15",
+    "captureMethod": "static-git-object-inspection-no-execution",
+    "files": [
+      {
+        "path": "index.ts",
+        "gitBlob": "bde0ad6dd5cbc7ef97d5893ccc8170cb1e54fdc2",
+        "sha256": "17a4d63705387b9478ccd3d2f0799895790081fa19960d70cfb21be3c69b1502"
+      },
+      {
+        "path": "services/tiny.service.ts",
+        "gitBlob": "8aaea027eb07ebe6072f53ab5493f17a3a33e8ac",
+        "sha256": "ad8d37eef88fb2050653fd29f3cd519b8cccf14e21fea9244b0d06f209a4f45f"
+      }
+    ]
+  },
+  "review": {
+    "producer": {
+      "kind": "deterministic-tool",
+      "id": "git-object-inspection+fixture-normalization/v1"
+    },
+    "reviewer": {
+      "kind": "agent",
+      "id": "ravi-dev",
+      "reviewedAt": "2026-07-15"
+    },
+    "classification": "sanitized-metadata-and-synthetic-normalized-fixtures",
+    "basis": "Pinned SDE Git objects and synthetic fixtures cross-checked offline; no credential, network request, Tiny API call, or customer data."
+  },
+  "operations": {
+    "info": {
+      "legacyCommand": "sde tiny info",
+      "arguments": [],
+      "options": ["--json", "--yes", "--schema"],
+      "sourceRefs": [
+        {
+          "path": "index.ts",
+          "symbol": "tiny.command('info')",
+          "gitBlob": "bde0ad6dd5cbc7ef97d5893ccc8170cb1e54fdc2"
+        },
+        {
+          "path": "services/tiny.service.ts",
+          "symbol": "getInfo",
+          "gitBlob": "8aaea027eb07ebe6072f53ab5493f17a3a33e8ac"
+        }
+      ],
+      "appOperation": "info",
+      "argumentMapping": {
+        "relationship": "app-stricter",
+        "appArguments": [],
+        "appOptions": ["--tenant <tenant>", "--dry-run"],
+        "appOnlyOptions": ["--tenant <tenant>", "--dry-run"],
+        "legacyOnlyOptions": ["--json", "--yes", "--schema"],
+        "renamedOptions": []
+      },
+      "normalized": {
+        "nominal": {
+          "kind": "success",
+          "data": {
+            "retorno": {
+              "status": "OK",
+              "status_processamento": "3",
+              "conta": { "id": "fixture-account" }
+            }
+          },
+          "normalization": "identity"
+        },
+        "empty": {
+          "kind": "success",
+          "data": { "retorno": { "status": "OK", "status_processamento": "3" } },
+          "normalization": "identity"
+        },
+        "error": { "kind": "error", "code": 2, "redaction": "code-only", "normalization": "identity" },
+        "pagination": { "mode": "not-applicable" },
+        "tenant": {
+          "legacyIsolation": "implicit-single-account",
+          "appIsolation": "explicit-tenant+broker-connection",
+          "relationship": "app-stricter"
+        }
+      }
+    },
+    "contatos": {
+      "legacyCommand": "sde tiny contatos",
+      "arguments": [],
+      "options": [
+        "--pesquisa <texto>",
+        "--cpf-cnpj <cpfCnpj>",
+        "--situacao <situacao>",
+        "--id-vendedor <id>",
+        "--nome-vendedor <nome>",
+        "--data-criacao <data>",
+        "--data-atualizacao <data>",
+        "--pagina <numero>",
+        "--json",
+        "--yes",
+        "--schema"
+      ],
+      "sourceRefs": [
+        {
+          "path": "index.ts",
+          "symbol": "tiny.command('contatos')",
+          "gitBlob": "bde0ad6dd5cbc7ef97d5893ccc8170cb1e54fdc2"
+        },
+        {
+          "path": "services/tiny.service.ts",
+          "symbol": "listContatos",
+          "gitBlob": "8aaea027eb07ebe6072f53ab5493f17a3a33e8ac"
+        }
+      ],
+      "appOperation": "contatos",
+      "argumentMapping": {
+        "relationship": "app-stricter",
+        "appArguments": [],
+        "appOptions": [
+          "--tenant <tenant>",
+          "--pesquisa <valor>",
+          "--cpf-cnpj <valor>",
+          "--situacao <valor>",
+          "--id-vendedor <valor>",
+          "--nome-vendedor <valor>",
+          "--data-criacao <valor>",
+          "--data-atualizacao <valor>",
+          "--pagina <valor>",
+          "--dry-run"
+        ],
+        "appOnlyOptions": ["--tenant <tenant>", "--dry-run"],
+        "legacyOnlyOptions": ["--json", "--yes", "--schema"],
+        "renamedOptions": []
+      },
+      "normalized": {
+        "nominal": {
+          "kind": "success",
+          "data": {
+            "retorno": {
+              "status": "OK",
+              "status_processamento": "3",
+              "pagina": 1,
+              "numero_paginas": 1,
+              "contatos": [{ "contato": { "id": "fixture-contact" } }]
+            }
+          },
+          "normalization": "identity"
+        },
+        "empty": {
+          "kind": "success",
+          "data": {
+            "retorno": {
+              "status": "OK",
+              "status_processamento": "3",
+              "pagina": 1,
+              "numero_paginas": 0,
+              "contatos": []
+            }
+          },
+          "normalization": "tiny-code-20-to-empty-collection"
+        },
+        "error": { "kind": "error", "code": 2, "redaction": "code-only", "normalization": "identity" },
+        "pagination": {
+          "mode": "pagina+numero_paginas",
+          "data": {
+            "retorno": {
+              "status": "OK",
+              "status_processamento": "3",
+              "pagina": 2,
+              "numero_paginas": 3,
+              "contatos": []
+            }
+          },
+          "normalization": "identity"
+        },
+        "tenant": {
+          "legacyIsolation": "implicit-single-account",
+          "appIsolation": "explicit-tenant+broker-connection",
+          "relationship": "app-stricter"
+        }
+      }
+    },
+    "contato": {
+      "legacyCommand": "sde tiny contato",
+      "arguments": ["id"],
+      "options": ["--json", "--yes", "--schema"],
+      "sourceRefs": [
+        {
+          "path": "index.ts",
+          "symbol": "tiny.command('contato <id>')",
+          "gitBlob": "bde0ad6dd5cbc7ef97d5893ccc8170cb1e54fdc2"
+        },
+        {
+          "path": "services/tiny.service.ts",
+          "symbol": "getContato",
+          "gitBlob": "8aaea027eb07ebe6072f53ab5493f17a3a33e8ac"
+        }
+      ],
+      "appOperation": "contato",
+      "argumentMapping": {
+        "relationship": "app-stricter",
+        "appArguments": ["id"],
+        "appOptions": ["--tenant <tenant>", "--dry-run"],
+        "appOnlyOptions": ["--tenant <tenant>", "--dry-run"],
+        "legacyOnlyOptions": ["--json", "--yes", "--schema"],
+        "renamedOptions": []
+      },
+      "normalized": {
+        "nominal": {
+          "kind": "success",
+          "data": {
+            "retorno": {
+              "status": "OK",
+              "status_processamento": "3",
+              "contato": { "id": "fixture-contact" }
+            }
+          },
+          "normalization": "identity"
+        },
+        "empty": { "kind": "error", "code": 20, "redaction": "code-only", "normalization": "identity" },
+        "error": { "kind": "error", "code": 2, "redaction": "code-only", "normalization": "identity" },
+        "pagination": { "mode": "not-applicable" },
+        "tenant": {
+          "legacyIsolation": "implicit-single-account",
+          "appIsolation": "explicit-tenant+broker-connection",
+          "relationship": "app-stricter"
+        }
+      }
+    },
+    "produtos": {
+      "legacyCommand": "sde tiny produtos",
+      "arguments": [],
+      "options": [
+        "--pesquisa <texto>",
+        "--situacao <situacao>",
+        "--gtin <gtin>",
+        "--id-tag <id>",
+        "--id-lista-preco <id>",
+        "--data-criacao <data>",
+        "--pagina <numero>",
+        "--json",
+        "--yes",
+        "--schema"
+      ],
+      "sourceRefs": [
+        {
+          "path": "index.ts",
+          "symbol": "tiny.command('produtos')",
+          "gitBlob": "bde0ad6dd5cbc7ef97d5893ccc8170cb1e54fdc2"
+        },
+        {
+          "path": "services/tiny.service.ts",
+          "symbol": "listProdutos",
+          "gitBlob": "8aaea027eb07ebe6072f53ab5493f17a3a33e8ac"
+        }
+      ],
+      "appOperation": "produtos",
+      "argumentMapping": {
+        "relationship": "app-stricter",
+        "appArguments": [],
+        "appOptions": [
+          "--tenant <tenant>",
+          "--pesquisa <valor>",
+          "--situacao <valor>",
+          "--gtin <valor>",
+          "--id-tag <valor>",
+          "--id-lista-preco <valor>",
+          "--data-criacao <valor>",
+          "--pagina <valor>",
+          "--dry-run"
+        ],
+        "appOnlyOptions": ["--tenant <tenant>", "--dry-run"],
+        "legacyOnlyOptions": ["--json", "--yes", "--schema"],
+        "renamedOptions": []
+      },
+      "normalized": {
+        "nominal": {
+          "kind": "success",
+          "data": {
+            "retorno": {
+              "status": "OK",
+              "status_processamento": "3",
+              "pagina": 1,
+              "numero_paginas": 1,
+              "produtos": [{ "produto": { "id": "fixture-product" } }]
+            }
+          },
+          "normalization": "identity"
+        },
+        "empty": {
+          "kind": "success",
+          "data": {
+            "retorno": {
+              "status": "OK",
+              "status_processamento": "3",
+              "pagina": 1,
+              "numero_paginas": 0,
+              "produtos": []
+            }
+          },
+          "normalization": "tiny-code-20-to-empty-collection"
+        },
+        "error": { "kind": "error", "code": 2, "redaction": "code-only", "normalization": "identity" },
+        "pagination": {
+          "mode": "pagina+numero_paginas",
+          "data": {
+            "retorno": {
+              "status": "OK",
+              "status_processamento": "3",
+              "pagina": 2,
+              "numero_paginas": 3,
+              "produtos": []
+            }
+          },
+          "normalization": "identity"
+        },
+        "tenant": {
+          "legacyIsolation": "implicit-single-account",
+          "appIsolation": "explicit-tenant+broker-connection",
+          "relationship": "app-stricter"
+        }
+      }
+    },
+    "produto": {
+      "legacyCommand": "sde tiny produto",
+      "arguments": ["id"],
+      "options": ["--json", "--yes", "--schema"],
+      "sourceRefs": [
+        {
+          "path": "index.ts",
+          "symbol": "tiny.command('produto <id>')",
+          "gitBlob": "bde0ad6dd5cbc7ef97d5893ccc8170cb1e54fdc2"
+        },
+        {
+          "path": "services/tiny.service.ts",
+          "symbol": "getProduto",
+          "gitBlob": "8aaea027eb07ebe6072f53ab5493f17a3a33e8ac"
+        }
+      ],
+      "appOperation": "produto",
+      "argumentMapping": {
+        "relationship": "app-stricter",
+        "appArguments": ["id"],
+        "appOptions": ["--tenant <tenant>", "--dry-run"],
+        "appOnlyOptions": ["--tenant <tenant>", "--dry-run"],
+        "legacyOnlyOptions": ["--json", "--yes", "--schema"],
+        "renamedOptions": []
+      },
+      "normalized": {
+        "nominal": {
+          "kind": "success",
+          "data": {
+            "retorno": {
+              "status": "OK",
+              "status_processamento": "3",
+              "produto": { "id": "fixture-product" }
+            }
+          },
+          "normalization": "identity"
+        },
+        "empty": { "kind": "error", "code": 20, "redaction": "code-only", "normalization": "identity" },
+        "error": { "kind": "error", "code": 2, "redaction": "code-only", "normalization": "identity" },
+        "pagination": { "mode": "not-applicable" },
+        "tenant": {
+          "legacyIsolation": "implicit-single-account",
+          "appIsolation": "explicit-tenant+broker-connection",
+          "relationship": "app-stricter"
+        }
+      }
+    },
+    "estoque": {
+      "legacyCommand": "sde tiny estoque",
+      "arguments": ["id"],
+      "options": ["--json", "--yes", "--schema"],
+      "sourceRefs": [
+        {
+          "path": "index.ts",
+          "symbol": "tiny.command('estoque <id>')",
+          "gitBlob": "bde0ad6dd5cbc7ef97d5893ccc8170cb1e54fdc2"
+        },
+        {
+          "path": "services/tiny.service.ts",
+          "symbol": "getEstoque",
+          "gitBlob": "8aaea027eb07ebe6072f53ab5493f17a3a33e8ac"
+        }
+      ],
+      "appOperation": "estoque",
+      "argumentMapping": {
+        "relationship": "app-stricter",
+        "appArguments": ["id"],
+        "appOptions": ["--tenant <tenant>", "--dry-run"],
+        "appOnlyOptions": ["--tenant <tenant>", "--dry-run"],
+        "legacyOnlyOptions": ["--json", "--yes", "--schema"],
+        "renamedOptions": []
+      },
+      "normalized": {
+        "nominal": {
+          "kind": "success",
+          "data": {
+            "retorno": {
+              "status": "OK",
+              "status_processamento": "3",
+              "produto": { "id": "fixture-stock", "saldo": 1 }
+            }
+          },
+          "normalization": "identity"
+        },
+        "empty": { "kind": "error", "code": 20, "redaction": "code-only", "normalization": "identity" },
+        "error": { "kind": "error", "code": 2, "redaction": "code-only", "normalization": "identity" },
+        "pagination": { "mode": "not-applicable" },
+        "tenant": {
+          "legacyIsolation": "implicit-single-account",
+          "appIsolation": "explicit-tenant+broker-connection",
+          "relationship": "app-stricter"
+        }
+      }
+    }
+  }
+}

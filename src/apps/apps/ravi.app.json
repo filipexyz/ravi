@@ -91,6 +91,18 @@
       "command": "ravi apps scaffold {id} --json",
       "mutating": true,
       "permission": "apps:write",
+      "safety": {
+        "idempotent": false,
+        "dryRunSupported": true,
+        "confirmationRequired": true,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "medium"
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1
+      },
       "outputSchema": "schemas/apps-scaffold.v1.json"
     }
   },
@@ -112,8 +124,11 @@
   "health": {
     "checks": [
       {
-        "type": "cli",
-        "command": "ravi apps check apps --json"
+        "id": "manifest",
+        "type": "builtin",
+        "required": true,
+        "sideEffectFree": true,
+        "handler": "apps.manifest.check"
       }
     ]
   },

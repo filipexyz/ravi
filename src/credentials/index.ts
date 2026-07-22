@@ -3,14 +3,17 @@ export {
   readSecret,
   readSecretFromStdin,
   redactSecretRef,
+  replaceSecret,
   writeSecret,
   type SecretWriteInput,
 } from "./backends.js";
 export {
+  CredentialAuthorizationError,
   execCredentialBroker,
   explainCredentialPolicy,
   publicCredentialConnection,
   resolveCredentialSecret,
+  type CredentialBrokerDependencies,
 } from "./broker.js";
 export {
   closeCredentialsDb,
@@ -29,7 +32,9 @@ export {
 export type {
   CredentialAuditEvent,
   CredentialAuditEventInput,
+  CredentialAuthorizationInput,
   CredentialBackend,
+  CredentialCallerContext,
   CredentialConnectionPage,
   CredentialConnectionRecord,
   CredentialConnectionStatus,

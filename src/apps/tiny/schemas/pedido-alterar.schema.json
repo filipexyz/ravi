@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tiny/pedido-alterar",
+  "type": "object",
+  "properties": {
+    "idPedido": { "type": "string", "pattern": "^\\d+$" },
+    "dadosPedido": { "type": "object" }
+  },
+  "required": ["idPedido", "dadosPedido"],
+  "additionalProperties": false
+}

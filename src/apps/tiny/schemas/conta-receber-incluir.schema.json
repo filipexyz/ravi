@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tiny/conta-receber-incluir",
+  "type": "object",
+  "properties": {
+    "conta": {
+      "type": "object",
+      "properties": {
+        "idContato": { "type": "string", "pattern": "^\\d+$" },
+        "dataEmissao": { "type": "string", "pattern": "^\\d{2}/\\d{2}/\\d{4}$" },
+        "dataVencimento": { "type": "string", "pattern": "^\\d{2}/\\d{2}/\\d{4}$" },
+        "valor": { "type": "string", "pattern": "^\\d+(?:\\.\\d+)?$" }
+      },
+      "required": ["idContato", "dataEmissao", "dataVencimento", "valor"],
+      "additionalProperties": true
+    }
+  },
+  "required": ["conta"],
+  "additionalProperties": false
+}

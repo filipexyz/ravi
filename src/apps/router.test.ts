@@ -72,6 +72,13 @@ function manifest(id: string): Record<string, unknown> {
         handler: "apps.stub.list",
         mutating: true,
         permission: `${id}:write`,
+        safety: {
+          idempotent: false,
+          dryRunSupported: true,
+          confirmationRequired: true,
+          liveExecution: true,
+          risk: "high",
+        },
       },
       [`${prefix}.test.a`]: {
         interface: "builtin",
@@ -165,6 +172,10 @@ console.log(JSON.stringify({
 
 function providerManifest(root: string, id: string, options: { timeoutMs?: number } = {}): Record<string, unknown> {
   const providerScript = writeProviderScript(root);
+  const schemaDirectory = join(root, "src", "apps", ...id.split("/"), "schemas");
+  mkdirSync(schemaDirectory, { recursive: true });
+  writeFileSync(join(schemaDirectory, "permission-request.v1.json"), JSON.stringify({ type: "object" }, null, 2));
+  writeFileSync(join(schemaDirectory, "permission-decision.v1.json"), JSON.stringify({ type: "object" }, null, 2));
   const base = manifest(id);
   const prefix = id.replace(/\//g, ".");
   const baseOperations = base.operations as Record<string, unknown>;
@@ -207,17 +218,329 @@ function providerManifest(root: string, id: string, options: { timeoutMs?: numbe
   };
 }
 
+function writeOperationProbe(root: string): string {
+  const directory = join(root, "src", "apps", "runtime-probe");
+  mkdirSync(directory, { recursive: true });
+  const path = join(directory, "operation-probe.mjs");
+  writeFileSync(
+    path,
+    `
+import { spawn } from "node:child_process";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+
+const [mode, ...args] = process.argv.slice(2);
+const marker = process.env.PROBE_MARKER;
+if (marker) appendFileSync(marker, mode + " " + args.join(" ") + "\\n");
+
+if (mode === "timeout") {
+  await new Promise((resolve) => setTimeout(resolve, 500));
+}
+if (mode === "timeout-tree") {
+  spawn(process.execPath, ["-e", "setTimeout(() => require('node:fs').writeFileSync(process.env.PROBE_DESCENDANT_MARKER, 'orphan'), 200)"], {
+    env: process.env,
+    stdio: "ignore"
+  });
+  await new Promise((resolve) => setTimeout(resolve, 5000));
+}
+if (mode === "invalid-json") {
+  console.log("not-json");
+  process.exit(0);
+}
+if (mode === "retry") {
+  const countPath = process.env.PROBE_COUNT;
+  const count = countPath && existsSync(countPath) ? Number(readFileSync(countPath, "utf8")) + 1 : 1;
+  const failuresBeforeSuccess = Number(process.env.PROBE_FAIL_ATTEMPTS || "2");
+  if (countPath) writeFileSync(countPath, String(count));
+  if (count <= failuresBeforeSuccess) {
+    process.stderr.write(JSON.stringify({
+      ok: false,
+      error: "upstream unavailable",
+      errorDetails: {
+        code: "UPSTREAM_503",
+        message: "upstream unavailable",
+        retryable: true,
+        httpStatus: 503,
+        retryAfterMs: 0,
+        requestId: "req-" + count
+      }
+    }));
+    process.exit(1);
+  }
+  console.log(JSON.stringify({ ok: true, count }));
+  process.exit(0);
+}
+if (mode === "nontransient") {
+  const countPath = process.env.PROBE_COUNT;
+  const count = countPath && existsSync(countPath) ? Number(readFileSync(countPath, "utf8")) + 1 : 1;
+  if (countPath) writeFileSync(countPath, String(count));
+  process.stderr.write(JSON.stringify({
+    ok: false,
+    errorDetails: {
+      code: "VALIDATION_FAILED",
+      message: "invalid input",
+      retryable: true
+    }
+  }));
+  process.exit(1);
+}
+if (mode === "leaky-stderr") {
+  process.stderr.write(JSON.stringify({
+    ok: false,
+    error: "raw child error token_secret_must_not_leak",
+    errorDetails: {
+      code: "UPSTREAM_503",
+      message: "raw upstream body token_secret_must_not_leak",
+      retryable: true,
+      httpStatus: 503,
+      retryAfterMs: 0,
+      requestId: "req-leaky",
+      details: { token: "token_secret_must_not_leak" }
+    }
+  }));
+  process.exit(1);
+}
+if (mode === "leaky-failure") {
+  process.stdout.write(JSON.stringify({
+    ok: false,
+    failure: {
+      version: "ravi.app.failure/v1",
+      code: "TINY_HTTP_RATE_LIMITED",
+      category: "rate_limit",
+      message: "raw canonical failure token_secret_must_not_leak",
+      retryable: true,
+      exitCode: 5,
+      details: { source: "tiny", httpStatus: 429, retryAfterSeconds: 2, secret: "token_secret_must_not_leak" }
+    }
+  }));
+  process.exit(5);
+}
+if (mode === "echo") {
+  console.log(JSON.stringify({
+    ok: true,
+    customer: { id: "42", name: "Alice" },
+    items: [{ id: "1", name: "First" }, { id: "2", name: "Second" }],
+    total: 7,
+    hidden: "x"
+  }));
+  process.exit(0);
+}
+if (mode === "schema-invalid") {
+  console.log(JSON.stringify({ ok: true, customer: { id: 42 }, items: "invalid" }));
+  process.exit(0);
+}
+if (mode === "readiness" && process.env.PROBE_READINESS_OK === "0") {
+  console.log(JSON.stringify({ ok: false, reason: "dependency unavailable" }));
+  process.exit(0);
+}
+console.log(JSON.stringify({ ok: true, mode, args }));
+`,
+    "utf8",
+  );
+  return path;
+}
+
+function runtimeProbeManifest(root: string): Record<string, unknown> {
+  const body = manifest("runtime-probe");
+  const operations = body.operations as Record<string, unknown>;
+  operations["runtime-probe.inspect"] = {
+    interface: "cli",
+    command: "bun ./operation-probe.mjs inspect {args}",
+    json: true,
+    mutating: true,
+    permission: "runtime-probe:write",
+    safety: {
+      idempotent: false,
+      dryRunSupported: true,
+      confirmationRequired: true,
+      liveExecution: true,
+      risk: "high",
+    },
+    reliability: { timeoutMs: 1000, maxAttempts: 1, baseDelayMs: 0 },
+    help: {
+      usage: "ravi runtime-probe inspect [--dry-run] [--yes]",
+      summary: "Inspect platform controls without performing a mutation.",
+      options: [{ flags: "--dry-run", description: "Preview only." }],
+    },
+  };
+  operations["runtime-probe.disabled"] = {
+    ...(operations["runtime-probe.inspect"] as Record<string, unknown>),
+    command: "bun ./operation-probe.mjs disabled {args}",
+    safety: {
+      idempotent: false,
+      dryRunSupported: true,
+      confirmationRequired: true,
+      liveExecution: false,
+      risk: "destructive",
+    },
+  };
+  operations["runtime-probe.retry"] = {
+    interface: "cli",
+    command: "bun ./operation-probe.mjs retry {args}",
+    json: true,
+    mutating: false,
+    safety: { idempotent: true, dryRunSupported: true, confirmationRequired: false, liveExecution: true },
+    reliability: { timeoutMs: 1000, maxAttempts: 3, baseDelayMs: 0 },
+  };
+  operations["runtime-probe.help-retry"] = {
+    interface: "cli",
+    command: "bun ./operation-probe.mjs retry {args}",
+    json: true,
+    mutating: false,
+    help: {
+      safety: { idempotent: true, dryRunSupported: true, confirmationRequired: false },
+    },
+    reliability: { timeoutMs: 1000, maxAttempts: 3, baseDelayMs: 0 },
+  };
+  operations["runtime-probe.nontransient"] = {
+    interface: "cli",
+    command: "bun ./operation-probe.mjs nontransient {args}",
+    json: true,
+    mutating: false,
+    safety: { idempotent: true, dryRunSupported: true, confirmationRequired: false, liveExecution: true },
+    reliability: { timeoutMs: 1000, maxAttempts: 3, baseDelayMs: 0 },
+  };
+  operations["runtime-probe.leaky-stderr"] = {
+    interface: "cli",
+    command: "bun ./operation-probe.mjs leaky-stderr {args}",
+    json: true,
+    mutating: false,
+    safety: { idempotent: true, dryRunSupported: true, confirmationRequired: false, liveExecution: true },
+    reliability: { timeoutMs: 1000, maxAttempts: 1, baseDelayMs: 0 },
+  };
+  operations["runtime-probe.leaky-failure"] = {
+    ...(operations["runtime-probe.leaky-stderr"] as Record<string, unknown>),
+    command: "bun ./operation-probe.mjs leaky-failure {args}",
+  };
+  operations["runtime-probe.unclassified"] = {
+    interface: "cli",
+    command: "bun ./operation-probe.mjs inspect {args}",
+    json: true,
+  };
+  operations["runtime-probe.timeout"] = {
+    interface: "cli",
+    command: "bun ./operation-probe.mjs timeout {args}",
+    json: true,
+    mutating: false,
+    safety: { idempotent: true, dryRunSupported: true, confirmationRequired: false, liveExecution: true },
+    reliability: { timeoutMs: 25, maxAttempts: 1 },
+  };
+  operations["runtime-probe.timeout-tree"] = {
+    ...(operations["runtime-probe.timeout"] as Record<string, unknown>),
+    command: "bun ./operation-probe.mjs timeout-tree {args}",
+  };
+  operations["runtime-probe.invalid"] = {
+    interface: "cli",
+    command: "bun ./operation-probe.mjs invalid-json {args}",
+    json: true,
+    mutating: false,
+    safety: { idempotent: true, dryRunSupported: true, confirmationRequired: false, liveExecution: true },
+  };
+  operations["runtime-probe.echo"] = {
+    interface: "cli",
+    command: "bun ./operation-probe.mjs echo {args}",
+    json: true,
+    mutating: false,
+    safety: { idempotent: true, dryRunSupported: true, confirmationRequired: false, liveExecution: true },
+    outputSchema: "schemas/echo.schema.json",
+    help: {
+      usage: "ravi runtime-probe echo [--fields <paths>]",
+      summary: "Return a structured probe payload.",
+      options: [{ flags: "--fields <paths>", description: "Select dotted fields." }],
+      sourceText: "x".repeat(10_000),
+      sections: [{ title: "INTERNAL", content: "x".repeat(10_000) }],
+    },
+  };
+  operations["runtime-probe.schema-invalid"] = {
+    ...(operations["runtime-probe.echo"] as Record<string, unknown>),
+    command: "bun ./operation-probe.mjs schema-invalid {args}",
+  };
+  operations["runtime-probe.args"] = {
+    interface: "cli",
+    command: "bun ./operation-probe.mjs inspect {args}",
+    json: true,
+    mutating: false,
+    safety: { idempotent: true, dryRunSupported: true, confirmationRequired: false, liveExecution: true },
+  };
+  operations["runtime-probe.help"] = {
+    interface: "cli",
+    command: "bun ./operation-probe.mjs inspect {args}",
+    json: true,
+    mutating: false,
+    safety: { idempotent: true, dryRunSupported: true, confirmationRequired: false, liveExecution: true },
+  };
+  body.health = {
+    checks: [
+      {
+        id: "manifest",
+        type: "builtin",
+        required: true,
+        sideEffectFree: true,
+        handler: "apps.manifest.check",
+      },
+      {
+        id: "probe",
+        type: "cli",
+        required: true,
+        sideEffectFree: true,
+        command: "bun ./operation-probe.mjs readiness {args}",
+        timeoutMs: 1000,
+      },
+    ],
+  };
+  writeOperationProbe(root);
+  const schemas = join(root, "src", "apps", "runtime-probe", "schemas");
+  mkdirSync(schemas, { recursive: true });
+  writeFileSync(
+    join(schemas, "echo.schema.json"),
+    JSON.stringify({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      additionalProperties: false,
+      required: ["ok", "customer", "items", "total", "hidden"],
+      properties: {
+        ok: { const: true },
+        customer: {
+          type: "object",
+          additionalProperties: false,
+          required: ["id", "name"],
+          properties: { id: { type: "string" }, name: { type: "string" } },
+        },
+        items: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["id", "name"],
+            properties: { id: { type: "string" }, name: { type: "string" } },
+          },
+        },
+        total: { type: "number" },
+        hidden: { type: "string" },
+      },
+    }),
+  );
+  return body;
+}
+
 async function captureJson(fn: () => Promise<unknown>): Promise<unknown> {
   const originalLog = console.log;
+  const originalWrite = process.stdout.write;
   const logs: string[] = [];
   console.log = (value?: unknown) => {
     if (typeof value === "string") logs.push(value);
   };
+  process.stdout.write = ((chunk: string | Uint8Array, ...args: unknown[]) => {
+    logs.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+    const callback = args.find((value) => typeof value === "function") as (() => void) | undefined;
+    callback?.();
+    return true;
+  }) as typeof process.stdout.write;
   try {
     await fn();
     return JSON.parse(logs.join("\n"));
   } finally {
     console.log = originalLog;
+    process.stdout.write = originalWrite;
   }
 }
 
@@ -309,6 +632,10 @@ describe("Ravi app router", () => {
       operation: "check",
       args: [],
       json: true,
+      confirmed: false,
+      dryRun: false,
+      fields: [],
+      virtualHelp: false,
     });
     expect(
       resolveAppAliasInvocation(["apps", "check", "--json"], {
@@ -320,6 +647,34 @@ describe("Ravi app router", () => {
         staticRootCommands: new Set(["apps"]),
       }),
     ).toBe(null);
+    expect(
+      resolveAppAliasInvocation(["khal-tasks", "list", "--", "--fields", "native"], {
+        staticRootCommands: new Set(["apps"]),
+      }),
+    ).toEqual({
+      appId: "khal-tasks",
+      operation: "list",
+      args: ["--", "--fields", "native"],
+      json: false,
+      confirmed: false,
+      dryRun: false,
+      fields: [],
+      virtualHelp: false,
+    });
+    expect(
+      resolveAppAliasInvocation(["khal-tasks", "list", "--help", "--json"], {
+        staticRootCommands: new Set(["apps"]),
+      }),
+    ).toEqual({
+      appId: "khal-tasks",
+      operation: "help",
+      args: ["list"],
+      json: true,
+      confirmed: false,
+      dryRun: false,
+      fields: [],
+      virtualHelp: true,
+    });
   });
 
   it("runs dynamic root aliases as JSON when an app id is discovered", async () => {
@@ -368,6 +723,442 @@ describe("Ravi app router", () => {
       result: { appRoot: appDir },
     });
     expect(realpathSync((result.result as { cwd: string }).cwd)).toBe(realpathSync(appDir));
+  });
+
+  it("fails closed before spawning a mutating operation without explicit confirmation", async () => {
+    const root = makeRepo();
+    const marker = join(root, "probe-marker.txt");
+    writeManifest(root, "runtime-probe", runtimeProbeManifest(root));
+
+    const result = await runAppOperation({
+      appId: "runtime-probe",
+      operation: "inspect",
+      json: true,
+      env: { ...process.env, PROBE_MARKER: marker },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      operationId: "runtime-probe.inspect",
+      mutating: true,
+      errorDetails: { code: "APP_CONFIRMATION_REQUIRED", retryable: false },
+    });
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it("blocks operations with an unknown mutation class before spawning", async () => {
+    const root = makeRepo();
+    const marker = join(root, "probe-marker.txt");
+    writeManifest(root, "runtime-probe", runtimeProbeManifest(root));
+
+    const result = await runAppOperation({
+      appId: "runtime-probe",
+      operation: "unclassified",
+      json: true,
+      env: { ...process.env, PROBE_MARKER: marker },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      mutating: false,
+      mutationClass: "unknown",
+      errorDetails: { code: "APP_MUTATION_CLASSIFICATION_REQUIRED", category: "safety" },
+    });
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it("forwards one dry-run flag and consumes the router confirmation flag", async () => {
+    const root = makeRepo();
+    writeManifest(root, "runtime-probe", runtimeProbeManifest(root));
+
+    const result = await runAppOperation({
+      appId: "runtime-probe",
+      operation: "inspect",
+      args: ["payload", "--yes", "--dry-run", "--dry-run"],
+      json: true,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      attempts: 1,
+      result: { ok: true, mode: "inspect", args: ["payload", "--dry-run"] },
+    });
+    expect(result.command).not.toContain("--yes");
+  });
+
+  it("blocks live execution disabled by the manifest even when confirmed", async () => {
+    const root = makeRepo();
+    const marker = join(root, "probe-marker.txt");
+    writeManifest(root, "runtime-probe", runtimeProbeManifest(root));
+
+    const result = await runAppOperation({
+      appId: "runtime-probe",
+      operation: "disabled",
+      confirmed: true,
+      json: true,
+      env: { ...process.env, PROBE_MARKER: marker },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      errorDetails: { code: "APP_LIVE_EXECUTION_DISABLED", retryable: false },
+    });
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it("retries only a declared idempotent read and preserves typed upstream errors", async () => {
+    const root = makeRepo();
+    const countPath = join(root, "probe-count.txt");
+    writeManifest(root, "runtime-probe", runtimeProbeManifest(root));
+
+    const result = await runAppOperation({
+      appId: "runtime-probe",
+      operation: "retry",
+      json: true,
+      env: { ...process.env, PROBE_COUNT: countPath },
+    });
+
+    expect(result).toMatchObject({ ok: true, attempts: 3, result: { ok: true, count: 3 } });
+    expect(readFileSync(countPath, "utf8")).toBe("3");
+  });
+
+  it("does not retry from help metadata or an unrecognized retryable child error", async () => {
+    const root = makeRepo();
+    writeManifest(root, "runtime-probe", runtimeProbeManifest(root));
+
+    for (const operation of ["help-retry", "nontransient"]) {
+      const countPath = join(root, `${operation}-count.txt`);
+      const result = await runAppOperation({
+        appId: "runtime-probe",
+        operation,
+        json: true,
+        env: { ...process.env, PROBE_COUNT: countPath },
+      });
+      expect(result).toMatchObject({ ok: false, attempts: 1 });
+      expect(readFileSync(countPath, "utf8")).toBe("1");
+    }
+  });
+
+  it("preserves the final transient error metadata after exhausting retries", async () => {
+    const root = makeRepo();
+    writeManifest(root, "runtime-probe", runtimeProbeManifest(root));
+    const countPath = join(root, "retry-exhausted-count.txt");
+
+    const result = await runAppOperation({
+      appId: "runtime-probe",
+      operation: "retry",
+      json: true,
+      env: { ...process.env, PROBE_COUNT: countPath, PROBE_FAIL_ATTEMPTS: "99" },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      attempts: 3,
+      errorDetails: {
+        code: "UPSTREAM_503",
+        retryable: true,
+        category: "adapter",
+        httpStatus: 503,
+        retryAfterMs: 0,
+        requestId: "req-3",
+      },
+    });
+    expect(readFileSync(countPath, "utf8")).toBe("3");
+  });
+
+  it("returns deterministic timeout and invalid JSON failures", async () => {
+    const root = makeRepo();
+    writeManifest(root, "runtime-probe", runtimeProbeManifest(root));
+
+    const timeout = await runAppOperation({
+      appId: "runtime-probe",
+      operation: "timeout",
+      json: true,
+    });
+    expect(timeout).toMatchObject({
+      ok: false,
+      attempts: 1,
+      timedOut: true,
+      errorDetails: { code: "APP_TIMEOUT", retryable: true },
+    });
+
+    const invalid = await runAppOperation({
+      appId: "runtime-probe",
+      operation: "invalid",
+      json: true,
+    });
+    expect(invalid).toMatchObject({
+      ok: false,
+      attempts: 1,
+      errorDetails: { code: "APP_INVALID_JSON", retryable: false },
+    });
+
+    const descendantMarker = join(root, "descendant-marker.txt");
+    const treeTimeout = await runAppOperation({
+      appId: "runtime-probe",
+      operation: "timeout-tree",
+      json: true,
+      env: { ...process.env, PROBE_DESCENDANT_MARKER: descendantMarker },
+    });
+    expect(treeTimeout).toMatchObject({
+      ok: false,
+      timedOut: true,
+      errorDetails: { code: "APP_TIMEOUT" },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(existsSync(descendantMarker)).toBe(false);
+  });
+
+  it("sanitizes child stderr before publishing public failure envelopes", async () => {
+    const root = makeRepo();
+    writeManifest(root, "runtime-probe", runtimeProbeManifest(root));
+
+    const result = await runAppOperation({
+      appId: "runtime-probe",
+      operation: "leaky-stderr",
+      json: true,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: "App operation failed.",
+      failure: {
+        version: "ravi.app.failure/v1",
+        code: "UPSTREAM_503",
+        category: "upstream",
+        message: "App operation failed.",
+        retryable: true,
+        details: { source: "app", httpStatus: 503, retryAfterSeconds: 0 },
+      },
+      errorDetails: {
+        code: "UPSTREAM_503",
+        message: "App operation failed.",
+        retryable: true,
+        httpStatus: 503,
+        retryAfterMs: 0,
+        requestId: "req-leaky",
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("token_secret_must_not_leak");
+    expect(JSON.stringify(result)).not.toContain("raw upstream body");
+    expect(JSON.stringify(result)).not.toContain("raw child error");
+  });
+
+  it("sanitizes child ravi.app.failure messages before republishing them", async () => {
+    const root = makeRepo();
+    writeManifest(root, "runtime-probe", runtimeProbeManifest(root));
+
+    const result = await runAppOperation({
+      appId: "runtime-probe",
+      operation: "leaky-failure",
+      json: true,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: "App operation failed.",
+      failure: {
+        version: "ravi.app.failure/v1",
+        code: "TINY_HTTP_RATE_LIMITED",
+        category: "rate_limit",
+        message: "App operation failed.",
+        retryable: true,
+        exitCode: 5,
+        details: { source: "tiny", httpStatus: 429, retryAfterSeconds: 2 },
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("token_secret_must_not_leak");
+    expect(JSON.stringify(result)).not.toContain("raw canonical failure");
+  });
+
+  it("projects dotted fields from structured app results", async () => {
+    const root = makeRepo();
+    writeManifest(root, "runtime-probe", runtimeProbeManifest(root));
+
+    const result = await runAppOperation({
+      appId: "runtime-probe",
+      operation: "echo",
+      fields: ["customer.id", "items[].id", "total"],
+      json: true,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      selectedFields: ["customer.id", "items[].id", "total"],
+      result: { customer: { id: "42" }, items: [{ id: "1" }, { id: "2" }], total: 7 },
+    });
+    expect((result.result as Record<string, unknown>).hidden).toBeUndefined();
+
+    const unprojected = await runAppOperation({
+      appId: "runtime-probe",
+      operation: "echo",
+      json: true,
+    });
+    expect(unprojected.selectedFields).toBeUndefined();
+    expect(unprojected.result).toMatchObject({
+      customer: { id: "42", name: "Alice" },
+      items: [
+        { id: "1", name: "First" },
+        { id: "2", name: "Second" },
+      ],
+      total: 7,
+      hidden: "x",
+    });
+  });
+
+  it("validates declared output schemas before publishing the router envelope", async () => {
+    const root = makeRepo();
+    writeManifest(root, "runtime-probe", runtimeProbeManifest(root));
+
+    const valid = await runAppOperation({ appId: "runtime-probe", operation: "echo", json: true });
+    expect(valid).toMatchObject({ schema: "ravi.app.operation-result/v1", ok: true });
+
+    const invalid = await runAppOperation({ appId: "runtime-probe", operation: "schema-invalid", json: true });
+    expect(invalid).toMatchObject({
+      schema: "ravi.app.operation-result/v1",
+      ok: false,
+      attempts: 1,
+      errorDetails: {
+        code: "APP_OUTPUT_SCHEMA_MISMATCH",
+        category: "adapter",
+        retryable: false,
+      },
+    });
+    expect(invalid.result).toBeUndefined();
+    expect(invalid.stdout).toBeUndefined();
+    expect(invalid.stderr).toBeUndefined();
+  });
+
+  it("forwards router-shaped flags after the passthrough marker", async () => {
+    const root = makeRepo();
+    writeManifest(root, "runtime-probe", runtimeProbeManifest(root));
+
+    const result = await runAppOperation({
+      appId: "runtime-probe",
+      operation: "args",
+      args: ["--", "--fields", "native", "--yes"],
+      json: true,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      result: { ok: true, mode: "inspect", args: ["--fields", "native", "--yes"] },
+    });
+    expect(result.selectedFields).toBeUndefined();
+  });
+
+  it("keeps check and help side-effect free and executes health only through readiness", async () => {
+    const root = makeRepo();
+    const marker = join(root, "probe-marker.txt");
+    writeManifest(root, "runtime-probe", runtimeProbeManifest(root));
+    const env = { ...process.env, PROBE_MARKER: marker };
+
+    const check = await runAppOperation({ appId: "runtime-probe", operation: "check", json: true, env });
+    expect(check.ok).toBe(true);
+    expect(existsSync(marker)).toBe(false);
+
+    const help = await runAppOperation({
+      appId: "runtime-probe",
+      operation: "help",
+      args: ["echo"],
+      json: true,
+      forceVirtualHelp: true,
+      env,
+    });
+    expect(help).toMatchObject({
+      ok: true,
+      handler: "apps.help",
+      result: {
+        operation: {
+          id: "runtime-probe.echo",
+          name: "echo",
+          help: {
+            usage: "ravi runtime-probe echo [--fields <paths>]",
+            summary: "Return a structured probe payload.",
+          },
+        },
+      },
+    });
+    const helpPayload = (help.result as { operation: { help: Record<string, unknown> } }).operation.help;
+    expect(helpPayload.sourceText).toBeUndefined();
+    expect(helpPayload.sections).toBeUndefined();
+    expect(existsSync(marker)).toBe(false);
+
+    const aliasHelp = (await captureJson(() =>
+      maybeRunAppAliasRoute(["runtime-probe", "echo", "--help", "--json"], {
+        staticRootCommands: new Set(["apps"]),
+        env,
+      }),
+    )) as { ok: boolean; handler: string; result: { operation: { id: string } } };
+    expect(aliasHelp).toMatchObject({
+      ok: true,
+      handler: "apps.help",
+      result: { operation: { id: "runtime-probe.echo" } },
+    });
+    expect(existsSync(marker)).toBe(false);
+
+    const readiness = await runAppOperation({
+      appId: "runtime-probe",
+      operation: "readiness",
+      args: ["--", "--tenant", "acme"],
+      json: true,
+      env,
+    });
+    expect(readiness).toMatchObject({
+      ok: true,
+      result: { ok: true, status: "ready", checked: 2 },
+    });
+    expect(readFileSync(marker, "utf8")).toContain("readiness --tenant acme");
+  });
+
+  it("distinguishes required, optional, and undeclared readiness states", async () => {
+    const root = makeRepo();
+    const marker = join(root, "probe-marker.txt");
+    const requiredBody = runtimeProbeManifest(root);
+    writeManifest(root, "runtime-probe", requiredBody);
+
+    const notReady = await runAppOperation({
+      appId: "runtime-probe",
+      operation: "readiness",
+      json: true,
+      env: { ...process.env, PROBE_MARKER: marker, PROBE_READINESS_OK: "0" },
+    });
+    expect(notReady).toMatchObject({
+      ok: false,
+      errorDetails: { code: "APP_NOT_READY", category: "readiness" },
+      result: { ok: false, status: "not_ready", checked: 2, executed: 2 },
+    });
+
+    const optionalBody = runtimeProbeManifest(root);
+    const optionalChecks = (optionalBody.health as { checks: Array<Record<string, unknown>> }).checks;
+    optionalChecks[1]!.required = false;
+    writeManifest(root, "runtime-probe", optionalBody);
+    const degraded = await runAppOperation({
+      appId: "runtime-probe",
+      operation: "readiness",
+      json: true,
+      env: { ...process.env, PROBE_READINESS_OK: "0" },
+    });
+    expect(degraded).toMatchObject({ ok: true, result: { ok: true, status: "degraded" } });
+
+    const legacyBody = runtimeProbeManifest(root);
+    const legacyChecks = (legacyBody.health as { checks: Array<Record<string, unknown>> }).checks;
+    delete legacyChecks[1]!.id;
+    delete legacyChecks[1]!.required;
+    delete legacyChecks[1]!.sideEffectFree;
+    writeManifest(root, "runtime-probe", legacyBody);
+    writeFileSync(marker, "");
+    const unknown = await runAppOperation({
+      appId: "runtime-probe",
+      operation: "readiness",
+      json: true,
+      env: { ...process.env, PROBE_MARKER: marker },
+    });
+    expect(unknown).toMatchObject({
+      ok: false,
+      result: { ok: false, status: "unknown", checked: 2, executed: 1 },
+    });
+    expect(readFileSync(marker, "utf8")).toBe("");
   });
 
   it("runs Ravi CLI app operations through the current installation", () => {
@@ -430,6 +1221,10 @@ describe("Ravi app router", () => {
       operation: "check",
       args: [],
       json: true,
+      confirmed: false,
+      dryRun: false,
+      fields: [],
+      virtualHelp: false,
     });
   });
 
@@ -499,6 +1294,7 @@ describe("Ravi app router", () => {
         appId: "khal-tasks",
         operation: "create",
         json: true,
+        confirmed: true,
       }),
     );
 
@@ -510,6 +1306,7 @@ describe("Ravi app router", () => {
         appId: "khal-tasks",
         operation: "create",
         json: true,
+        confirmed: true,
       }),
     );
 
@@ -720,7 +1517,7 @@ describe("Ravi app router", () => {
 
   it("fails closed on provider invalid JSON and timeout", async () => {
     const root = makeRepo();
-    writeManifest(root, "khal-tasks", providerManifest(root, "khal-tasks", { timeoutMs: 250 }));
+    writeManifest(root, "khal-tasks", providerManifest(root, "khal-tasks", { timeoutMs: 1000 }));
 
     const invalidJson = await runWithContext(appToolContext([appCapability("use")]), () =>
       runAppOperation({
@@ -736,6 +1533,7 @@ describe("Ravi app router", () => {
       reasonCode: "provider_invalid_json",
     });
 
+    writeManifest(root, "khal-tasks", providerManifest(root, "khal-tasks", { timeoutMs: 250 }));
     const timeout = await runWithContext(appToolContext([appCapability("use")]), () =>
       runAppOperation({
         appId: "khal-tasks",

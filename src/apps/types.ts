@@ -61,14 +61,45 @@ export interface RaviAppManifest {
   artifacts?: unknown;
   events?: unknown;
   skills?: unknown;
-  health?: unknown;
+  health?: RaviAppHealthDeclaration;
   versioning?: unknown;
   [key: string]: unknown;
+}
+
+export interface RaviAppHealthCheckDeclaration {
+  id: string;
+  type: "builtin" | "cli";
+  required: boolean;
+  sideEffectFree: true;
+  timeoutMs?: number;
+  handler?: string;
+  command?: string;
+}
+
+export interface RaviAppHealthDeclaration {
+  checks: RaviAppHealthCheckDeclaration[];
 }
 
 export type RaviAppOperationInterface = "builtin" | "cli" | "sdk" | "tool" | "stream";
 
 export type RaviAppOperationAuthorizationOwner = "actor" | "surface" | "executorAgent";
+
+export type RaviAppOperationRisk = "low" | "medium" | "high" | "destructive";
+
+export interface RaviAppOperationSafetyDeclaration {
+  idempotent: boolean;
+  dryRunSupported: boolean;
+  confirmationRequired: boolean;
+  hitlRequired?: boolean;
+  liveExecution?: boolean;
+  risk?: RaviAppOperationRisk;
+}
+
+export interface RaviAppOperationReliabilityDeclaration {
+  timeoutMs?: number;
+  maxAttempts?: number;
+  baseDelayMs?: number;
+}
 
 export interface RaviAppOperationAuthorizationDeclaration {
   resource?: {
@@ -99,6 +130,9 @@ export interface RaviAppOperationDeclaration {
   inputSchema?: unknown;
   outputSchema?: unknown;
   authorization?: RaviAppOperationAuthorizationDeclaration;
+  safety?: RaviAppOperationSafetyDeclaration;
+  reliability?: RaviAppOperationReliabilityDeclaration;
+  help?: unknown;
   json?: boolean;
   [key: string]: unknown;
 }
@@ -262,20 +296,112 @@ export interface RaviAppRunOptions extends RaviAppDiscoveryOptions {
   operation?: string;
   args?: string[];
   json?: boolean;
+  confirmed?: boolean;
+  dryRun?: boolean;
+  fields?: string[];
+  forceVirtualHelp?: boolean;
   staticRootCommands?: Set<string>;
 }
 
+export type RaviAppOperationErrorCode =
+  | "APP_OPERATION_FAILED"
+  | "APP_MANIFEST_INVALID"
+  | "APP_OPERATION_NOT_FOUND"
+  | "APP_MUTATION_CLASSIFICATION_REQUIRED"
+  | "APP_MUTATION_SAFETY_UNDECLARED"
+  | "APP_CONFIRMATION_REQUIRED"
+  | "APP_DRY_RUN_UNSUPPORTED"
+  | "APP_LIVE_EXECUTION_DISABLED"
+  | "APP_TIMEOUT"
+  | "APP_OUTPUT_TRUNCATED"
+  | "APP_INVALID_JSON"
+  | "APP_CHILD_EXIT"
+  | "APP_FIELDS_INVALID"
+  | "APP_READINESS_UNDECLARED"
+  | "APP_READINESS_INVALID_RESULT"
+  | "APP_PERMISSION_PROVIDER_DENIED"
+  | "APP_NOT_READY";
+
+export type RaviAppOperationErrorCategory =
+  | "input"
+  | "authorization"
+  | "safety"
+  | "timeout"
+  | "dependency"
+  | "adapter"
+  | "readiness"
+  | "internal";
+
+export const RAVI_APP_OPERATION_RESULT_SCHEMA = "ravi.app.operation-result/v1" as const;
+
+export type RaviAppFailureCategory =
+  | "validation"
+  | "authentication"
+  | "authorization"
+  | "rate_limit"
+  | "upstream"
+  | "protocol"
+  | "timeout"
+  | "execution"
+  | "not_found";
+
+export interface RaviAppFailureDetails {
+  source: "router" | "app" | "tiny";
+  httpStatus?: number;
+  retryAfterSeconds?: number;
+}
+
+export interface RaviAppFailure {
+  version: "ravi.app.failure/v1";
+  code: string;
+  category: RaviAppFailureCategory;
+  message: string;
+  retryable: boolean;
+  exitCode: number;
+  details?: RaviAppFailureDetails;
+}
+
+export interface RaviAppOperationErrorDetails {
+  code: RaviAppOperationErrorCode | string;
+  message: string;
+  retryable: boolean;
+  category?: RaviAppOperationErrorCategory;
+  httpStatus?: number;
+  vendorCode?: string;
+  retryAfterMs?: number;
+  requestId?: string;
+  details?: unknown;
+}
+
+export class RaviAppOperationError extends Error {
+  readonly details: RaviAppOperationErrorDetails;
+
+  constructor(details: RaviAppOperationErrorDetails) {
+    super(details.message);
+    this.name = "RaviAppOperationError";
+    this.details = details;
+  }
+}
+
 export interface RaviAppRunResult {
+  schema?: typeof RAVI_APP_OPERATION_RESULT_SCHEMA;
   ok: boolean;
   appId: string | null;
   operation: string | null;
   operationId: string | null;
   interface: RaviAppOperationInterface | null;
   mutating: boolean;
+  mutationClass?: "read" | "write" | "unknown";
   status: "completed" | "failed";
   durationMs: number;
+  attempts?: number;
+  timedOut?: boolean;
+  truncated?: boolean;
+  selectedFields?: string[];
   result?: unknown;
   error?: string;
+  failure?: RaviAppFailure;
+  errorDetails?: RaviAppOperationErrorDetails;
   command?: string;
   handler?: string;
   channel?: string;
@@ -290,6 +416,10 @@ export interface RaviAppAliasInvocation {
   operation?: string;
   args: string[];
   json: boolean;
+  confirmed: boolean;
+  dryRun: boolean;
+  fields: string[];
+  virtualHelp: boolean;
 }
 
 export type RaviAppPermissionDecision = "allow" | "deny" | "needs_grant" | "not_applicable";

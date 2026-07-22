@@ -1,0 +1,245 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tiny/write-plan-output",
+  "type": "object",
+  "properties": {
+    "ok": { "const": true },
+    "dryRun": { "const": true },
+    "executionEnabled": { "const": false },
+    "networkCalled": { "const": false },
+    "tenant": { "type": "string" },
+    "operation": {
+      "enum": [
+        "contato-incluir",
+        "contato-alterar",
+        "produto-incluir",
+        "produto-alterar",
+        "pedido-incluir",
+        "estoque-atualizar",
+        "nota-emitir",
+        "conta-receber-baixar",
+        "webhook-incluir",
+        "oc-criar"
+      ]
+    },
+    "apiVersion": { "enum": ["v2", "v3"] },
+    "method": { "const": "POST" },
+    "endpoint": { "type": "string", "format": "uri" },
+    "authentication": {
+      "type": "object",
+      "properties": {
+        "provider": { "const": "tiny" },
+        "connection": { "type": "string" },
+        "mode": { "enum": ["legacy-token-form", "oauth2-bearer"] },
+        "secretResolved": { "const": false }
+      },
+      "required": ["provider", "connection", "mode", "secretResolved"],
+      "additionalProperties": false
+    },
+    "permission": { "enum": ["tiny:write", "tiny:destructive"] },
+    "risk": { "enum": ["medium", "high", "destructive"] },
+    "hitlRequired": { "const": true },
+    "confirmationRequired": { "const": true },
+    "idempotent": { "const": false },
+    "input": {
+      "type": "object",
+      "properties": {
+        "schemaRef": { "type": "string", "pattern": "^schemas/.+\\.schema\\.json$" },
+        "validated": { "const": true },
+        "topLevelFields": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "valuesExposed": { "const": false }
+      },
+      "required": ["schemaRef", "validated", "topLevelFields", "sha256", "valuesExposed"],
+      "additionalProperties": false
+    },
+    "quota": {
+      "type": "object",
+      "properties": {
+        "policy": {
+          "type": "object",
+          "properties": {
+            "apiVersion": { "enum": ["v2", "v3"] },
+            "status": { "enum": ["published_plan_dependent", "unknown"] },
+            "scope": { "enum": ["account", "account_shared_across_applications"] },
+            "unit": { "const": "requests" },
+            "window": { "const": "minute" },
+            "publishedLimitPerMinute": { "type": "null" },
+            "publishedPlanLimitsPerMinute": {
+              "type": ["object", "null"],
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "total": { "type": "integer", "minimum": 0 },
+                  "write": { "type": ["integer", "null"], "minimum": 0 }
+                },
+                "required": ["total", "write"],
+                "additionalProperties": false
+              }
+            },
+            "batch": {
+              "anyOf": [
+                { "type": "null" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "callsPerMinute": { "const": 5 },
+                    "maxRecordsPerRequest": { "const": 20 },
+                    "maxRecordsPerResponse": { "const": 100 },
+                    "officialAlwaysBatchOperations": {
+                      "type": "array",
+                      "items": {
+                        "enum": [
+                          "contato-incluir",
+                          "contato-alterar",
+                          "produto-incluir",
+                          "produto-alterar",
+                          "grupo-tag-incluir",
+                          "grupo-tag-alterar",
+                          "tag-incluir",
+                          "tag-alterar"
+                        ]
+                      },
+                      "minItems": 8,
+                      "maxItems": 8,
+                      "uniqueItems": true
+                    },
+                    "migratedAlwaysBatchOperations": {
+                      "type": "array",
+                      "items": {
+                        "enum": ["contato-incluir", "contato-alterar", "produto-incluir", "produto-alterar"]
+                      },
+                      "minItems": 4,
+                      "maxItems": 4,
+                      "uniqueItems": true
+                    }
+                  },
+                  "required": [
+                    "callsPerMinute",
+                    "maxRecordsPerRequest",
+                    "maxRecordsPerResponse",
+                    "officialAlwaysBatchOperations",
+                    "migratedAlwaysBatchOperations"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "recommendedMaxConcurrencyFraction": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+            "observeHeaders": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+            "documentedQuotaError": { "type": ["string", "null"] },
+            "conservativePolicy": {
+              "type": "object",
+              "properties": {
+                "maxInFlight": { "const": 1 },
+                "minIntervalMs": { "const": 3000 },
+                "maxAttempts": { "const": 1 },
+                "retryAutomatically": { "const": false },
+                "respectRetryAfter": { "const": true },
+                "stopOnQuotaError": { "const": true }
+              },
+              "required": [
+                "maxInFlight",
+                "minIntervalMs",
+                "maxAttempts",
+                "retryAutomatically",
+                "respectRetryAfter",
+                "stopOnQuotaError"
+              ],
+              "additionalProperties": false
+            },
+            "officialDocs": { "type": "array", "items": { "type": "string", "format": "uri" }, "minItems": 1 },
+            "verifiedAt": { "const": "2026-07-14" },
+            "evidenceStatus": { "enum": ["established", "gap"] },
+            "unknownReason": { "type": ["string", "null"] },
+            "closureOwner": { "type": ["string", "null"] },
+            "liveGate": { "enum": ["documented", "no-go"] }
+          },
+          "required": [
+            "apiVersion",
+            "status",
+            "scope",
+            "unit",
+            "window",
+            "publishedLimitPerMinute",
+            "publishedPlanLimitsPerMinute",
+            "batch",
+            "recommendedMaxConcurrencyFraction",
+            "observeHeaders",
+            "documentedQuotaError",
+            "conservativePolicy",
+            "officialDocs",
+            "verifiedAt",
+            "evidenceStatus",
+            "unknownReason",
+            "closureOwner",
+            "liveGate"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": ["policy"],
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "officialDoc": {
+          "anyOf": [{ "type": "string", "format": "uri" }, { "type": "null" }]
+        },
+        "supportingOfficialDocs": {
+          "type": "array",
+          "items": { "type": "string", "format": "uri" },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "apiVersion": { "enum": ["v2", "v3"] },
+        "endpointEvidenceStatus": { "enum": ["established", "gap"] },
+        "confidence": { "enum": ["high", "low"] },
+        "owner": { "type": ["string", "null"] },
+        "liveGate": { "enum": ["documented", "no-go"] },
+        "legacyCommand": { "type": "string", "pattern": "^sde tiny " },
+        "legacyGap": { "type": ["string", "null"] },
+        "verifiedAt": { "const": "2026-07-14" }
+      },
+      "required": [
+        "officialDoc",
+        "supportingOfficialDocs",
+        "apiVersion",
+        "endpointEvidenceStatus",
+        "confidence",
+        "owner",
+        "liveGate",
+        "legacyCommand",
+        "legacyGap",
+        "verifiedAt"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "ok",
+    "dryRun",
+    "executionEnabled",
+    "networkCalled",
+    "tenant",
+    "operation",
+    "apiVersion",
+    "method",
+    "endpoint",
+    "authentication",
+    "permission",
+    "risk",
+    "hitlRequired",
+    "confirmationRequired",
+    "idempotent",
+    "input",
+    "quota",
+    "provenance"
+  ],
+  "additionalProperties": false
+}

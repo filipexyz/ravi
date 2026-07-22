@@ -3,7 +3,7 @@ import { serve } from "bun";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { deleteSecret, readSecret, redactSecretRef, writeSecret } from "./backends.js";
+import { deleteSecret, readSecret, redactSecretRef, replaceSecret, writeSecret } from "./backends.js";
 import { explainCredentialPolicy, publicCredentialConnection } from "./broker.js";
 import {
   closeCredentialsDb,
@@ -113,6 +113,12 @@ describe("credential broker", () => {
       token: "dummy-provider-secret",
     });
     expect(await readSecret(ref)).toBe("dummy-provider-secret");
+    await replaceSecret(ref, "rotated-provider-secret");
+    expect(await readSecret(ref)).toBe("rotated-provider-secret");
+    expect(vaultData.get("ravi/credentials/slack/rbbt")).toEqual({
+      marker: "keep",
+      token: "rotated-provider-secret",
+    });
     expect(await deleteSecret(ref)).toBe(true);
     expect(vaultData.get("ravi/credentials/slack/rbbt")).toEqual({ marker: "keep" });
   });

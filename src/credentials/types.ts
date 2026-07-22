@@ -46,6 +46,23 @@ export interface CredentialPolicyExplanation {
   };
 }
 
+export interface CredentialCallerContext {
+  contextId: string;
+  agentId?: string | null;
+  kind?: string | null;
+  capabilities: Array<{
+    permission: string;
+    objectType: string;
+    objectId: string;
+    source?: string;
+  }>;
+}
+
+export interface CredentialAuthorizationInput {
+  tenant?: string | null;
+  approvalStatus?: "approved" | "denied" | "not_requested" | null;
+}
+
 export interface CredentialAuditEventInput {
   provider: string;
   connection: string;

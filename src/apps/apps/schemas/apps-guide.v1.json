@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ravi/apps-guide/v1",
+  "type": "object",
+  "properties": {
+    "appId": { "type": ["string", "null"] },
+    "app": { "type": ["object", "null"] },
+    "skill": { "type": "string" },
+    "skillGate": { "type": "object" },
+    "prompts": { "type": "array", "items": { "type": "object" } },
+    "nextCommands": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["appId", "app", "skill", "skillGate", "prompts", "nextCommands"],
+  "additionalProperties": false
+}

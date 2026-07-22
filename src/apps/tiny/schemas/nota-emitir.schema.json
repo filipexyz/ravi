@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tiny/nota-emitir",
+  "type": "object",
+  "properties": {
+    "idNota": { "type": "string", "pattern": "^\\d+$" }
+  },
+  "required": ["idNota"],
+  "additionalProperties": false
+}

@@ -301,7 +301,11 @@ merely because a manifest was generated.
 - Tool operations MUST declare `name`.
 - Stream operations MUST declare `channel`.
 - Operations SHOULD declare `mutating` as a boolean.
+- Runtime execution MUST fail closed when `mutating` is absent, while discovery
+  MAY retain a compatibility warning for legacy manifests.
 - Mutating operations SHOULD declare `permission` or `permissions`.
+- Mutating operations MUST declare top-level `safety`; retry and confirmation
+  decisions MUST NOT be inferred from descriptive help metadata.
 - Operations SHOULD declare input and output schema references when the
   operation is consumed by UI or automation.
 - Operations MAY declare `authorization.resource` to describe the app-domain
@@ -386,6 +390,9 @@ merely because a manifest was generated.
 - Manifest validation MUST allow router-owned safe health commands such as
   `ravi <app-id> check --json`, and MUST fail health commands that recurse into
   mutating or non-health app operations.
+- Executable readiness checks MUST declare a stable `id`, boolean `required`
+  and `sideEffectFree=true`. Legacy health declarations remain discoverable but
+  MUST be skipped by readiness rather than executed implicitly.
 - Manifest validation MUST fail when builtin operations use handlers outside
   the router allowlist.
 - Manifest validation SHOULD warn on missing health checks, missing skill for

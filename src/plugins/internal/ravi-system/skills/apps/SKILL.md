@@ -23,6 +23,7 @@ nao concede permissao e discovery/check nao executam codigo do app.
 ravi apps list --json
 ravi apps show <app-id> --json
 ravi apps check [app-id] --json
+ravi apps readiness <app-id> --json
 ravi apps scaffold <app-id> --name "Nome" --description "Descricao" --json
 ravi apps scaffold <app-id> --dry-run --json
 ravi apps guide [app-id] --json
@@ -59,7 +60,17 @@ ravi apps show <app-id> --json
 ravi apps check <app-id> --json
 ```
 
-4. Leia estes campos antes de operar:
+4. Quando a operacao depende de servico externo, confira readiness:
+
+```bash
+ravi apps readiness <app-id> --json
+```
+
+`check` valida somente o manifesto. `readiness` executa apenas health checks
+declarados com `id`, `required` e `sideEffectFree=true`, e retorna `ready`,
+`degraded`, `not_ready` ou `unknown`.
+
+5. Leia estes campos antes de operar:
 
 - `manifest.interfaces`: superficies CLI, SDK, UI, stream e tool.
 - `manifest.operations`: acoes e snapshots que agentes/UI podem chamar.
@@ -69,11 +80,15 @@ ravi apps check <app-id> --json
 - `manifest.skills`: skills que ensinam agentes a operar o app.
 - `manifest.health`: checks seguros e nao destrutivos.
 
-5. Opere pelo alias do app:
+6. Opere pelo alias do app:
 
 ```bash
 ravi <app-id> <operation> --json
 ```
+
+Em operacoes de leitura, use `--fields campo,subobj.campo` para reduzir o
+payload quando o resultado for JSON estruturado. Use `--` antes de uma flag que
+precisa chegar ao CLI interno com o mesmo nome.
 
 ## Fluxo Para Criar Um App
 
@@ -111,6 +126,12 @@ ravi apps guide <app-id> --json
 - Operations com caminho pontuado podem ser chamadas em CLI como tokens separados quando declaradas. Exemplo: `app.test.a` pode ser invocado como `ravi app test a`.
 - Nao raspe stdout quando houver JSON.
 - Nao execute health checks durante discovery.
+- Nao trate `apps check` como prova de dependencia online; use `apps readiness`.
+- Operacao executavel sem classificacao `mutating` falha fechada.
+- Mutacoes exigem safety top-level e `--yes` ou `--dry-run` suportado; writes
+  nunca recebem retry automatico.
+- Retry de leitura requer safety top-level idempotente e se limita a timeout ou
+  HTTP 429/502/503/504, no maximo tres tentativas.
 - Nao use manifesto como grant de permissao.
 - Mutacoes precisam de permissao declarada e autorizacao runtime real. Se uma
   app bloquear por permissão recorrente, prefira `ravi permissions resolve

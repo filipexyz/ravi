@@ -1,0 +1,523 @@
+{
+  "schema": "ravi.app.read-oracle/v1",
+  "appId": "tiny",
+  "waveId": "read-wave-1",
+  "sanitized": true,
+  "provenance": {
+    "kind": "reviewed-offline-snapshot",
+    "source": "Tiny v2 public contracts plus synthetic sanitized fixtures cross-checked against a pinned SDE baseline",
+    "independentOf": ["sde", "ravi.app.json", "generate-manifest.ts"],
+    "reviewedAt": "2026-07-15"
+  },
+  "legacyBaseline": {
+    "schema": "ravi.app.sde-read-baseline/v1",
+    "path": "read-wave-1.sde-baseline.json",
+    "sha256": "77060104b89b5a9808c178645b93dec5e8a2f30c68775879cf1c082038da0aba"
+  },
+  "operations": {
+    "info": {
+      "command": "bun run ./cli.ts info {args} --json",
+      "arguments": [],
+      "options": ["--tenant <tenant>", "--dry-run"],
+      "endpoint": {
+        "method": "POST",
+        "baseUrl": "https://api.tiny.com.br/api2",
+        "path": "/info.php"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "tenant": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+          "dryRun": { "type": "boolean", "default": false }
+        },
+        "required": ["tenant"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "path": "schemas/read-output.schema.json",
+        "sha256": "9464ff0bb552a73428f0be3ed9282295ece8b9531830a191ac3f391341302614"
+      },
+      "parity": {
+        "version": "ravi-app-read-parity/v1",
+        "responseKind": "single",
+        "collectionKey": null,
+        "emptyState": "empty-success",
+        "pagination": "not-applicable",
+        "tenantIsolation": "explicit-tenant+broker-connection",
+        "errorPolicy": "redacted-code-only",
+        "cases": ["nominal", "empty", "error", "pagination", "tenant"]
+      },
+      "fixtures": {
+        "args": [],
+        "input": { "path": "/info.php", "params": {} },
+        "nominal": {
+          "upstream": {
+            "retorno": { "status": "OK", "status_processamento": "3", "conta": { "id": "fixture-account" } }
+          },
+          "expected": {
+            "retorno": { "status": "OK", "status_processamento": "3", "conta": { "id": "fixture-account" } }
+          }
+        },
+        "empty": {
+          "mode": "success",
+          "upstream": { "retorno": { "status": "OK", "status_processamento": "3" } },
+          "expected": { "retorno": { "status": "OK", "status_processamento": "3" } }
+        },
+        "error": {
+          "upstream": {
+            "retorno": {
+              "status": "Erro",
+              "status_processamento": "3",
+              "codigo_erro": 2,
+              "erros": [{ "erro": "sanitized-upstream-error" }]
+            }
+          },
+          "expectedCode": 2
+        },
+        "pagination": { "mode": "not-applicable" },
+        "tenant": { "first": ["tenant-a", "tenant-a-primary"], "second": ["tenant-b", "tenant-b-primary"] }
+      }
+    },
+    "contatos": {
+      "command": "bun run ./cli.ts contatos {args} --json",
+      "arguments": [],
+      "options": [
+        "--tenant <tenant>",
+        "--pesquisa <valor>",
+        "--cpf-cnpj <valor>",
+        "--situacao <valor>",
+        "--id-vendedor <valor>",
+        "--nome-vendedor <valor>",
+        "--data-criacao <valor>",
+        "--data-atualizacao <valor>",
+        "--pagina <valor>",
+        "--dry-run"
+      ],
+      "endpoint": {
+        "method": "POST",
+        "baseUrl": "https://api.tiny.com.br/api2",
+        "path": "/contatos.pesquisa.php"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "tenant": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+          "dryRun": { "type": "boolean", "default": false },
+          "pesquisa": { "type": "string" },
+          "cpfCnpj": { "type": "string" },
+          "situacao": { "type": "string" },
+          "idVendedor": { "type": "string" },
+          "nomeVendedor": { "type": "string" },
+          "dataCriacao": { "type": "string" },
+          "dataAtualizacao": { "type": "string" },
+          "pagina": { "type": "string" }
+        },
+        "required": ["tenant", "pesquisa"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "path": "schemas/read-output.schema.json",
+        "sha256": "9464ff0bb552a73428f0be3ed9282295ece8b9531830a191ac3f391341302614"
+      },
+      "parity": {
+        "version": "ravi-app-read-parity/v1",
+        "responseKind": "collection",
+        "collectionKey": "contatos",
+        "emptyState": "empty-collection",
+        "pagination": "pagina+numero_paginas",
+        "tenantIsolation": "explicit-tenant+broker-connection",
+        "errorPolicy": "redacted-code-only",
+        "cases": ["nominal", "empty", "error", "pagination", "tenant"]
+      },
+      "fixtures": {
+        "args": ["--pesquisa", "fixture"],
+        "input": { "path": "/contatos.pesquisa.php", "params": { "pagina": "1", "pesquisa": "fixture" } },
+        "nominal": {
+          "upstream": {
+            "retorno": {
+              "status": "OK",
+              "status_processamento": "3",
+              "pagina": 1,
+              "numero_paginas": 1,
+              "contatos": [{ "contato": { "id": "fixture-contact" } }]
+            }
+          },
+          "expected": {
+            "retorno": {
+              "status": "OK",
+              "status_processamento": "3",
+              "pagina": 1,
+              "numero_paginas": 1,
+              "contatos": [{ "contato": { "id": "fixture-contact" } }]
+            }
+          }
+        },
+        "empty": {
+          "mode": "collection",
+          "upstream": {
+            "retorno": {
+              "status": "Erro",
+              "status_processamento": "3",
+              "codigo_erro": 20,
+              "erros": [{ "erro": "sanitized-empty" }]
+            }
+          },
+          "expected": {
+            "retorno": { "status": "OK", "status_processamento": "3", "pagina": 1, "numero_paginas": 0, "contatos": [] }
+          }
+        },
+        "error": {
+          "upstream": {
+            "retorno": {
+              "status": "Erro",
+              "status_processamento": "3",
+              "codigo_erro": 2,
+              "erros": [{ "erro": "sanitized-upstream-error" }]
+            }
+          },
+          "expectedCode": 2
+        },
+        "pagination": {
+          "mode": "pagina+numero_paginas",
+          "args": ["--pesquisa", "fixture", "--pagina", "2"],
+          "upstream": {
+            "retorno": { "status": "OK", "status_processamento": "3", "pagina": 2, "numero_paginas": 3, "contatos": [] }
+          },
+          "expected": {
+            "retorno": { "status": "OK", "status_processamento": "3", "pagina": 2, "numero_paginas": 3, "contatos": [] }
+          }
+        },
+        "tenant": { "first": ["tenant-a", "tenant-a-primary"], "second": ["tenant-b", "tenant-b-primary"] }
+      }
+    },
+    "contato": {
+      "command": "bun run ./cli.ts contato {args} --json",
+      "arguments": ["id"],
+      "options": ["--tenant <tenant>", "--dry-run"],
+      "endpoint": {
+        "method": "POST",
+        "baseUrl": "https://api.tiny.com.br/api2",
+        "path": "/contato.obter.php"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "tenant": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+          "dryRun": { "type": "boolean", "default": false },
+          "id": { "type": "string", "pattern": "^\\d+$" }
+        },
+        "required": ["tenant", "id"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "path": "schemas/read-output.schema.json",
+        "sha256": "9464ff0bb552a73428f0be3ed9282295ece8b9531830a191ac3f391341302614"
+      },
+      "parity": {
+        "version": "ravi-app-read-parity/v1",
+        "responseKind": "single",
+        "collectionKey": null,
+        "emptyState": "not-found-error",
+        "pagination": "not-applicable",
+        "tenantIsolation": "explicit-tenant+broker-connection",
+        "errorPolicy": "redacted-code-only",
+        "cases": ["nominal", "empty", "error", "pagination", "tenant"]
+      },
+      "fixtures": {
+        "args": ["101"],
+        "input": { "path": "/contato.obter.php", "params": { "id": "101" } },
+        "nominal": {
+          "upstream": {
+            "retorno": { "status": "OK", "status_processamento": "3", "contato": { "id": "fixture-contact" } }
+          },
+          "expected": {
+            "retorno": { "status": "OK", "status_processamento": "3", "contato": { "id": "fixture-contact" } }
+          }
+        },
+        "empty": {
+          "mode": "error",
+          "upstream": {
+            "retorno": {
+              "status": "Erro",
+              "status_processamento": "3",
+              "codigo_erro": 20,
+              "erros": [{ "erro": "sanitized-empty" }]
+            }
+          },
+          "expectedCode": 20
+        },
+        "error": {
+          "upstream": {
+            "retorno": {
+              "status": "Erro",
+              "status_processamento": "3",
+              "codigo_erro": 2,
+              "erros": [{ "erro": "sanitized-upstream-error" }]
+            }
+          },
+          "expectedCode": 2
+        },
+        "pagination": { "mode": "not-applicable" },
+        "tenant": { "first": ["tenant-a", "tenant-a-primary"], "second": ["tenant-b", "tenant-b-primary"] }
+      }
+    },
+    "produtos": {
+      "command": "bun run ./cli.ts produtos {args} --json",
+      "arguments": [],
+      "options": [
+        "--tenant <tenant>",
+        "--pesquisa <valor>",
+        "--situacao <valor>",
+        "--gtin <valor>",
+        "--id-tag <valor>",
+        "--id-lista-preco <valor>",
+        "--data-criacao <valor>",
+        "--pagina <valor>",
+        "--dry-run"
+      ],
+      "endpoint": {
+        "method": "POST",
+        "baseUrl": "https://api.tiny.com.br/api2",
+        "path": "/produtos.pesquisa.php"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "tenant": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+          "dryRun": { "type": "boolean", "default": false },
+          "pesquisa": { "type": "string" },
+          "situacao": { "type": "string" },
+          "gtin": { "type": "string" },
+          "idTag": { "type": "string" },
+          "idListaPreco": { "type": "string" },
+          "dataCriacao": { "type": "string" },
+          "pagina": { "type": "string" }
+        },
+        "required": ["tenant", "pesquisa"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "path": "schemas/read-output.schema.json",
+        "sha256": "9464ff0bb552a73428f0be3ed9282295ece8b9531830a191ac3f391341302614"
+      },
+      "parity": {
+        "version": "ravi-app-read-parity/v1",
+        "responseKind": "collection",
+        "collectionKey": "produtos",
+        "emptyState": "empty-collection",
+        "pagination": "pagina+numero_paginas",
+        "tenantIsolation": "explicit-tenant+broker-connection",
+        "errorPolicy": "redacted-code-only",
+        "cases": ["nominal", "empty", "error", "pagination", "tenant"]
+      },
+      "fixtures": {
+        "args": ["--pesquisa", "fixture"],
+        "input": { "path": "/produtos.pesquisa.php", "params": { "pagina": "1", "pesquisa": "fixture" } },
+        "nominal": {
+          "upstream": {
+            "retorno": {
+              "status": "OK",
+              "status_processamento": "3",
+              "pagina": 1,
+              "numero_paginas": 1,
+              "produtos": [{ "produto": { "id": "fixture-product" } }]
+            }
+          },
+          "expected": {
+            "retorno": {
+              "status": "OK",
+              "status_processamento": "3",
+              "pagina": 1,
+              "numero_paginas": 1,
+              "produtos": [{ "produto": { "id": "fixture-product" } }]
+            }
+          }
+        },
+        "empty": {
+          "mode": "collection",
+          "upstream": {
+            "retorno": {
+              "status": "Erro",
+              "status_processamento": "3",
+              "codigo_erro": 20,
+              "erros": [{ "erro": "sanitized-empty" }]
+            }
+          },
+          "expected": {
+            "retorno": { "status": "OK", "status_processamento": "3", "pagina": 1, "numero_paginas": 0, "produtos": [] }
+          }
+        },
+        "error": {
+          "upstream": {
+            "retorno": {
+              "status": "Erro",
+              "status_processamento": "3",
+              "codigo_erro": 2,
+              "erros": [{ "erro": "sanitized-upstream-error" }]
+            }
+          },
+          "expectedCode": 2
+        },
+        "pagination": {
+          "mode": "pagina+numero_paginas",
+          "args": ["--pesquisa", "fixture", "--pagina", "2"],
+          "upstream": {
+            "retorno": { "status": "OK", "status_processamento": "3", "pagina": 2, "numero_paginas": 3, "produtos": [] }
+          },
+          "expected": {
+            "retorno": { "status": "OK", "status_processamento": "3", "pagina": 2, "numero_paginas": 3, "produtos": [] }
+          }
+        },
+        "tenant": { "first": ["tenant-a", "tenant-a-primary"], "second": ["tenant-b", "tenant-b-primary"] }
+      }
+    },
+    "produto": {
+      "command": "bun run ./cli.ts produto {args} --json",
+      "arguments": ["id"],
+      "options": ["--tenant <tenant>", "--dry-run"],
+      "endpoint": {
+        "method": "POST",
+        "baseUrl": "https://api.tiny.com.br/api2",
+        "path": "/produto.obter.php"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "tenant": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+          "dryRun": { "type": "boolean", "default": false },
+          "id": { "type": "string", "pattern": "^\\d+$" }
+        },
+        "required": ["tenant", "id"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "path": "schemas/read-output.schema.json",
+        "sha256": "9464ff0bb552a73428f0be3ed9282295ece8b9531830a191ac3f391341302614"
+      },
+      "parity": {
+        "version": "ravi-app-read-parity/v1",
+        "responseKind": "single",
+        "collectionKey": null,
+        "emptyState": "not-found-error",
+        "pagination": "not-applicable",
+        "tenantIsolation": "explicit-tenant+broker-connection",
+        "errorPolicy": "redacted-code-only",
+        "cases": ["nominal", "empty", "error", "pagination", "tenant"]
+      },
+      "fixtures": {
+        "args": ["202"],
+        "input": { "path": "/produto.obter.php", "params": { "id": "202" } },
+        "nominal": {
+          "upstream": {
+            "retorno": { "status": "OK", "status_processamento": "3", "produto": { "id": "fixture-product" } }
+          },
+          "expected": {
+            "retorno": { "status": "OK", "status_processamento": "3", "produto": { "id": "fixture-product" } }
+          }
+        },
+        "empty": {
+          "mode": "error",
+          "upstream": {
+            "retorno": {
+              "status": "Erro",
+              "status_processamento": "3",
+              "codigo_erro": 20,
+              "erros": [{ "erro": "sanitized-empty" }]
+            }
+          },
+          "expectedCode": 20
+        },
+        "error": {
+          "upstream": {
+            "retorno": {
+              "status": "Erro",
+              "status_processamento": "3",
+              "codigo_erro": 2,
+              "erros": [{ "erro": "sanitized-upstream-error" }]
+            }
+          },
+          "expectedCode": 2
+        },
+        "pagination": { "mode": "not-applicable" },
+        "tenant": { "first": ["tenant-a", "tenant-a-primary"], "second": ["tenant-b", "tenant-b-primary"] }
+      }
+    },
+    "estoque": {
+      "command": "bun run ./cli.ts estoque {args} --json",
+      "arguments": ["id"],
+      "options": ["--tenant <tenant>", "--dry-run"],
+      "endpoint": {
+        "method": "POST",
+        "baseUrl": "https://api.tiny.com.br/api2",
+        "path": "/produto.obter.estoque.php"
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "tenant": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+          "dryRun": { "type": "boolean", "default": false },
+          "id": { "type": "string", "pattern": "^\\d+$" }
+        },
+        "required": ["tenant", "id"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "path": "schemas/read-output.schema.json",
+        "sha256": "9464ff0bb552a73428f0be3ed9282295ece8b9531830a191ac3f391341302614"
+      },
+      "parity": {
+        "version": "ravi-app-read-parity/v1",
+        "responseKind": "single",
+        "collectionKey": null,
+        "emptyState": "not-found-error",
+        "pagination": "not-applicable",
+        "tenantIsolation": "explicit-tenant+broker-connection",
+        "errorPolicy": "redacted-code-only",
+        "cases": ["nominal", "empty", "error", "pagination", "tenant"]
+      },
+      "fixtures": {
+        "args": ["303"],
+        "input": { "path": "/produto.obter.estoque.php", "params": { "id": "303" } },
+        "nominal": {
+          "upstream": {
+            "retorno": { "status": "OK", "status_processamento": "3", "produto": { "id": "fixture-stock", "saldo": 1 } }
+          },
+          "expected": {
+            "retorno": { "status": "OK", "status_processamento": "3", "produto": { "id": "fixture-stock", "saldo": 1 } }
+          }
+        },
+        "empty": {
+          "mode": "error",
+          "upstream": {
+            "retorno": {
+              "status": "Erro",
+              "status_processamento": "3",
+              "codigo_erro": 20,
+              "erros": [{ "erro": "sanitized-empty" }]
+            }
+          },
+          "expectedCode": 20
+        },
+        "error": {
+          "upstream": {
+            "retorno": {
+              "status": "Erro",
+              "status_processamento": "3",
+              "codigo_erro": 2,
+              "erros": [{ "erro": "sanitized-upstream-error" }]
+            }
+          },
+          "expectedCode": 2
+        },
+        "pagination": { "mode": "not-applicable" },
+        "tenant": { "first": ["tenant-a", "tenant-a-primary"], "second": ["tenant-b", "tenant-b-primary"] }
+      }
+    }
+  }
+}

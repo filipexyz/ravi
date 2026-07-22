@@ -59,6 +59,8 @@ teaching skill.
 - Commands MUST return or print enough structured information for an agent to
   decide the next step without scraping prose.
 - Errors MUST explain what failed, why it failed, and how to correct it.
+  Machine errors SHOULD preserve a stable code, category, retryability and any
+  available HTTP status, vendor code, retry delay and request id.
 - A CLI App that runs inside Ravi runtime MUST receive `RAVI_CONTEXT_KEY` and
   resolve identity through `ravi context whoami`, `ravi context check`, or
   `ravi context authorize`.

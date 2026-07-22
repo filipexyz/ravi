@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tiny/produto-incluir",
+  "type": "object",
+  "properties": {
+    "produto": {
+      "type": "object",
+      "properties": {
+        "nome": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "unidade": { "type": "string", "minLength": 1, "maxLength": 3 },
+        "preco": { "type": "string", "pattern": "^\\d+(?:\\.\\d+)?$" },
+        "origem": { "type": "string", "minLength": 1, "maxLength": 1 },
+        "situacao": { "type": "string", "enum": ["A", "I"] },
+        "tipo": { "type": "string", "enum": ["P", "S"] }
+      },
+      "required": ["nome", "unidade", "preco", "origem", "situacao", "tipo"],
+      "additionalProperties": true
+    }
+  },
+  "required": ["produto"],
+  "additionalProperties": false
+}

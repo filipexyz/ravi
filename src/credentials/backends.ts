@@ -36,6 +36,22 @@ export async function readSecret(secretRef: string): Promise<string> {
   throw new Error(`Unsupported secret ref: ${redactSecretRef(secretRef)}`);
 }
 
+export async function replaceSecret(secretRef: string, secret: string): Promise<void> {
+  if (!secret) throw new Error("Secret replacement value is required.");
+  if (secretRef.startsWith("keychain:")) {
+    const { service, account } = parseKeychainRef(secretRef);
+    runSecurity(["add-generic-password", "-a", account, "-s", service, "-w", secret, "-U"]);
+    return;
+  }
+  if (secretRef.startsWith("vault:")) {
+    const parsed = parseVaultRef(secretRef);
+    const existing = (await readVaultData(parsed, { allowNotFound: true })) ?? {};
+    await writeVaultData(parsed, { ...existing, [parsed.key]: secret });
+    return;
+  }
+  throw new Error(`Unsupported secret ref: ${redactSecretRef(secretRef)}`);
+}
+
 export async function deleteSecret(secretRef: string): Promise<boolean> {
   if (secretRef.startsWith("keychain:")) return deleteKeychainSecret(secretRef);
   if (secretRef.startsWith("vault:")) return deleteVaultSecret(secretRef);

@@ -65,15 +65,23 @@ function makeRepo(): string {
 
 function captureJson(fn: () => unknown): unknown {
   const originalLog = console.log;
+  const originalWrite = process.stdout.write;
   const logs: string[] = [];
   console.log = (value?: unknown) => {
     if (typeof value === "string") logs.push(value);
   };
+  process.stdout.write = ((chunk: string | Uint8Array, ...args: unknown[]) => {
+    logs.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+    const callback = args.find((value) => typeof value === "function") as (() => void) | undefined;
+    callback?.();
+    return true;
+  }) as typeof process.stdout.write;
   try {
     fn();
     return JSON.parse(logs.join("\n"));
   } finally {
     console.log = originalLog;
+    process.stdout.write = originalWrite;
   }
 }
 
@@ -87,15 +95,23 @@ function contextWithCapabilities(capabilities: ContextCapability[]): ContextReco
 
 async function captureJsonAsync(fn: () => Promise<unknown>): Promise<unknown> {
   const originalLog = console.log;
+  const originalWrite = process.stdout.write;
   const logs: string[] = [];
   console.log = (value?: unknown) => {
     if (typeof value === "string") logs.push(value);
   };
+  process.stdout.write = ((chunk: string | Uint8Array, ...args: unknown[]) => {
+    logs.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+    const callback = args.find((value) => typeof value === "function") as (() => void) | undefined;
+    callback?.();
+    return true;
+  }) as typeof process.stdout.write;
   try {
     await fn();
     return JSON.parse(logs.join("\n"));
   } finally {
     console.log = originalLog;
+    process.stdout.write = originalWrite;
   }
 }
 
@@ -147,7 +163,7 @@ describe("AppsCommands", () => {
     expect(check.results[0]).toMatchObject({ id: "apps", ok: true });
   });
 
-  it("filters app discovery by app use permission in agent context", () => {
+  it("filters app discovery by app use permission in agent context", async () => {
     makeRepo();
     const commands = new AppsCommands();
 
@@ -160,9 +176,9 @@ describe("AppsCommands", () => {
     expect(hiddenList.total).toBe(0);
     expect(hiddenList.apps).toEqual([]);
 
-    expect(() =>
-      runWithContext({ agentId: "app-agent" }, () => captureJson(() => commands.show("apps", true))),
-    ).toThrow(/App not found: apps/);
+    await expect(runWithContext({ agentId: "app-agent" }, () => commands.show("apps", true))).rejects.toThrow(
+      /App not found: apps/,
+    );
 
     const appContext = contextWithCapabilities([
       { permission: "use", objectType: "app", objectId: "apps", source: "test" },

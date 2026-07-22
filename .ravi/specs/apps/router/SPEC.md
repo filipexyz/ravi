@@ -105,6 +105,24 @@ ravi apps run <app-id> [operation] [args...] --json
   class when available.
 - `--json` MUST produce machine-readable output for router success and failure
   states.
+- Every router result MUST identify `ravi.app.operation-result/v1`. Failures
+  MUST carry `ravi.app.failure/v1`, use its exit code, and exclude raw child
+  stdout/stderr from the public failure.
+- Executable operations MUST declare `mutating`; missing classification MUST
+  fail before child process launch.
+- Mutating operations MUST satisfy the top-level safety contract with a
+  supported `--dry-run` or explicit `--yes`, and writes MUST NOT retry.
+- CLI operations MUST have a bounded timeout. Automatic retry MUST be limited
+  to top-level idempotent reads and timeout or HTTP `429/502/503/504`, with no
+  more than three attempts.
+- `apps check` MUST remain declarative. `apps readiness` MAY execute only
+  explicit side-effect-free checks and MUST aggregate `ready`, `degraded`,
+  `not_ready` or `unknown`.
+- `apps check` MUST resolve and compile every declared `outputSchema` without
+  executing App code. Runtime validation applies to the canonical adapter
+  result before an optional `--fields` projection.
+- `--help` on a dynamic App route MUST always use router-owned help, even when
+  the manifest declares an operation named `<app>.help`.
 - Discovery and help/show/list operations MUST NOT execute app binaries, run
   health checks, import arbitrary code, or mutate storage.
 - Stream operations MUST NOT be faked as single-shot CLI output. The router
@@ -130,6 +148,8 @@ Argument handling:
 - Remaining args are operation-specific and MUST be passed only after the
   operation executor has been resolved and authorized.
 - Global CLI flags such as `--json` MUST retain their normal behavior.
+- Router-owned `--yes`, `--dry-run` and `--fields` MUST be consumed before
+  child execution. A `--` marker MUST preserve same-named flags for the child.
 
 ## Resolution Order
 

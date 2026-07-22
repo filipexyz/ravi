@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tiny/pedido-situacao",
+  "type": "object",
+  "properties": {
+    "idPedido": { "type": "string", "pattern": "^\\d+$" },
+    "situacao": {
+      "type": "string",
+      "enum": [
+        "aberto",
+        "aprovado",
+        "preparando_envio",
+        "faturado",
+        "pronto_envio",
+        "enviado",
+        "entregue",
+        "nao_entregue",
+        "cancelado"
+      ]
+    }
+  },
+  "required": ["idPedido", "situacao"],
+  "additionalProperties": false
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tiny/produto-alterar",
+  "type": "object",
+  "properties": {
+    "produto": {
+      "type": "object",
+      "properties": { "id": { "type": "string", "pattern": "^\\d+$" } },
+      "required": ["id"],
+      "additionalProperties": true
+    }
+  },
+  "required": ["produto"],
+  "additionalProperties": false
+}

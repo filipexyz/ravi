@@ -114,7 +114,16 @@
       "interface": "cli",
       "command": "ravi yt reply --json {args}",
       "mutating": true,
-      "permission": "youtube:comments:write"
+      "permission": "youtube:comments:write",
+      "safety": {
+        "idempotent": false,
+        "dryRunSupported": false,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": true,
+        "risk": "high"
+      },
+      "reliability": { "timeoutMs": 30000, "maxAttempts": 1 }
     },
     "youtube.playlists": {
       "interface": "cli",
@@ -198,37 +207,91 @@
       "interface": "cli",
       "command": "ravi yt video-update --json {args}",
       "mutating": true,
-      "permission": "youtube:videos:write"
+      "permission": "youtube:videos:write",
+      "safety": {
+        "idempotent": false,
+        "dryRunSupported": false,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": true,
+        "risk": "high"
+      },
+      "reliability": { "timeoutMs": 30000, "maxAttempts": 1 }
     },
     "youtube.video-delete": {
       "interface": "cli",
       "command": "ravi yt video-delete --json {args}",
       "mutating": true,
-      "permission": "youtube:videos:delete"
+      "permission": "youtube:videos:delete",
+      "safety": {
+        "idempotent": false,
+        "dryRunSupported": false,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": true,
+        "risk": "destructive"
+      },
+      "reliability": { "timeoutMs": 30000, "maxAttempts": 1 }
     },
     "youtube.playlist-create": {
       "interface": "cli",
       "command": "ravi yt playlist-create --json {args}",
       "mutating": true,
-      "permission": "youtube:playlists:write"
+      "permission": "youtube:playlists:write",
+      "safety": {
+        "idempotent": false,
+        "dryRunSupported": false,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": true,
+        "risk": "high"
+      },
+      "reliability": { "timeoutMs": 30000, "maxAttempts": 1 }
     },
     "youtube.playlist-delete": {
       "interface": "cli",
       "command": "ravi yt playlist-delete --json {args}",
       "mutating": true,
-      "permission": "youtube:playlists:delete"
+      "permission": "youtube:playlists:delete",
+      "safety": {
+        "idempotent": false,
+        "dryRunSupported": false,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": true,
+        "risk": "destructive"
+      },
+      "reliability": { "timeoutMs": 30000, "maxAttempts": 1 }
     },
     "youtube.playlist-add": {
       "interface": "cli",
       "command": "ravi yt playlist-add --json {args}",
       "mutating": true,
-      "permission": "youtube:playlists:write"
+      "permission": "youtube:playlists:write",
+      "safety": {
+        "idempotent": false,
+        "dryRunSupported": false,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": true,
+        "risk": "high"
+      },
+      "reliability": { "timeoutMs": 30000, "maxAttempts": 1 }
     },
     "youtube.playlist-remove": {
       "interface": "cli",
       "command": "ravi yt playlist-remove --json {args}",
       "mutating": true,
-      "permission": "youtube:playlists:delete"
+      "permission": "youtube:playlists:delete",
+      "safety": {
+        "idempotent": false,
+        "dryRunSupported": false,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": true,
+        "risk": "destructive"
+      },
+      "reliability": { "timeoutMs": 30000, "maxAttempts": 1 }
     }
   },
   "permissions": {
@@ -285,8 +348,19 @@
   "health": {
     "checks": [
       {
+        "id": "manifest",
         "type": "builtin",
+        "required": true,
+        "sideEffectFree": true,
         "handler": "apps.manifest.check"
+      },
+      {
+        "id": "provider",
+        "type": "cli",
+        "required": true,
+        "sideEffectFree": true,
+        "command": "ravi yt health --json",
+        "timeoutMs": 30000
       }
     ]
   },

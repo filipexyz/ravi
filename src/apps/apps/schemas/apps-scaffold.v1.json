@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ravi/apps-scaffold/v1",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string" },
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "command": { "type": "string" },
+    "dryRun": { "type": "boolean" },
+    "force": { "type": "boolean" },
+    "manifestPath": { "type": "string" },
+    "specPath": { "type": ["string", "null"] },
+    "skillPath": { "type": ["string", "null"] },
+    "skill": { "type": ["string", "null"] },
+    "files": { "type": "array", "items": { "type": "object" } },
+    "manifest": { "type": "object" },
+    "nextCommands": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": [
+    "id",
+    "name",
+    "description",
+    "command",
+    "dryRun",
+    "force",
+    "manifestPath",
+    "specPath",
+    "skillPath",
+    "skill",
+    "files",
+    "manifest",
+    "nextCommands"
+  ],
+  "additionalProperties": false
+}

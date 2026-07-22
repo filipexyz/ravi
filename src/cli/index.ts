@@ -251,10 +251,10 @@ async function bootstrapCli(): Promise<void> {
     staticRootCommands: rootCommandNames(program),
   });
   if (handledByAppAlias) {
-    process.exit(process.exitCode ?? 0);
+    return;
   }
 
-  program.parse();
+  await program.parseAsync();
 }
 
 function maybeSuggestKnownRootCommand(args: string[], command: Command): void {

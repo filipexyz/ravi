@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tiny/contato-incluir",
+  "type": "object",
+  "properties": {
+    "contato": {
+      "type": "object",
+      "properties": {
+        "nome": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "situacao": { "type": "string", "enum": ["A", "I", "S"] },
+        "tipo_pessoa": { "type": "string", "enum": ["F", "J", "E"] },
+        "cpf_cnpj": { "type": "string", "minLength": 1, "maxLength": 18 }
+      },
+      "required": ["nome", "situacao"],
+      "additionalProperties": true
+    }
+  },
+  "required": ["contato"],
+  "additionalProperties": false
+}

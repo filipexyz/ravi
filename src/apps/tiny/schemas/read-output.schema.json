@@ -1,0 +1,262 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tiny/read-output",
+  "title": "Tiny read wave 1 output",
+  "description": "Discriminated, fail-closed envelope for offline plans and successful Tiny v2 reads.",
+  "oneOf": [{ "$ref": "#/$defs/dryRunEnvelope" }, { "$ref": "#/$defs/liveEnvelope" }],
+  "$defs": {
+    "dryRunEnvelope": {
+      "type": "object",
+      "properties": {
+        "ok": { "const": true },
+        "dryRun": { "const": true },
+        "request": { "$ref": "#/$defs/requestPlan" }
+      },
+      "required": ["ok", "dryRun", "request"],
+      "additionalProperties": false
+    },
+    "liveEnvelope": {
+      "type": "object",
+      "properties": {
+        "ok": { "const": true },
+        "dryRun": { "const": false },
+        "tenant": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+        "data": { "$ref": "#/$defs/tinyData" },
+        "quota": { "$ref": "#/$defs/observedQuota" }
+      },
+      "required": ["ok", "dryRun", "tenant", "data", "quota"],
+      "additionalProperties": false
+    },
+    "requestPlan": {
+      "type": "object",
+      "properties": {
+        "dryRun": { "const": true },
+        "networkCalled": { "const": false },
+        "secretResolved": { "const": false },
+        "tenant": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+        "operation": { "enum": ["info", "contatos", "contato", "produtos", "produto", "estoque"] },
+        "apiVersion": { "const": "v2" },
+        "method": { "const": "POST" },
+        "endpointPath": { "type": "string", "pattern": "^/[a-z.]+\\.php$" },
+        "parameterNames": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "credentialSource": { "const": "broker" },
+        "credentialProvider": { "const": "tiny" },
+        "credentialConnection": { "type": "string", "minLength": 1 },
+        "credentialConfigured": { "type": "boolean" },
+        "mutating": { "const": false },
+        "quota": { "$ref": "#/$defs/quotaPolicy" },
+        "provenance": { "$ref": "#/$defs/provenance" }
+      },
+      "required": [
+        "dryRun",
+        "networkCalled",
+        "secretResolved",
+        "tenant",
+        "operation",
+        "apiVersion",
+        "method",
+        "endpointPath",
+        "parameterNames",
+        "credentialSource",
+        "credentialProvider",
+        "credentialConnection",
+        "credentialConfigured",
+        "mutating",
+        "quota",
+        "provenance"
+      ],
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "officialDoc": { "type": "string", "pattern": "^https://tiny\\.com\\.br/api-docs/api2-" },
+        "legacyCommand": { "type": "string", "pattern": "^sde tiny " },
+        "verifiedAt": { "const": "2026-07-14" }
+      },
+      "required": ["officialDoc", "legacyCommand", "verifiedAt"],
+      "additionalProperties": false
+    },
+    "tinyData": {
+      "type": "object",
+      "properties": {
+        "retorno": {
+          "type": "object",
+          "properties": {
+            "status": { "const": "OK" },
+            "status_processamento": { "type": "string", "minLength": 1 },
+            "pagina": { "type": "integer", "minimum": 1 },
+            "numero_paginas": { "type": "integer", "minimum": 0 },
+            "conta": { "type": "object" },
+            "contato": { "type": "object" },
+            "produto": { "type": "object" },
+            "contatos": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": { "contato": { "type": "object" } },
+                "required": ["contato"],
+                "additionalProperties": false
+              }
+            },
+            "produtos": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": { "produto": { "type": "object" } },
+                "required": ["produto"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": ["status", "status_processamento"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["retorno"],
+      "additionalProperties": false
+    },
+    "observedQuota": {
+      "type": "object",
+      "properties": {
+        "policy": { "$ref": "#/$defs/quotaPolicy" },
+        "observed": {
+          "type": "object",
+          "properties": {
+            "limitPerMinute": { "type": ["number", "null"], "minimum": 0 },
+            "retryAfterSeconds": { "type": ["number", "null"], "minimum": 0 }
+          },
+          "required": ["limitPerMinute", "retryAfterSeconds"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["policy", "observed"],
+      "additionalProperties": false
+    },
+    "quotaPolicy": {
+      "type": "object",
+      "properties": {
+        "apiVersion": { "const": "v2" },
+        "status": { "const": "published_plan_dependent" },
+        "scope": { "const": "account" },
+        "unit": { "const": "requests" },
+        "window": { "const": "minute" },
+        "publishedLimitPerMinute": { "type": "null" },
+        "publishedPlanLimitsPerMinute": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "total": { "type": "integer", "minimum": 0 },
+              "write": { "type": ["integer", "null"], "minimum": 0 }
+            },
+            "required": ["total", "write"],
+            "additionalProperties": false
+          }
+        },
+        "batch": {
+          "type": "object",
+          "properties": {
+            "callsPerMinute": { "const": 5 },
+            "maxRecordsPerRequest": { "const": 20 },
+            "maxRecordsPerResponse": { "const": 100 },
+            "officialAlwaysBatchOperations": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "contato-incluir",
+                  "contato-alterar",
+                  "produto-incluir",
+                  "produto-alterar",
+                  "grupo-tag-incluir",
+                  "grupo-tag-alterar",
+                  "tag-incluir",
+                  "tag-alterar"
+                ]
+              },
+              "minItems": 8,
+              "maxItems": 8,
+              "uniqueItems": true
+            },
+            "migratedAlwaysBatchOperations": {
+              "type": "array",
+              "items": {
+                "enum": ["contato-incluir", "contato-alterar", "produto-incluir", "produto-alterar"]
+              },
+              "minItems": 4,
+              "maxItems": 4,
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "callsPerMinute",
+            "maxRecordsPerRequest",
+            "maxRecordsPerResponse",
+            "officialAlwaysBatchOperations",
+            "migratedAlwaysBatchOperations"
+          ],
+          "additionalProperties": false
+        },
+        "recommendedMaxConcurrencyFraction": { "const": 0.25 },
+        "observeHeaders": {
+          "type": "array",
+          "items": { "const": "x-limit-api" },
+          "minItems": 1,
+          "maxItems": 1
+        },
+        "documentedQuotaError": { "type": "null" },
+        "conservativePolicy": {
+          "type": "object",
+          "properties": {
+            "maxInFlight": { "const": 1 },
+            "minIntervalMs": { "const": 3000 },
+            "maxAttempts": { "const": 1 },
+            "retryAutomatically": { "const": false },
+            "respectRetryAfter": { "const": true },
+            "stopOnQuotaError": { "const": true }
+          },
+          "required": [
+            "maxInFlight",
+            "minIntervalMs",
+            "maxAttempts",
+            "retryAutomatically",
+            "respectRetryAfter",
+            "stopOnQuotaError"
+          ],
+          "additionalProperties": false
+        },
+        "officialDocs": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^https://tiny\\.com\\.br/api-docs/" },
+          "minItems": 1
+        },
+        "verifiedAt": { "const": "2026-07-14" },
+        "evidenceStatus": { "const": "established" },
+        "unknownReason": { "type": "null" },
+        "closureOwner": { "type": "null" },
+        "liveGate": { "const": "documented" }
+      },
+      "required": [
+        "apiVersion",
+        "status",
+        "scope",
+        "unit",
+        "window",
+        "publishedLimitPerMinute",
+        "publishedPlanLimitsPerMinute",
+        "batch",
+        "recommendedMaxConcurrencyFraction",
+        "observeHeaders",
+        "documentedQuotaError",
+        "conservativePolicy",
+        "officialDocs",
+        "verifiedAt",
+        "evidenceStatus",
+        "unknownReason",
+        "closureOwner",
+        "liveGate"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

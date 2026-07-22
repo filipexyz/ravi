@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { checkAppManifests, discoverAppManifests, getAppManifest, isPackagedAppRuntime } from "./service.js";
 
 const tempRoots: string[] = [];
@@ -24,6 +24,12 @@ function writeManifest(root: string, id: string, body: Record<string, unknown>):
   const path = join(dir, "ravi.app.json");
   writeFileSync(path, JSON.stringify(body, null, 2));
   return path;
+}
+
+function writeSchema(root: string, id: string, reference: string, body: Record<string, unknown>): void {
+  const path = join(root, "src", "apps", ...id.split("/"), reference);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify(body, null, 2));
 }
 
 function validManifest(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -113,15 +119,59 @@ describe("Ravi app manifest service", () => {
     expect(app.path).toEndWith("src/apps/apps/ravi.app.json");
   });
 
-  it("reports duplicate app ids as hard conflicts", () => {
+  it("shadows legacy state copies when a repo app is authoritative without deleting state data", () => {
     const root = makeRepo();
     const stateDir = join(root, ".state");
     mkdirSync(join(stateDir, "apps", "apps-copy"), { recursive: true });
+    const stateManifestPath = join(stateDir, "apps", "apps-copy", "ravi.app.json");
     writeManifest(root, "apps", validManifest());
-    writeFileSync(join(stateDir, "apps", "apps-copy", "ravi.app.json"), JSON.stringify(validManifest(), null, 2));
+    writeFileSync(stateManifestPath, JSON.stringify(validManifest(), null, 2));
 
     const apps = discoverAppManifests({ env: { ...process.env, RAVI_STATE_DIR: stateDir } });
-    const duplicates = apps.filter((app) => app.id === "apps");
+    const records = apps.filter((app) => app.id === "apps");
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ source: "repo", valid: true });
+    expect(records[0]?.warnings.join("\n")).toContain("Ignored 1 legacy state copy/copies");
+    expect(existsSync(stateManifestPath)).toBe(true);
+
+    const stateOnly = discoverAppManifests({ source: "state", env: { ...process.env, RAVI_STATE_DIR: stateDir } });
+    expect(stateOnly.filter((app) => app.id === "apps")).toHaveLength(1);
+  });
+
+  it("shadows legacy state copies when an internal plugin app is authoritative without deleting state data", () => {
+    const root = makeRepo();
+    const stateDir = join(root, ".state");
+    const pluginAppDir = join(root, "src", "plugins", "internal", "ravi-system", "apps", "tiny");
+    const stateAppDir = join(stateDir, "apps", "tiny-copy");
+    mkdirSync(pluginAppDir, { recursive: true });
+    mkdirSync(stateAppDir, { recursive: true });
+    const manifest = validManifest({ id: "tiny", name: "Tiny" });
+    const stateManifestPath = join(stateAppDir, "ravi.app.json");
+    writeFileSync(join(pluginAppDir, "ravi.app.json"), JSON.stringify(manifest, null, 2));
+    writeFileSync(stateManifestPath, JSON.stringify(manifest, null, 2));
+
+    const apps = discoverAppManifests({
+      cwd: root,
+      env: { ...process.env, HOME: root, RAVI_STATE_DIR: stateDir },
+    });
+    const records = apps.filter((app) => app.id === "tiny");
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ source: "plugin", valid: true });
+    expect(records[0]?.warnings.join("\n")).toContain("Ignored 1 legacy state copy/copies");
+    expect(existsSync(stateManifestPath)).toBe(true);
+  });
+
+  it("reports duplicate unmanaged state app ids as hard conflicts", () => {
+    const root = makeRepo();
+    const stateDir = join(root, ".state");
+    mkdirSync(join(stateDir, "apps", "legacy-one"), { recursive: true });
+    mkdirSync(join(stateDir, "apps", "legacy-two"), { recursive: true });
+    const manifest = validManifest({ id: "legacy", name: "Legacy App" });
+    writeFileSync(join(stateDir, "apps", "legacy-one", "ravi.app.json"), JSON.stringify(manifest, null, 2));
+    writeFileSync(join(stateDir, "apps", "legacy-two", "ravi.app.json"), JSON.stringify(manifest, null, 2));
+
+    const apps = discoverAppManifests({ env: { ...process.env, RAVI_STATE_DIR: stateDir } });
+    const duplicates = apps.filter((app) => app.id === "legacy");
     expect(duplicates).toHaveLength(2);
     expect(duplicates.some((app) => app.errors.some((error) => error.includes("Duplicate app id")))).toBe(true);
   });
@@ -212,6 +262,7 @@ describe("Ravi app manifest service", () => {
 
   it("accepts semantic UI and operation declarations", () => {
     const root = makeRepo();
+    writeSchema(root, "apps", "schemas/apps-list.v1.json", { type: "object" });
     writeManifest(
       root,
       "apps",
@@ -274,9 +325,39 @@ describe("Ravi app manifest service", () => {
     expect(app.errors).toEqual([]);
   });
 
+  it("rejects unavailable and incompatible operation output schemas during manifest checks", () => {
+    const root = makeRepo();
+    const withSchema = validManifest({
+      operations: {
+        "apps.list": {
+          interface: "cli",
+          command: "ravi apps list --json",
+          mutating: false,
+          outputSchema: "schemas/apps-list.v1.json",
+        },
+      },
+    });
+    writeManifest(root, "apps", withSchema);
+
+    expect(getAppManifest("apps")).toMatchObject({
+      valid: false,
+      errors: [expect.stringContaining("outputSchema is unavailable or invalid")],
+    });
+
+    writeSchema(root, "apps", "schemas/apps-list.v1.json", { type: "not-a-json-schema-type" });
+    expect(getAppManifest("apps")).toMatchObject({
+      valid: false,
+      errors: [expect.stringContaining("outputSchema is unavailable or invalid")],
+    });
+
+    writeSchema(root, "apps", "schemas/apps-list.v1.json", { type: "object" });
+    expect(getAppManifest("apps").valid).toBe(true);
+  });
+
   it("accepts app permission provider metadata without executing the provider", () => {
     const root = makeRepo();
     const marker = join(root, "provider-ran");
+    writeSchema(root, "apps", "schemas/permission-decision.v1.json", { type: "object" });
     writeManifest(
       root,
       "apps",
@@ -521,6 +602,66 @@ describe("Ravi app manifest service", () => {
     expect(errors).toContain("operations.apps.check.authorization.resource.ownerFrom");
     expect(errors).toContain("operations.apps.check.authorization.input.includeArgs");
     expect(errors).toContain("operations.apps.check.authorization.input.includeOptions");
+  });
+
+  it("validates operation safety, bounded reliability, and executable readiness declarations", () => {
+    const root = makeRepo();
+    writeManifest(
+      root,
+      "runtime-contract",
+      validManifest({
+        id: "runtime-contract",
+        name: "Runtime Contract",
+        operations: {
+          "runtime-contract.write": {
+            interface: "cli",
+            command: "bun write.mjs --json",
+            mutating: true,
+            permission: "runtime-contract:write",
+            safety: {
+              idempotent: false,
+              dryRunSupported: true,
+              confirmationRequired: false,
+              liveExecution: "sometimes",
+              risk: "critical",
+            },
+            reliability: { timeoutMs: 120001, maxAttempts: 2, baseDelayMs: -1 },
+          },
+          "runtime-contract.read": {
+            interface: "cli",
+            command: "bun read.mjs --json",
+            mutating: false,
+            safety: {
+              idempotent: true,
+              dryRunSupported: true,
+              confirmationRequired: false,
+            },
+            reliability: { timeoutMs: 30000, maxAttempts: 3, baseDelayMs: 250 },
+          },
+        },
+        health: {
+          checks: [
+            { type: "builtin", handler: "apps.help" },
+            { type: "cli", command: "", timeoutMs: 0 },
+            { type: "http", url: "https://example.invalid" },
+          ],
+        },
+      }),
+    );
+
+    const app = getAppManifest("runtime-contract");
+    const errors = app.errors.join("\n");
+    expect(app.valid).toBe(false);
+    expect(errors).toContain("operations.runtime-contract.write.safety.confirmationRequired");
+    expect(errors).toContain("operations.runtime-contract.write.safety.liveExecution");
+    expect(errors).toContain("operations.runtime-contract.write.safety.risk");
+    expect(errors).toContain("operations.runtime-contract.write.reliability.timeoutMs");
+    expect(errors).toContain("operations.runtime-contract.write.reliability.maxAttempts must be 1");
+    expect(errors).toContain("operations.runtime-contract.write.reliability.baseDelayMs");
+    expect(errors).toContain("health.checks[0].handler");
+    expect(errors).toContain("health.checks[1].command");
+    expect(errors).toContain("health.checks[2].type");
+    expect(errors).not.toContain("operations.runtime-contract.read.reliability");
   });
 
   it("validates UI artifact references", () => {

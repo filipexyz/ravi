@@ -82,6 +82,8 @@
     "@opentui/react": "^0.1.81",
     "@strudel/web": "1.3.0",
     "agora-agent-server-sdk": "^1.3.2",
+    "ajv": "^8.18.0",
+    "ajv-formats": "^3.0.1",
     "commander": "^14.0.2",
     "croner": "^10.0.1",
     "ink": "^6.6.0",

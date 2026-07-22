@@ -692,24 +692,50 @@ export type AppsPromptsReturn = {
   };
 };
 
-/** Input shape for `apps.run`. */
-export type AppsRunInput = {
+/** Input shape for `apps.readiness`. */
+export type AppsReadinessInput = {
   args?: string[];
+  fields?: string;
   id: string;
-  operation?: string;
 };
 
-/** Return shape for `apps.run`. */
-export type AppsRunReturn = {
+/** Return shape for `apps.readiness`. */
+export type AppsReadinessReturn = {
   appId: string | null;
+  attempts?: number;
   channel?: string;
   command?: string;
   durationMs: number;
   error?: string;
+  errorDetails?: {
+    category?: "input" | "authorization" | "safety" | "timeout" | "dependency" | "adapter" | "readiness" | "internal";
+    code: string;
+    details?: unknown;
+    httpStatus?: number;
+    message: string;
+    requestId?: string;
+    retryAfterMs?: number;
+    retryable: boolean;
+    vendorCode?: string;
+  };
   exitCode?: number | null;
+  failure?: {
+    category: "validation" | "authentication" | "authorization" | "rate_limit" | "upstream" | "protocol" | "timeout" | "execution" | "not_found";
+    code: string;
+    details?: {
+      httpStatus?: number;
+      retryAfterSeconds?: number;
+      source: "router" | "app" | "tiny";
+    };
+    exitCode: number;
+    message: string;
+    retryable: boolean;
+    version: "ravi.app.failure/v1";
+  };
   handler?: string;
   interface: ("builtin" | "cli" | "sdk" | "tool" | "stream") | null;
   mutating: boolean;
+  mutationClass?: "read" | "write" | "unknown";
   ok: boolean;
   operation: string | null;
   operationId: string | null;
@@ -732,9 +758,91 @@ export type AppsRunReturn = {
     requestId: string;
   };
   result?: unknown;
+  schema: "ravi.app.operation-result/v1";
+  selectedFields?: string[];
   status: "completed" | "failed";
   stderr?: string;
   stdout?: string;
+  timedOut?: boolean;
+  truncated?: boolean;
+};
+
+/** Input shape for `apps.run`. */
+export type AppsRunInput = {
+  args?: string[];
+  dryRun?: boolean;
+  fields?: string;
+  id: string;
+  operation?: string;
+  yes?: boolean;
+};
+
+/** Return shape for `apps.run`. */
+export type AppsRunReturn = {
+  appId: string | null;
+  attempts?: number;
+  channel?: string;
+  command?: string;
+  durationMs: number;
+  error?: string;
+  errorDetails?: {
+    category?: "input" | "authorization" | "safety" | "timeout" | "dependency" | "adapter" | "readiness" | "internal";
+    code: string;
+    details?: unknown;
+    httpStatus?: number;
+    message: string;
+    requestId?: string;
+    retryAfterMs?: number;
+    retryable: boolean;
+    vendorCode?: string;
+  };
+  exitCode?: number | null;
+  failure?: {
+    category: "validation" | "authentication" | "authorization" | "rate_limit" | "upstream" | "protocol" | "timeout" | "execution" | "not_found";
+    code: string;
+    details?: {
+      httpStatus?: number;
+      retryAfterSeconds?: number;
+      source: "router" | "app" | "tiny";
+    };
+    exitCode: number;
+    message: string;
+    retryable: boolean;
+    version: "ravi.app.failure/v1";
+  };
+  handler?: string;
+  interface: ("builtin" | "cli" | "sdk" | "tool" | "stream") | null;
+  mutating: boolean;
+  mutationClass?: "read" | "write" | "unknown";
+  ok: boolean;
+  operation: string | null;
+  operationId: string | null;
+  permissionProvider?: {
+    audit?: unknown;
+    cache: {
+      hit: boolean;
+      ttlSec?: number;
+    };
+    decision: "allow" | "deny" | "needs_grant" | "not_applicable" | "error" | "invalid";
+    durationMs: number;
+    error?: string;
+    grantSuggestion?: unknown;
+    interface: "builtin" | "cli" | "sdk" | "tool";
+    providerId: string;
+    providerOperationId: string;
+    providerVersion: string;
+    reason?: string;
+    reasonCode: string | null;
+    requestId: string;
+  };
+  result?: unknown;
+  schema: "ravi.app.operation-result/v1";
+  selectedFields?: string[];
+  status: "completed" | "failed";
+  stderr?: string;
+  stdout?: string;
+  timedOut?: boolean;
+  truncated?: boolean;
 };
 
 /** Input shape for `apps.scaffold`. */

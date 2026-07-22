@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
+import { writeJsonToStdout } from "../stdout.js";
 import {
   buildAppsGuide,
   checkAppManifests,
@@ -20,10 +21,6 @@ import {
   filterVisibleAppManifests,
   type RaviAppManifestRecord,
 } from "../../apps/index.js";
-
-function printJson(payload: unknown): void {
-  console.log(JSON.stringify(payload, null, 2));
-}
 
 const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
   z.union([
@@ -200,16 +197,64 @@ const appsGuideReturnSchema = z.object({
 });
 
 const appsRunReturnSchema = z.object({
+  schema: z.literal("ravi.app.operation-result/v1"),
   ok: z.boolean(),
   appId: z.string().nullable(),
   operation: z.string().nullable(),
   operationId: z.string().nullable(),
   interface: z.enum(["builtin", "cli", "sdk", "tool", "stream"]).nullable(),
   mutating: z.boolean(),
+  mutationClass: z.enum(["read", "write", "unknown"]).optional(),
   status: z.enum(["completed", "failed"]),
   durationMs: z.number(),
+  attempts: z.number().optional(),
+  timedOut: z.boolean().optional(),
+  truncated: z.boolean().optional(),
+  selectedFields: z.array(z.string()).optional(),
   result: z.unknown().optional(),
   error: z.string().optional(),
+  failure: z
+    .object({
+      version: z.literal("ravi.app.failure/v1"),
+      code: z.string(),
+      category: z.enum([
+        "validation",
+        "authentication",
+        "authorization",
+        "rate_limit",
+        "upstream",
+        "protocol",
+        "timeout",
+        "execution",
+        "not_found",
+      ]),
+      message: z.string(),
+      retryable: z.boolean(),
+      exitCode: z.number().int().positive(),
+      details: z
+        .object({
+          source: z.enum(["router", "app", "tiny"]),
+          httpStatus: z.number().int().optional(),
+          retryAfterSeconds: z.number().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+  errorDetails: z
+    .object({
+      code: z.string(),
+      message: z.string(),
+      retryable: z.boolean(),
+      category: z
+        .enum(["input", "authorization", "safety", "timeout", "dependency", "adapter", "readiness", "internal"])
+        .optional(),
+      httpStatus: z.number().optional(),
+      vendorCode: z.string().optional(),
+      retryAfterMs: z.number().optional(),
+      requestId: z.string().optional(),
+      details: z.unknown().optional(),
+    })
+    .optional(),
   command: z.string().optional(),
   handler: z.string().optional(),
   channel: z.string().optional(),
@@ -306,7 +351,7 @@ export class AppsCommands {
   @Command({ name: "list", description: "List discovered Ravi apps" })
   @CommandAccess({ kind: "read", resource: "apps", action: "list", risk: "low" })
   @Returns(appsListReturnSchema)
-  list(
+  async list(
     @Option({ flags: "--source <source>", description: "Filter by source: repo|plugin|state" }) source?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
@@ -329,7 +374,7 @@ export class AppsCommands {
       const payload = { total: page.total, pagination, items: page.items, apps: page.items };
 
       if (asJson) {
-        printJson(payload);
+        await writeJsonToStdout(payload);
         return payload;
       }
 
@@ -354,7 +399,7 @@ export class AppsCommands {
   @Command({ name: "show", description: "Show a Ravi app manifest" })
   @CommandAccess({ kind: "read", resource: "apps", action: "show", risk: "low" })
   @Returns(appsShowReturnSchema)
-  show(
+  async show(
     @Arg("id", { description: "App id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
@@ -364,7 +409,7 @@ export class AppsCommands {
       const payload = { app };
 
       if (asJson) {
-        printJson(payload);
+        await writeJsonToStdout(payload);
         return payload;
       }
 
@@ -385,7 +430,7 @@ export class AppsCommands {
       return payload;
     } catch (error) {
       if (error instanceof RaviAppError && asJson) {
-        printJson(error.toJSON());
+        await writeJsonToStdout(error.toJSON());
         if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
         return;
       }
@@ -396,7 +441,7 @@ export class AppsCommands {
   @Command({ name: "check", description: "Validate Ravi app manifests without executing app code" })
   @CommandAccess({ kind: "read", resource: "apps", action: "check", risk: "low" })
   @Returns(appsCheckReturnSchema)
-  check(
+  async check(
     @Arg("id", { required: false, description: "Optional app id. Omit to check all discovered apps." }) id?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
@@ -410,7 +455,7 @@ export class AppsCommands {
       };
 
       if (asJson) {
-        printJson(payload);
+        await writeJsonToStdout(payload);
         if (!payload.ok && getContext()?.suppressCliOutput !== true) process.exitCode = 1;
         return payload;
       }
@@ -437,7 +482,7 @@ export class AppsCommands {
       return payload;
     } catch (error) {
       if (error instanceof RaviAppError && asJson) {
-        printJson(error.toJSON());
+        await writeJsonToStdout(error.toJSON());
         if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
         return;
       }
@@ -453,6 +498,10 @@ export class AppsCommands {
     @Arg("operation", { required: false, description: "Operation name. Defaults to app help." }) operation?: string,
     @Arg("args", { required: false, variadic: true, description: "Operation arguments" }) rest?: string[],
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--yes", description: "Explicitly confirm a live mutating operation" }) confirmed?: boolean,
+    @Option({ flags: "--dry-run", description: "Run the operation preview without live mutation" }) dryRun?: boolean,
+    @Option({ flags: "--fields <fields>", description: "Project comma-separated dotted result fields" })
+    fields?: string,
   ) {
     const wantsJson = asJson === true || getContext()?.suppressCliOutput === true;
     const result = await runAppOperation({
@@ -460,17 +509,52 @@ export class AppsCommands {
       operation,
       args: rest ?? [],
       json: wantsJson,
+      confirmed,
+      dryRun,
+      fields: splitFields(fields),
     });
 
-    printAppRunResult(result, { json: wantsJson });
-    if (!result.ok && getContext()?.suppressCliOutput !== true) process.exitCode = 1;
+    await printAppRunResult(result, { json: wantsJson });
+    if (!result.ok && getContext()?.suppressCliOutput !== true) {
+      process.exitCode = result.failure?.exitCode ?? result.exitCode ?? 1;
+    }
+    return result;
+  }
+
+  @Command({ name: "readiness", description: "Execute an app's declared safe readiness checks" })
+  @CommandAccess({ kind: "read", resource: "apps", action: "readiness", risk: "low" })
+  @Returns(appsRunReturnSchema)
+  async readiness(
+    @Arg("id", { description: "App id" }) id: string,
+    @Arg("args", {
+      required: false,
+      variadic: true,
+      description: "App-specific readiness arguments; place after -- when they start with --",
+    })
+    rest?: string[],
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <fields>", description: "Project comma-separated dotted result fields" })
+    fields?: string,
+  ) {
+    const wantsJson = asJson === true || getContext()?.suppressCliOutput === true;
+    const result = await runAppOperation({
+      appId: id,
+      operation: "readiness",
+      args: rest ?? [],
+      fields: splitFields(fields),
+      json: wantsJson,
+    });
+    await printAppRunResult(result, { json: wantsJson });
+    if (!result.ok && getContext()?.suppressCliOutput !== true) {
+      process.exitCode = result.failure?.exitCode ?? result.exitCode ?? 1;
+    }
     return result;
   }
 
   @Command({ name: "scaffold", description: "Create a Ravi app scaffold from the app contract" })
   @CommandAccess({ kind: "mutate", resource: "apps", action: "scaffold", risk: "medium" })
   @Returns(appsScaffoldReturnSchema)
-  scaffold(
+  async scaffold(
     @Arg("id", { description: "Stable app id, e.g. music or music/player" }) id: string,
     @Option({ flags: "--name <name>", description: "Human display name" }) name?: string,
     @Option({ flags: "--description <text>", description: "Short app description" }) description?: string,
@@ -497,7 +581,7 @@ export class AppsCommands {
       });
 
       if (asJson) {
-        printJson(payload);
+        await writeJsonToStdout(payload);
         return payload;
       }
 
@@ -510,7 +594,7 @@ export class AppsCommands {
       return payload;
     } catch (error) {
       if (error instanceof RaviAppError && asJson) {
-        printJson(error.toJSON());
+        await writeJsonToStdout(error.toJSON());
         if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
         return;
       }
@@ -521,7 +605,7 @@ export class AppsCommands {
   @Command({ name: "delete", description: "Delete scaffold-owned artifacts for a Ravi app" })
   @CommandAccess({ kind: "mutate", resource: "apps", action: "delete", risk: "high" })
   @Returns(appsDeleteReturnSchema)
-  delete(
+  async delete(
     @Arg("id", { description: "App id to delete" }) id: string,
     @Option({ flags: "--dry-run", description: "Print planned deletions without removing files" }) dryRun?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -530,7 +614,7 @@ export class AppsCommands {
       const payload = deleteApp({ id, dryRun });
 
       if (asJson) {
-        printJson(payload);
+        await writeJsonToStdout(payload);
         return payload;
       }
 
@@ -548,7 +632,7 @@ export class AppsCommands {
       return payload;
     } catch (error) {
       if (error instanceof RaviAppError && asJson) {
-        printJson(error.toJSON());
+        await writeJsonToStdout(error.toJSON());
         if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
         return;
       }
@@ -559,7 +643,7 @@ export class AppsCommands {
   @Command({ name: "import-cli", description: "Create a Ravi app draft from an existing CLI contract" })
   @CommandAccess({ kind: "mutate", resource: "apps", action: "import-cli", risk: "high" })
   @Returns(appsImportCliReturnSchema)
-  importCli(
+  async importCli(
     @Arg("command", { description: "CLI command to import, e.g. 'ravi apps' or 'my-cli'" }) command: string,
     @Option({ flags: "--id <id>", description: "Stable app id to generate" }) id?: string,
     @Option({ flags: "--name <name>", description: "Human display name" }) name?: string,
@@ -590,7 +674,7 @@ export class AppsCommands {
       });
 
       if (asJson) {
-        printJson(payload);
+        await writeJsonToStdout(payload);
         return payload;
       }
 
@@ -613,7 +697,7 @@ export class AppsCommands {
   @Command({ name: "guide", description: "Print agent guidance for discovering, scaffolding, and operating Ravi apps" })
   @CommandAccess({ kind: "read", resource: "apps", action: "guide", risk: "low" })
   @Returns(appsGuideReturnSchema)
-  guide(
+  async guide(
     @Arg("id", { required: false, description: "Optional app id for app-specific prompts" }) id?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
@@ -623,14 +707,14 @@ export class AppsCommands {
   @Command({ name: "prompts", description: "Print all built-in Ravi apps agent prompts" })
   @CommandAccess({ kind: "read", resource: "apps", action: "prompts", risk: "low" })
   @Returns(appsGuideReturnSchema)
-  prompts(
+  async prompts(
     @Arg("id", { required: false, description: "Optional app id for app-specific prompts" }) id?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     return this.printGuide(id, asJson);
   }
 
-  private printGuide(id?: string, asJson?: boolean): z.infer<typeof appsGuideReturnSchema> | undefined {
+  private async printGuide(id?: string, asJson?: boolean): Promise<z.infer<typeof appsGuideReturnSchema> | undefined> {
     try {
       const guide = buildAppsGuide(id);
       const payload = {
@@ -639,7 +723,7 @@ export class AppsCommands {
       };
 
       if (asJson) {
-        printJson(payload);
+        await writeJsonToStdout(payload);
         return payload;
       }
 
@@ -668,4 +752,13 @@ function normalizeImportSource(value?: string): "auto" | "manifest" | "registry"
     return normalized;
   }
   throw new Error(`Invalid import source: ${value}. Use auto|manifest|registry|help.`);
+}
+
+function splitFields(value?: string): string[] {
+  return value
+    ? value
+        .split(",")
+        .map((field) => field.trim())
+        .filter(Boolean)
+    : [];
 }

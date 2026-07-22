@@ -196,13 +196,13 @@ function buildScaffoldManifest(input: {
         interface: "builtin",
         handler: "apps.stub.list",
         mutating: false,
-        outputSchema: `schemas/${input.appSlug}-list.v1.json`,
+        outputSchema: scaffoldListOutputSchema(),
       },
       [`${input.operationPrefix}.check`]: {
         interface: "builtin",
         handler: "apps.manifest.check",
         mutating: false,
-        outputSchema: `schemas/${input.appSlug}-check.v1.json`,
+        outputSchema: buildScaffoldCheckOutputSchema(),
       },
     },
     permissions: {
@@ -230,7 +230,10 @@ function buildScaffoldManifest(input: {
     health: {
       checks: [
         {
+          id: "manifest",
           type: "builtin",
+          required: true,
+          sideEffectFree: true,
           handler: "apps.manifest.check",
         },
       ],
@@ -239,6 +242,35 @@ function buildScaffoldManifest(input: {
       compatibility: "semver",
       migrations: [],
     },
+  };
+}
+
+function scaffoldListOutputSchema(): Record<string, unknown> {
+  return {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    type: "object",
+    required: ["app", "total", "items", "message"],
+    properties: {
+      app: { type: "object" },
+      total: { type: "integer", minimum: 0 },
+      items: { type: "array" },
+      message: { type: "string" },
+    },
+    additionalProperties: false,
+  };
+}
+
+export function buildScaffoldCheckOutputSchema(): Record<string, unknown> {
+  return {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    type: "object",
+    required: ["ok", "checked", "results"],
+    properties: {
+      ok: { type: "boolean" },
+      checked: { type: "integer", minimum: 0 },
+      results: { type: "array" },
+    },
+    additionalProperties: false,
   };
 }
 

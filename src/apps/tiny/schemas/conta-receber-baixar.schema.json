@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tiny/conta-receber-baixar",
+  "type": "object",
+  "properties": {
+    "idConta": { "type": "string", "pattern": "^\\d+$" },
+    "data": { "type": "string", "pattern": "^\\d{2}/\\d{2}/\\d{4}$" },
+    "valorPago": { "type": "string", "pattern": "^\\d+(?:\\.\\d+)?$" },
+    "historico": { "type": "string", "maxLength": 300 }
+  },
+  "required": ["idConta", "data", "valorPago"],
+  "additionalProperties": false
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ravi/apps-list/v1",
+  "type": "object",
+  "properties": {
+    "total": { "type": "integer", "minimum": 0 },
+    "pagination": { "type": "object" },
+    "items": { "type": "array", "items": { "type": "object" } },
+    "apps": { "type": "array", "items": { "type": "object" } }
+  },
+  "required": ["total", "pagination", "items", "apps"],
+  "additionalProperties": false
+}

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tiny/pedido-incluir",
+  "type": "object",
+  "properties": {
+    "pedido": {
+      "type": "object",
+      "properties": {
+        "cliente": { "type": "object" },
+        "itens": { "type": "array", "minItems": 1, "items": { "type": "object" } },
+        "situacao": {
+          "type": "string",
+          "enum": [
+            "aberto",
+            "aprovado",
+            "preparando_envio",
+            "faturado",
+            "pronto_envio",
+            "enviado",
+            "entregue",
+            "nao_entregue",
+            "cancelado"
+          ]
+        }
+      },
+      "required": ["cliente", "itens"],
+      "additionalProperties": true
+    }
+  },
+  "required": ["pedido"],
+  "additionalProperties": false
+}

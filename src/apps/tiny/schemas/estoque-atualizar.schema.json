@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tiny/estoque-atualizar",
+  "type": "object",
+  "properties": {
+    "idProduto": { "type": "string", "pattern": "^\\d+$" },
+    "quantidade": { "type": "string", "pattern": "^\\d+(?:\\.\\d+)?$" },
+    "tipo": { "type": "string", "enum": ["B", "E", "S"] },
+    "observacoes": { "type": "string", "maxLength": 100 }
+  },
+  "required": ["idProduto", "quantidade", "tipo"],
+  "additionalProperties": false
+}

@@ -3597,23 +3597,23 @@ export const AppsPromptsReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `apps.run`. */
-export const AppsRunInputSchema = {
+/** JSON Schema for the input body of `apps.readiness`. */
+export const AppsReadinessInputSchema = {
   "additionalProperties": false,
   "properties": {
     "args": {
-      "description": "Operation arguments",
+      "description": "App-specific readiness arguments; place after -- when they start with --",
       "items": {
         "type": "string"
       },
       "type": "array"
     },
-    "id": {
-      "description": "App id",
+    "fields": {
+      "description": "Project comma-separated dotted result fields",
       "type": "string"
     },
-    "operation": {
-      "description": "Operation name. Defaults to app help.",
+    "id": {
+      "description": "App id",
       "type": "string"
     }
   },
@@ -3623,8 +3623,8 @@ export const AppsRunInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `apps.run`. */
-export const AppsRunReturnSchema = {
+/** JSON Schema for the return shape of `apps.readiness`. */
+export const AppsReadinessReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -3670,6 +3670,9 @@ export const AppsRunReturnSchema = {
         }
       ]
     },
+    "attempts": {
+      "type": "number"
+    },
     "channel": {
       "type": "string"
     },
@@ -3682,6 +3685,52 @@ export const AppsRunReturnSchema = {
     "error": {
       "type": "string"
     },
+    "errorDetails": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "enum": [
+            "input",
+            "authorization",
+            "safety",
+            "timeout",
+            "dependency",
+            "adapter",
+            "readiness",
+            "internal"
+          ],
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "details": {},
+        "httpStatus": {
+          "type": "number"
+        },
+        "message": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "retryAfterMs": {
+          "type": "number"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "vendorCode": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryable"
+      ],
+      "type": "object"
+    },
     "exitCode": {
       "anyOf": [
         {
@@ -3691,6 +3740,77 @@ export const AppsRunReturnSchema = {
           "type": "null"
         }
       ]
+    },
+    "failure": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "enum": [
+            "validation",
+            "authentication",
+            "authorization",
+            "rate_limit",
+            "upstream",
+            "protocol",
+            "timeout",
+            "execution",
+            "not_found"
+          ],
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": false,
+          "properties": {
+            "httpStatus": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "retryAfterSeconds": {
+              "type": "number"
+            },
+            "source": {
+              "enum": [
+                "router",
+                "app",
+                "tiny"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "type": "object"
+        },
+        "exitCode": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "version": {
+          "const": "ravi.app.failure/v1",
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "code",
+        "category",
+        "message",
+        "retryable",
+        "exitCode"
+      ],
+      "type": "object"
     },
     "handler": {
       "type": "string"
@@ -3714,6 +3834,14 @@ export const AppsRunReturnSchema = {
     },
     "mutating": {
       "type": "boolean"
+    },
+    "mutationClass": {
+      "enum": [
+        "read",
+        "write",
+        "unknown"
+      ],
+      "type": "string"
     },
     "ok": {
       "type": "boolean"
@@ -3828,6 +3956,16 @@ export const AppsRunReturnSchema = {
       "type": "object"
     },
     "result": {},
+    "schema": {
+      "const": "ravi.app.operation-result/v1",
+      "type": "string"
+    },
+    "selectedFields": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "status": {
       "enum": [
         "completed",
@@ -3840,9 +3978,431 @@ export const AppsRunReturnSchema = {
     },
     "stdout": {
       "type": "string"
+    },
+    "timedOut": {
+      "type": "boolean"
+    },
+    "truncated": {
+      "type": "boolean"
     }
   },
   "required": [
+    "schema",
+    "ok",
+    "appId",
+    "operation",
+    "operationId",
+    "interface",
+    "mutating",
+    "status",
+    "durationMs"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `apps.run`. */
+export const AppsRunInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "args": {
+      "description": "Operation arguments",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "dryRun": {
+      "description": "Run the operation preview without live mutation",
+      "type": "boolean"
+    },
+    "fields": {
+      "description": "Project comma-separated dotted result fields",
+      "type": "string"
+    },
+    "id": {
+      "description": "App id",
+      "type": "string"
+    },
+    "operation": {
+      "description": "Operation name. Defaults to app help.",
+      "type": "string"
+    },
+    "yes": {
+      "description": "Explicitly confirm a live mutating operation",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.run`. */
+export const AppsRunReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "appId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "attempts": {
+      "type": "number"
+    },
+    "channel": {
+      "type": "string"
+    },
+    "command": {
+      "type": "string"
+    },
+    "durationMs": {
+      "type": "number"
+    },
+    "error": {
+      "type": "string"
+    },
+    "errorDetails": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "enum": [
+            "input",
+            "authorization",
+            "safety",
+            "timeout",
+            "dependency",
+            "adapter",
+            "readiness",
+            "internal"
+          ],
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "details": {},
+        "httpStatus": {
+          "type": "number"
+        },
+        "message": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "retryAfterMs": {
+          "type": "number"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "vendorCode": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryable"
+      ],
+      "type": "object"
+    },
+    "exitCode": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "failure": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "enum": [
+            "validation",
+            "authentication",
+            "authorization",
+            "rate_limit",
+            "upstream",
+            "protocol",
+            "timeout",
+            "execution",
+            "not_found"
+          ],
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": false,
+          "properties": {
+            "httpStatus": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "retryAfterSeconds": {
+              "type": "number"
+            },
+            "source": {
+              "enum": [
+                "router",
+                "app",
+                "tiny"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "type": "object"
+        },
+        "exitCode": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "version": {
+          "const": "ravi.app.failure/v1",
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "code",
+        "category",
+        "message",
+        "retryable",
+        "exitCode"
+      ],
+      "type": "object"
+    },
+    "handler": {
+      "type": "string"
+    },
+    "interface": {
+      "anyOf": [
+        {
+          "enum": [
+            "builtin",
+            "cli",
+            "sdk",
+            "tool",
+            "stream"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "mutating": {
+      "type": "boolean"
+    },
+    "mutationClass": {
+      "enum": [
+        "read",
+        "write",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "operation": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "operationId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "permissionProvider": {
+      "additionalProperties": false,
+      "properties": {
+        "audit": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "cache": {
+          "additionalProperties": false,
+          "properties": {
+            "hit": {
+              "type": "boolean"
+            },
+            "ttlSec": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "hit"
+          ],
+          "type": "object"
+        },
+        "decision": {
+          "enum": [
+            "allow",
+            "deny",
+            "needs_grant",
+            "not_applicable",
+            "error",
+            "invalid"
+          ],
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "number"
+        },
+        "error": {
+          "type": "string"
+        },
+        "grantSuggestion": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "interface": {
+          "enum": [
+            "builtin",
+            "cli",
+            "sdk",
+            "tool"
+          ],
+          "type": "string"
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "providerOperationId": {
+          "type": "string"
+        },
+        "providerVersion": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "reasonCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requestId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId",
+        "providerVersion",
+        "providerOperationId",
+        "interface",
+        "requestId",
+        "decision",
+        "reasonCode",
+        "durationMs",
+        "cache"
+      ],
+      "type": "object"
+    },
+    "result": {},
+    "schema": {
+      "const": "ravi.app.operation-result/v1",
+      "type": "string"
+    },
+    "selectedFields": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "status": {
+      "enum": [
+        "completed",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "stderr": {
+      "type": "string"
+    },
+    "stdout": {
+      "type": "string"
+    },
+    "timedOut": {
+      "type": "boolean"
+    },
+    "truncated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema",
     "ok",
     "appId",
     "operation",

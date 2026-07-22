@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tiny/conta-receber-estornar",
+  "type": "object",
+  "properties": { "idConta": { "type": "string", "pattern": "^\\d+$" } },
+  "required": ["idConta"],
+  "additionalProperties": false
+}

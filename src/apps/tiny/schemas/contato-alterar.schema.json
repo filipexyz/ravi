@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tiny/contato-alterar",
+  "type": "object",
+  "properties": {
+    "contato": {
+      "type": "object",
+      "properties": { "id": { "type": "string", "pattern": "^\\d+$" } },
+      "required": ["id"],
+      "additionalProperties": true
+    }
+  },
+  "required": ["contato"],
+  "additionalProperties": false
+}

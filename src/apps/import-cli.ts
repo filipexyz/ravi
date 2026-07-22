@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { basename } from "node:path";
 import { getRegistry, type CommandRegistryEntry } from "../cli/registry-snapshot.js";
 import { normalizeAppId, RAVI_APP_MANIFEST_SCHEMA } from "./service.js";
-import { scaffoldApp } from "./scaffold.js";
+import { buildScaffoldCheckOutputSchema, scaffoldApp } from "./scaffold.js";
 import type {
   RaviAppImportCliConfidence,
   RaviAppImportCliOperationCandidate,
@@ -355,7 +355,7 @@ function buildImportedManifest(input: {
       interface: "builtin",
       handler: "apps.manifest.check",
       mutating: false,
-      outputSchema: `schemas/${input.appSlug}-check.v1.json`,
+      outputSchema: buildScaffoldCheckOutputSchema(),
     },
   };
   const mutatingPermissions = new Set<string>();
@@ -366,6 +366,22 @@ function buildImportedManifest(input: {
       command: candidate.command,
       mutating: candidate.mutating,
       json: candidate.json,
+      safety: candidate.mutating
+        ? {
+            idempotent: false,
+            dryRunSupported: false,
+            confirmationRequired: true,
+            liveExecution: false,
+            risk: candidate.destructive ? "destructive" : "high",
+          }
+        : {
+            idempotent: false,
+            dryRunSupported: false,
+            confirmationRequired: false,
+            liveExecution: true,
+            risk: "low",
+          },
+      reliability: { timeoutMs: 30_000, maxAttempts: 1 },
     };
     if (candidate.description) operation.description = candidate.description;
     if (candidate.mutating) {
@@ -444,7 +460,15 @@ function buildImportedManifest(input: {
     },
     skills: input.skill ? [input.skill] : [],
     health: {
-      checks: [{ type: "builtin", handler: "apps.manifest.check" }],
+      checks: [
+        {
+          id: "manifest",
+          type: "builtin",
+          required: true,
+          sideEffectFree: true,
+          handler: "apps.manifest.check",
+        },
+      ],
     },
     versioning: {
       compatibility: "semver",
