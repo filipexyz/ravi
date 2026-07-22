@@ -4,6 +4,7 @@ import {
   CHANNEL_RUNNER_HEALTH_SCHEMA_VERSION,
   channelRunnerHealthSubject,
   createChannelRunnerHealthSnapshot,
+  isChannelRunnerHealthSnapshot,
   probeChannelRunnerHealth,
   startChannelRunnerHealthResponder,
   type ChannelRunnerHealthMessage,
@@ -86,6 +87,51 @@ describe("channel runner health contract", () => {
     });
     status.adapters[0]!.status = "failed";
     expect(snapshot.adapters[0]?.status).toBe("connected");
+  });
+
+  it("validates outbound consumer and publish outbox telemetry", () => {
+    const snapshot = createChannelRunnerHealthSnapshot({
+      ...runtimeStatus(),
+      outbound: {
+        ...runtimeStatus().outbound,
+        lastMessageAt: 1_721_563_202_500,
+        lastError: {
+          phase: "consume_loop",
+          message: "temporary consumer failure",
+          at: 1_721_563_202_600,
+        },
+        publishOutbox: {
+          pendingCount: 2,
+          oldestPendingAt: 1_721_563_200_500,
+          nextAttemptAt: 1_721_563_204_000,
+          lastPublishedAt: 1_721_563_202_000,
+          lastError: {
+            message: "temporary publish failure",
+            at: 1_721_563_202_700,
+          },
+        },
+      },
+    });
+
+    expect(isChannelRunnerHealthSnapshot(snapshot)).toBe(true);
+    expect(
+      isChannelRunnerHealthSnapshot({
+        ...snapshot,
+        outbound: {
+          ...snapshot.outbound,
+          publishOutbox: { ...snapshot.outbound.publishOutbox, pendingCount: -1 },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isChannelRunnerHealthSnapshot({
+        ...snapshot,
+        outbound: {
+          ...snapshot.outbound,
+          lastError: { ...snapshot.outbound.lastError, phase: "publish" },
+        },
+      }),
+    ).toBe(false);
   });
 
   it("responds with the current snapshot and stops the subscription", async () => {
