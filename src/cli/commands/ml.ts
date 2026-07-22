@@ -11,6 +11,45 @@ const itemIdSchema = z.string().regex(/^ML[A-Z]{1,2}\d+$/, "Expected an item id 
 const siteIdSchema = z.string().regex(/^ML[A-Z]$/, "Expected a site id such as MLB, MLA or MLM.");
 const categoryIdSchema = z.string().regex(/^ML[A-Z]\d+$/, "Expected a category id such as MLB1051.");
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected date in YYYY-MM-DD format.");
+const mlJsonObjectSchema = z.object({}).catchall(jsonValueSchema);
+const structuredArraySchema = z.array(mlJsonObjectSchema);
+const itemPatchFields = [
+  "title",
+  "available_quantity",
+  "seller_custom_field",
+  "pictures",
+  "attributes",
+  "shipping",
+  "sale_terms",
+] as const;
+const itemCreateSchema = mlJsonObjectSchema
+  .extend({
+    title: z.string().trim().min(1).max(60),
+    category_id: categoryIdSchema,
+    price: z.number().positive(),
+    currency_id: z.string().regex(/^[A-Z]{3}$/, "Expected a 3-letter currency code such as BRL."),
+    available_quantity: z.number().int().min(0),
+    buying_mode: z.enum(["buy_it_now", "auction"]),
+    listing_type_id: z.string().trim().min(1),
+    pictures: structuredArraySchema.optional(),
+    attributes: structuredArraySchema.optional(),
+    shipping: mlJsonObjectSchema.optional(),
+    sale_terms: structuredArraySchema.optional(),
+    seller_custom_field: z.string().trim().min(1).optional(),
+  })
+  .passthrough();
+const itemPatchSchema = z
+  .object({
+    title: z.string().trim().min(1).max(60).optional(),
+    available_quantity: z.number().int().min(0).optional(),
+    seller_custom_field: z.string().trim().min(1).optional(),
+    pictures: structuredArraySchema.optional(),
+    attributes: structuredArraySchema.optional(),
+    shipping: mlJsonObjectSchema.optional(),
+    sale_terms: structuredArraySchema.optional(),
+  })
+  .strict()
+  .refine((body) => Object.keys(body).length > 0, "--body must change at least one safe item field.");
 const connectionOption = {
   flags: "--connection <id>",
   description: "Ravi credential connection reserved for Phase 2 (default: default)",
@@ -1065,20 +1104,12 @@ function itemCreateBody(value?: string): MlJsonObject {
   for (const key of ["description", "status", "deleted"]) {
     if (key in body) throw new Error(`--body field ${key} is not allowed in item-create; use the dedicated command.`);
   }
-  return body;
+  return parseBody(itemCreateSchema, body, "--body item-create");
 }
 
 function safeItemPatch(value?: string): MlJsonObject {
   const body = jsonObject(value);
-  const allowed = new Set([
-    "title",
-    "available_quantity",
-    "seller_custom_field",
-    "pictures",
-    "attributes",
-    "shipping",
-    "sale_terms",
-  ]);
+  const allowed = new Set<string>(itemPatchFields);
   const fields = Object.keys(body);
   if (fields.length === 0) throw new Error("--body must change at least one safe item field.");
   const forbidden = fields.filter((field) => !allowed.has(field));
@@ -1087,7 +1118,18 @@ function safeItemPatch(value?: string): MlJsonObject {
       `item-update rejects fields: ${forbidden.join(", ")}. Use dedicated status/description commands; price writes are unavailable.`,
     );
   }
-  return body;
+  return parseBody(itemPatchSchema, body, "--body item-update");
+}
+
+function parseBody(schema: z.ZodType, body: MlJsonObject, label: string): MlJsonObject {
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) {
+    const message = parsed.error.issues
+      .map((issue) => `${issue.path.join(".") || "body"}: ${issue.message}`)
+      .join("; ");
+    throw new Error(`${label} is invalid: ${message}.`);
+  }
+  return parsed.data as MlJsonObject;
 }
 
 function requireConfirmation(confirm?: boolean): void {
@@ -1121,7 +1163,9 @@ function writeDryRunPlan(
     input: {
       validated: true,
       topLevelFields: Object.keys(body).sort(),
-      valuesExposed: false,
+      valuesExposed: true,
+      target: targetId,
+      proposed: body,
       textLength:
         typeof body.text === "string"
           ? body.text.length

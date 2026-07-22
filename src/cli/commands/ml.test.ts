@@ -37,6 +37,55 @@ describe("ml CLI contract", () => {
     );
   });
 
+  it("rejects semantically invalid item mutation bodies before dry-run validation", async () => {
+    await expect(
+      new MlCommands().itemCreate(
+        '{"title":false,"category_id":"MLB1051","price":"gratuito","currency_id":[],"available_quantity":-1,"buying_mode":"buy_it_now","listing_type_id":"gold_special"}',
+        undefined,
+        undefined,
+        true,
+      ),
+    ).rejects.toThrow("--body item-create is invalid");
+
+    await expect(
+      new MlCommands().itemUpdate("MLB1234567890", '{"available_quantity":-999}', undefined, undefined, true),
+    ).rejects.toThrow("--body item-update is invalid");
+  });
+
+  it("includes proposed non-sensitive values in dry-run HITL plans", async () => {
+    const update = await new MlCommands().itemUpdate(
+      "MLB1234567890",
+      '{"available_quantity":10,"title":"Titulo revisado"}',
+      undefined,
+      "sandbox",
+      true,
+    );
+    const updatePlan = update.result as Record<string, unknown>;
+    const updateInput = updatePlan.input as Record<string, unknown>;
+
+    expect(updateInput.valuesExposed).toBe(true);
+    expect(updateInput.target).toBe("MLB1234567890");
+    expect(updateInput.proposed).toEqual({ available_quantity: 10, title: "Titulo revisado" });
+
+    const message = await new MlCommands().messageSend(
+      "2000000089077943",
+      "415458330",
+      "3037675074",
+      "Mensagem revisada",
+      undefined,
+      undefined,
+      true,
+    );
+    const messageInput = (message.result as Record<string, unknown>).input as Record<string, unknown>;
+
+    expect(messageInput.proposed).toEqual({
+      pack_id: "2000000089077943",
+      seller_id: "415458330",
+      to_user_id: "3037675074",
+      text: "Mensagem revisada",
+    });
+  });
+
   it("keeps financial reads distinct and exposes no financial mutation command", () => {
     const registry = buildRegistry([MlCommands]);
     const commands = registry.commands.filter((command) => command.fullName.startsWith("ml."));
