@@ -32,7 +32,7 @@ import { applyDirectRuntimeModelSwitch, resolveRuntimeModelSwitchStrategy } from
 import { resolveAgentModelSelection } from "./model-preset-resolver.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID } from "./provider-registry.js";
 import type { RuntimeProviderId } from "./types.js";
-import { formatUserFacingTurnFailure, type RuntimeSafeEmit } from "./host-event-loop.js";
+import type { RuntimeSafeEmit } from "./host-event-loop.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
 import {
   startRuntimeSession,
@@ -40,6 +40,7 @@ import {
   type PendingRuntimeSessionStart,
 } from "./session-launcher.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { formatUserFacingTurnFailure } from "./public-failure.js";
 import { resolveSessionOutputTarget } from "./session-output-target.js";
 import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-runtime-context.js";
 import {

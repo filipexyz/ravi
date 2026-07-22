@@ -858,10 +858,12 @@ describe("RaviBot runtime guards", () => {
     }
   });
 
-  it("cleans up the in-memory streaming session when runtime startup throws", async () => {
+  it("cleans up runtime startup failures without exposing internal paths", async () => {
     const sessionKey = "agent:main:start-failure";
+    const startupError =
+      "ENOENT: no such file or directory, scandir '/Users/luis/.cache/ravi/plugins/ravi-system/skills/slack'";
     runtimeStartImpl = () => {
-      throw new Error("boom");
+      throw new Error(startupError);
     };
 
     const bot = createBot();
@@ -873,12 +875,15 @@ describe("RaviBot runtime guards", () => {
         (entry) =>
           entry.topic === `ravi.session.${sessionKey}.runtime` &&
           entry.data?.type === "turn.failed" &&
-          entry.data?.error === "boom",
+          entry.data?.error === startupError,
       ),
     ).toBe(true);
     expect(
       emittedEvents.some(
-        (entry) => entry.topic === `ravi.session.${sessionKey}.response` && entry.data?.response === "Error: boom",
+        (entry) =>
+          entry.topic === `ravi.session.${sessionKey}.response` &&
+          entry.data?.response ===
+            "Error: The agent could not complete this request because of an internal runtime error. Please try again.",
       ),
     ).toBe(true);
   });
@@ -914,7 +919,10 @@ describe("RaviBot runtime guards", () => {
 
     const response = emittedEvents.find((entry) => entry.topic === `ravi.session.${sessionKey}.response`)?.data
       ?.response;
-    expect(String(response).startsWith("Error: TypeError: oD is not a function")).toBe(true);
+    expect(response).toBe(
+      "Error: The agent could not complete this request because of an internal runtime error. Please try again.",
+    );
+    expect(String(response)).not.toContain("TypeError");
     expect(String(response).length).toBeLessThanOrEqual(340);
   });
 

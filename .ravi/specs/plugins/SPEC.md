@@ -45,8 +45,9 @@ The plugin domain exists so that capability content (skills, commands) is decoup
 - A plugin's skills MUST live under `<plugin-root>/skills/<skill-name>/SKILL.md`.
 - A skill `description` field MUST be treated as the discovery contract: it is the only signal the harness uses to decide whether to auto-load the skill on a matching prompt. Vague descriptions break discovery.
 - The runtime MUST discover plugins from two canonical sources, in order:
-  1. **Internal plugins** — embedded in the Ravi binary, extracted on start to `~/.cache/ravi/plugins/<name>/`. These MUST NOT be edited manually; they are regenerated every runtime start.
+  1. **Internal plugins** — embedded in the Ravi binary and materialized as immutable, content-addressed snapshots at `~/.cache/ravi/plugins/.snapshots/<digest>/<name>/`. Snapshots MUST be published atomically and MUST NOT be edited manually.
   2. **User plugins** — operator-installed at `~/ravi/plugins/<name>/`. These MUST persist across restarts and are the operator's source of truth.
+- Concurrent Ravi versions MUST be able to keep reading their own internal plugin snapshot. Publishing a new snapshot MUST NOT remove or mutate a snapshot already returned to another process.
 - A plugin directory without `.claude-plugin/plugin.json` MUST be ignored by user-plugin discovery (silent skip with debug log, never an error).
 - Plugins MUST NOT be discovered from arbitrary cwds today. Per-agent local plugins (`<agent-cwd>/.ravi/plugins/`) are a proposed extension governed by the `runtime-sync` capability and MUST NOT be assumed active without explicit implementation.
 - The default user-plugin name reserved for operator-installed skills with no explicit container is `ravi-user-skills`; new operator skills SHOULD install into this plugin unless a domain-specific plugin already exists.
@@ -63,3 +64,4 @@ The plugin domain exists so that capability content (skills, commands) is decoup
 - A new plugin MUST become discoverable by the runtime without code changes once placed at `~/ravi/plugins/<name>/` with a valid manifest.
 - A skill inside a plugin MUST be auto-invocable by Claude Code's Skill tool given a matching prompt and the agent has `toolgroup:navigate`.
 - Removing a plugin from `~/ravi/plugins/` MUST cause its skills to disappear from the next session's discovery without leaking residue into agent contexts.
+- Concurrent processes materializing the same embedded artifact MUST converge on one complete snapshot; different artifacts MUST resolve to different immutable paths.

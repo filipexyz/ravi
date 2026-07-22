@@ -28,10 +28,10 @@ This capability defines the canonical filesystem locations for Ravi plugins, who
 
 ### Internal plugins (binary-shipped)
 
-- **Path:** `~/.cache/ravi/plugins/<plugin-name>/`
+- **Path:** `~/.cache/ravi/plugins/.snapshots/<artifact-digest>/<plugin-name>/`
 - **Owner:** Ravi runtime.
-- **Lifecycle:** Re-extracted on every Ravi start from the embedded `internal-plugins.json` artifact.
-- **Edits:** MUST NOT be edited manually. Edits are erased on the next start.
+- **Lifecycle:** Materialized from the embedded `internal-plugins.json` artifact into an immutable content-addressed snapshot. Identical artifacts reuse the same complete snapshot; changed artifacts publish a new one.
+- **Edits:** MUST NOT be edited manually. A process may retain its resolved snapshot path for the lifetime of a session.
 - **Examples:** `ravi-system`, `ravi-dev`.
 
 ### User plugins (operator-installed)
@@ -51,15 +51,19 @@ This capability defines the canonical filesystem locations for Ravi plugins, who
 
 ## Rules
 
-- Plugin discovery MUST scan `~/.cache/ravi/plugins/` for internal plugins and `~/ravi/plugins/` for user plugins, in that order.
+- Plugin discovery MUST resolve embedded internal plugins from their complete content-addressed snapshot, then scan `~/ravi/plugins/` for user plugins, in that order.
 - Discovery MUST require `.claude-plugin/plugin.json` at the plugin root. Directories without a manifest MUST be silently skipped at debug log level.
 - The runtime MUST NOT delete user plugins under `~/ravi/plugins/` as part of any automatic operation.
-- The runtime MAY freely overwrite `~/.cache/ravi/plugins/` at start-up; operators MUST NOT use this path as durable storage.
+- Internal snapshots MUST be assembled in a private staging directory and exposed only through an atomic publish after all files and the completion marker exist.
+- The runtime MUST NOT overwrite or remove a published snapshot in the discovery hot path. Cleanup requires a separate mechanism that can prove no live process or session still references the snapshot.
+- Operators MUST NOT use `~/.cache/ravi/plugins/` as durable storage.
 - Per-agent local plugin discovery MUST be opt-in and explicit. Until `runtime-sync` is implemented, no code path SHOULD scan `<agent-cwd>/.ravi/plugins/` for plugins.
 - Plugin names MUST be slugified consistently across the codebase using the `slugifySkillName` rules (lowercase, alnum, dot, dash, underscore).
 
 ## Acceptance Criteria
 
 - `discoverPlugins()` returns internal plugins first, then user plugins, with consistent ordering across runs.
+- Two processes publishing the same embedded artifact concurrently MUST return the same complete snapshot path without exposing staging contents.
+- A process using snapshot A MUST continue reading it successfully while another process publishes snapshot B.
 - An empty `~/ravi/plugins/` MUST cause `getUserPlugins()` to return `[]` without errors and without creating the directory.
 - A malformed user plugin (missing manifest, invalid JSON) MUST NOT crash discovery. It MUST be skipped with a logged warning carrying the path.

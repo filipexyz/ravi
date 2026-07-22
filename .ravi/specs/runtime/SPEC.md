@@ -74,6 +74,7 @@ The runtime abstraction exists so new execution engines can be added without cop
 - The prompt generator MUST set `turnActive` before yielding a provider prompt and MUST be signaled on every terminal event path.
 - The event loop MUST persist provider session state only from canonical terminal state, not from raw provider events.
 - User prompts MUST be saved before provider handoff; assistant messages MUST be saved only after a non-interrupted terminal turn.
+- Raw runtime failures MUST remain available in internal logs, traces, and runtime events, but user-facing responses, live-state summaries, waited CLI errors, and observation prompts MUST sanitize local paths, runtime exception details, and credential-shaped values while preserving actionable provider guidance.
 - Tool start/end lifecycle MUST be recorded through canonical `tool.started` and `tool.completed` events.
 - Runtime permissions MUST flow through Ravi host services or host hooks. Providers MUST NOT create a parallel permission model.
 - `adapter.request` trace MUST be recorded before provider handoff, including prompt hashes, system prompt hashes, model, provider, resume/fork state, delivery barrier, source, and capability summary.

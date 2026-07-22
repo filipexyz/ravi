@@ -20,7 +20,7 @@ Plugins decouple identity (agent) from capability (plugin), and give the runtime
 
 Internal plugins ship inside the Ravi binary so that core capabilities (system commands, dev skills, prox flow) cannot be partially upgraded — they move with the runtime release. User plugins live at `~/ravi/plugins/` so that operators can install or modify capabilities without rebuilding the binary.
 
-The two-source split also keeps blast radius bounded: an operator who breaks a user plugin only breaks their own session; they cannot brick the runtime by editing a path that ships with the binary, because internal extraction overwrites the cache directory on every start.
+The two-source split also keeps blast radius bounded: an operator who breaks a user plugin only breaks their own session; they cannot brick the runtime by editing a path that ships with the binary. Internal plugins are published as immutable content-addressed snapshots, so rolling versions can coexist without overwriting files another process is reading.
 
 ## Why plugin ≠ skill
 
