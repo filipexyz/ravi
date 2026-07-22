@@ -153,8 +153,6 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
       // filter — they are its curated arsenal, invisible to the agnostic core.
       const request = withLocalSkillsPreserved(input);
       const resumeSessionId = readRuntimeSessionId(request.resumeSession) ?? request.resume;
-      const env = buildClaudeCodeEnvironment(request.env);
-      const pathToClaudeCodeExecutable = resolveClaudeCodeExecutable(env);
       const skillVisibility = buildPluginSkillVisibilitySnapshot({
         provider: "claude",
         plugins: request.plugins,
@@ -171,8 +169,6 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
         skillVisibility,
         events: runClaudeTurns(request, {
           initialResumeSessionId: resumeSessionId,
-          env,
-          pathToClaudeCodeExecutable,
           skillVisibility,
           getModel: () => currentModel,
           setActiveQuery: (queryResult) => {
@@ -207,8 +203,6 @@ async function* runClaudeTurns(
   input: RuntimeStartRequest,
   runtime: {
     initialResumeSessionId?: string;
-    env: Record<string, string>;
-    pathToClaudeCodeExecutable?: string;
     skillVisibility?: RuntimeSkillVisibilitySnapshot;
     getModel(): string;
     setActiveQuery(queryResult: Query | null): void;
@@ -227,12 +221,15 @@ async function* runClaudeTurns(
       continue;
     }
 
+    // The host rotates `input.env` before yielding each turn. Snapshot it here
+    // so authority changes apply between queries, never during an active one.
+    const env = buildClaudeCodeEnvironment(input.env);
     const queryResult = query({
       prompt,
-      options: buildClaudeQueryOptions({ ...input, model: runtime.getModel() }, runtime.env, {
+      options: buildClaudeQueryOptions({ ...input, model: runtime.getModel() }, env, {
         resumeSessionId,
         forkSession: useForkSession,
-        pathToClaudeCodeExecutable: runtime.pathToClaudeCodeExecutable,
+        pathToClaudeCodeExecutable: resolveClaudeCodeExecutable(env),
       }),
     });
     runtime.setActiveQuery(queryResult);

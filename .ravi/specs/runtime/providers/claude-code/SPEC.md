@@ -74,6 +74,10 @@ The Claude Code provider adapts the current default cloud execution bridge into 
 
 - The provider MUST pass Ravi `systemPromptAppend` as additional system instructions.
 - The provider MUST pass Ravi-owned env into the native query environment.
+- The provider MUST snapshot the current Ravi-owned env immediately before each
+  native query. A live provider session MUST observe the newly rotated
+  `RAVI_CONTEXT_KEY` and removal of stale managed `RAVI_*` values on the next
+  turn without resetting conversation history.
 - The provider MUST use Ravi `canUseTool` for tool permission decisions.
 - The provider MUST attach host hooks only when capabilities allow it.
 - The provider MUST attach spec server only for spec-mode agents.
@@ -101,6 +105,9 @@ The Claude Code provider adapts the current default cloud execution bridge into 
 - Host exit-plan logic still reads a provider-specific plan directory; future providers need an explicit plan artifact/control contract instead of host hardcoding.
 - Provider-specific settings files are created during prepare but not captured as explicit runtime bootstrap state.
 - Host hooks are available here but not in Codex, which can hide permission behavior differences.
+- Regressing to a native query environment copied only at provider-session
+  start freezes turn-scoped authority. Grants and revocations then remain stale
+  until the provider session or daemon restarts.
 - Runtime controls are unavailable even though the sessions CLI exposes a generic control surface.
 - Raw events lack consistent thread/turn/item metadata compared with Codex, reducing trace correlation.
 - The model catalog is alias-based and provider-specific instead of a generic provider model registry.

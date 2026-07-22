@@ -464,6 +464,51 @@ describe("createClaudeRuntimeProvider", () => {
     expect(queryCalls[1]?.options.model).toBe("model-b");
   });
 
+  it("refreshes Ravi authority env between turns without resetting conversation history", async () => {
+    nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-authority" }];
+    const env: Record<string, string> = {
+      PATH: "",
+      RAVI_CONTEXT_KEY: "rctx_first",
+      RAVI_TASK_ID: "task_stale",
+    };
+
+    const provider = createClaudeRuntimeProvider();
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "first" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+          env.RAVI_CONTEXT_KEY = "rctx_second";
+          delete env.RAVI_TASK_ID;
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "second" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+        { env },
+      ),
+    );
+
+    const events = await collectEvents(session.events);
+    expect(queryCalls).toHaveLength(2);
+    const firstEnv = queryCalls[0]?.options.env as Record<string, string>;
+    const secondEnv = queryCalls[1]?.options.env as Record<string, string>;
+
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(2);
+    expect(firstEnv.RAVI_CONTEXT_KEY).toBe("rctx_first");
+    expect(firstEnv.RAVI_TASK_ID).toBe("task_stale");
+    expect(secondEnv.RAVI_CONTEXT_KEY).toBe("rctx_second");
+    expect(secondEnv.RAVI_TASK_ID).toBeUndefined();
+    expect(queryCalls[1]?.options.resume).toBe("claude-session-authority");
+    expect(secondEnv).not.toBe(firstEnv);
+  });
+
   it("backfills daemon auth env when the runtime env is partial", async () => {
     const originalToken = process.env.CLAUDE_CODE_OAUTH_TOKEN;
     process.env.CLAUDE_CODE_OAUTH_TOKEN = "test-daemon-token";

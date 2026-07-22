@@ -10,6 +10,9 @@
 - Non-success result maps to recoverable `turn.failed`.
 - Query exception maps to recoverable `turn.failed`.
 - `setModel` updates active query when possible and always affects next query.
+- A live provider session snapshots the current Ravi env for every query: a
+  rotated `RAVI_CONTEXT_KEY` appears on the next turn, removed managed values do
+  not survive, and the Claude session id is still resumed.
 - Resume session id is read from `RuntimeSessionState.params`.
 - Fork is passed only when requested by session continuity.
 
