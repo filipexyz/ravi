@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createChannelRunnerHealthSnapshot, type ChannelRunnerRuntimeStatus } from "../../channels/health.js";
 import { dbGetChannel } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
@@ -7,9 +10,11 @@ import {
   buildRunnerPm2Env,
   ChannelsCommands,
   classifyChannelRunnerHealth,
+  validateChannelRunnerRuntimeTarget,
 } from "./channels.js";
 
 const ORIGINAL_ENV = { ...process.env };
+const tempDirs: string[] = [];
 let stateDir: string | null = null;
 
 beforeEach(async () => {
@@ -20,6 +25,10 @@ afterEach(async () => {
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
   process.env = { ...ORIGINAL_ENV };
+  while (tempDirs.length > 0) {
+    const dir = tempDirs.pop();
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 describe("channels command runner env", () => {
@@ -208,5 +217,102 @@ describe("channels live status", () => {
   it("classifies adapter recovery and failure independently from PM2", () => {
     expect(classifyChannelRunnerHealth(liveRunnerStatus("reconnecting"))).toBe("starting");
     expect(classifyChannelRunnerHealth(liveRunnerStatus("failed"))).toBe("degraded");
+  });
+
+  it("classifies outbound consumer loop errors as degraded", () => {
+    const snapshot = createChannelRunnerHealthSnapshot({
+      ...liveRunnerStatus(),
+      outbound: {
+        ...liveRunnerStatus().outbound,
+        lastError: {
+          phase: "consume_loop",
+          message: "JetStream consumer unavailable",
+          at: 1_721_563_204_000,
+        },
+      },
+    });
+
+    expect(classifyChannelRunnerHealth(snapshot)).toBe("degraded");
+  });
+
+  it("classifies native publish outbox failures as degraded", () => {
+    const snapshot = createChannelRunnerHealthSnapshot({
+      ...liveRunnerStatus(),
+      outbound: {
+        ...liveRunnerStatus().outbound,
+        publishOutbox: {
+          pendingCount: 1,
+          nextAttemptAt: 1_721_563_234_000,
+          lastError: {
+            message: "503 no space left on device",
+            at: 1_721_563_204_000,
+          },
+        },
+      },
+    });
+
+    expect(classifyChannelRunnerHealth(snapshot)).toBe("degraded");
+  });
+});
+
+describe("channels runner runtime target parity", () => {
+  it("accepts the daemon-authoritative bundle", () => {
+    const root = mkdtempSync(join(tmpdir(), "ravi-channels-target-"));
+    tempDirs.push(root);
+    const bundlePath = join(root, "dist", "bundle", "index.js");
+    mkdirSync(join(bundlePath, ".."), { recursive: true });
+    writeFileSync(bundlePath, "", "utf8");
+
+    const validation = validateChannelRunnerRuntimeTarget(
+      { bundlePath, cwd: root },
+      {
+        inspectRuntimeTarget: () =>
+          ({
+            daemon: {
+              online: true,
+              execPath: bundlePath,
+              cwd: root,
+              matchesCli: true,
+            },
+          }) as never,
+      },
+    );
+
+    expect(validation).toEqual({ ok: true });
+  });
+
+  it("rejects a channel runner bundle that diverges from the live daemon", () => {
+    const root = mkdtempSync(join(tmpdir(), "ravi-channels-target-mismatch-"));
+    tempDirs.push(root);
+    const daemonBundle = join(root, "daemon", "dist", "bundle", "index.js");
+    const targetBundle = join(root, "stale", "dist", "bundle", "index.js");
+    mkdirSync(join(daemonBundle, ".."), { recursive: true });
+    mkdirSync(join(targetBundle, ".."), { recursive: true });
+    writeFileSync(daemonBundle, "", "utf8");
+    writeFileSync(targetBundle, "", "utf8");
+
+    const validation = validateChannelRunnerRuntimeTarget(
+      { bundlePath: targetBundle, cwd: join(root, "stale") },
+      {
+        inspectRuntimeTarget: () =>
+          ({
+            daemon: {
+              online: true,
+              execPath: daemonBundle,
+              cwd: join(root, "daemon"),
+              matchesCli: false,
+            },
+          }) as never,
+      },
+    );
+
+    expect(validation).toMatchObject({
+      ok: false,
+      targetBundle: realpathSync(targetBundle).toLowerCase(),
+      daemonBundle: realpathSync(daemonBundle).toLowerCase(),
+    });
+    if (!validation.ok) {
+      expect(validation.message).toContain("Refusing to start channel runner");
+    }
   });
 });

@@ -33,6 +33,22 @@ export interface ChannelRunnerRuntimeStatus {
     enabled: boolean;
     infrastructureReady: boolean;
     consuming: boolean;
+    lastMessageAt?: number;
+    lastError?: {
+      phase: "consume_loop";
+      message: string;
+      at: number;
+    };
+    publishOutbox?: {
+      pendingCount: number;
+      oldestPendingAt?: number;
+      nextAttemptAt?: number;
+      lastPublishedAt?: number;
+      lastError?: {
+        message: string;
+        at: number;
+      };
+    };
   };
   adapters: ChannelAdapterHealth[];
 }
@@ -188,7 +204,37 @@ export function isChannelRunnerHealthSnapshot(value: unknown): value is ChannelR
   if (typeof value.outbound.enabled !== "boolean") return false;
   if (typeof value.outbound.infrastructureReady !== "boolean") return false;
   if (typeof value.outbound.consuming !== "boolean") return false;
+  if (value.outbound.lastMessageAt !== undefined && !isFiniteNumber(value.outbound.lastMessageAt)) return false;
+  if (value.outbound.lastError !== undefined && !isOutboundLastError(value.outbound.lastError)) return false;
+  if (value.outbound.publishOutbox !== undefined && !isOutboundPublishOutbox(value.outbound.publishOutbox))
+    return false;
   if (!Array.isArray(value.adapters) || !value.adapters.every(isChannelAdapterHealth)) return false;
+  return true;
+}
+
+function isOutboundLastError(
+  value: unknown,
+): value is NonNullable<ChannelRunnerRuntimeStatus["outbound"]["lastError"]> {
+  if (!isRecord(value)) return false;
+  if (value.phase !== "consume_loop") return false;
+  if (typeof value.message !== "string") return false;
+  if (!isFiniteNumber(value.at)) return false;
+  return true;
+}
+
+function isOutboundPublishOutbox(
+  value: unknown,
+): value is NonNullable<ChannelRunnerRuntimeStatus["outbound"]["publishOutbox"]> {
+  if (!isRecord(value)) return false;
+  if (typeof value.pendingCount !== "number" || value.pendingCount < 0) return false;
+  if (value.oldestPendingAt !== undefined && !isFiniteNumber(value.oldestPendingAt)) return false;
+  if (value.nextAttemptAt !== undefined && !isFiniteNumber(value.nextAttemptAt)) return false;
+  if (value.lastPublishedAt !== undefined && !isFiniteNumber(value.lastPublishedAt)) return false;
+  if (value.lastError !== undefined) {
+    if (!isRecord(value.lastError)) return false;
+    if (typeof value.lastError.message !== "string") return false;
+    if (!isFiniteNumber(value.lastError.at)) return false;
+  }
   return true;
 }
 

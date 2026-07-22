@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { EventEmitter } from "node:events";
+import { configStore } from "../../config-store.js";
 import {
   createContact,
   ensureContactFromInbound,
@@ -22,6 +23,7 @@ import {
   dbGetContext,
   dbListChatParticipants,
   dbUpsertChat,
+  dbUpsertInstance,
   getDb,
 } from "../../router/router-db.js";
 import type { InstanceConfig } from "../../router/router-db.js";
@@ -150,6 +152,7 @@ describe("Slack Socket Mode routing", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-slack-socket-mode-");
     seedAgent("ravi-hil", "/tmp/ravi-hil");
+    configStore.refresh();
   });
 
   afterEach(async () => {
@@ -157,27 +160,87 @@ describe("Slack Socket Mode routing", () => {
     stateDir = null;
   });
 
-  it("scopes native text delivery to the configured Slack workspace", () => {
+  it("scopes native text delivery to explicit Slack workspace aliases", () => {
+    const slug = "ravi-rbbt-slack";
+    const uuid = "0bc9635c-1ee9-42e3-9112-95be9cdb0334";
+    const otherUuid = "11111111-2222-3333-4444-555555555555";
     const delivery = new SlackTextDelivery({} as never, {} as never, {
-      accountId: "ravi-rbbt-slack",
-      routeAccountId: "ravi-rbbt-slack",
-      instanceId: "0bc9635c-1ee9-42e3-9112-95be9cdb0334",
-      connection: "ravi-rbbt-slack",
+      accountId: slug,
+      routeAccountId: slug,
+      instanceId: slug,
+      connection: slug,
+      instanceAliases: [uuid, slug],
     });
 
     expect(
       delivery.supports({
         channel: "slack",
-        accountId: "0bc9635c-1ee9-42e3-9112-95be9cdb0334",
-        instanceId: "0bc9635c-1ee9-42e3-9112-95be9cdb0334",
+        accountId: uuid,
+        instanceId: uuid,
         chatId: "C123",
       }),
     ).toBe(true);
     expect(
       delivery.supports({
         channel: "slack",
-        accountId: "hana-slack",
-        instanceId: "hana-slack",
+        accountId: otherUuid,
+        instanceId: otherUuid,
+        chatId: "C456",
+      }),
+    ).toBe(false);
+    expect(
+      delivery.supports({
+        channel: "slack",
+        accountId: slug,
+        instanceId: otherUuid,
+        chatId: "C456",
+      }),
+    ).toBe(false);
+  });
+
+  it("loads explicit Slack instance UUID aliases into outbound runtime scope", async () => {
+    const slug = "ravi-rbbt-slack";
+    const uuid = "0bc9635c-1ee9-42e3-9112-95be9cdb0334";
+    const otherUuid = "11111111-2222-3333-4444-555555555555";
+    dbUpsertInstance({ name: slug, instanceId: uuid, channel: "slack" });
+    dbUpsertInstance({ name: "hana-slack", instanceId: otherUuid, channel: "slack" });
+    configStore.refresh();
+
+    const runtimes = await createSlackNativeRuntimesFromEnv({} as NodeJS.ProcessEnv, {
+      resolveSecret: mock(async () => ({
+        secret: JSON.stringify({ appToken: "xapp-rbbt", botToken: "xoxb-rbbt" }),
+        connection: { connection: slug },
+      })),
+      channels: {
+        [slug]: slackChannel({ name: slug, credentialConnection: slug }),
+      },
+    });
+
+    expect(runtimes).toHaveLength(1);
+    const runtime = runtimes[0]!;
+    expect(runtime.accountId).toBe(slug);
+    expect(runtime.instanceId).toBe(slug);
+    expect(
+      runtime.delivery.supports({
+        channel: "slack",
+        accountId: uuid,
+        instanceId: uuid,
+        chatId: "C123",
+      }),
+    ).toBe(true);
+    expect(
+      runtime.delivery.supports({
+        channel: "slack",
+        accountId: otherUuid,
+        instanceId: otherUuid,
+        chatId: "C456",
+      }),
+    ).toBe(false);
+    expect(
+      runtime.delivery.supports({
+        channel: "slack",
+        accountId: slug,
+        instanceId: otherUuid,
         chatId: "C456",
       }),
     ).toBe(false);
@@ -251,6 +314,42 @@ describe("Slack Socket Mode routing", () => {
     expect(resolveSecret.mock.calls.map((call) => call[0].connection)).toEqual(["hana-secret", "rbbt-secret"]);
     expect(runtimes.map((runtime) => runtime.accountId)).toEqual(["hana-slack", "ravi-rbbt-slack"]);
     expect(runtimes.map((runtime) => runtime.connection)).toEqual(["hana-secret", "rbbt-secret"]);
+  });
+
+  it("isolates one Slack account startup failure from other configured accounts", async () => {
+    const errors: string[] = [];
+    const disabled: string[] = [];
+    const resolveSecret = mock(async ({ connection }: { connection: string }) => {
+      if (connection === "bad-secret") throw new Error("credential backend unavailable");
+      return {
+        secret: JSON.stringify({
+          appToken: `xapp-${connection}`,
+          botToken: `xoxb-${connection}`,
+        }),
+        connection: { connection },
+      };
+    });
+
+    const runtimes = await createSlackNativeRuntimesFromEnv({} as NodeJS.ProcessEnv, {
+      resolveSecret,
+      onRuntimeDisabled: (channel, reason) => disabled.push(`${channel.name}:${reason}`),
+      onRuntimeError: (channel, error) =>
+        errors.push(`${channel.name}:${error instanceof Error ? error.message : String(error)}`),
+      channels: {
+        "bad-slack": slackChannel({
+          name: "bad-slack",
+          credentialConnection: "bad-secret",
+        }),
+        "hana-slack": slackChannel({
+          name: "hana-slack",
+          credentialConnection: "hana-secret",
+        }),
+      },
+    });
+
+    expect(runtimes.map((runtime) => runtime.accountId)).toEqual(["hana-slack"]);
+    expect(errors).toEqual(["bad-slack:credential backend unavailable"]);
+    expect(disabled).toEqual([]);
   });
 
   it("keeps bot alias defaults isolated per configured Slack account", async () => {

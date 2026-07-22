@@ -4,6 +4,7 @@
 
 import "reflect-metadata";
 import { spawnSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { z } from "zod";
 import {
   probeChannelRunnerHealth,
@@ -27,6 +28,7 @@ import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns, Scope } f
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { jsonObjectSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
+import { inspectCliRuntimeTarget, type CliRuntimeTargetSummary } from "../runtime-target.js";
 import { resolveDaemonRuntimeTarget, type DaemonRuntimeTarget } from "./daemon.js";
 
 const pm2ProcessReturnSchema = z
@@ -69,6 +71,31 @@ const channelRunnerHealthSnapshotReturnSchema = z
         enabled: z.boolean(),
         infrastructureReady: z.boolean(),
         consuming: z.boolean(),
+        lastMessageAt: z.number().optional(),
+        lastError: z
+          .object({
+            phase: z.literal("consume_loop"),
+            message: z.string(),
+            at: z.number(),
+          })
+          .strict()
+          .optional(),
+        publishOutbox: z
+          .object({
+            pendingCount: z.number().int().nonnegative(),
+            oldestPendingAt: z.number().optional(),
+            nextAttemptAt: z.number().optional(),
+            lastPublishedAt: z.number().optional(),
+            lastError: z
+              .object({
+                message: z.string(),
+                at: z.number(),
+              })
+              .strict()
+              .optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict(),
     adapters: z.array(channelAdapterHealthReturnSchema),
@@ -305,6 +332,8 @@ export type ChannelsRunnerHealthState = "ready" | "starting" | "degraded" | "unr
 export function classifyChannelRunnerHealth(snapshot: ChannelRunnerHealthSnapshot): ChannelsRunnerHealthState {
   if (!snapshot.running) return "degraded";
   if (!snapshot.outbound.infrastructureReady) return "starting";
+  if (snapshot.outbound.lastError) return "degraded";
+  if (snapshot.outbound.publishOutbox?.lastError && snapshot.outbound.publishOutbox.pendingCount > 0) return "degraded";
 
   if (snapshot.adapters.some((adapter) => ["failed", "degraded", "disconnected"].includes(adapter.status))) {
     return "degraded";
@@ -394,7 +423,64 @@ function requireRuntimeTarget(build?: boolean): DaemonRuntimeTarget {
   if (!target) {
     fail("Could not resolve Ravi runtime bundle. Use --build from the source repo or set RAVI_BUNDLE.");
   }
+  const validation = validateChannelRunnerRuntimeTarget(target);
+  if (!validation.ok) fail(validation.message);
   return target;
+}
+
+export type ChannelRunnerRuntimeTargetValidation =
+  | { ok: true }
+  | {
+      ok: false;
+      message: string;
+      targetBundle: string;
+      daemonBundle: string | null;
+    };
+
+export function validateChannelRunnerRuntimeTarget(
+  target: DaemonRuntimeTarget,
+  options: { inspectRuntimeTarget?: () => CliRuntimeTargetSummary } = {},
+): ChannelRunnerRuntimeTargetValidation {
+  const summary = (options.inspectRuntimeTarget ?? inspectCliRuntimeTarget)();
+  if (!summary.daemon.online) return { ok: true };
+
+  const targetBundle = normalizeComparablePath(target.bundlePath) ?? target.bundlePath.toLowerCase();
+  const daemonBundle = normalizeComparablePath(summary.daemon.execPath);
+  if (!daemonBundle) {
+    return {
+      ok: false,
+      targetBundle,
+      daemonBundle,
+      message: [
+        "Cannot start channel runner because the live daemon bundle is unknown.",
+        `Target bundle: ${target.bundlePath}`,
+        "Run `ravi daemon status --json` and restart channels only from the daemon-authoritative runtime.",
+      ].join("\n"),
+    };
+  }
+  if (targetBundle === daemonBundle) return { ok: true };
+
+  return {
+    ok: false,
+    targetBundle,
+    daemonBundle,
+    message: [
+      "Refusing to start channel runner from a bundle that diverges from the live daemon.",
+      `Target bundle: ${target.bundlePath}`,
+      `Daemon bundle: ${summary.daemon.execPath ?? "-"}`,
+      "Use the same repo/runtime as the live daemon, or restart the daemon first with the intended bundle.",
+    ].join("\n"),
+  };
+}
+
+function normalizeComparablePath(path: string | null | undefined): string | null {
+  const trimmed = path?.trim();
+  if (!trimmed) return null;
+  try {
+    return realpathSync(trimmed).toLowerCase();
+  } catch {
+    return trimmed.toLowerCase();
+  }
 }
 
 @Group({
@@ -638,6 +724,7 @@ export class ChannelsCommands {
   ) {
     requirePm2();
     const runnerEnv = buildRunnerPm2Env();
+    const target = requireRuntimeTarget(build);
 
     if (isPm2ProcessRunning(CHANNELS_PM2_PROCESS_NAME)) {
       const stopped = asJson
@@ -646,7 +733,6 @@ export class ChannelsCommands {
       if (stopped.status !== 0) fail("Failed to stop channel runner before restart");
     }
 
-    const target = requireRuntimeTarget(build);
     const args = ["start", "bun", "--name", CHANNELS_PM2_PROCESS_NAME, "--", target.bundlePath, "channels", "run"];
     const { status } = asJson
       ? runPm2Quiet(args, { cwd: target.cwd, envOverrides: runnerEnv })

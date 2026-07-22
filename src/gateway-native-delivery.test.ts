@@ -105,6 +105,18 @@ async function createGateway() {
   return { gateway, emitted, omniSend };
 }
 
+async function getPublishOutboxJob(idempotencyKey: string) {
+  const { getChannelOutboundPublishJob } = await import("./channels/outbound-publish-outbox.js");
+  return getChannelOutboundPublishJob(idempotencyKey);
+}
+
+async function reconcilePublishOutbox(
+  options: { now?: () => number; emitEvent?: (topic: string, payload: Record<string, unknown>) => Promise<void> } = {},
+) {
+  const { reconcileDueChannelOutboundPublishes } = await import("./channels/outbound-publish-outbox.js");
+  return reconcileDueChannelOutboundPublishes(options);
+}
+
 async function handleResponse(gateway: unknown, sessionName: string, response: ResponseMessage): Promise<void> {
   await (
     gateway as {
@@ -173,6 +185,11 @@ describe("Gateway native channel outbound queue", () => {
       reason: "native_channel_outbound",
       jobId: "runtime:main-slack:emit-1",
     });
+    const record = await getPublishOutboxJob(publishedJobs[0]!.request.idempotencyKey);
+    expect(record).toMatchObject({
+      jobId: "runtime:main-slack:emit-1",
+      status: "published",
+    });
   });
 
   it("retries JetStream publish ack timeouts with an idempotent msgID before marking queued", async () => {
@@ -222,11 +239,21 @@ describe("Gateway native channel outbound queue", () => {
     expect(emitted[0]?.[1]).toMatchObject({
       status: "failed",
       reason: "queue_error",
+      jobId: "runtime:main-slack:emit-timeout-fail",
       error: "TIMEOUT",
+      retryable: true,
+    });
+    expect(emitted[0]?.[1]).toHaveProperty("nextAttemptAt");
+    const record = await getPublishOutboxJob("runtime:main-slack:emit-timeout-fail:slack:slack:C123:root");
+    expect(record).toMatchObject({
+      jobId: "runtime:main-slack:emit-timeout-fail",
+      status: "pending",
+      attemptCount: 1,
+      lastErrorMessage: "TIMEOUT",
     });
   });
 
-  it("emits delivery.failed for non-timeout native queue errors", async () => {
+  it("persists and later republishes non-timeout native queue errors without duplicate provider sends", async () => {
     publishBehavior = "failBeforePublish";
     const { gateway, emitted } = await createGateway();
 
@@ -246,8 +273,44 @@ describe("Gateway native channel outbound queue", () => {
     expect(emitted[0]?.[1]).toMatchObject({
       status: "failed",
       reason: "queue_error",
+      jobId: "runtime:main-slack:emit-fail",
       error: "stream unavailable",
+      retryable: true,
     });
+    const idempotencyKey = "runtime:main-slack:emit-fail:slack:slack:C123:root";
+    expect(await getPublishOutboxJob(idempotencyKey)).toMatchObject({
+      status: "pending",
+      attemptCount: 1,
+      lastErrorMessage: "stream unavailable",
+    });
+
+    publishBehavior = "ok";
+    const reconciled = await reconcilePublishOutbox({
+      now: () => Date.now() + 60_000,
+      emitEvent: async (topic, payload) => {
+        emitted.push([topic, payload]);
+      },
+    });
+
+    expect(reconciled).toEqual({ attempted: 1, published: 1, failed: 0 });
+    expect(publishedJobs).toHaveLength(1);
+    expect(publishedJobs[0]?.jobId).toBe("runtime:main-slack:emit-fail");
+    const publishedRecord = await getPublishOutboxJob(idempotencyKey);
+    expect(publishedRecord).toMatchObject({
+      status: "published",
+      attemptCount: 1,
+    });
+    expect(publishedRecord?.lastErrorMessage).toBeUndefined();
+    expect(emitted[1]?.[0]).toBe("ravi.session.main-slack.delivery");
+    expect(emitted[1]?.[1]).toMatchObject({
+      status: "queued",
+      reason: "native_channel_outbound_reconciled",
+      jobId: "runtime:main-slack:emit-fail",
+    });
+
+    const second = await reconcilePublishOutbox({ now: () => Date.now() + 120_000 });
+    expect(second).toEqual({ attempted: 0, published: 0, failed: 0 });
+    expect(publishedJobs).toHaveLength(1);
   });
 
   it("publishes Slack typing presence through the native channel presence topic", async () => {

@@ -2356,6 +2356,22 @@ export type ChannelsRestartReturn = {
         consuming: boolean;
         enabled: boolean;
         infrastructureReady: boolean;
+        lastError?: {
+          at: number;
+          message: string;
+          phase: "consume_loop";
+        };
+        lastMessageAt?: number;
+        publishOutbox?: {
+          lastError?: {
+            at: number;
+            message: string;
+          };
+          lastPublishedAt?: number;
+          nextAttemptAt?: number;
+          oldestPendingAt?: number;
+          pendingCount: number;
+        };
         stream: string;
       };
       pid: number;
@@ -2473,6 +2489,22 @@ export type ChannelsStartReturn = {
         consuming: boolean;
         enabled: boolean;
         infrastructureReady: boolean;
+        lastError?: {
+          at: number;
+          message: string;
+          phase: "consume_loop";
+        };
+        lastMessageAt?: number;
+        publishOutbox?: {
+          lastError?: {
+            at: number;
+            message: string;
+          };
+          lastPublishedAt?: number;
+          nextAttemptAt?: number;
+          oldestPendingAt?: number;
+          pendingCount: number;
+        };
         stream: string;
       };
       pid: number;
@@ -2539,6 +2571,22 @@ export type ChannelsStatusReturn = {
       consuming: boolean;
       enabled: boolean;
       infrastructureReady: boolean;
+      lastError?: {
+        at: number;
+        message: string;
+        phase: "consume_loop";
+      };
+      lastMessageAt?: number;
+      publishOutbox?: {
+        lastError?: {
+          at: number;
+          message: string;
+        };
+        lastPublishedAt?: number;
+        nextAttemptAt?: number;
+        oldestPendingAt?: number;
+        pendingCount: number;
+      };
       stream: string;
     };
     pid: number;
@@ -2608,6 +2656,22 @@ export type ChannelsStopReturn = {
         consuming: boolean;
         enabled: boolean;
         infrastructureReady: boolean;
+        lastError?: {
+          at: number;
+          message: string;
+          phase: "consume_loop";
+        };
+        lastMessageAt?: number;
+        publishOutbox?: {
+          lastError?: {
+            at: number;
+            message: string;
+          };
+          lastPublishedAt?: number;
+          nextAttemptAt?: number;
+          oldestPendingAt?: number;
+          pendingCount: number;
+        };
         stream: string;
       };
       pid: number;
