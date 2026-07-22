@@ -3704,7 +3704,9 @@ export const AppsReadinessReturnSchema = {
         "code": {
           "type": "string"
         },
-        "details": {},
+        "details": {
+          "$ref": "#/$defs/__schema0"
+        },
         "httpStatus": {
           "type": "number"
         },
@@ -3955,7 +3957,9 @@ export const AppsReadinessReturnSchema = {
       ],
       "type": "object"
     },
-    "result": {},
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    },
     "schema": {
       "const": "ravi.app.operation-result/v1",
       "type": "string"
@@ -4119,7 +4123,9 @@ export const AppsRunReturnSchema = {
         "code": {
           "type": "string"
         },
-        "details": {},
+        "details": {
+          "$ref": "#/$defs/__schema0"
+        },
         "httpStatus": {
           "type": "number"
         },
@@ -4370,7 +4376,9 @@ export const AppsRunReturnSchema = {
       ],
       "type": "object"
     },
-    "result": {},
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    },
     "schema": {
       "const": "ravi.app.operation-result/v1",
       "type": "string"
@@ -42367,6 +42375,1942 @@ export const MeetingsVoiceRuntimesReturnSchema = {
     "defaultRuntimeId",
     "recommendation",
     "candidates"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `merchant.account-get`. */
+export const MerchantAccountGetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Numeric Merchant Center account id",
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "account"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `merchant.account-get`. */
+export const MerchantAccountGetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `merchant.account-issues`. */
+export const MerchantAccountIssuesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "pageSize": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "pageToken": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "account"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `merchant.account-issues`. */
+export const MerchantAccountIssuesReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `merchant.accounts`. */
+export const MerchantAccountsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2",
+      "type": "string"
+    },
+    "pageSize": {
+      "description": "Maximum accounts (1-500)",
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "pageToken": {
+      "description": "Token returned by the preceding page",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `merchant.accounts`. */
+export const MerchantAccountsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `merchant.contract`. */
+export const MerchantContractInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Matrix page size (default: 50, max: 160)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of legacy operations to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `merchant.contract`. */
+export const MerchantContractReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "confirmed_official_contract": {
+      "const": "yes",
+      "type": "string"
+    },
+    "official_contract": {
+      "additionalProperties": false,
+      "properties": {
+        "baseUrl": {
+          "format": "uri",
+          "type": "string"
+        },
+        "confirmed": {
+          "const": true,
+          "type": "boolean"
+        },
+        "limitedSubApis": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "oauthScope": {
+          "format": "uri",
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "format": "uri",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "stableSubApis": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "verifiedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "confirmed",
+        "verifiedAt",
+        "baseUrl",
+        "oauthScope",
+        "stableSubApis",
+        "limitedSubApis",
+        "sources"
+      ],
+      "type": "object"
+    },
+    "operation_matrix": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "categoria": {
+            "type": "string"
+          },
+          "endpoint_ou_recurso_oficial": {
+            "type": "string"
+          },
+          "fonte_oficial": {
+            "format": "uri",
+            "type": "string"
+          },
+          "justificativa": {
+            "type": "string"
+          },
+          "observacoes_para_ravi_dev": {
+            "type": "string"
+          },
+          "operacao_ravi": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "operacao_sde": {
+            "type": "string"
+          },
+          "risco_read_write": {
+            "enum": [
+              "read",
+              "write",
+              "destructive",
+              "financial",
+              "setup"
+            ],
+            "type": "string"
+          },
+          "status_decisao": {
+            "enum": [
+              "migrar",
+              "adicionar",
+              "estudar",
+              "ignorar",
+              "aguardar"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "operacao_sde",
+          "categoria",
+          "risco_read_write",
+          "endpoint_ou_recurso_oficial",
+          "status_decisao",
+          "justificativa",
+          "fonte_oficial",
+          "observacoes_para_ravi_dev",
+          "operacao_ravi"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "returned": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "total": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "summary": {
+      "additionalProperties": false,
+      "properties": {
+        "byDecision": {
+          "additionalProperties": false,
+          "properties": {
+            "adicionar": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "aguardar": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "estudar": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "ignorar": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "migrar": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "migrar",
+            "adicionar",
+            "estudar",
+            "ignorar",
+            "aguardar"
+          ],
+          "type": "object"
+        },
+        "byRisk": {
+          "additionalProperties": false,
+          "properties": {
+            "destructive": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "financial": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "read": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "setup": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            },
+            "write": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "read",
+            "write",
+            "destructive",
+            "financial",
+            "setup"
+          ],
+          "type": "object"
+        },
+        "legacyOperations": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "legacyOperations",
+        "byRisk",
+        "byDecision"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "confirmed_official_contract",
+    "official_contract",
+    "summary",
+    "pagination",
+    "operation_matrix"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `merchant.data-source-create`. */
+export const MerchantDataSourceCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "body": {
+      "description": "DataSource JSON body",
+      "type": "string"
+    },
+    "confirm": {
+      "type": "boolean"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Return the write preview without calling Google Merchant API",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "account"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `merchant.data-source-create`. */
+export const MerchantDataSourceCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `merchant.data-source-delete`. */
+export const MerchantDataSourceDeleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "confirm": {
+      "description": "Confirm destructive deletion",
+      "type": "boolean"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "dataSource": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Return the destructive preview without calling Google Merchant API",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "account",
+    "dataSource"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `merchant.data-source-delete`. */
+export const MerchantDataSourceDeleteReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `merchant.data-source-fetch`. */
+export const MerchantDataSourceFetchInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "confirm": {
+      "type": "boolean"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "dataSource": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Return the write preview without calling Google Merchant API",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "account",
+    "dataSource"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `merchant.data-source-fetch`. */
+export const MerchantDataSourceFetchReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `merchant.data-source-get`. */
+export const MerchantDataSourceGetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "dataSource": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "dataSource"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `merchant.data-source-get`. */
+export const MerchantDataSourceGetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `merchant.data-source-update`. */
+export const MerchantDataSourceUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "body": {
+      "description": "DataSource JSON body",
+      "type": "string"
+    },
+    "confirm": {
+      "type": "boolean"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "dataSource": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Return the write preview without calling Google Merchant API",
+      "type": "boolean"
+    },
+    "updateMask": {
+      "description": "Required comma-separated field mask",
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "dataSource"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `merchant.data-source-update`. */
+export const MerchantDataSourceUpdateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `merchant.data-sources`. */
+export const MerchantDataSourcesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "pageSize": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "pageToken": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "account"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `merchant.data-sources`. */
+export const MerchantDataSourcesReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `merchant.order-tracking-create`. */
+export const MerchantOrderTrackingCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "body": {
+      "description": "OrderTrackingSignal JSON body (never logged)",
+      "type": "string"
+    },
+    "confirm": {
+      "type": "boolean"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Return the financial write preview without calling Google Merchant API",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "account"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `merchant.order-tracking-create`. */
+export const MerchantOrderTrackingCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `merchant.product-delete`. */
+export const MerchantProductDeleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "confirm": {
+      "description": "Confirm destructive deletion",
+      "type": "boolean"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "dataSource": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Return the destructive preview without calling Google Merchant API",
+      "type": "boolean"
+    },
+    "productInput": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "dataSource",
+    "productInput"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `merchant.product-delete`. */
+export const MerchantProductDeleteReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `merchant.product-get`. */
+export const MerchantProductGetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "product": {
+      "description": "Product resource id; use Google's base64url form for reserved characters",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "product"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `merchant.product-get`. */
+export const MerchantProductGetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `merchant.product-insert`. */
+export const MerchantProductInsertInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "body": {
+      "description": "ProductInput JSON body",
+      "type": "string"
+    },
+    "confirm": {
+      "description": "Confirm this Merchant mutation",
+      "type": "boolean"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "dataSource": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Return the write preview without calling Google Merchant API",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "account",
+    "dataSource"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `merchant.product-insert`. */
+export const MerchantProductInsertReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `merchant.product-patch`. */
+export const MerchantProductPatchInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "body": {
+      "description": "ProductInput JSON body",
+      "type": "string"
+    },
+    "confirm": {
+      "description": "Confirm this Merchant mutation",
+      "type": "boolean"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "dataSource": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Return the write preview without calling Google Merchant API",
+      "type": "boolean"
+    },
+    "productInput": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "updateMask": {
+      "description": "Required comma-separated top-level field mask",
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "dataSource",
+    "productInput"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `merchant.product-patch`. */
+export const MerchantProductPatchReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `merchant.products`. */
+export const MerchantProductsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "pageSize": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "pageToken": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "account"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `merchant.products`. */
+export const MerchantProductsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `merchant.promotion-get`. */
+export const MerchantPromotionGetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "promotion": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "promotion"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `merchant.promotion-get`. */
+export const MerchantPromotionGetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `merchant.promotion-insert`. */
+export const MerchantPromotionInsertInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "body": {
+      "description": "Promotion JSON body",
+      "type": "string"
+    },
+    "confirm": {
+      "type": "boolean"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "dataSource": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Return the write preview without calling Google Merchant API",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "account",
+    "dataSource"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `merchant.promotion-insert`. */
+export const MerchantPromotionInsertReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `merchant.promotions`. */
+export const MerchantPromotionsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "pageSize": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "pageToken": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "account"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `merchant.promotions`. */
+export const MerchantPromotionsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `merchant.report-search`. */
+export const MerchantReportSearchInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "pageSize": {
+      "description": "Rows, maximum 100000",
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "pageToken": {
+      "type": "string"
+    },
+    "query": {
+      "description": "Merchant API Query Language SELECT statement",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "query"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `merchant.report-search`. */
+export const MerchantReportSearchReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "result"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

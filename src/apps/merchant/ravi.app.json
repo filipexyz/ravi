@@ -1,0 +1,549 @@
+{
+  "schema": "ravi.app/v1",
+  "id": "merchant",
+  "name": "Google Merchant",
+  "version": "0.1.0",
+  "description": "Opera contas, produtos, relatórios, fontes e promoções pelo Google Merchant API nativo.",
+  "interfaces": {
+    "cli": {
+      "command": "ravi merchant",
+      "json": true,
+      "health": "ravi apps check merchant --json"
+    },
+    "sdk": {
+      "namespace": "merchant"
+    },
+    "ui": {
+      "routes": [
+        {
+          "id": "main",
+          "path": "/apps/merchant",
+          "label": "Merchant",
+          "icon": "shopping-bag",
+          "view": "overview"
+        }
+      ],
+      "views": [
+        {
+          "id": "overview",
+          "type": "dashboard",
+          "title": "Google Merchant",
+          "density": "compact",
+          "query": {
+            "operation": "merchant.products"
+          },
+          "actions": [
+            {
+              "id": "products",
+              "label": "Produtos",
+              "icon": "package",
+              "operation": "merchant.products",
+              "placement": "toolbar",
+              "permission": "merchant:read"
+            },
+            {
+              "id": "issues",
+              "label": "Issues",
+              "icon": "triangle-alert",
+              "operation": "merchant.account-issues",
+              "placement": "toolbar",
+              "permission": "merchant:read"
+            },
+            {
+              "id": "data-sources",
+              "label": "Fontes",
+              "icon": "database",
+              "operation": "merchant.data-sources",
+              "placement": "toolbar",
+              "permission": "merchant:read"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "operations": {
+    "merchant.check": {
+      "interface": "builtin",
+      "handler": "apps.manifest.check",
+      "mutating": false,
+      "safety": {
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": false,
+        "risk": "low"
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      }
+    },
+    "merchant.contract": {
+      "interface": "sdk",
+      "namespace": "merchant",
+      "method": "contract",
+      "mutating": false,
+      "permission": "merchant:read",
+      "safety": {
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": false,
+        "risk": "low"
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      }
+    },
+    "merchant.accounts": {
+      "interface": "sdk",
+      "namespace": "merchant",
+      "method": "accounts",
+      "mutating": false,
+      "permission": "merchant:read",
+      "safety": {
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": false,
+        "risk": "low"
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      }
+    },
+    "merchant.account-get": {
+      "interface": "sdk",
+      "namespace": "merchant",
+      "method": "accountGet",
+      "mutating": false,
+      "permission": "merchant:read",
+      "safety": {
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": false,
+        "risk": "low"
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      }
+    },
+    "merchant.account-issues": {
+      "interface": "sdk",
+      "namespace": "merchant",
+      "method": "accountIssues",
+      "mutating": false,
+      "permission": "merchant:read",
+      "safety": {
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": false,
+        "risk": "low"
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      }
+    },
+    "merchant.products": {
+      "interface": "sdk",
+      "namespace": "merchant",
+      "method": "products",
+      "mutating": false,
+      "permission": "merchant:read",
+      "safety": {
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": false,
+        "risk": "low"
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      }
+    },
+    "merchant.product-get": {
+      "interface": "sdk",
+      "namespace": "merchant",
+      "method": "productGet",
+      "mutating": false,
+      "permission": "merchant:read",
+      "safety": {
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": false,
+        "risk": "low"
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      }
+    },
+    "merchant.report-search": {
+      "interface": "sdk",
+      "namespace": "merchant",
+      "method": "reportSearch",
+      "mutating": false,
+      "permission": "merchant:read",
+      "safety": {
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": false,
+        "risk": "low"
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      }
+    },
+    "merchant.data-sources": {
+      "interface": "sdk",
+      "namespace": "merchant",
+      "method": "dataSources",
+      "mutating": false,
+      "permission": "merchant:read",
+      "safety": {
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": false,
+        "risk": "low"
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      }
+    },
+    "merchant.data-source-get": {
+      "interface": "sdk",
+      "namespace": "merchant",
+      "method": "dataSourceGet",
+      "mutating": false,
+      "permission": "merchant:read",
+      "safety": {
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": false,
+        "risk": "low"
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      }
+    },
+    "merchant.promotions": {
+      "interface": "sdk",
+      "namespace": "merchant",
+      "method": "promotions",
+      "mutating": false,
+      "permission": "merchant:read",
+      "safety": {
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": false,
+        "risk": "low"
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      }
+    },
+    "merchant.promotion-get": {
+      "interface": "sdk",
+      "namespace": "merchant",
+      "method": "promotionGet",
+      "mutating": false,
+      "permission": "merchant:read",
+      "safety": {
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": false,
+        "risk": "low"
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      }
+    },
+    "merchant.product-insert": {
+      "interface": "sdk",
+      "namespace": "merchant",
+      "method": "productInsert",
+      "mutating": true,
+      "permission": "merchant:write",
+      "safety": {
+        "idempotent": false,
+        "dryRunSupported": true,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": false,
+        "risk": "high"
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      }
+    },
+    "merchant.product-patch": {
+      "interface": "sdk",
+      "namespace": "merchant",
+      "method": "productPatch",
+      "mutating": true,
+      "permission": "merchant:write",
+      "safety": {
+        "idempotent": false,
+        "dryRunSupported": true,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": false,
+        "risk": "high"
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      }
+    },
+    "merchant.product-delete": {
+      "interface": "sdk",
+      "namespace": "merchant",
+      "method": "productDelete",
+      "mutating": true,
+      "permission": "merchant:destructive",
+      "safety": {
+        "idempotent": false,
+        "dryRunSupported": true,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": false,
+        "risk": "destructive"
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      }
+    },
+    "merchant.data-source-create": {
+      "interface": "sdk",
+      "namespace": "merchant",
+      "method": "dataSourceCreate",
+      "mutating": true,
+      "permission": "merchant:write",
+      "safety": {
+        "idempotent": false,
+        "dryRunSupported": true,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": false,
+        "risk": "high"
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      }
+    },
+    "merchant.data-source-update": {
+      "interface": "sdk",
+      "namespace": "merchant",
+      "method": "dataSourceUpdate",
+      "mutating": true,
+      "permission": "merchant:write",
+      "safety": {
+        "idempotent": false,
+        "dryRunSupported": true,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": false,
+        "risk": "high"
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      }
+    },
+    "merchant.data-source-fetch": {
+      "interface": "sdk",
+      "namespace": "merchant",
+      "method": "dataSourceFetch",
+      "mutating": true,
+      "permission": "merchant:write",
+      "safety": {
+        "idempotent": false,
+        "dryRunSupported": true,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": false,
+        "risk": "high"
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      }
+    },
+    "merchant.data-source-delete": {
+      "interface": "sdk",
+      "namespace": "merchant",
+      "method": "dataSourceDelete",
+      "mutating": true,
+      "permission": "merchant:destructive",
+      "safety": {
+        "idempotent": false,
+        "dryRunSupported": true,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": false,
+        "risk": "destructive"
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      }
+    },
+    "merchant.promotion-insert": {
+      "interface": "sdk",
+      "namespace": "merchant",
+      "method": "promotionInsert",
+      "mutating": true,
+      "permission": "merchant:write",
+      "safety": {
+        "idempotent": false,
+        "dryRunSupported": true,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": false,
+        "risk": "high"
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      }
+    },
+    "merchant.order-tracking-create": {
+      "interface": "sdk",
+      "namespace": "merchant",
+      "method": "orderTrackingCreate",
+      "mutating": true,
+      "permission": "merchant:financial",
+      "safety": {
+        "idempotent": false,
+        "dryRunSupported": true,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": false,
+        "risk": "high"
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      }
+    }
+  },
+  "permissions": {
+    "required": ["merchant:read"],
+    "optional": ["merchant:write", "merchant:destructive", "merchant:financial"],
+    "mutating": ["merchant:write", "merchant:destructive", "merchant:financial"]
+  },
+  "storage": {
+    "sqlite": [],
+    "files": []
+  },
+  "artifacts": [],
+  "events": {
+    "emits": [],
+    "consumes": []
+  },
+  "skills": [],
+  "health": {
+    "checks": [
+      {
+        "id": "manifest",
+        "type": "builtin",
+        "required": true,
+        "sideEffectFree": true,
+        "handler": "apps.manifest.check"
+      }
+    ]
+  },
+  "officialContract": {
+    "confirmed": true,
+    "verifiedAt": "2026-07-13",
+    "baseUrl": "https://merchantapi.googleapis.com",
+    "directory": "https://discovery.googleapis.com/discovery/v1/apis?name=merchantapi",
+    "versioning": "https://developers.google.com/merchant/api/guides/versioning",
+    "stableSubApis": [
+      "accounts_v1",
+      "conversions_v1",
+      "datasources_v1",
+      "inventories_v1",
+      "issueresolution_v1",
+      "lfp_v1",
+      "notifications_v1",
+      "ordertracking_v1",
+      "products_v1",
+      "promotions_v1",
+      "quota_v1",
+      "reports_v1"
+    ],
+    "limitedSubApis": ["productstudio_v1alpha", "reviews_v1alpha"],
+    "oauthScope": "https://www.googleapis.com/auth/content",
+    "phase": "structure-without-real-authentication"
+  },
+  "versioning": {
+    "compatibility": "semver",
+    "migrations": []
+  },
+  "migration": {
+    "mode": "native-parallel",
+    "legacyCommand": "sde merchant",
+    "legacyStatus": "preserved",
+    "operationScope": "all existing Merchant legacy operations audited; native reads first; writes dry-run/promotion-blocked",
+    "credentialPolicy": "Ravi credential broker provider=merchant connection=<id>; no legacy credential file reads",
+    "writeExecution": "disabled in source-ready task; static CLI returns dry-run previews and blocks live writes",
+    "cutover": "disabled; separate protected approval required",
+    "contract": "/home/ravi/ravi-dev/apps-wave-20260722/artifacts/gmc/MIGRATION_CONTRACT.json"
+  }
+}

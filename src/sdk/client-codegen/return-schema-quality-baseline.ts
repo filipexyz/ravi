@@ -23,7 +23,6 @@ export const WEAK_PUBLIC_RETURN_COMMANDS_BASELINE = [
   "agents.sync-instructions",
   "apps.guide",
   "apps.prompts",
-  "apps.run",
   "apps.show",
   "artifacts.archive",
   "artifacts.attach",

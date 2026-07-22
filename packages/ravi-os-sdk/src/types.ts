@@ -8224,6 +8224,322 @@ export type MeetingsVoiceRuntimesReturn = {
   recommendation: string;
 };
 
+/** Input shape for `merchant.account-get`. */
+export type MerchantAccountGetInput = {
+  account: string;
+  connection?: string;
+};
+
+/** Return shape for `merchant.account-get`. */
+export type MerchantAccountGetReturn = {
+  result: Record<string, unknown>;
+};
+
+/** Input shape for `merchant.account-issues`. */
+export type MerchantAccountIssuesInput = {
+  account: string;
+  connection?: string;
+  pageSize?: string;
+  pageToken?: string;
+};
+
+/** Return shape for `merchant.account-issues`. */
+export type MerchantAccountIssuesReturn = {
+  result: Record<string, unknown>;
+};
+
+/** Input shape for `merchant.accounts`. */
+export type MerchantAccountsInput = {
+  connection?: string;
+  pageSize?: string;
+  pageToken?: string;
+};
+
+/** Return shape for `merchant.accounts`. */
+export type MerchantAccountsReturn = {
+  result: Record<string, unknown>;
+};
+
+/** Input shape for `merchant.contract`. */
+export type MerchantContractInput = {
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `merchant.contract`. */
+export type MerchantContractReturn = {
+  confirmed_official_contract: "yes";
+  official_contract: {
+    baseUrl: string;
+    confirmed: true;
+    limitedSubApis: string[];
+    oauthScope: string;
+    sources: string[];
+    stableSubApis: string[];
+    verifiedAt: string;
+  };
+  operation_matrix: Array<{
+    categoria: string;
+    endpoint_ou_recurso_oficial: string;
+    fonte_oficial: string;
+    justificativa: string;
+    observacoes_para_ravi_dev: string;
+    operacao_ravi: string | null;
+    operacao_sde: string;
+    risco_read_write: "read" | "write" | "destructive" | "financial" | "setup";
+    status_decisao: "migrar" | "adicionar" | "estudar" | "ignorar" | "aguardar";
+  }>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  summary: {
+    byDecision: {
+      adicionar: number;
+      aguardar: number;
+      estudar: number;
+      ignorar: number;
+      migrar: number;
+    };
+    byRisk: {
+      destructive: number;
+      financial: number;
+      read: number;
+      setup: number;
+      write: number;
+    };
+    legacyOperations: number;
+  };
+};
+
+/** Input shape for `merchant.data-source-create`. */
+export type MerchantDataSourceCreateInput = {
+  account: string;
+  body?: string;
+  confirm?: boolean;
+  connection?: string;
+  dryRun?: boolean;
+};
+
+/** Return shape for `merchant.data-source-create`. */
+export type MerchantDataSourceCreateReturn = {
+  result: Record<string, unknown>;
+};
+
+/** Input shape for `merchant.data-source-delete`. */
+export type MerchantDataSourceDeleteInput = {
+  account: string;
+  confirm?: boolean;
+  connection?: string;
+  dataSource: string;
+  dryRun?: boolean;
+};
+
+/** Return shape for `merchant.data-source-delete`. */
+export type MerchantDataSourceDeleteReturn = {
+  result: Record<string, unknown>;
+};
+
+/** Input shape for `merchant.data-source-fetch`. */
+export type MerchantDataSourceFetchInput = {
+  account: string;
+  confirm?: boolean;
+  connection?: string;
+  dataSource: string;
+  dryRun?: boolean;
+};
+
+/** Return shape for `merchant.data-source-fetch`. */
+export type MerchantDataSourceFetchReturn = {
+  result: Record<string, unknown>;
+};
+
+/** Input shape for `merchant.data-source-get`. */
+export type MerchantDataSourceGetInput = {
+  account: string;
+  connection?: string;
+  dataSource: string;
+};
+
+/** Return shape for `merchant.data-source-get`. */
+export type MerchantDataSourceGetReturn = {
+  result: Record<string, unknown>;
+};
+
+/** Input shape for `merchant.data-source-update`. */
+export type MerchantDataSourceUpdateInput = {
+  account: string;
+  body?: string;
+  confirm?: boolean;
+  connection?: string;
+  dataSource: string;
+  dryRun?: boolean;
+  updateMask?: string;
+};
+
+/** Return shape for `merchant.data-source-update`. */
+export type MerchantDataSourceUpdateReturn = {
+  result: Record<string, unknown>;
+};
+
+/** Input shape for `merchant.data-sources`. */
+export type MerchantDataSourcesInput = {
+  account: string;
+  connection?: string;
+  pageSize?: string;
+  pageToken?: string;
+};
+
+/** Return shape for `merchant.data-sources`. */
+export type MerchantDataSourcesReturn = {
+  result: Record<string, unknown>;
+};
+
+/** Input shape for `merchant.order-tracking-create`. */
+export type MerchantOrderTrackingCreateInput = {
+  account: string;
+  body?: string;
+  confirm?: boolean;
+  connection?: string;
+  dryRun?: boolean;
+};
+
+/** Return shape for `merchant.order-tracking-create`. */
+export type MerchantOrderTrackingCreateReturn = {
+  result: Record<string, unknown>;
+};
+
+/** Input shape for `merchant.product-delete`. */
+export type MerchantProductDeleteInput = {
+  account: string;
+  confirm?: boolean;
+  connection?: string;
+  dataSource: string;
+  dryRun?: boolean;
+  productInput: string;
+};
+
+/** Return shape for `merchant.product-delete`. */
+export type MerchantProductDeleteReturn = {
+  result: Record<string, unknown>;
+};
+
+/** Input shape for `merchant.product-get`. */
+export type MerchantProductGetInput = {
+  account: string;
+  connection?: string;
+  product: string;
+};
+
+/** Return shape for `merchant.product-get`. */
+export type MerchantProductGetReturn = {
+  result: Record<string, unknown>;
+};
+
+/** Input shape for `merchant.product-insert`. */
+export type MerchantProductInsertInput = {
+  account: string;
+  body?: string;
+  confirm?: boolean;
+  connection?: string;
+  dataSource: string;
+  dryRun?: boolean;
+};
+
+/** Return shape for `merchant.product-insert`. */
+export type MerchantProductInsertReturn = {
+  result: Record<string, unknown>;
+};
+
+/** Input shape for `merchant.product-patch`. */
+export type MerchantProductPatchInput = {
+  account: string;
+  body?: string;
+  confirm?: boolean;
+  connection?: string;
+  dataSource: string;
+  dryRun?: boolean;
+  productInput: string;
+  updateMask?: string;
+};
+
+/** Return shape for `merchant.product-patch`. */
+export type MerchantProductPatchReturn = {
+  result: Record<string, unknown>;
+};
+
+/** Input shape for `merchant.products`. */
+export type MerchantProductsInput = {
+  account: string;
+  connection?: string;
+  pageSize?: string;
+  pageToken?: string;
+};
+
+/** Return shape for `merchant.products`. */
+export type MerchantProductsReturn = {
+  result: Record<string, unknown>;
+};
+
+/** Input shape for `merchant.promotion-get`. */
+export type MerchantPromotionGetInput = {
+  account: string;
+  connection?: string;
+  promotion: string;
+};
+
+/** Return shape for `merchant.promotion-get`. */
+export type MerchantPromotionGetReturn = {
+  result: Record<string, unknown>;
+};
+
+/** Input shape for `merchant.promotion-insert`. */
+export type MerchantPromotionInsertInput = {
+  account: string;
+  body?: string;
+  confirm?: boolean;
+  connection?: string;
+  dataSource: string;
+  dryRun?: boolean;
+};
+
+/** Return shape for `merchant.promotion-insert`. */
+export type MerchantPromotionInsertReturn = {
+  result: Record<string, unknown>;
+};
+
+/** Input shape for `merchant.promotions`. */
+export type MerchantPromotionsInput = {
+  account: string;
+  connection?: string;
+  pageSize?: string;
+  pageToken?: string;
+};
+
+/** Return shape for `merchant.promotions`. */
+export type MerchantPromotionsReturn = {
+  result: Record<string, unknown>;
+};
+
+/** Input shape for `merchant.report-search`. */
+export type MerchantReportSearchInput = {
+  account: string;
+  connection?: string;
+  pageSize?: string;
+  pageToken?: string;
+  query: string;
+};
+
+/** Return shape for `merchant.report-search`. */
+export type MerchantReportSearchReturn = {
+  result: Record<string, unknown>;
+};
+
 /** Input shape for `metrics.dates`. */
 export type MetricsDatesInput = Record<string, never>;
 

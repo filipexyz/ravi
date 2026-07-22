@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { Ajv2020 } from "ajv/dist/2020.js";
@@ -133,12 +133,32 @@ function shadowLegacyStateCopies(
   const repoRoot = findRepoRoot(cwd);
   const homeDir = options.env?.HOME?.trim() || homedir();
   const internalPluginNames = new Set(loadInternalPlugins().map((plugin) => plugin.name));
+  const repoRecords = records.filter((record) => record.source === "repo");
+  const repoIds = new Set(repoRecords.map((record) => record.id));
+  const shadowedInternalPluginCopies = records.filter(
+    (record) =>
+      record.source === "plugin" &&
+      repoIds.has(record.id) &&
+      isInternalPluginAppRoot(record.rootPath, repoRoot, homeDir, internalPluginNames),
+  );
+
+  for (const repoRecord of repoRecords) {
+    const pluginCopies = shadowedInternalPluginCopies.filter((record) => record.id === repoRecord.id);
+    if (pluginCopies.length === 0) continue;
+    repoRecord.warnings.push(
+      `Ignored ${pluginCopies.length} packaged internal plugin copy/copies because the repo app "${repoRecord.id}" is authoritative in this source tree.`,
+    );
+  }
+
+  const withoutShadowedInternalPlugins = records.filter((record) => !shadowedInternalPluginCopies.includes(record));
   const managedRecords = records.filter(
     (record) =>
       record.source === "repo" || isInternalPluginAppRoot(record.rootPath, repoRoot, homeDir, internalPluginNames),
   );
   const managedIds = new Set(managedRecords.map((record) => record.id));
-  const shadowed = records.filter((record) => record.source === "state" && managedIds.has(record.id));
+  const shadowed = withoutShadowedInternalPlugins.filter(
+    (record) => record.source === "state" && managedIds.has(record.id),
+  );
 
   for (const managed of managedRecords) {
     const legacyCopies = shadowed.filter((record) => record.id === managed.id);
@@ -148,7 +168,7 @@ function shadowLegacyStateCopies(
     );
   }
 
-  return records.filter((record) => !shadowed.includes(record));
+  return withoutShadowedInternalPlugins.filter((record) => !shadowed.includes(record));
 }
 
 function isInternalPluginAppRoot(
@@ -206,7 +226,7 @@ export function discoverAppRoots(options: RaviAppDiscoveryOptions = {}): RaviApp
   const repoRoot = findRepoRoot(cwd);
   const packagedRuntime = isPackagedAppRuntime();
 
-  if (!packagedRuntime) {
+  if (!packagedRuntime || isLocalPackagedSourceRuntime(repoRoot)) {
     roots.push({ source: "repo", rootPath: join(repoRoot, "src", "apps") });
   }
 
@@ -233,6 +253,17 @@ function findRepoRoot(cwd: string): string {
 
 export function isPackagedAppRuntime(entrypoint = process.argv[1] ?? ""): boolean {
   return entrypoint.split("\\").join("/").includes("/dist/bundle/");
+}
+
+function isLocalPackagedSourceRuntime(repoRoot: string, entrypoint = process.argv[1] ?? ""): boolean {
+  if (!entrypoint || !existsSync(entrypoint)) return false;
+  const sourceAppsRoot = join(repoRoot, "src", "apps");
+  if (!existsSync(sourceAppsRoot)) return false;
+
+  const realRepoRoot = realpathSync(repoRoot);
+  const realEntrypoint = realpathSync(entrypoint);
+  const localBundleRoot = join(realRepoRoot, "dist", "bundle");
+  return realEntrypoint === join(localBundleRoot, "index.js") || realEntrypoint.startsWith(`${localBundleRoot}${sep}`);
 }
 
 function discoverPluginRoots(

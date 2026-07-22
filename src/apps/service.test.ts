@@ -2,11 +2,18 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { checkAppManifests, discoverAppManifests, getAppManifest, isPackagedAppRuntime } from "./service.js";
+import {
+  checkAppManifests,
+  discoverAppManifests,
+  discoverAppRoots,
+  getAppManifest,
+  isPackagedAppRuntime,
+} from "./service.js";
 
 const tempRoots: string[] = [];
 const originalCwd = process.cwd();
 const originalStateDir = process.env.RAVI_STATE_DIR;
+const originalEntrypoint = process.argv[1];
 
 function makeRepo(): string {
   const root = mkdtempSync(join(tmpdir(), "ravi-apps-"));
@@ -69,6 +76,7 @@ afterEach(() => {
     if (root) rmSync(root, { recursive: true, force: true });
   }
   process.exitCode = undefined;
+  process.argv[1] = originalEntrypoint;
 });
 
 describe("Ravi app manifest service", () => {
@@ -76,6 +84,54 @@ describe("Ravi app manifest service", () => {
     expect(isPackagedAppRuntime("/opt/ravi/dist/bundle/index.js")).toBe(true);
     expect(isPackagedAppRuntime("C:\\ravi\\dist\\bundle\\index.js")).toBe(true);
     expect(isPackagedAppRuntime("/opt/ravi/src/cli/index.ts")).toBe(false);
+  });
+
+  it("keeps repo manifests visible when the local wrapper runs the built bundle from a source tree", () => {
+    const root = makeRepo();
+    writeManifest(root, "apps", validManifest());
+    const bundleDir = join(root, "dist", "bundle");
+    mkdirSync(bundleDir, { recursive: true });
+    writeFileSync(join(bundleDir, "index.js"), "");
+    writeFileSync(join(bundleDir, "internal-plugins.json"), JSON.stringify({ schemaVersion: 1, plugins: [] }));
+
+    process.argv[1] = join(bundleDir, "index.js");
+
+    const roots = discoverAppRoots({
+      cwd: root,
+      env: { ...process.env, RAVI_STATE_DIR: join(root, ".state") },
+    });
+
+    expect(roots).toContainEqual(
+      expect.objectContaining({
+        source: "repo",
+        rootPath: join(root, "src", "apps"),
+      }),
+    );
+  });
+
+  it("does not trust cwd repo manifests when a packaged runtime entrypoint belongs to another tree", () => {
+    const root = makeRepo();
+    writeManifest(root, "apps", validManifest());
+    const runtimeRoot = mkdtempSync(join(tmpdir(), "ravi-runtime-"));
+    tempRoots.push(runtimeRoot);
+    const bundleDir = join(runtimeRoot, "dist", "bundle");
+    mkdirSync(bundleDir, { recursive: true });
+    writeFileSync(join(bundleDir, "index.js"), "");
+    writeFileSync(join(bundleDir, "internal-plugins.json"), JSON.stringify({ schemaVersion: 1, plugins: [] }));
+
+    process.argv[1] = join(bundleDir, "index.js");
+
+    const roots = discoverAppRoots({
+      cwd: root,
+      env: { ...process.env, RAVI_STATE_DIR: join(root, ".state") },
+    });
+
+    expect(roots).not.toContainEqual(
+      expect.objectContaining({
+        source: "repo",
+        rootPath: join(root, "src", "apps"),
+      }),
+    );
   });
 
   it("ignores cached mirrors of internal plugins during source discovery", () => {
@@ -99,6 +155,25 @@ describe("Ravi app manifest service", () => {
     expect(apps.filter((app) => app.id === "apps")).toHaveLength(1);
     expect(apps.find((app) => app.id === "apps")?.source).toBe("repo");
     expect(apps.find((app) => app.id === "partner")?.source).toBe("plugin");
+  });
+
+  it("shadows internal plugin copies when a repo app id is authoritative", () => {
+    const root = makeRepo();
+    const manifest = validManifest({ id: "apps", name: "Ravi Apps" });
+    writeManifest(root, "apps", manifest);
+    const internalPluginAppDir = join(root, "src", "plugins", "internal", "ravi-system", "apps", "apps");
+    mkdirSync(internalPluginAppDir, { recursive: true });
+    writeFileSync(join(internalPluginAppDir, "ravi.app.json"), JSON.stringify(manifest, null, 2));
+
+    const apps = discoverAppManifests({
+      cwd: root,
+      env: { ...process.env, HOME: root, RAVI_STATE_DIR: join(root, ".state") },
+    });
+    const records = apps.filter((app) => app.id === "apps");
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ source: "repo", valid: true });
+    expect(records[0]?.warnings.join("\n")).toContain("packaged internal plugin copy/copies");
   });
 
   it("discovers and validates repo app manifests", () => {

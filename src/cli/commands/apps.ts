@@ -211,7 +211,7 @@ const appsRunReturnSchema = z.object({
   timedOut: z.boolean().optional(),
   truncated: z.boolean().optional(),
   selectedFields: z.array(z.string()).optional(),
-  result: z.unknown().optional(),
+  result: jsonValueSchema.optional(),
   error: z.string().optional(),
   failure: z
     .object({
@@ -252,7 +252,7 @@ const appsRunReturnSchema = z.object({
       vendorCode: z.string().optional(),
       retryAfterMs: z.number().optional(),
       requestId: z.string().optional(),
-      details: z.unknown().optional(),
+      details: jsonValueSchema.optional(),
     })
     .optional(),
   command: z.string().optional(),
