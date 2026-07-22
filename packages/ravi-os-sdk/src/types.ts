@@ -8271,6 +8271,481 @@ export type MetricsShowReturn = Array<{
   turnsInterrupted: number;
 }>;
 
+/** Input shape for `ml.ads-ad-groups`. */
+export type MlAdsAdGroupsInput = {
+  advertiser: string;
+  connection?: string;
+  items: string;
+  site: string;
+};
+
+/** Return shape for `ml.ads-ad-groups`. */
+export type MlAdsAdGroupsReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.ads-advertisers`. */
+export type MlAdsAdvertisersInput = {
+  connection?: string;
+};
+
+/** Return shape for `ml.ads-advertisers`. */
+export type MlAdsAdvertisersReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.ads-campaigns`. */
+export type MlAdsCampaignsInput = {
+  advertiser: string;
+  connection?: string;
+  from?: string;
+  limit?: string;
+  metrics?: string;
+  offset?: string;
+  site: string;
+  status?: string;
+  to?: string;
+};
+
+/** Return shape for `ml.ads-campaigns`. */
+export type MlAdsCampaignsReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.category-get`. */
+export type MlCategoryGetInput = {
+  category: string;
+  connection?: string;
+};
+
+/** Return shape for `ml.category-get`. */
+export type MlCategoryGetReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.claim-get`. */
+export type MlClaimGetInput = {
+  claim: string;
+  connection?: string;
+};
+
+/** Return shape for `ml.claim-get`. */
+export type MlClaimGetReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.claim-messages`. */
+export type MlClaimMessagesInput = {
+  claim: string;
+  connection?: string;
+};
+
+/** Return shape for `ml.claim-messages`. */
+export type MlClaimMessagesReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.claim-return`. */
+export type MlClaimReturnInput = {
+  claim: string;
+  connection?: string;
+};
+
+/** Return shape for `ml.claim-return`. */
+export type MlClaimReturnReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.claims`. */
+export type MlClaimsInput = {
+  connection?: string;
+  limit?: string;
+  offset?: string;
+  seller: string;
+  stage?: string;
+  status?: string;
+};
+
+/** Return shape for `ml.claims`. */
+export type MlClaimsReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.description-create`. */
+export type MlDescriptionCreateInput = {
+  confirm?: boolean;
+  connection?: string;
+  dryRun?: boolean;
+  item: string;
+  text: string;
+};
+
+/** Return shape for `ml.description-create`. */
+export type MlDescriptionCreateReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.description-update`. */
+export type MlDescriptionUpdateInput = {
+  confirm?: boolean;
+  connection?: string;
+  dryRun?: boolean;
+  item: string;
+  text: string;
+};
+
+/** Return shape for `ml.description-update`. */
+export type MlDescriptionUpdateReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.highlights`. */
+export type MlHighlightsInput = {
+  category: string;
+  connection?: string;
+  site?: string;
+};
+
+/** Return shape for `ml.highlights`. */
+export type MlHighlightsReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.item-activate`. */
+export type MlItemActivateInput = {
+  confirm?: boolean;
+  connection?: string;
+  dryRun?: boolean;
+  item: string;
+};
+
+/** Return shape for `ml.item-activate`. */
+export type MlItemActivateReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.item-close`. */
+export type MlItemCloseInput = {
+  confirm?: boolean;
+  connection?: string;
+  dryRun?: boolean;
+  item: string;
+};
+
+/** Return shape for `ml.item-close`. */
+export type MlItemCloseReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.item-create`. */
+export type MlItemCreateInput = {
+  body?: string;
+  confirm?: boolean;
+  connection?: string;
+  dryRun?: boolean;
+};
+
+/** Return shape for `ml.item-create`. */
+export type MlItemCreateReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.item-delete`. */
+export type MlItemDeleteInput = {
+  confirm?: boolean;
+  connection?: string;
+  dryRun?: boolean;
+  item: string;
+};
+
+/** Return shape for `ml.item-delete`. */
+export type MlItemDeleteReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.item-description`. */
+export type MlItemDescriptionInput = {
+  connection?: string;
+  item: string;
+};
+
+/** Return shape for `ml.item-description`. */
+export type MlItemDescriptionReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.item-get`. */
+export type MlItemGetInput = {
+  connection?: string;
+  item: string;
+};
+
+/** Return shape for `ml.item-get`. */
+export type MlItemGetReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.item-pause`. */
+export type MlItemPauseInput = {
+  confirm?: boolean;
+  connection?: string;
+  dryRun?: boolean;
+  item: string;
+};
+
+/** Return shape for `ml.item-pause`. */
+export type MlItemPauseReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.item-prices`. */
+export type MlItemPricesInput = {
+  connection?: string;
+  item: string;
+};
+
+/** Return shape for `ml.item-prices`. */
+export type MlItemPricesReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.item-update`. */
+export type MlItemUpdateInput = {
+  body?: string;
+  confirm?: boolean;
+  connection?: string;
+  dryRun?: boolean;
+  item: string;
+};
+
+/** Return shape for `ml.item-update`. */
+export type MlItemUpdateReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.item-visits`. */
+export type MlItemVisitsInput = {
+  connection?: string;
+  item: string;
+  last?: string;
+};
+
+/** Return shape for `ml.item-visits`. */
+export type MlItemVisitsReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.items`. */
+export type MlItemsInput = {
+  connection?: string;
+  limit?: string;
+  offset?: string;
+  seller: string;
+  sku?: string;
+  status?: string;
+};
+
+/** Return shape for `ml.items`. */
+export type MlItemsReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.items-get`. */
+export type MlItemsGetInput = {
+  connection?: string;
+  items: string;
+};
+
+/** Return shape for `ml.items-get`. */
+export type MlItemsGetReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.items-visits`. */
+export type MlItemsVisitsInput = {
+  connection?: string;
+  items: string;
+};
+
+/** Return shape for `ml.items-visits`. */
+export type MlItemsVisitsReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.message-send`. */
+export type MlMessageSendInput = {
+  confirm?: boolean;
+  connection?: string;
+  dryRun?: boolean;
+  pack: string;
+  seller: string;
+  text: string;
+  "to-user": string;
+};
+
+/** Return shape for `ml.message-send`. */
+export type MlMessageSendReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.messages`. */
+export type MlMessagesInput = {
+  connection?: string;
+  limit?: string;
+  offset?: string;
+  pack: string;
+  seller: string;
+};
+
+/** Return shape for `ml.messages`. */
+export type MlMessagesReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.order-billing`. */
+export type MlOrderBillingInput = {
+  connection?: string;
+  order: string;
+  site?: string;
+};
+
+/** Return shape for `ml.order-billing`. */
+export type MlOrderBillingReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.order-get`. */
+export type MlOrderGetInput = {
+  connection?: string;
+  order: string;
+};
+
+/** Return shape for `ml.order-get`. */
+export type MlOrderGetReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.order-notes`. */
+export type MlOrderNotesInput = {
+  connection?: string;
+  order: string;
+};
+
+/** Return shape for `ml.order-notes`. */
+export type MlOrderNotesReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.orders`. */
+export type MlOrdersInput = {
+  connection?: string;
+  from?: string;
+  limit?: string;
+  offset?: string;
+  seller: string;
+  status?: string;
+  to?: string;
+};
+
+/** Return shape for `ml.orders`. */
+export type MlOrdersReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.pack-get`. */
+export type MlPackGetInput = {
+  connection?: string;
+  pack: string;
+};
+
+/** Return shape for `ml.pack-get`. */
+export type MlPackGetReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.question-answer`. */
+export type MlQuestionAnswerInput = {
+  confirm?: boolean;
+  connection?: string;
+  dryRun?: boolean;
+  question: string;
+  text: string;
+};
+
+/** Return shape for `ml.question-answer`. */
+export type MlQuestionAnswerReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.questions`. */
+export type MlQuestionsInput = {
+  connection?: string;
+  limit?: string;
+  offset?: string;
+  seller: string;
+  status?: string;
+};
+
+/** Return shape for `ml.questions`. */
+export type MlQuestionsReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.seller`. */
+export type MlSellerInput = {
+  connection?: string;
+};
+
+/** Return shape for `ml.seller`. */
+export type MlSellerReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.shipment-costs`. */
+export type MlShipmentCostsInput = {
+  connection?: string;
+  shipment: string;
+};
+
+/** Return shape for `ml.shipment-costs`. */
+export type MlShipmentCostsReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.shipment-get`. */
+export type MlShipmentGetInput = {
+  connection?: string;
+  shipment: string;
+};
+
+/** Return shape for `ml.shipment-get`. */
+export type MlShipmentGetReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.shipment-history`. */
+export type MlShipmentHistoryInput = {
+  connection?: string;
+  shipment: string;
+};
+
+/** Return shape for `ml.shipment-history`. */
+export type MlShipmentHistoryReturn = {
+  result: unknown;
+};
+
+/** Input shape for `ml.trends`. */
+export type MlTrendsInput = {
+  category?: string;
+  connection?: string;
+  site?: string;
+};
+
+/** Return shape for `ml.trends`. */
+export type MlTrendsReturn = {
+  result: unknown;
+};
+
 /** Input shape for `observers.list`. */
 export type ObserversListInput = {
   agent?: string;

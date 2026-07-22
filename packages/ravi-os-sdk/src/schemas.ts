@@ -42528,6 +42528,2911 @@ export const MetricsShowReturnSchema = {
   "type": "array"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `ml.ads-ad-groups`. */
+export const MlAdsAdGroupsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "advertiser": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "items": {
+      "description": "Comma-separated item ids",
+      "type": "string"
+    },
+    "site": {
+      "pattern": "^ML[A-Z]$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "advertiser",
+    "items",
+    "site"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.ads-ad-groups`. */
+export const MlAdsAdGroupsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.ads-advertisers`. */
+export const MlAdsAdvertisersInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.ads-advertisers`. */
+export const MlAdsAdvertisersReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.ads-campaigns`. */
+export const MlAdsCampaignsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "advertiser": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "from": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "type": "string"
+    },
+    "limit": {
+      "default": "50",
+      "description": "Maximum results in this provider page, 1-50 (default: 50)",
+      "type": "string"
+    },
+    "metrics": {
+      "description": "Comma-separated official metric names",
+      "type": "string"
+    },
+    "offset": {
+      "default": "0",
+      "description": "Provider result offset (default: 0)",
+      "type": "string"
+    },
+    "site": {
+      "pattern": "^ML[A-Z]$",
+      "type": "string"
+    },
+    "status": {
+      "description": "active or paused campaign filter",
+      "type": "string"
+    },
+    "to": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "advertiser",
+    "site"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.ads-campaigns`. */
+export const MlAdsCampaignsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.category-get`. */
+export const MlCategoryGetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "category": {
+      "pattern": "^ML[A-Z]\\d+$",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "category"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.category-get`. */
+export const MlCategoryGetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.claim-get`. */
+export const MlClaimGetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "claim": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "claim"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.claim-get`. */
+export const MlClaimGetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.claim-messages`. */
+export const MlClaimMessagesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "claim": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "claim"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.claim-messages`. */
+export const MlClaimMessagesReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.claim-return`. */
+export const MlClaimReturnInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "claim": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "claim"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.claim-return`. */
+export const MlClaimReturnReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.claims`. */
+export const MlClaimsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "limit": {
+      "default": "50",
+      "description": "Maximum results in this provider page, 1-100 (default: 50)",
+      "type": "string"
+    },
+    "offset": {
+      "default": "0",
+      "description": "Provider result offset (default: 0)",
+      "type": "string"
+    },
+    "seller": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "stage": {
+      "description": "Optional claim stage",
+      "type": "string"
+    },
+    "status": {
+      "default": "opened",
+      "type": "string"
+    }
+  },
+  "required": [
+    "seller"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.claims`. */
+export const MlClaimsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.description-create`. */
+export const MlDescriptionCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "confirm": {
+      "description": "Confirm this external mutation explicitly",
+      "type": "boolean"
+    },
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Validate and return a mutation plan without resolving credentials or calling Mercado Livre",
+      "type": "boolean"
+    },
+    "item": {
+      "pattern": "^ML[A-Z]{1,2}\\d+$",
+      "type": "string"
+    },
+    "text": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "item",
+    "text"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.description-create`. */
+export const MlDescriptionCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.description-update`. */
+export const MlDescriptionUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "confirm": {
+      "description": "Confirm this external mutation explicitly",
+      "type": "boolean"
+    },
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Validate and return a mutation plan without resolving credentials or calling Mercado Livre",
+      "type": "boolean"
+    },
+    "item": {
+      "pattern": "^ML[A-Z]{1,2}\\d+$",
+      "type": "string"
+    },
+    "text": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "item",
+    "text"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.description-update`. */
+export const MlDescriptionUpdateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.highlights`. */
+export const MlHighlightsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "category": {
+      "pattern": "^ML[A-Z]\\d+$",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "site": {
+      "pattern": "^ML[A-Z]$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "category"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.highlights`. */
+export const MlHighlightsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.item-activate`. */
+export const MlItemActivateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "confirm": {
+      "description": "Confirm this external mutation explicitly",
+      "type": "boolean"
+    },
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Validate and return a mutation plan without resolving credentials or calling Mercado Livre",
+      "type": "boolean"
+    },
+    "item": {
+      "pattern": "^ML[A-Z]{1,2}\\d+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "item"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.item-activate`. */
+export const MlItemActivateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.item-close`. */
+export const MlItemCloseInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "confirm": {
+      "description": "Confirm this external mutation explicitly",
+      "type": "boolean"
+    },
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Validate and return a mutation plan without resolving credentials or calling Mercado Livre",
+      "type": "boolean"
+    },
+    "item": {
+      "pattern": "^ML[A-Z]{1,2}\\d+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "item"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.item-close`. */
+export const MlItemCloseReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.item-create`. */
+export const MlItemCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "body": {
+      "description": "Official item JSON object; never persisted by Ravi",
+      "type": "string"
+    },
+    "confirm": {
+      "description": "Confirm this external mutation explicitly",
+      "type": "boolean"
+    },
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Validate and return a mutation plan without resolving credentials or calling Mercado Livre",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.item-create`. */
+export const MlItemCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.item-delete`. */
+export const MlItemDeleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "confirm": {
+      "description": "Confirm this external mutation explicitly",
+      "type": "boolean"
+    },
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Validate and return a mutation plan without resolving credentials or calling Mercado Livre",
+      "type": "boolean"
+    },
+    "item": {
+      "pattern": "^ML[A-Z]{1,2}\\d+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "item"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.item-delete`. */
+export const MlItemDeleteReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.item-description`. */
+export const MlItemDescriptionInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "item": {
+      "pattern": "^ML[A-Z]{1,2}\\d+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "item"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.item-description`. */
+export const MlItemDescriptionReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.item-get`. */
+export const MlItemGetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "item": {
+      "pattern": "^ML[A-Z]{1,2}\\d+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "item"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.item-get`. */
+export const MlItemGetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.item-pause`. */
+export const MlItemPauseInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "confirm": {
+      "description": "Confirm this external mutation explicitly",
+      "type": "boolean"
+    },
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Validate and return a mutation plan without resolving credentials or calling Mercado Livre",
+      "type": "boolean"
+    },
+    "item": {
+      "pattern": "^ML[A-Z]{1,2}\\d+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "item"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.item-pause`. */
+export const MlItemPauseReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.item-prices`. */
+export const MlItemPricesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "item": {
+      "pattern": "^ML[A-Z]{1,2}\\d+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "item"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.item-prices`. */
+export const MlItemPricesReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.item-update`. */
+export const MlItemUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "body": {
+      "description": "Allowed fields: title, available_quantity, seller_custom_field, pictures, attributes, shipping, sale_terms",
+      "type": "string"
+    },
+    "confirm": {
+      "description": "Confirm this external mutation explicitly",
+      "type": "boolean"
+    },
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Validate and return a mutation plan without resolving credentials or calling Mercado Livre",
+      "type": "boolean"
+    },
+    "item": {
+      "pattern": "^ML[A-Z]{1,2}\\d+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "item"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.item-update`. */
+export const MlItemUpdateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.item-visits`. */
+export const MlItemVisitsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "item": {
+      "pattern": "^ML[A-Z]{1,2}\\d+$",
+      "type": "string"
+    },
+    "last": {
+      "default": "30",
+      "description": "Days in the window, 1-150",
+      "type": "string"
+    }
+  },
+  "required": [
+    "item"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.item-visits`. */
+export const MlItemVisitsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.items`. */
+export const MlItemsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "limit": {
+      "default": "50",
+      "description": "Maximum results in this provider page, 1-50 (default: 50)",
+      "type": "string"
+    },
+    "offset": {
+      "default": "0",
+      "description": "Provider result offset (default: 0)",
+      "type": "string"
+    },
+    "seller": {
+      "description": "Numeric seller id",
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "sku": {
+      "description": "Optional seller SKU filter",
+      "type": "string"
+    },
+    "status": {
+      "description": "Optional item status filter",
+      "type": "string"
+    }
+  },
+  "required": [
+    "seller"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.items`. */
+export const MlItemsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.items-get`. */
+export const MlItemsGetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "items": {
+      "description": "Comma-separated item ids",
+      "type": "string"
+    }
+  },
+  "required": [
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.items-get`. */
+export const MlItemsGetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.items-visits`. */
+export const MlItemsVisitsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "items": {
+      "description": "Comma-separated item ids",
+      "type": "string"
+    }
+  },
+  "required": [
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.items-visits`. */
+export const MlItemsVisitsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.message-send`. */
+export const MlMessageSendInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "confirm": {
+      "description": "Confirm this external mutation explicitly",
+      "type": "boolean"
+    },
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Validate and return a mutation plan without resolving credentials or calling Mercado Livre",
+      "type": "boolean"
+    },
+    "pack": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "seller": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "text": {
+      "maxLength": 350,
+      "minLength": 1,
+      "type": "string"
+    },
+    "to-user": {
+      "description": "Current official recipient/agent user id",
+      "pattern": "^\\d+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pack",
+    "seller",
+    "text",
+    "to-user"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.message-send`. */
+export const MlMessageSendReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.messages`. */
+export const MlMessagesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "limit": {
+      "default": "50",
+      "description": "Maximum results in this provider page, 1-50 (default: 50)",
+      "type": "string"
+    },
+    "offset": {
+      "default": "0",
+      "description": "Provider result offset (default: 0)",
+      "type": "string"
+    },
+    "pack": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "seller": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pack",
+    "seller"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.messages`. */
+export const MlMessagesReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.order-billing`. */
+export const MlOrderBillingInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "order": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "site": {
+      "description": "Mercado Livre site id",
+      "pattern": "^ML[A-Z]$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "order"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.order-billing`. */
+export const MlOrderBillingReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.order-get`. */
+export const MlOrderGetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "order": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "order"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.order-get`. */
+export const MlOrderGetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.order-notes`. */
+export const MlOrderNotesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "order": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "order"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.order-notes`. */
+export const MlOrderNotesReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.orders`. */
+export const MlOrdersInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "from": {
+      "description": "Created from YYYY-MM-DD",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "type": "string"
+    },
+    "limit": {
+      "default": "50",
+      "description": "Maximum results in this provider page, 1-50 (default: 50)",
+      "type": "string"
+    },
+    "offset": {
+      "default": "0",
+      "description": "Provider result offset (default: 0)",
+      "type": "string"
+    },
+    "seller": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "status": {
+      "description": "Order status such as paid or cancelled",
+      "type": "string"
+    },
+    "to": {
+      "description": "Created through YYYY-MM-DD",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "seller"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.orders`. */
+export const MlOrdersReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.pack-get`. */
+export const MlPackGetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "pack": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pack"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.pack-get`. */
+export const MlPackGetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.question-answer`. */
+export const MlQuestionAnswerInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "confirm": {
+      "description": "Confirm this external mutation explicitly",
+      "type": "boolean"
+    },
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Validate and return a mutation plan without resolving credentials or calling Mercado Livre",
+      "type": "boolean"
+    },
+    "question": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "text": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "question",
+    "text"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.question-answer`. */
+export const MlQuestionAnswerReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.questions`. */
+export const MlQuestionsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "limit": {
+      "default": "50",
+      "description": "Maximum results in this provider page, 1-50 (default: 50)",
+      "type": "string"
+    },
+    "offset": {
+      "default": "0",
+      "description": "Provider result offset (default: 0)",
+      "type": "string"
+    },
+    "seller": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "status": {
+      "description": "Question status such as UNANSWERED",
+      "type": "string"
+    }
+  },
+  "required": [
+    "seller"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.questions`. */
+export const MlQuestionsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.seller`. */
+export const MlSellerInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.seller`. */
+export const MlSellerReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.shipment-costs`. */
+export const MlShipmentCostsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "shipment": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "shipment"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.shipment-costs`. */
+export const MlShipmentCostsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.shipment-get`. */
+export const MlShipmentGetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "shipment": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "shipment"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.shipment-get`. */
+export const MlShipmentGetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.shipment-history`. */
+export const MlShipmentHistoryInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "shipment": {
+      "pattern": "^\\d+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "shipment"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.shipment-history`. */
+export const MlShipmentHistoryReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `ml.trends`. */
+export const MlTrendsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "category": {
+      "pattern": "^ML[A-Z]\\d+$",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Ravi credential connection reserved for Phase 2 (default: default)",
+      "type": "string"
+    },
+    "site": {
+      "pattern": "^ML[A-Z]$",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `ml.trends`. */
+export const MlTrendsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "result": {
+      "$ref": "#/$defs/__schema0"
+    }
+  },
+  "required": [
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `observers.list`. */
 export const ObserversListInputSchema = {
   "additionalProperties": false,

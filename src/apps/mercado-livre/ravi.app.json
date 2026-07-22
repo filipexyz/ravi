@@ -1,0 +1,2585 @@
+{
+  "schema": "ravi.app/v1",
+  "id": "mercado-livre",
+  "name": "Mercado Livre",
+  "version": "0.2.0-runtime-hardening",
+  "description": "Opera catálogo, vendas, envios, pós-venda e métricas pela API oficial do Mercado Livre.",
+  "interfaces": {
+    "cli": {
+      "command": "ravi ml",
+      "json": true,
+      "health": "ravi mercado-livre check --json"
+    },
+    "sdk": {
+      "namespace": "ml"
+    }
+  },
+  "operations": {
+    "mercado-livre.check": {
+      "interface": "builtin",
+      "handler": "apps.manifest.check",
+      "mutating": false,
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "low",
+        "gates": []
+      },
+      "reliability": {
+        "timeoutMs": 5000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      }
+    },
+    "mercado-livre.seller": {
+      "interface": "cli",
+      "command": "ravi ml seller --json {args}",
+      "mutating": false,
+      "permission": "ml:account:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "medium",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "seller is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre seller [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          }
+        ],
+        "examples": ["ravi mercado-livre seller --json", "ravi mercado-livre seller --connection sandbox --json"],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.items": {
+      "interface": "cli",
+      "command": "ravi ml items --json {args}",
+      "mutating": false,
+      "permission": "ml:catalog:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "low",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "items is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre items 123456 --status active --limit 50 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          },
+          {
+            "flags": "--limit <n>",
+            "description": "Bounded provider page limit."
+          },
+          {
+            "flags": "--offset <n>",
+            "description": "Provider offset; default 0."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre items 123456 --status active --limit 50 --json",
+          "ravi mercado-livre items 123456 --status active --limit 50 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.item-get": {
+      "interface": "cli",
+      "command": "ravi ml item-get --json {args}",
+      "mutating": false,
+      "permission": "ml:catalog:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "low",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "item-get is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre item-get MLB1234567890 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre item-get MLB1234567890 --json",
+          "ravi mercado-livre item-get MLB1234567890 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.items-get": {
+      "interface": "cli",
+      "command": "ravi ml items-get --json {args}",
+      "mutating": false,
+      "permission": "ml:catalog:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "low",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "items-get is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre items-get MLB1234567890,MLB1234567891 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre items-get MLB1234567890,MLB1234567891 --json",
+          "ravi mercado-livre items-get MLB1234567890,MLB1234567891 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.item-description": {
+      "interface": "cli",
+      "command": "ravi ml item-description --json {args}",
+      "mutating": false,
+      "permission": "ml:catalog:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "low",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "item-description is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre item-description MLB1234567890 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre item-description MLB1234567890 --json",
+          "ravi mercado-livre item-description MLB1234567890 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.item-visits": {
+      "interface": "cli",
+      "command": "ravi ml item-visits --json {args}",
+      "mutating": false,
+      "permission": "ml:metrics:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "low",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "item-visits is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre item-visits MLB1234567890 --last 30 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre item-visits MLB1234567890 --last 30 --json",
+          "ravi mercado-livre item-visits MLB1234567890 --last 30 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.items-visits": {
+      "interface": "cli",
+      "command": "ravi ml items-visits --json {args}",
+      "mutating": false,
+      "permission": "ml:metrics:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "low",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "items-visits is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre items-visits MLB1234567890,MLB1234567891 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre items-visits MLB1234567890,MLB1234567891 --json",
+          "ravi mercado-livre items-visits MLB1234567890,MLB1234567891 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.item-prices": {
+      "interface": "cli",
+      "command": "ravi ml item-prices --json {args}",
+      "mutating": false,
+      "permission": "ml:financial:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "low",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "item-prices is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre item-prices MLB1234567890 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre item-prices MLB1234567890 --json",
+          "ravi mercado-livre item-prices MLB1234567890 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.orders": {
+      "interface": "cli",
+      "command": "ravi ml orders --json {args}",
+      "mutating": false,
+      "permission": "ml:sales:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "medium",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "orders is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre orders 123456 --status paid --from 2026-07-01 --limit 50 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          },
+          {
+            "flags": "--limit <n>",
+            "description": "Bounded provider page limit."
+          },
+          {
+            "flags": "--offset <n>",
+            "description": "Provider offset; default 0."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre orders 123456 --status paid --from 2026-07-01 --limit 50 --json",
+          "ravi mercado-livre orders 123456 --status paid --from 2026-07-01 --limit 50 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.order-get": {
+      "interface": "cli",
+      "command": "ravi ml order-get --json {args}",
+      "mutating": false,
+      "permission": "ml:sales:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "medium",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "order-get is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre order-get 2000010733434062 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre order-get 2000010733434062 --json",
+          "ravi mercado-livre order-get 2000010733434062 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.order-billing": {
+      "interface": "cli",
+      "command": "ravi ml order-billing --json {args}",
+      "mutating": false,
+      "permission": "ml:financial:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "high",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "order-billing is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre order-billing 2000010733434062 --site MLB [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre order-billing 2000010733434062 --site MLB --json",
+          "ravi mercado-livre order-billing 2000010733434062 --site MLB --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.order-notes": {
+      "interface": "cli",
+      "command": "ravi ml order-notes --json {args}",
+      "mutating": false,
+      "permission": "ml:sales:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "low",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "order-notes is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre order-notes 2000010733434062 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre order-notes 2000010733434062 --json",
+          "ravi mercado-livre order-notes 2000010733434062 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.shipment-get": {
+      "interface": "cli",
+      "command": "ravi ml shipment-get --json {args}",
+      "mutating": false,
+      "permission": "ml:shipping:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "medium",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "shipment-get is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre shipment-get 40000123456 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre shipment-get 40000123456 --json",
+          "ravi mercado-livre shipment-get 40000123456 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.shipment-costs": {
+      "interface": "cli",
+      "command": "ravi ml shipment-costs --json {args}",
+      "mutating": false,
+      "permission": "ml:financial:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "medium",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "shipment-costs is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre shipment-costs 40000123456 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre shipment-costs 40000123456 --json",
+          "ravi mercado-livre shipment-costs 40000123456 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.shipment-history": {
+      "interface": "cli",
+      "command": "ravi ml shipment-history --json {args}",
+      "mutating": false,
+      "permission": "ml:shipping:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "low",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "shipment-history is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre shipment-history 40000123456 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre shipment-history 40000123456 --json",
+          "ravi mercado-livre shipment-history 40000123456 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.questions": {
+      "interface": "cli",
+      "command": "ravi ml questions --json {args}",
+      "mutating": false,
+      "permission": "ml:communication:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "medium",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "questions is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre questions 123456 --status UNANSWERED --limit 50 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          },
+          {
+            "flags": "--limit <n>",
+            "description": "Bounded provider page limit."
+          },
+          {
+            "flags": "--offset <n>",
+            "description": "Provider offset; default 0."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre questions 123456 --status UNANSWERED --limit 50 --json",
+          "ravi mercado-livre questions 123456 --status UNANSWERED --limit 50 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.pack-get": {
+      "interface": "cli",
+      "command": "ravi ml pack-get --json {args}",
+      "mutating": false,
+      "permission": "ml:sales:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "medium",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "pack-get is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre pack-get 2000006181551917 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre pack-get 2000006181551917 --json",
+          "ravi mercado-livre pack-get 2000006181551917 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.category-get": {
+      "interface": "cli",
+      "command": "ravi ml category-get --json {args}",
+      "mutating": false,
+      "permission": "ml:catalog:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "low",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "category-get is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre category-get MLB1051 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre category-get MLB1051 --json",
+          "ravi mercado-livre category-get MLB1051 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.trends": {
+      "interface": "cli",
+      "command": "ravi ml trends --json {args}",
+      "mutating": false,
+      "permission": "ml:metrics:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "low",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "trends is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre trends --site MLB --category MLB1051 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre trends --site MLB --category MLB1051 --json",
+          "ravi mercado-livre trends --site MLB --category MLB1051 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.highlights": {
+      "interface": "cli",
+      "command": "ravi ml highlights --json {args}",
+      "mutating": false,
+      "permission": "ml:metrics:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "low",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "highlights is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre highlights MLB432825 --site MLB [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre highlights MLB432825 --site MLB --json",
+          "ravi mercado-livre highlights MLB432825 --site MLB --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.messages": {
+      "interface": "cli",
+      "command": "ravi ml messages --json {args}",
+      "mutating": false,
+      "permission": "ml:communication:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "medium",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "messages is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre messages 2000000089077943 415458330 --limit 50 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          },
+          {
+            "flags": "--limit <n>",
+            "description": "Bounded provider page limit."
+          },
+          {
+            "flags": "--offset <n>",
+            "description": "Provider offset; default 0."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre messages 2000000089077943 415458330 --limit 50 --json",
+          "ravi mercado-livre messages 2000000089077943 415458330 --limit 50 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.claims": {
+      "interface": "cli",
+      "command": "ravi ml claims --json {args}",
+      "mutating": false,
+      "permission": "ml:claims:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "medium",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "claims is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre claims 123456 --status opened --limit 30 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          },
+          {
+            "flags": "--limit <n>",
+            "description": "Bounded provider page limit."
+          },
+          {
+            "flags": "--offset <n>",
+            "description": "Provider offset; default 0."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre claims 123456 --status opened --limit 30 --json",
+          "ravi mercado-livre claims 123456 --status opened --limit 30 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.claim-get": {
+      "interface": "cli",
+      "command": "ravi ml claim-get --json {args}",
+      "mutating": false,
+      "permission": "ml:claims:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "medium",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "claim-get is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre claim-get 5281510459 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre claim-get 5281510459 --json",
+          "ravi mercado-livre claim-get 5281510459 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.claim-messages": {
+      "interface": "cli",
+      "command": "ravi ml claim-messages --json {args}",
+      "mutating": false,
+      "permission": "ml:claims:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "medium",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "claim-messages is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre claim-messages 5281510459 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre claim-messages 5281510459 --json",
+          "ravi mercado-livre claim-messages 5281510459 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.claim-return": {
+      "interface": "cli",
+      "command": "ravi ml claim-return --json {args}",
+      "mutating": false,
+      "permission": "ml:claims:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "medium",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "claim-return is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre claim-return 5281510459 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre claim-return 5281510459 --json",
+          "ravi mercado-livre claim-return 5281510459 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.ads-advertisers": {
+      "interface": "cli",
+      "command": "ravi ml ads-advertisers --json {args}",
+      "mutating": false,
+      "permission": "ml:financial:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "medium",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "ads-advertisers is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre ads-advertisers [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre ads-advertisers --json",
+          "ravi mercado-livre ads-advertisers --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.ads-campaigns": {
+      "interface": "cli",
+      "command": "ravi ml ads-campaigns --json {args}",
+      "mutating": false,
+      "permission": "ml:financial:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "medium",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "ads-campaigns is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre ads-campaigns MLB 12345 --from 2026-06-01 --to 2026-06-30 --metrics clicks,cost [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          },
+          {
+            "flags": "--limit <n>",
+            "description": "Bounded provider page limit."
+          },
+          {
+            "flags": "--offset <n>",
+            "description": "Provider offset; default 0."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre ads-campaigns MLB 12345 --from 2026-06-01 --to 2026-06-30 --metrics clicks,cost --json",
+          "ravi mercado-livre ads-campaigns MLB 12345 --from 2026-06-01 --to 2026-06-30 --metrics clicks,cost --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.ads-ad-groups": {
+      "interface": "cli",
+      "command": "ravi ml ads-ad-groups --json {args}",
+      "mutating": false,
+      "permission": "ml:financial:read",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": true,
+        "mutating": false,
+        "destructive": false,
+        "idempotent": true,
+        "dryRunSupported": false,
+        "confirmationRequired": false,
+        "hitlRequired": false,
+        "liveExecution": true,
+        "risk": "medium",
+        "gates": ["phase-2-credential-required"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "ads-ad-groups is a read-only Mercado Livre operation with fail-closed authentication.",
+        "usage": "ravi mercado-livre ads-ad-groups MLB 12345 MLB1234567890 [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre ads-ad-groups MLB 12345 MLB1234567890 --json",
+          "ravi mercado-livre ads-ad-groups MLB 12345 MLB1234567890 --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use for bounded read-only API discovery or parity checks."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use as a write, cutover, or credential-onboarding proof."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.item-create": {
+      "interface": "cli",
+      "command": "ravi ml item-create --json {args}",
+      "mutating": true,
+      "permission": "ml:catalog:write",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": false,
+        "mutating": true,
+        "destructive": false,
+        "idempotent": false,
+        "dryRunSupported": true,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": false,
+        "risk": "high",
+        "gates": ["dry-run-only", "explicit-hitl", "phase-2-credential-required", "no-automatic-retry"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "item-create is a dry-run-only Mercado Livre mutation in Phase 1.",
+        "usage": "ravi mercado-livre item-create --body JSON --dry-run [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          },
+          {
+            "flags": "--dry-run",
+            "description": "Validate and return a mutation plan without network or secret resolution."
+          },
+          {
+            "flags": "--yes",
+            "description": "Router live confirmation; currently blocked because liveExecution=false."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre item-create --body JSON --dry-run --json",
+          "ravi mercado-livre item-create --body JSON --dry-run --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use to validate the proposed change shape before HITL approval."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use for live execution; app router blocks it until a protected promotion."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.item-update": {
+      "interface": "cli",
+      "command": "ravi ml item-update --json {args}",
+      "mutating": true,
+      "permission": "ml:catalog:write",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": false,
+        "mutating": true,
+        "destructive": false,
+        "idempotent": false,
+        "dryRunSupported": true,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": false,
+        "risk": "high",
+        "gates": ["dry-run-only", "explicit-hitl", "phase-2-credential-required", "no-automatic-retry"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "item-update is a dry-run-only Mercado Livre mutation in Phase 1.",
+        "usage": "ravi mercado-livre item-update MLB1234567890 --body JSON --dry-run [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          },
+          {
+            "flags": "--dry-run",
+            "description": "Validate and return a mutation plan without network or secret resolution."
+          },
+          {
+            "flags": "--yes",
+            "description": "Router live confirmation; currently blocked because liveExecution=false."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre item-update MLB1234567890 --body JSON --dry-run --json",
+          "ravi mercado-livre item-update MLB1234567890 --body JSON --dry-run --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use to validate the proposed change shape before HITL approval."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use for live execution; app router blocks it until a protected promotion."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.description-create": {
+      "interface": "cli",
+      "command": "ravi ml description-create --json {args}",
+      "mutating": true,
+      "permission": "ml:catalog:write",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": false,
+        "mutating": true,
+        "destructive": false,
+        "idempotent": false,
+        "dryRunSupported": true,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": false,
+        "risk": "high",
+        "gates": ["dry-run-only", "explicit-hitl", "phase-2-credential-required", "no-automatic-retry"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "description-create is a dry-run-only Mercado Livre mutation in Phase 1.",
+        "usage": "ravi mercado-livre description-create MLB1234567890 DESCRICAO --dry-run [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          },
+          {
+            "flags": "--dry-run",
+            "description": "Validate and return a mutation plan without network or secret resolution."
+          },
+          {
+            "flags": "--yes",
+            "description": "Router live confirmation; currently blocked because liveExecution=false."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre description-create MLB1234567890 DESCRICAO --dry-run --json",
+          "ravi mercado-livre description-create MLB1234567890 DESCRICAO --dry-run --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use to validate the proposed change shape before HITL approval."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use for live execution; app router blocks it until a protected promotion."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.description-update": {
+      "interface": "cli",
+      "command": "ravi ml description-update --json {args}",
+      "mutating": true,
+      "permission": "ml:catalog:write",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": false,
+        "mutating": true,
+        "destructive": false,
+        "idempotent": false,
+        "dryRunSupported": true,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": false,
+        "risk": "high",
+        "gates": ["dry-run-only", "explicit-hitl", "phase-2-credential-required", "no-automatic-retry"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "description-update is a dry-run-only Mercado Livre mutation in Phase 1.",
+        "usage": "ravi mercado-livre description-update MLB1234567890 DESCRICAO --dry-run [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          },
+          {
+            "flags": "--dry-run",
+            "description": "Validate and return a mutation plan without network or secret resolution."
+          },
+          {
+            "flags": "--yes",
+            "description": "Router live confirmation; currently blocked because liveExecution=false."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre description-update MLB1234567890 DESCRICAO --dry-run --json",
+          "ravi mercado-livre description-update MLB1234567890 DESCRICAO --dry-run --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use to validate the proposed change shape before HITL approval."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use for live execution; app router blocks it until a protected promotion."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.item-pause": {
+      "interface": "cli",
+      "command": "ravi ml item-pause --json {args}",
+      "mutating": true,
+      "permission": "ml:catalog:write",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": false,
+        "mutating": true,
+        "destructive": false,
+        "idempotent": false,
+        "dryRunSupported": true,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": false,
+        "risk": "high",
+        "gates": ["dry-run-only", "explicit-hitl", "phase-2-credential-required", "no-automatic-retry"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "item-pause is a dry-run-only Mercado Livre mutation in Phase 1.",
+        "usage": "ravi mercado-livre item-pause MLB1234567890 --dry-run [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          },
+          {
+            "flags": "--dry-run",
+            "description": "Validate and return a mutation plan without network or secret resolution."
+          },
+          {
+            "flags": "--yes",
+            "description": "Router live confirmation; currently blocked because liveExecution=false."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre item-pause MLB1234567890 --dry-run --json",
+          "ravi mercado-livre item-pause MLB1234567890 --dry-run --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use to validate the proposed change shape before HITL approval."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use for live execution; app router blocks it until a protected promotion."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.item-activate": {
+      "interface": "cli",
+      "command": "ravi ml item-activate --json {args}",
+      "mutating": true,
+      "permission": "ml:catalog:write",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": false,
+        "mutating": true,
+        "destructive": false,
+        "idempotent": false,
+        "dryRunSupported": true,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": false,
+        "risk": "high",
+        "gates": ["dry-run-only", "explicit-hitl", "phase-2-credential-required", "no-automatic-retry"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "item-activate is a dry-run-only Mercado Livre mutation in Phase 1.",
+        "usage": "ravi mercado-livre item-activate MLB1234567890 --dry-run [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          },
+          {
+            "flags": "--dry-run",
+            "description": "Validate and return a mutation plan without network or secret resolution."
+          },
+          {
+            "flags": "--yes",
+            "description": "Router live confirmation; currently blocked because liveExecution=false."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre item-activate MLB1234567890 --dry-run --json",
+          "ravi mercado-livre item-activate MLB1234567890 --dry-run --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use to validate the proposed change shape before HITL approval."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use for live execution; app router blocks it until a protected promotion."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.item-close": {
+      "interface": "cli",
+      "command": "ravi ml item-close --json {args}",
+      "mutating": true,
+      "permission": "ml:catalog:destructive",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": false,
+        "mutating": true,
+        "destructive": true,
+        "idempotent": false,
+        "dryRunSupported": true,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": false,
+        "risk": "destructive",
+        "gates": ["dry-run-only", "explicit-hitl", "phase-2-credential-required", "no-automatic-retry"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "item-close is a dry-run-only Mercado Livre mutation in Phase 1.",
+        "usage": "ravi mercado-livre item-close MLB1234567890 --dry-run [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          },
+          {
+            "flags": "--dry-run",
+            "description": "Validate and return a mutation plan without network or secret resolution."
+          },
+          {
+            "flags": "--yes",
+            "description": "Router live confirmation; currently blocked because liveExecution=false."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre item-close MLB1234567890 --dry-run --json",
+          "ravi mercado-livre item-close MLB1234567890 --dry-run --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use to validate the proposed change shape before HITL approval."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use for live execution; app router blocks it until a protected promotion."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.item-delete": {
+      "interface": "cli",
+      "command": "ravi ml item-delete --json {args}",
+      "mutating": true,
+      "permission": "ml:catalog:destructive",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": false,
+        "mutating": true,
+        "destructive": true,
+        "idempotent": false,
+        "dryRunSupported": true,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": false,
+        "risk": "destructive",
+        "gates": ["dry-run-only", "explicit-hitl", "phase-2-credential-required", "no-automatic-retry"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "item-delete is a dry-run-only Mercado Livre mutation in Phase 1.",
+        "usage": "ravi mercado-livre item-delete MLB1234567890 --dry-run [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          },
+          {
+            "flags": "--dry-run",
+            "description": "Validate and return a mutation plan without network or secret resolution."
+          },
+          {
+            "flags": "--yes",
+            "description": "Router live confirmation; currently blocked because liveExecution=false."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre item-delete MLB1234567890 --dry-run --json",
+          "ravi mercado-livre item-delete MLB1234567890 --dry-run --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use to validate the proposed change shape before HITL approval."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use for live execution; app router blocks it until a protected promotion."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.question-answer": {
+      "interface": "cli",
+      "command": "ravi ml question-answer --json {args}",
+      "mutating": true,
+      "permission": "ml:communication:write",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": false,
+        "mutating": true,
+        "destructive": false,
+        "idempotent": false,
+        "dryRunSupported": true,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": false,
+        "risk": "high",
+        "gates": ["dry-run-only", "explicit-hitl", "phase-2-credential-required", "no-automatic-retry"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "question-answer is a dry-run-only Mercado Livre mutation in Phase 1.",
+        "usage": "ravi mercado-livre question-answer 3957150025 TEXTO --dry-run [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          },
+          {
+            "flags": "--dry-run",
+            "description": "Validate and return a mutation plan without network or secret resolution."
+          },
+          {
+            "flags": "--yes",
+            "description": "Router live confirmation; currently blocked because liveExecution=false."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre question-answer 3957150025 TEXTO --dry-run --json",
+          "ravi mercado-livre question-answer 3957150025 TEXTO --dry-run --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use to validate the proposed change shape before HITL approval."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use for live execution; app router blocks it until a protected promotion."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    },
+    "mercado-livre.message-send": {
+      "interface": "cli",
+      "command": "ravi ml message-send --json {args}",
+      "mutating": true,
+      "permission": "ml:communication:write",
+      "inputSchema": "schemas/cli-invocation.v1.json",
+      "outputSchema": "schemas/result-envelope.v1.json",
+      "safety": {
+        "readOnly": false,
+        "mutating": true,
+        "destructive": false,
+        "idempotent": false,
+        "dryRunSupported": true,
+        "confirmationRequired": true,
+        "hitlRequired": true,
+        "liveExecution": false,
+        "risk": "high",
+        "gates": ["dry-run-only", "explicit-hitl", "phase-2-credential-required", "no-automatic-retry"]
+      },
+      "reliability": {
+        "timeoutMs": 30000,
+        "maxAttempts": 1,
+        "baseDelayMs": 250
+      },
+      "help": {
+        "summary": "message-send is a dry-run-only Mercado Livre mutation in Phase 1.",
+        "usage": "ravi mercado-livre message-send 2000000089077943 415458330 3037675074 TEXTO --dry-run [--json]",
+        "arguments": [],
+        "options": [
+          {
+            "flags": "--json",
+            "description": "Print machine-readable JSON."
+          },
+          {
+            "flags": "--connection <id>",
+            "description": "Ravi credential connection reserved for Phase 2; default is default."
+          },
+          {
+            "flags": "--dry-run",
+            "description": "Validate and return a mutation plan without network or secret resolution."
+          },
+          {
+            "flags": "--yes",
+            "description": "Router live confirmation; currently blocked because liveExecution=false."
+          }
+        ],
+        "examples": [
+          "ravi mercado-livre message-send 2000000089077943 415458330 3037675074 TEXTO --dry-run --json",
+          "ravi mercado-livre message-send 2000000089077943 415458330 3037675074 TEXTO --dry-run --connection sandbox --json"
+        ],
+        "sections": [
+          {
+            "title": "USE",
+            "content": "Use to validate the proposed change shape before HITL approval."
+          },
+          {
+            "title": "NAO USE",
+            "content": "Do not use for live execution; app router blocks it until a protected promotion."
+          },
+          {
+            "title": "ON ERROR",
+            "content": "Missing credential is expected in Phase 1. 401/403 require credential/broker review. 429 keeps cutover NO-GO until quota is approved."
+          },
+          {
+            "title": "FONTES",
+            "content": "Official Mercado Livre docs linked in MIGRATION_CONTRACT and src/apps/mercado-livre/contract.ts."
+          }
+        ]
+      }
+    }
+  },
+  "permissions": {
+    "required": [
+      "ml:account:read",
+      "ml:catalog:read",
+      "ml:sales:read",
+      "ml:shipping:read",
+      "ml:communication:read",
+      "ml:claims:read",
+      "ml:metrics:read",
+      "ml:financial:read"
+    ],
+    "optional": ["ml:catalog:write", "ml:catalog:destructive", "ml:communication:write"],
+    "mutating": ["ml:catalog:write", "ml:catalog:destructive", "ml:communication:write"]
+  },
+  "storage": {
+    "sqlite": [],
+    "files": []
+  },
+  "artifacts": [],
+  "events": {
+    "emits": [],
+    "consumes": []
+  },
+  "skills": [],
+  "health": {
+    "checks": [
+      {
+        "id": "manifest",
+        "type": "builtin",
+        "required": true,
+        "sideEffectFree": true,
+        "handler": "apps.manifest.check"
+      }
+    ]
+  },
+  "officialContract": {
+    "confirmed": true,
+    "verifiedAt": "2026-07-13",
+    "baseUrl": "https://api.mercadolibre.com",
+    "documentation": "https://developers.mercadolivre.com.br/pt_br",
+    "phase": "structure-without-real-authentication",
+    "knownDivergences": [
+      "legacy order billing endpoint deprecated in favor of orders/billing-info/{site}/{billing_info_id}",
+      "legacy Product Ads item/campaign endpoints disabled in 2026; current reads use Api-Version 2 and ad_groups",
+      "standard price write endpoint remains officially unavailable and is not implemented",
+      "ML+Tiny+SEFAZ fulfillment remains in the legacy composite path"
+    ]
+  },
+  "versioning": {
+    "compatibility": "semver",
+    "migrations": []
+  },
+  "migration": {
+    "mode": "native-parallel",
+    "legacyCommand": "sde ml",
+    "legacyStatus": "preserved",
+    "sourceTask": "task-14d75d4f",
+    "contractPath": "/home/ravi/ravi-dev/apps-wave-20260722/artifacts/ml/MIGRATION_CONTRACT.json",
+    "writeExecution": "disabled in app router; mutating operations support CLI dry-run only",
+    "cutover": "disabled; promotion requires separate approval"
+  }
+}
