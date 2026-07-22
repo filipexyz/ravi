@@ -10,6 +10,7 @@ const actualRouterDbModule = await import("../router/router-db.js");
 const actualRouterIndexModule = await import("../router/index.js");
 const actualRouterSessionsModule = await import("../router/sessions.js");
 const actualChatDbModule = await import("../db.js");
+const actualSessionStreamModule = await import("./session-stream.js");
 const actualDbSaveMessageMeta = actualRouterDbModule.dbSaveMessageMeta;
 const actualDbGetMessageMeta = actualRouterDbModule.dbGetMessageMeta;
 const actualDbUpsertChat = actualRouterDbModule.dbUpsertChat;
@@ -80,6 +81,7 @@ mock.module("../nats.js", () => ({
 }));
 
 mock.module("./session-stream.js", () => ({
+  ...actualSessionStreamModule,
   publishSessionPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
     promptCalls.push([sessionName, payload]);
   }),

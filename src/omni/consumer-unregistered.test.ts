@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:tes
 
 const actualRouterIndexModule = await import("../router/index.js");
 const actualContactsModule = await import("../contacts.js");
+const actualSessionStreamModule = await import("./session-stream.js");
 const { logger } = await import("../utils/logger.js");
 
 const publishCalls: Array<[string, Record<string, unknown>]> = [];
@@ -37,6 +38,7 @@ mock.module("../nats.js", () => ({
 }));
 
 mock.module("./session-stream.js", () => ({
+  ...actualSessionStreamModule,
   publishSessionPrompt: mock(async () => {}),
 }));
 
