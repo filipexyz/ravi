@@ -85,6 +85,16 @@ Tasks do not own:
 - Task-level and dispatch-level runtime overrides MUST NOT be implemented by mutating session model or thinking preferences.
 - Reporting, blocking, completing, and failing a task MUST write through the task runtime so DB state and task events stay authoritative.
 - External channel messages are not the task runtime's primitive. If a task report needs to reach a person or session, it MUST use the explicit report delivery path.
+- Dispatch and task acceptance across the core/work storage boundary MUST follow the `tasks/dispatch` protocol: work owns the assignment and durable dispatch intent, core owns session resolution and prompt enqueueing, and acceptance MUST require a matching runtime acknowledgement. Work state read failures MUST NOT be treated as absence.
+
+## Cross-Store Boundary
+
+Once storage is split by workload, task state (work-owned) and session state
+(core-owned) no longer share one transaction. The normative protocol for that
+crossing lives in `tasks/dispatch` (dispatch/acceptance) and
+`tasks/reporting/delivery` (report delivery). Both reference the shared storage
+outbox/receipt protocol under the storage topology and MUST NOT define a second
+generic outbox. This domain MUST NOT create or edit any storage spec subtree.
 
 ## CLI Surface
 

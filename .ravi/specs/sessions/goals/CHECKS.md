@@ -61,6 +61,18 @@ normative: false
 - `sessions.goal` has a concrete `@Returns(zod)` schema.
 - `sessions.goal` is NOT in `WEAK_PUBLIC_RETURN_COMMANDS_BASELINE`.
 
+## Cross-Store References
+
+- `taskId` and `projectId` are stored as opaque optional strings with no
+  cross-store foreign key and no cross-store cascade.
+- Goal read, create, replace, account, and render MUST NOT perform a required
+  work-store owner lookup.
+- A `missing` work record (unknown/deleted `taskId`/`projectId`) MUST NOT
+  delete, complete, block, or otherwise mutate the goal.
+- An `unavailable` work store MUST NOT block goal read or budget accounting and
+  MUST NOT be treated as `missing`.
+- Goal budget accounting and lifecycle transitions succeed from core-only state.
+
 ## Validation Commands
 
 ```bash
