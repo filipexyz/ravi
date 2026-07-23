@@ -26,6 +26,8 @@ function processChannelOutboundJob(job: ChannelOutboundJob, options: ChannelOutb
 describe("channel outbound consumer", () => {
   it("delivers text with the matching native adapter and emits delivery telemetry without direct presence renewal", async () => {
     const emitEvent = mock(async () => {});
+    const job = makeJob();
+    job.request.origin.responsePhase = "commentary";
     const delivery: NativeTextDelivery = {
       channelId: "slack",
       supports: (target) => target.channel === "slack",
@@ -36,7 +38,7 @@ describe("channel outbound consumer", () => {
       })),
     };
 
-    const result = await processChannelOutboundJob(makeJob(), {
+    const result = await processChannelOutboundJob(job, {
       deliveries: [delivery],
       emitEvent,
       persistDelivery: false,
@@ -65,6 +67,7 @@ describe("channel outbound consumer", () => {
         messageId: "slack:C123:1711111111.000100",
         providerMessageId: "1711111111.000100",
         platformMessageId: "1711111111.000100",
+        responsePhase: "commentary",
         idempotencyKey: "runtime:ravi-channels:emit_1:slack:T1:C123:1711111111.000010",
         jobId: "runtime:ravi-channels:emit_1",
       }),

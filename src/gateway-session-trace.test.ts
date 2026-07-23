@@ -54,6 +54,7 @@ type DeliveryObservationData = {
   status?: string;
   messageId?: string;
   platformMessageId?: string;
+  responsePhase?: string;
   target?: ResponseMessage["target"];
 };
 
@@ -811,6 +812,74 @@ describe("Gateway session trace instrumentation", () => {
           statusAnchorKind: "last_outbound_message",
           statusAnchorMessageId: "1783269000.123456",
           sourceMessageId: "1783268187.075159",
+        }),
+      }),
+    ]);
+  });
+
+  it("moves native Slack presence to a delivered commentary message immediately", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        renewActiveTarget: mock(async () => false),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    emitted.length = 0;
+
+    await handleDeliveryObservation(gateway, sessionName, {
+      status: "delivered",
+      platformMessageId: "1783269000.123456",
+      responsePhase: "commentary",
+      target,
+    });
+
+    expect(emitted).toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        sessionName,
+        active: true,
+        reason: "native-delivery-commentary",
+        target: expect.objectContaining({
+          channel: "slack",
+          chatId: "C123",
+          statusAnchorKind: "last_outbound_message",
+          statusAnchorMessageId: "1783269000.123456",
+          sourceMessageId: "1783268187.075159",
+        }),
+      }),
+    ]);
+  });
+
+  it("does not reactivate native Slack presence for a delivered final answer", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        renewActiveTarget: mock(async () => false),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    emitted.length = 0;
+
+    await handleDeliveryObservation(gateway, sessionName, {
+      status: "delivered",
+      platformMessageId: "1783269000.123456",
+      responsePhase: "final_answer",
+      target,
+    });
+
+    expect(emitted).not.toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        active: true,
+        target: expect.objectContaining({
+          statusAnchorMessageId: "1783269000.123456",
         }),
       }),
     ]);

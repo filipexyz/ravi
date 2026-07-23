@@ -382,6 +382,8 @@ export interface RuntimeItemMetadata {
   type?: string;
   status?: string;
   parentId?: string;
+  /** Provider-native assistant output phase, e.g. commentary or final_answer. */
+  phase?: string;
 }
 
 export interface RuntimeEventMetadata {

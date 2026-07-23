@@ -1618,6 +1618,7 @@ rl.on("line", (line) => {
           type: "agentMessage",
           text: "done",
           status: "completed",
+          phase: "commentary",
           parentItemId: "turn_app",
         },
       },
@@ -1667,6 +1668,7 @@ rl.on("line", (line) => {
       input: { command: "pwd" },
     });
     expect(assistantMessages[0]?.text).toBe("done");
+    expect(assistantMessages[0]?.metadata?.item?.phase).toBe("commentary");
     expect(completions[0]?.usage).toEqual({
       inputTokens: 2,
       outputTokens: 3,

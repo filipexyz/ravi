@@ -2390,6 +2390,7 @@ function extractRuntimeItemMetadata(item: unknown): RuntimeItemMetadata | undefi
   const id = firstString(record.item_id, record.itemId, source.id);
   const type = nested || (!record.item_id && !record.itemId) ? firstString(source.type) : undefined;
   const status = firstString(source.status);
+  const phase = firstString(source.phase);
   const parentId = firstString(
     source.parent_id,
     source.parentId,
@@ -2399,7 +2400,7 @@ function extractRuntimeItemMetadata(item: unknown): RuntimeItemMetadata | undefi
     record.parentItemId,
   );
 
-  if (!id && !type && !status && !parentId) {
+  if (!id && !type && !status && !parentId && !phase) {
     return undefined;
   }
 
@@ -2408,6 +2409,7 @@ function extractRuntimeItemMetadata(item: unknown): RuntimeItemMetadata | undefi
     ...(type ? { type } : {}),
     ...(status ? { status } : {}),
     ...(parentId ? { parentId } : {}),
+    ...(phase ? { phase } : {}),
   };
 }
 
