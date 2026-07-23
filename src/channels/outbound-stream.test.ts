@@ -28,6 +28,11 @@ describe("channel outbound jobs", () => {
       {
         response: "hello Slack",
         _emitId: "emit_1",
+        metadata: {
+          item: {
+            phase: "commentary",
+          },
+        },
         target: {
           channel: "slack",
           accountId: "workspace:T1",
@@ -57,6 +62,7 @@ describe("channel outbound jobs", () => {
         origin: {
           sessionName: "ravi-channels",
           emitId: "emit_1",
+          responsePhase: "commentary",
         },
         content: {
           type: "text",

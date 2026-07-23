@@ -545,6 +545,7 @@ export function recordDeliveryTrace(input: RecordDeliveryTraceInput): SessionEve
       platformMessageId: input.delivery.platformMessageId,
       providerMessageId: input.delivery.providerMessageId,
       providerTimestamp: input.delivery.providerTimestamp,
+      responsePhase: input.delivery.responsePhase,
       idempotencyKey: input.delivery.idempotencyKey,
       target,
       textLen: input.delivery.textLen,

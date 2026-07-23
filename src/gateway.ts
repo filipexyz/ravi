@@ -127,6 +127,10 @@ function deliveryAnchorMessageId(data: Record<string, unknown>): string | undefi
   return undefined;
 }
 
+function deliveryResponsePhase(data: Record<string, unknown>): string | undefined {
+  return typeof data.responsePhase === "string" && data.responsePhase ? data.responsePhase : undefined;
+}
+
 function slackMessageTs(value: string | undefined): number | undefined {
   if (!value) return undefined;
   const ts = Number(value);
@@ -776,6 +780,20 @@ export class Gateway {
     if (this.isPresenceSuppressed(target)) return;
     const outboundTarget = withOutboundStatusAnchor(target, data);
     this.rememberNativeOutboundTurnAnchor(sessionName, outboundTarget);
+
+    const responsePhase = deliveryResponsePhase(data);
+    if (responsePhase === "commentary") {
+      if (!this.activeRuntimeSessions.has(sessionName)) return;
+      if (this.terminalRuntimeSessions.has(sessionName)) return;
+      this.clearPostDeliveryRenewal(sessionName);
+      await this.forceRenewTyping(sessionName, outboundTarget, "native-delivery-commentary");
+      return;
+    }
+    if (responsePhase === "final_answer") {
+      this.clearPostDeliveryRenewal(sessionName);
+      return;
+    }
+
     this.schedulePostDeliveryPresenceRenewal(sessionName, outboundTarget, "native-delivery-renew");
   }
 
@@ -805,7 +823,7 @@ export class Gateway {
   }
 
   private isPresenceStartEvent(type: string | undefined, nativeEvent?: string): boolean {
-    if (type === "turn.started" || type === "thread.started") return true;
+    if (type === "prompt.published" || type === "turn.started" || type === "thread.started") return true;
     if (nativeEvent === "turn.started" || nativeEvent === "thread.started") return true;
     return false;
   }

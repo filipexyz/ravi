@@ -42,6 +42,7 @@ export interface ChannelOutboundRequest {
     emitId: string;
     responseVersion?: number;
     runtimePid?: number;
+    responsePhase?: string;
   };
   content: {
     type: "text";
@@ -284,6 +285,7 @@ export function buildChannelOutboundJobFromResponse(
             typeof (response as { _v?: unknown })._v === "number" ? (response as { _v: number })._v : undefined,
           runtimePid:
             typeof (response as { _pid?: unknown })._pid === "number" ? (response as { _pid: number })._pid : undefined,
+          responsePhase: response.metadata?.item?.phase,
         },
         content: {
           type: "text",
