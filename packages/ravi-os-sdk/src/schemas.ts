@@ -48564,6 +48564,8911 @@ export const RulesSourcesReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `runtime.continuity.apply`. */
+export const RuntimeContinuityApplyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "description": "Canonical Ravi agent id frozen in the preview",
+      "type": "string"
+    },
+    "approvalRef": {
+      "description": "External approval/change reference",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Stable key for this exact apply payload",
+      "type": "string"
+    },
+    "planHash": {
+      "description": "Exact hash returned by preview",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agentId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.continuity.apply`. */
+export const RuntimeContinuityApplyReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "changed": {
+      "type": "boolean"
+    },
+    "compatibilitySnapshotId": {
+      "const": "provider-continuity-1.0.0-rm-20260722",
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "applied",
+        "no_op",
+        "invalid",
+        "stale",
+        "temporary_failure",
+        "permanent_failure"
+      ],
+      "type": "string"
+    },
+    "plan": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "compatibilitySnapshotId": {
+              "const": "provider-continuity-1.0.0-rm-20260722",
+              "type": "string"
+            },
+            "createdAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "desiredPolicy": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "compatibilitySnapshotId": {
+                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "type": "string"
+                    },
+                    "deadlineMs": {
+                      "default": 120000,
+                      "maximum": 3600000,
+                      "minimum": 1000,
+                      "type": "integer"
+                    },
+                    "enabled": {
+                      "default": true,
+                      "type": "boolean"
+                    },
+                    "specVersion": {
+                      "const": "1.0.0",
+                      "type": "string"
+                    },
+                    "strategy": {
+                      "const": "ordered",
+                      "type": "string"
+                    },
+                    "targets": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "model": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "provider": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "provider",
+                          "model"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "specVersion",
+                    "compatibilitySnapshotId",
+                    "strategy",
+                    "targets",
+                    "deadlineMs",
+                    "enabled"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "exactAgentIds": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "expiresAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "items": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "create",
+                      "update",
+                      "no_op",
+                      "clear"
+                    ],
+                    "type": "string"
+                  },
+                  "agentId": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "beforeVersion": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "errors": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "valid": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "agentId",
+                  "beforeVersion",
+                  "action",
+                  "valid",
+                  "errors"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "planHash": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "planId": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "selector": {
+              "additionalProperties": false,
+              "properties": {
+                "agentIds": {
+                  "items": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "kind": {
+                  "enum": [
+                    "single",
+                    "selected",
+                    "all"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "agentIds"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "planId",
+            "planHash",
+            "selector",
+            "exactAgentIds",
+            "desiredPolicy",
+            "items",
+            "expiresAt",
+            "createdAt",
+            "compatibilitySnapshotId"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "policy": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "compatibilitySnapshotId": {
+              "const": "provider-continuity-1.0.0-rm-20260722",
+              "type": "string"
+            },
+            "createdAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "deadlineMs": {
+              "default": 120000,
+              "maximum": 3600000,
+              "minimum": 1000,
+              "type": "integer"
+            },
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "specVersion": {
+              "const": "1.0.0",
+              "type": "string"
+            },
+            "strategy": {
+              "const": "ordered",
+              "type": "string"
+            },
+            "targets": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "model": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "updatedAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "version": {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "specVersion",
+            "compatibilitySnapshotId",
+            "strategy",
+            "targets",
+            "deadlineMs",
+            "enabled",
+            "agentId",
+            "version",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "specVersion": {
+      "const": "1.0.0",
+      "type": "string"
+    }
+  },
+  "required": [
+    "specVersion",
+    "compatibilitySnapshotId",
+    "changed",
+    "outcome",
+    "policy",
+    "plan"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.continuity.batch-apply`. */
+export const RuntimeContinuityBatchApplyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "approvalRef": {
+      "description": "External approval/change reference",
+      "type": "string"
+    },
+    "batchId": {
+      "description": "Batch id returned by batch-preview",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Stable key for this exact apply payload",
+      "type": "string"
+    },
+    "planHash": {
+      "description": "Exact immutable plan hash",
+      "type": "string"
+    }
+  },
+  "required": [
+    "batchId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.continuity.batch-apply`. */
+export const RuntimeContinuityBatchApplyReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "batch": {
+      "additionalProperties": false,
+      "properties": {
+        "appliedAt": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "approvalRef": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "batchId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "compatibilitySnapshotId": {
+          "const": "provider-continuity-1.0.0-rm-20260722",
+          "type": "string"
+        },
+        "createdAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "idempotencyKey": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcomes": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "afterVersion": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "agentId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "beforeVersion": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "message": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "outcome": {
+                "enum": [
+                  "applied",
+                  "no_op",
+                  "invalid",
+                  "stale",
+                  "temporary_failure",
+                  "permanent_failure"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "agentId",
+              "outcome",
+              "beforeVersion",
+              "afterVersion",
+              "message"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "plan": {
+          "additionalProperties": false,
+          "properties": {
+            "compatibilitySnapshotId": {
+              "const": "provider-continuity-1.0.0-rm-20260722",
+              "type": "string"
+            },
+            "createdAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "desiredPolicy": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "compatibilitySnapshotId": {
+                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "type": "string"
+                    },
+                    "deadlineMs": {
+                      "default": 120000,
+                      "maximum": 3600000,
+                      "minimum": 1000,
+                      "type": "integer"
+                    },
+                    "enabled": {
+                      "default": true,
+                      "type": "boolean"
+                    },
+                    "specVersion": {
+                      "const": "1.0.0",
+                      "type": "string"
+                    },
+                    "strategy": {
+                      "const": "ordered",
+                      "type": "string"
+                    },
+                    "targets": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "model": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "provider": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "provider",
+                          "model"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "specVersion",
+                    "compatibilitySnapshotId",
+                    "strategy",
+                    "targets",
+                    "deadlineMs",
+                    "enabled"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "exactAgentIds": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "expiresAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "items": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "create",
+                      "update",
+                      "no_op",
+                      "clear"
+                    ],
+                    "type": "string"
+                  },
+                  "agentId": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "beforeVersion": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "errors": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "valid": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "agentId",
+                  "beforeVersion",
+                  "action",
+                  "valid",
+                  "errors"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "planHash": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "planId": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "selector": {
+              "additionalProperties": false,
+              "properties": {
+                "agentIds": {
+                  "items": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "kind": {
+                  "enum": [
+                    "single",
+                    "selected",
+                    "all"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "agentIds"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "planId",
+            "planHash",
+            "selector",
+            "exactAgentIds",
+            "desiredPolicy",
+            "items",
+            "expiresAt",
+            "createdAt",
+            "compatibilitySnapshotId"
+          ],
+          "type": "object"
+        },
+        "requestFingerprint": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "preview",
+            "success",
+            "partial_success",
+            "failed",
+            "stale",
+            "expired"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "batchId",
+        "plan",
+        "status",
+        "approvalRef",
+        "idempotencyKey",
+        "requestFingerprint",
+        "outcomes",
+        "createdAt",
+        "appliedAt",
+        "compatibilitySnapshotId"
+      ],
+      "type": "object"
+    },
+    "compatibilitySnapshotId": {
+      "const": "provider-continuity-1.0.0-rm-20260722",
+      "type": "string"
+    },
+    "specVersion": {
+      "const": "1.0.0",
+      "type": "string"
+    }
+  },
+  "required": [
+    "specVersion",
+    "compatibilitySnapshotId",
+    "batch"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.continuity.batch-preview`. */
+export const RuntimeContinuityBatchPreviewInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "description": "Comma-separated exact agent ids",
+      "type": "string"
+    },
+    "all": {
+      "description": "Freeze all agents visible at preview time",
+      "type": "boolean"
+    },
+    "deadlineMs": {
+      "description": "Logical request deadline in milliseconds",
+      "type": "string"
+    },
+    "disabled": {
+      "description": "Preview a disabled policy",
+      "type": "boolean"
+    },
+    "targets": {
+      "description": "Ordered JSON array of {provider,model}",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.continuity.batch-preview`. */
+export const RuntimeContinuityBatchPreviewReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "batch": {
+      "additionalProperties": false,
+      "properties": {
+        "appliedAt": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "approvalRef": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "batchId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "compatibilitySnapshotId": {
+          "const": "provider-continuity-1.0.0-rm-20260722",
+          "type": "string"
+        },
+        "createdAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "idempotencyKey": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcomes": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "afterVersion": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "agentId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "beforeVersion": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "message": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "outcome": {
+                "enum": [
+                  "applied",
+                  "no_op",
+                  "invalid",
+                  "stale",
+                  "temporary_failure",
+                  "permanent_failure"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "agentId",
+              "outcome",
+              "beforeVersion",
+              "afterVersion",
+              "message"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "plan": {
+          "additionalProperties": false,
+          "properties": {
+            "compatibilitySnapshotId": {
+              "const": "provider-continuity-1.0.0-rm-20260722",
+              "type": "string"
+            },
+            "createdAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "desiredPolicy": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "compatibilitySnapshotId": {
+                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "type": "string"
+                    },
+                    "deadlineMs": {
+                      "default": 120000,
+                      "maximum": 3600000,
+                      "minimum": 1000,
+                      "type": "integer"
+                    },
+                    "enabled": {
+                      "default": true,
+                      "type": "boolean"
+                    },
+                    "specVersion": {
+                      "const": "1.0.0",
+                      "type": "string"
+                    },
+                    "strategy": {
+                      "const": "ordered",
+                      "type": "string"
+                    },
+                    "targets": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "model": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "provider": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "provider",
+                          "model"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "specVersion",
+                    "compatibilitySnapshotId",
+                    "strategy",
+                    "targets",
+                    "deadlineMs",
+                    "enabled"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "exactAgentIds": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "expiresAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "items": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "create",
+                      "update",
+                      "no_op",
+                      "clear"
+                    ],
+                    "type": "string"
+                  },
+                  "agentId": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "beforeVersion": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "errors": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "valid": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "agentId",
+                  "beforeVersion",
+                  "action",
+                  "valid",
+                  "errors"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "planHash": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "planId": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "selector": {
+              "additionalProperties": false,
+              "properties": {
+                "agentIds": {
+                  "items": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "kind": {
+                  "enum": [
+                    "single",
+                    "selected",
+                    "all"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "agentIds"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "planId",
+            "planHash",
+            "selector",
+            "exactAgentIds",
+            "desiredPolicy",
+            "items",
+            "expiresAt",
+            "createdAt",
+            "compatibilitySnapshotId"
+          ],
+          "type": "object"
+        },
+        "requestFingerprint": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "preview",
+            "success",
+            "partial_success",
+            "failed",
+            "stale",
+            "expired"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "batchId",
+        "plan",
+        "status",
+        "approvalRef",
+        "idempotencyKey",
+        "requestFingerprint",
+        "outcomes",
+        "createdAt",
+        "appliedAt",
+        "compatibilitySnapshotId"
+      ],
+      "type": "object"
+    },
+    "compatibilitySnapshotId": {
+      "const": "provider-continuity-1.0.0-rm-20260722",
+      "type": "string"
+    },
+    "specVersion": {
+      "const": "1.0.0",
+      "type": "string"
+    }
+  },
+  "required": [
+    "specVersion",
+    "compatibilitySnapshotId",
+    "batch"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.continuity.batch-status`. */
+export const RuntimeContinuityBatchStatusInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "batchId": {
+      "description": "Batch id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "batchId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.continuity.batch-status`. */
+export const RuntimeContinuityBatchStatusReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "batch": {
+      "additionalProperties": false,
+      "properties": {
+        "appliedAt": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "approvalRef": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "batchId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "compatibilitySnapshotId": {
+          "const": "provider-continuity-1.0.0-rm-20260722",
+          "type": "string"
+        },
+        "createdAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "idempotencyKey": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcomes": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "afterVersion": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "agentId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "beforeVersion": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "message": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "outcome": {
+                "enum": [
+                  "applied",
+                  "no_op",
+                  "invalid",
+                  "stale",
+                  "temporary_failure",
+                  "permanent_failure"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "agentId",
+              "outcome",
+              "beforeVersion",
+              "afterVersion",
+              "message"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "plan": {
+          "additionalProperties": false,
+          "properties": {
+            "compatibilitySnapshotId": {
+              "const": "provider-continuity-1.0.0-rm-20260722",
+              "type": "string"
+            },
+            "createdAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "desiredPolicy": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "compatibilitySnapshotId": {
+                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "type": "string"
+                    },
+                    "deadlineMs": {
+                      "default": 120000,
+                      "maximum": 3600000,
+                      "minimum": 1000,
+                      "type": "integer"
+                    },
+                    "enabled": {
+                      "default": true,
+                      "type": "boolean"
+                    },
+                    "specVersion": {
+                      "const": "1.0.0",
+                      "type": "string"
+                    },
+                    "strategy": {
+                      "const": "ordered",
+                      "type": "string"
+                    },
+                    "targets": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "model": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "provider": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "provider",
+                          "model"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "specVersion",
+                    "compatibilitySnapshotId",
+                    "strategy",
+                    "targets",
+                    "deadlineMs",
+                    "enabled"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "exactAgentIds": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "expiresAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "items": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "create",
+                      "update",
+                      "no_op",
+                      "clear"
+                    ],
+                    "type": "string"
+                  },
+                  "agentId": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "beforeVersion": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "errors": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "valid": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "agentId",
+                  "beforeVersion",
+                  "action",
+                  "valid",
+                  "errors"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "planHash": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "planId": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "selector": {
+              "additionalProperties": false,
+              "properties": {
+                "agentIds": {
+                  "items": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "kind": {
+                  "enum": [
+                    "single",
+                    "selected",
+                    "all"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "agentIds"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "planId",
+            "planHash",
+            "selector",
+            "exactAgentIds",
+            "desiredPolicy",
+            "items",
+            "expiresAt",
+            "createdAt",
+            "compatibilitySnapshotId"
+          ],
+          "type": "object"
+        },
+        "requestFingerprint": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "preview",
+            "success",
+            "partial_success",
+            "failed",
+            "stale",
+            "expired"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "batchId",
+        "plan",
+        "status",
+        "approvalRef",
+        "idempotencyKey",
+        "requestFingerprint",
+        "outcomes",
+        "createdAt",
+        "appliedAt",
+        "compatibilitySnapshotId"
+      ],
+      "type": "object"
+    },
+    "compatibilitySnapshotId": {
+      "const": "provider-continuity-1.0.0-rm-20260722",
+      "type": "string"
+    },
+    "specVersion": {
+      "const": "1.0.0",
+      "type": "string"
+    }
+  },
+  "required": [
+    "specVersion",
+    "compatibilitySnapshotId",
+    "batch"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.continuity.clear`. */
+export const RuntimeContinuityClearInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "description": "Canonical Ravi agent id",
+      "type": "string"
+    },
+    "approvalRef": {
+      "description": "External approval/change reference",
+      "type": "string"
+    },
+    "expectedVersion": {
+      "description": "Required current policy version",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Stable key for this exact mutation",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agentId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.continuity.clear`. */
+export const RuntimeContinuityClearReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "changed": {
+      "type": "boolean"
+    },
+    "compatibilitySnapshotId": {
+      "const": "provider-continuity-1.0.0-rm-20260722",
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "applied",
+        "no_op",
+        "invalid",
+        "stale",
+        "temporary_failure",
+        "permanent_failure"
+      ],
+      "type": "string"
+    },
+    "plan": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "compatibilitySnapshotId": {
+              "const": "provider-continuity-1.0.0-rm-20260722",
+              "type": "string"
+            },
+            "createdAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "desiredPolicy": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "compatibilitySnapshotId": {
+                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "type": "string"
+                    },
+                    "deadlineMs": {
+                      "default": 120000,
+                      "maximum": 3600000,
+                      "minimum": 1000,
+                      "type": "integer"
+                    },
+                    "enabled": {
+                      "default": true,
+                      "type": "boolean"
+                    },
+                    "specVersion": {
+                      "const": "1.0.0",
+                      "type": "string"
+                    },
+                    "strategy": {
+                      "const": "ordered",
+                      "type": "string"
+                    },
+                    "targets": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "model": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "provider": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "provider",
+                          "model"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "specVersion",
+                    "compatibilitySnapshotId",
+                    "strategy",
+                    "targets",
+                    "deadlineMs",
+                    "enabled"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "exactAgentIds": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "expiresAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "items": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "create",
+                      "update",
+                      "no_op",
+                      "clear"
+                    ],
+                    "type": "string"
+                  },
+                  "agentId": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "beforeVersion": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "errors": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "valid": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "agentId",
+                  "beforeVersion",
+                  "action",
+                  "valid",
+                  "errors"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "planHash": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "planId": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "selector": {
+              "additionalProperties": false,
+              "properties": {
+                "agentIds": {
+                  "items": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "kind": {
+                  "enum": [
+                    "single",
+                    "selected",
+                    "all"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "agentIds"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "planId",
+            "planHash",
+            "selector",
+            "exactAgentIds",
+            "desiredPolicy",
+            "items",
+            "expiresAt",
+            "createdAt",
+            "compatibilitySnapshotId"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "policy": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "compatibilitySnapshotId": {
+              "const": "provider-continuity-1.0.0-rm-20260722",
+              "type": "string"
+            },
+            "createdAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "deadlineMs": {
+              "default": 120000,
+              "maximum": 3600000,
+              "minimum": 1000,
+              "type": "integer"
+            },
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "specVersion": {
+              "const": "1.0.0",
+              "type": "string"
+            },
+            "strategy": {
+              "const": "ordered",
+              "type": "string"
+            },
+            "targets": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "model": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "updatedAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "version": {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "specVersion",
+            "compatibilitySnapshotId",
+            "strategy",
+            "targets",
+            "deadlineMs",
+            "enabled",
+            "agentId",
+            "version",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "specVersion": {
+      "const": "1.0.0",
+      "type": "string"
+    }
+  },
+  "required": [
+    "specVersion",
+    "compatibilitySnapshotId",
+    "changed",
+    "outcome",
+    "policy",
+    "plan"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.continuity.decision`. */
+export const RuntimeContinuityDecisionInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "logicalRequestId": {
+      "description": "Stable logical request id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "logicalRequestId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.continuity.decision`. */
+export const RuntimeContinuityDecisionReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "compatibilitySnapshotId": {
+      "const": "provider-continuity-1.0.0-rm-20260722",
+      "type": "string"
+    },
+    "decision": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "enum": [
+                "start",
+                "retry_same_target",
+                "recover_credential",
+                "switch_target",
+                "skip_target",
+                "wait",
+                "wake",
+                "probe",
+                "failback",
+                "hold",
+                "success",
+                "composed_failure",
+                "exhausted",
+                "reconcile"
+              ],
+              "type": "string"
+            },
+            "compatibilitySnapshotId": {
+              "const": "provider-continuity-1.0.0-rm-20260722",
+              "type": "string"
+            },
+            "createdAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "decisionId": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "fromTargetIndex": {
+              "anyOf": [
+                {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "holdReason": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "unknown_evidence",
+                    "missing_evidence",
+                    "stale_evidence",
+                    "conflicting_evidence",
+                    "known_invalid_evidence",
+                    "effect_started",
+                    "effect_ambiguous",
+                    "context_loss",
+                    "snapshot_conflict",
+                    "deadline_expired",
+                    "idempotency_collision"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "logicalRequestId": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "reasonCode": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "rejectionReasons": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "sequence": {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            },
+            "toTargetIndex": {
+              "anyOf": [
+                {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "decisionId",
+            "logicalRequestId",
+            "sequence",
+            "action",
+            "fromTargetIndex",
+            "toTargetIndex",
+            "reasonCode",
+            "rejectionReasons",
+            "holdReason",
+            "createdAt",
+            "compatibilitySnapshotId"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "journal": {
+      "additionalProperties": false,
+      "properties": {
+        "activeEffectId": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agentId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "attempts": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "attemptId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "completedAt": {
+                "anyOf": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "failure": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "confidence": {
+                        "enum": [
+                          "high",
+                          "medium",
+                          "low"
+                        ],
+                        "type": "string"
+                      },
+                      "credentialRecoveryEligible": {
+                        "type": "boolean"
+                      },
+                      "fingerprint": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "quota",
+                          "rate_limit",
+                          "authentication",
+                          "timeout",
+                          "overload",
+                          "network",
+                          "permanent_request",
+                          "cancellation",
+                          "unknown"
+                        ],
+                        "type": "string"
+                      },
+                      "message": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "observedAt": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "qualifiedForCircuit": {
+                        "type": "boolean"
+                      },
+                      "retryAfterMs": {
+                        "anyOf": [
+                          {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "safeToRetry": {
+                        "type": "boolean"
+                      },
+                      "safeToSwitch": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "confidence",
+                      "safeToRetry",
+                      "safeToSwitch",
+                      "credentialRecoveryEligible",
+                      "qualifiedForCircuit",
+                      "code",
+                      "message",
+                      "retryAfterMs",
+                      "observedAt",
+                      "fingerprint"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "enum": [
+                  "normal",
+                  "credential_recovery",
+                  "probe"
+                ],
+                "type": "string"
+              },
+              "outcome": {
+                "enum": [
+                  "running",
+                  "succeeded",
+                  "failed",
+                  "skipped",
+                  "hold"
+                ],
+                "type": "string"
+              },
+              "probeLeaseId": {
+                "anyOf": [
+                  {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "startedAt": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "target": {
+                "additionalProperties": false,
+                "properties": {
+                  "model": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ],
+                "type": "object"
+              },
+              "targetIndex": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "attemptId",
+              "targetIndex",
+              "target",
+              "kind",
+              "probeLeaseId",
+              "startedAt",
+              "completedAt",
+              "outcome",
+              "failure"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "compatibilitySnapshotId": {
+          "const": "provider-continuity-1.0.0-rm-20260722",
+          "type": "string"
+        },
+        "contextSnapshot": {
+          "additionalProperties": false,
+          "properties": {
+            "attachments": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "fingerprint": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "mediaType": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reference": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "reference",
+                  "mediaType",
+                  "fingerprint"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "createdAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "fingerprint": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "forbiddenLosses": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "messages": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "anyOf": [
+                      {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "role": {
+                    "enum": [
+                      "system",
+                      "user",
+                      "assistant",
+                      "tool"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "role",
+                  "content",
+                  "createdAt"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "runtimeControls": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "safetyControls": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "toolRecords": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "input": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "inputFingerprint": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "output": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "outputFingerprint": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "enum": [
+                      "requested",
+                      "started",
+                      "succeeded",
+                      "failed",
+                      "ambiguous"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "input",
+                  "output",
+                  "inputFingerprint",
+                  "outputFingerprint",
+                  "status"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "transformations": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "preserved",
+                      "rewritten",
+                      "dropped"
+                    ],
+                    "type": "string"
+                  },
+                  "approvedLoss": {
+                    "type": "boolean"
+                  },
+                  "path": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "reason": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path",
+                  "action",
+                  "reason",
+                  "approvedLoss"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "translationVersion": {
+              "const": "ravi-portable-context-v1",
+              "type": "string"
+            }
+          },
+          "required": [
+            "translationVersion",
+            "fingerprint",
+            "messages",
+            "toolRecords",
+            "attachments",
+            "safetyControls",
+            "runtimeControls",
+            "transformations",
+            "forbiddenLosses",
+            "createdAt"
+          ],
+          "type": "object"
+        },
+        "createdAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "credentialRecoveriesRemaining": {
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "currentTargetIndex": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "deadlineAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "decisions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "start",
+                  "retry_same_target",
+                  "recover_credential",
+                  "switch_target",
+                  "skip_target",
+                  "wait",
+                  "wake",
+                  "probe",
+                  "failback",
+                  "hold",
+                  "success",
+                  "composed_failure",
+                  "exhausted",
+                  "reconcile"
+                ],
+                "type": "string"
+              },
+              "compatibilitySnapshotId": {
+                "const": "provider-continuity-1.0.0-rm-20260722",
+                "type": "string"
+              },
+              "createdAt": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "decisionId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "fromTargetIndex": {
+                "anyOf": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "holdReason": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "unknown_evidence",
+                      "missing_evidence",
+                      "stale_evidence",
+                      "conflicting_evidence",
+                      "known_invalid_evidence",
+                      "effect_started",
+                      "effect_ambiguous",
+                      "context_loss",
+                      "snapshot_conflict",
+                      "deadline_expired",
+                      "idempotency_collision"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "logicalRequestId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "reasonCode": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "rejectionReasons": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "sequence": {
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991,
+                "type": "integer"
+              },
+              "toTargetIndex": {
+                "anyOf": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "decisionId",
+              "logicalRequestId",
+              "sequence",
+              "action",
+              "fromTargetIndex",
+              "toTargetIndex",
+              "reasonCode",
+              "rejectionReasons",
+              "holdReason",
+              "createdAt",
+              "compatibilitySnapshotId"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "deliveryId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "deliveryState": {
+          "enum": [
+            "pending",
+            "started",
+            "delivered",
+            "failed",
+            "ambiguous"
+          ],
+          "type": "string"
+        },
+        "effectBoundary": {
+          "enum": [
+            "none",
+            "intention",
+            "started",
+            "terminal",
+            "ambiguous"
+          ],
+          "type": "string"
+        },
+        "globalAttemptsRemaining": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "holdReason": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown_evidence",
+                "missing_evidence",
+                "stale_evidence",
+                "conflicting_evidence",
+                "known_invalid_evidence",
+                "effect_started",
+                "effect_ambiguous",
+                "context_loss",
+                "snapshot_conflict",
+                "deadline_expired",
+                "idempotency_collision"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "logicalRequestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "normalAttemptsRemaining": {
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "policySnapshot": {
+          "additionalProperties": false,
+          "properties": {
+            "compatibilitySnapshotId": {
+              "const": "provider-continuity-1.0.0-rm-20260722",
+              "type": "string"
+            },
+            "deadlineMs": {
+              "default": 120000,
+              "maximum": 3600000,
+              "minimum": 1000,
+              "type": "integer"
+            },
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "specVersion": {
+              "const": "1.0.0",
+              "type": "string"
+            },
+            "strategy": {
+              "const": "ordered",
+              "type": "string"
+            },
+            "targets": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "model": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "specVersion",
+            "compatibilitySnapshotId",
+            "strategy",
+            "targets",
+            "deadlineMs",
+            "enabled"
+          ],
+          "type": "object"
+        },
+        "policyVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "sessionName": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "running",
+            "waiting",
+            "hold",
+            "reconciliation_required",
+            "succeeded",
+            "failed",
+            "exhausted"
+          ],
+          "type": "string"
+        },
+        "terminalDetail": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "terminalOutcome": {
+          "anyOf": [
+            {
+              "enum": [
+                "success",
+                "failure",
+                "exhaustion",
+                "hold"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "wakeAt": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "logicalRequestId",
+        "agentId",
+        "sessionName",
+        "policyVersion",
+        "policySnapshot",
+        "contextSnapshot",
+        "currentTargetIndex",
+        "attempts",
+        "decisions",
+        "normalAttemptsRemaining",
+        "credentialRecoveriesRemaining",
+        "globalAttemptsRemaining",
+        "effectBoundary",
+        "activeEffectId",
+        "state",
+        "holdReason",
+        "terminalOutcome",
+        "terminalDetail",
+        "deliveryId",
+        "deliveryState",
+        "deadlineAt",
+        "wakeAt",
+        "createdAt",
+        "updatedAt",
+        "compatibilitySnapshotId"
+      ],
+      "type": "object"
+    },
+    "specVersion": {
+      "const": "1.0.0",
+      "type": "string"
+    }
+  },
+  "required": [
+    "specVersion",
+    "compatibilitySnapshotId",
+    "journal",
+    "decision"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.continuity.explain`. */
+export const RuntimeContinuityExplainInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "description": "Canonical Ravi agent id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agentId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.continuity.explain`. */
+export const RuntimeContinuityExplainReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "compatibilitySnapshotId": {
+      "const": "provider-continuity-1.0.0-rm-20260722",
+      "type": "string"
+    },
+    "decision": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "orderedTargets": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "eligible": {
+            "type": "boolean"
+          },
+          "index": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recovery": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "agentId": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "consecutiveQualifiedFailures": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "lastFailureAt": {
+                    "anyOf": [
+                      {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "lastSuccessAt": {
+                    "anyOf": [
+                      {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "model": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "openedAt": {
+                    "anyOf": [
+                      {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "probationSuccesses": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "probeEligibleAt": {
+                    "anyOf": [
+                      {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "probeLeaseExpiresAt": {
+                    "anyOf": [
+                      {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "probeLeaseId": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "provider": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "stableSince": {
+                    "anyOf": [
+                      {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "state": {
+                    "enum": [
+                      "closed",
+                      "open",
+                      "half_open"
+                    ],
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "agentId",
+                  "provider",
+                  "model",
+                  "state",
+                  "consecutiveQualifiedFailures",
+                  "probationSuccesses",
+                  "openedAt",
+                  "probeEligibleAt",
+                  "probeLeaseId",
+                  "probeLeaseExpiresAt",
+                  "stableSince",
+                  "lastFailureAt",
+                  "lastSuccessAt",
+                  "updatedAt"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rejectionReasons": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "target": {
+            "additionalProperties": false,
+            "properties": {
+              "model": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "provider": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "provider",
+              "model"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "index",
+          "target",
+          "eligible",
+          "recovery",
+          "rejectionReasons"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "policyVersion": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "selectedTargetIndex": {
+      "anyOf": [
+        {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "specVersion": {
+      "const": "1.0.0",
+      "type": "string"
+    }
+  },
+  "required": [
+    "specVersion",
+    "compatibilitySnapshotId",
+    "agentId",
+    "policyVersion",
+    "enabled",
+    "orderedTargets",
+    "selectedTargetIndex",
+    "decision"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.continuity.preview`. */
+export const RuntimeContinuityPreviewInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "description": "Canonical Ravi agent id",
+      "type": "string"
+    },
+    "deadlineMs": {
+      "description": "Logical request deadline in milliseconds",
+      "type": "string"
+    },
+    "disabled": {
+      "description": "Preview a disabled policy",
+      "type": "boolean"
+    },
+    "expectedVersion": {
+      "description": "Compare-and-set policy version (0 means absent)",
+      "type": "string"
+    },
+    "targets": {
+      "description": "Ordered JSON array of {provider,model}",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agentId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.continuity.preview`. */
+export const RuntimeContinuityPreviewReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "compatibilitySnapshotId": {
+      "const": "provider-continuity-1.0.0-rm-20260722",
+      "type": "string"
+    },
+    "plan": {
+      "additionalProperties": false,
+      "properties": {
+        "compatibilitySnapshotId": {
+          "const": "provider-continuity-1.0.0-rm-20260722",
+          "type": "string"
+        },
+        "createdAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "desiredPolicy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "compatibilitySnapshotId": {
+                  "const": "provider-continuity-1.0.0-rm-20260722",
+                  "type": "string"
+                },
+                "deadlineMs": {
+                  "default": 120000,
+                  "maximum": 3600000,
+                  "minimum": 1000,
+                  "type": "integer"
+                },
+                "enabled": {
+                  "default": true,
+                  "type": "boolean"
+                },
+                "specVersion": {
+                  "const": "1.0.0",
+                  "type": "string"
+                },
+                "strategy": {
+                  "const": "ordered",
+                  "type": "string"
+                },
+                "targets": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "model": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "provider": {
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "provider",
+                      "model"
+                    ],
+                    "type": "object"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "specVersion",
+                "compatibilitySnapshotId",
+                "strategy",
+                "targets",
+                "deadlineMs",
+                "enabled"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exactAgentIds": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "expiresAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "items": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "create",
+                  "update",
+                  "no_op",
+                  "clear"
+                ],
+                "type": "string"
+              },
+              "agentId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "beforeVersion": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "errors": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "valid": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "agentId",
+              "beforeVersion",
+              "action",
+              "valid",
+              "errors"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "planHash": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "planId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "selector": {
+          "additionalProperties": false,
+          "properties": {
+            "agentIds": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "enum": [
+                "single",
+                "selected",
+                "all"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "agentIds"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "planId",
+        "planHash",
+        "selector",
+        "exactAgentIds",
+        "desiredPolicy",
+        "items",
+        "expiresAt",
+        "createdAt",
+        "compatibilitySnapshotId"
+      ],
+      "type": "object"
+    },
+    "specVersion": {
+      "const": "1.0.0",
+      "type": "string"
+    }
+  },
+  "required": [
+    "specVersion",
+    "compatibilitySnapshotId",
+    "plan"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.continuity.reconcile`. */
+export const RuntimeContinuityReconcileInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "effectId": {
+      "description": "Stable effect id",
+      "type": "string"
+    },
+    "evidenceRef": {
+      "description": "Stable, non-secret readback evidence reference",
+      "type": "string"
+    },
+    "outcome": {
+      "description": "Readback outcome: succeeded|failed",
+      "type": "string"
+    }
+  },
+  "required": [
+    "effectId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.continuity.reconcile`. */
+export const RuntimeContinuityReconcileReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "changed": {
+      "type": "boolean"
+    },
+    "compatibilitySnapshotId": {
+      "const": "provider-continuity-1.0.0-rm-20260722",
+      "type": "string"
+    },
+    "effect": {
+      "additionalProperties": false,
+      "properties": {
+        "compatibilitySnapshotId": {
+          "const": "provider-continuity-1.0.0-rm-20260722",
+          "type": "string"
+        },
+        "createdAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "effectId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "evidenceFingerprint": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inputFingerprint": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "logicalRequestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "operation": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "result": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "status": {
+          "enum": [
+            "intention",
+            "started",
+            "succeeded",
+            "failed",
+            "ambiguous",
+            "reconciled"
+          ],
+          "type": "string"
+        },
+        "toolCallId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "updatedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "effectId",
+        "logicalRequestId",
+        "toolCallId",
+        "operation",
+        "inputFingerprint",
+        "status",
+        "result",
+        "evidenceFingerprint",
+        "createdAt",
+        "updatedAt",
+        "compatibilitySnapshotId"
+      ],
+      "type": "object"
+    },
+    "journal": {
+      "additionalProperties": false,
+      "properties": {
+        "activeEffectId": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agentId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "attempts": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "attemptId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "completedAt": {
+                "anyOf": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "failure": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "confidence": {
+                        "enum": [
+                          "high",
+                          "medium",
+                          "low"
+                        ],
+                        "type": "string"
+                      },
+                      "credentialRecoveryEligible": {
+                        "type": "boolean"
+                      },
+                      "fingerprint": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "quota",
+                          "rate_limit",
+                          "authentication",
+                          "timeout",
+                          "overload",
+                          "network",
+                          "permanent_request",
+                          "cancellation",
+                          "unknown"
+                        ],
+                        "type": "string"
+                      },
+                      "message": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "observedAt": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "qualifiedForCircuit": {
+                        "type": "boolean"
+                      },
+                      "retryAfterMs": {
+                        "anyOf": [
+                          {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "safeToRetry": {
+                        "type": "boolean"
+                      },
+                      "safeToSwitch": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "confidence",
+                      "safeToRetry",
+                      "safeToSwitch",
+                      "credentialRecoveryEligible",
+                      "qualifiedForCircuit",
+                      "code",
+                      "message",
+                      "retryAfterMs",
+                      "observedAt",
+                      "fingerprint"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "enum": [
+                  "normal",
+                  "credential_recovery",
+                  "probe"
+                ],
+                "type": "string"
+              },
+              "outcome": {
+                "enum": [
+                  "running",
+                  "succeeded",
+                  "failed",
+                  "skipped",
+                  "hold"
+                ],
+                "type": "string"
+              },
+              "probeLeaseId": {
+                "anyOf": [
+                  {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "startedAt": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "target": {
+                "additionalProperties": false,
+                "properties": {
+                  "model": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ],
+                "type": "object"
+              },
+              "targetIndex": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "attemptId",
+              "targetIndex",
+              "target",
+              "kind",
+              "probeLeaseId",
+              "startedAt",
+              "completedAt",
+              "outcome",
+              "failure"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "compatibilitySnapshotId": {
+          "const": "provider-continuity-1.0.0-rm-20260722",
+          "type": "string"
+        },
+        "contextSnapshot": {
+          "additionalProperties": false,
+          "properties": {
+            "attachments": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "fingerprint": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "mediaType": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reference": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "reference",
+                  "mediaType",
+                  "fingerprint"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "createdAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "fingerprint": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "forbiddenLosses": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "messages": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "anyOf": [
+                      {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "role": {
+                    "enum": [
+                      "system",
+                      "user",
+                      "assistant",
+                      "tool"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "role",
+                  "content",
+                  "createdAt"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "runtimeControls": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "safetyControls": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "toolRecords": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "input": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "inputFingerprint": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "output": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "outputFingerprint": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "enum": [
+                      "requested",
+                      "started",
+                      "succeeded",
+                      "failed",
+                      "ambiguous"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "input",
+                  "output",
+                  "inputFingerprint",
+                  "outputFingerprint",
+                  "status"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "transformations": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "preserved",
+                      "rewritten",
+                      "dropped"
+                    ],
+                    "type": "string"
+                  },
+                  "approvedLoss": {
+                    "type": "boolean"
+                  },
+                  "path": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "reason": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path",
+                  "action",
+                  "reason",
+                  "approvedLoss"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "translationVersion": {
+              "const": "ravi-portable-context-v1",
+              "type": "string"
+            }
+          },
+          "required": [
+            "translationVersion",
+            "fingerprint",
+            "messages",
+            "toolRecords",
+            "attachments",
+            "safetyControls",
+            "runtimeControls",
+            "transformations",
+            "forbiddenLosses",
+            "createdAt"
+          ],
+          "type": "object"
+        },
+        "createdAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "credentialRecoveriesRemaining": {
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "currentTargetIndex": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "deadlineAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "decisions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "start",
+                  "retry_same_target",
+                  "recover_credential",
+                  "switch_target",
+                  "skip_target",
+                  "wait",
+                  "wake",
+                  "probe",
+                  "failback",
+                  "hold",
+                  "success",
+                  "composed_failure",
+                  "exhausted",
+                  "reconcile"
+                ],
+                "type": "string"
+              },
+              "compatibilitySnapshotId": {
+                "const": "provider-continuity-1.0.0-rm-20260722",
+                "type": "string"
+              },
+              "createdAt": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "decisionId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "fromTargetIndex": {
+                "anyOf": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "holdReason": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "unknown_evidence",
+                      "missing_evidence",
+                      "stale_evidence",
+                      "conflicting_evidence",
+                      "known_invalid_evidence",
+                      "effect_started",
+                      "effect_ambiguous",
+                      "context_loss",
+                      "snapshot_conflict",
+                      "deadline_expired",
+                      "idempotency_collision"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "logicalRequestId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "reasonCode": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "rejectionReasons": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "sequence": {
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991,
+                "type": "integer"
+              },
+              "toTargetIndex": {
+                "anyOf": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "decisionId",
+              "logicalRequestId",
+              "sequence",
+              "action",
+              "fromTargetIndex",
+              "toTargetIndex",
+              "reasonCode",
+              "rejectionReasons",
+              "holdReason",
+              "createdAt",
+              "compatibilitySnapshotId"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "deliveryId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "deliveryState": {
+          "enum": [
+            "pending",
+            "started",
+            "delivered",
+            "failed",
+            "ambiguous"
+          ],
+          "type": "string"
+        },
+        "effectBoundary": {
+          "enum": [
+            "none",
+            "intention",
+            "started",
+            "terminal",
+            "ambiguous"
+          ],
+          "type": "string"
+        },
+        "globalAttemptsRemaining": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "holdReason": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown_evidence",
+                "missing_evidence",
+                "stale_evidence",
+                "conflicting_evidence",
+                "known_invalid_evidence",
+                "effect_started",
+                "effect_ambiguous",
+                "context_loss",
+                "snapshot_conflict",
+                "deadline_expired",
+                "idempotency_collision"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "logicalRequestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "normalAttemptsRemaining": {
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "policySnapshot": {
+          "additionalProperties": false,
+          "properties": {
+            "compatibilitySnapshotId": {
+              "const": "provider-continuity-1.0.0-rm-20260722",
+              "type": "string"
+            },
+            "deadlineMs": {
+              "default": 120000,
+              "maximum": 3600000,
+              "minimum": 1000,
+              "type": "integer"
+            },
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "specVersion": {
+              "const": "1.0.0",
+              "type": "string"
+            },
+            "strategy": {
+              "const": "ordered",
+              "type": "string"
+            },
+            "targets": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "model": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "specVersion",
+            "compatibilitySnapshotId",
+            "strategy",
+            "targets",
+            "deadlineMs",
+            "enabled"
+          ],
+          "type": "object"
+        },
+        "policyVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "sessionName": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "running",
+            "waiting",
+            "hold",
+            "reconciliation_required",
+            "succeeded",
+            "failed",
+            "exhausted"
+          ],
+          "type": "string"
+        },
+        "terminalDetail": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "terminalOutcome": {
+          "anyOf": [
+            {
+              "enum": [
+                "success",
+                "failure",
+                "exhaustion",
+                "hold"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "wakeAt": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "logicalRequestId",
+        "agentId",
+        "sessionName",
+        "policyVersion",
+        "policySnapshot",
+        "contextSnapshot",
+        "currentTargetIndex",
+        "attempts",
+        "decisions",
+        "normalAttemptsRemaining",
+        "credentialRecoveriesRemaining",
+        "globalAttemptsRemaining",
+        "effectBoundary",
+        "activeEffectId",
+        "state",
+        "holdReason",
+        "terminalOutcome",
+        "terminalDetail",
+        "deliveryId",
+        "deliveryState",
+        "deadlineAt",
+        "wakeAt",
+        "createdAt",
+        "updatedAt",
+        "compatibilitySnapshotId"
+      ],
+      "type": "object"
+    },
+    "specVersion": {
+      "const": "1.0.0",
+      "type": "string"
+    }
+  },
+  "required": [
+    "specVersion",
+    "compatibilitySnapshotId",
+    "changed",
+    "effect",
+    "journal"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.continuity.reorder`. */
+export const RuntimeContinuityReorderInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "description": "Canonical Ravi agent id",
+      "type": "string"
+    },
+    "approvalRef": {
+      "description": "External approval/change reference",
+      "type": "string"
+    },
+    "expectedVersion": {
+      "description": "Required current policy version",
+      "type": "string"
+    },
+    "fromIndex": {
+      "description": "Existing zero-based target index",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "idempotencyKey": {
+      "description": "Stable key for this exact mutation",
+      "type": "string"
+    },
+    "toIndex": {
+      "description": "Desired zero-based target index",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "agentId",
+    "fromIndex",
+    "toIndex"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.continuity.reorder`. */
+export const RuntimeContinuityReorderReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "changed": {
+      "type": "boolean"
+    },
+    "compatibilitySnapshotId": {
+      "const": "provider-continuity-1.0.0-rm-20260722",
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "applied",
+        "no_op",
+        "invalid",
+        "stale",
+        "temporary_failure",
+        "permanent_failure"
+      ],
+      "type": "string"
+    },
+    "plan": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "compatibilitySnapshotId": {
+              "const": "provider-continuity-1.0.0-rm-20260722",
+              "type": "string"
+            },
+            "createdAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "desiredPolicy": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "compatibilitySnapshotId": {
+                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "type": "string"
+                    },
+                    "deadlineMs": {
+                      "default": 120000,
+                      "maximum": 3600000,
+                      "minimum": 1000,
+                      "type": "integer"
+                    },
+                    "enabled": {
+                      "default": true,
+                      "type": "boolean"
+                    },
+                    "specVersion": {
+                      "const": "1.0.0",
+                      "type": "string"
+                    },
+                    "strategy": {
+                      "const": "ordered",
+                      "type": "string"
+                    },
+                    "targets": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "model": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "provider": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "provider",
+                          "model"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "specVersion",
+                    "compatibilitySnapshotId",
+                    "strategy",
+                    "targets",
+                    "deadlineMs",
+                    "enabled"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "exactAgentIds": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "expiresAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "items": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "create",
+                      "update",
+                      "no_op",
+                      "clear"
+                    ],
+                    "type": "string"
+                  },
+                  "agentId": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "beforeVersion": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "errors": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "valid": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "agentId",
+                  "beforeVersion",
+                  "action",
+                  "valid",
+                  "errors"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "planHash": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "planId": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "selector": {
+              "additionalProperties": false,
+              "properties": {
+                "agentIds": {
+                  "items": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "kind": {
+                  "enum": [
+                    "single",
+                    "selected",
+                    "all"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "agentIds"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "planId",
+            "planHash",
+            "selector",
+            "exactAgentIds",
+            "desiredPolicy",
+            "items",
+            "expiresAt",
+            "createdAt",
+            "compatibilitySnapshotId"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "policy": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "compatibilitySnapshotId": {
+              "const": "provider-continuity-1.0.0-rm-20260722",
+              "type": "string"
+            },
+            "createdAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "deadlineMs": {
+              "default": 120000,
+              "maximum": 3600000,
+              "minimum": 1000,
+              "type": "integer"
+            },
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "specVersion": {
+              "const": "1.0.0",
+              "type": "string"
+            },
+            "strategy": {
+              "const": "ordered",
+              "type": "string"
+            },
+            "targets": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "model": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "updatedAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "version": {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "specVersion",
+            "compatibilitySnapshotId",
+            "strategy",
+            "targets",
+            "deadlineMs",
+            "enabled",
+            "agentId",
+            "version",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "specVersion": {
+      "const": "1.0.0",
+      "type": "string"
+    }
+  },
+  "required": [
+    "specVersion",
+    "compatibilitySnapshotId",
+    "changed",
+    "outcome",
+    "policy",
+    "plan"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.continuity.resume`. */
+export const RuntimeContinuityResumeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "logicalRequestId": {
+      "description": "Stable logical request id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "logicalRequestId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.continuity.resume`. */
+export const RuntimeContinuityResumeReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "compatibilitySnapshotId": {
+      "const": "provider-continuity-1.0.0-rm-20260722",
+      "type": "string"
+    },
+    "journal": {
+      "additionalProperties": false,
+      "properties": {
+        "activeEffectId": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agentId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "attempts": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "attemptId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "completedAt": {
+                "anyOf": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "failure": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "confidence": {
+                        "enum": [
+                          "high",
+                          "medium",
+                          "low"
+                        ],
+                        "type": "string"
+                      },
+                      "credentialRecoveryEligible": {
+                        "type": "boolean"
+                      },
+                      "fingerprint": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "quota",
+                          "rate_limit",
+                          "authentication",
+                          "timeout",
+                          "overload",
+                          "network",
+                          "permanent_request",
+                          "cancellation",
+                          "unknown"
+                        ],
+                        "type": "string"
+                      },
+                      "message": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "observedAt": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "qualifiedForCircuit": {
+                        "type": "boolean"
+                      },
+                      "retryAfterMs": {
+                        "anyOf": [
+                          {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "safeToRetry": {
+                        "type": "boolean"
+                      },
+                      "safeToSwitch": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "confidence",
+                      "safeToRetry",
+                      "safeToSwitch",
+                      "credentialRecoveryEligible",
+                      "qualifiedForCircuit",
+                      "code",
+                      "message",
+                      "retryAfterMs",
+                      "observedAt",
+                      "fingerprint"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "enum": [
+                  "normal",
+                  "credential_recovery",
+                  "probe"
+                ],
+                "type": "string"
+              },
+              "outcome": {
+                "enum": [
+                  "running",
+                  "succeeded",
+                  "failed",
+                  "skipped",
+                  "hold"
+                ],
+                "type": "string"
+              },
+              "probeLeaseId": {
+                "anyOf": [
+                  {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "startedAt": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "target": {
+                "additionalProperties": false,
+                "properties": {
+                  "model": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ],
+                "type": "object"
+              },
+              "targetIndex": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "attemptId",
+              "targetIndex",
+              "target",
+              "kind",
+              "probeLeaseId",
+              "startedAt",
+              "completedAt",
+              "outcome",
+              "failure"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "compatibilitySnapshotId": {
+          "const": "provider-continuity-1.0.0-rm-20260722",
+          "type": "string"
+        },
+        "contextSnapshot": {
+          "additionalProperties": false,
+          "properties": {
+            "attachments": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "fingerprint": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "mediaType": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reference": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "reference",
+                  "mediaType",
+                  "fingerprint"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "createdAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "fingerprint": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "forbiddenLosses": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "messages": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "anyOf": [
+                      {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "role": {
+                    "enum": [
+                      "system",
+                      "user",
+                      "assistant",
+                      "tool"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "role",
+                  "content",
+                  "createdAt"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "runtimeControls": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "safetyControls": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "toolRecords": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "input": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "inputFingerprint": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "output": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "outputFingerprint": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "enum": [
+                      "requested",
+                      "started",
+                      "succeeded",
+                      "failed",
+                      "ambiguous"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "input",
+                  "output",
+                  "inputFingerprint",
+                  "outputFingerprint",
+                  "status"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "transformations": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "preserved",
+                      "rewritten",
+                      "dropped"
+                    ],
+                    "type": "string"
+                  },
+                  "approvedLoss": {
+                    "type": "boolean"
+                  },
+                  "path": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "reason": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path",
+                  "action",
+                  "reason",
+                  "approvedLoss"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "translationVersion": {
+              "const": "ravi-portable-context-v1",
+              "type": "string"
+            }
+          },
+          "required": [
+            "translationVersion",
+            "fingerprint",
+            "messages",
+            "toolRecords",
+            "attachments",
+            "safetyControls",
+            "runtimeControls",
+            "transformations",
+            "forbiddenLosses",
+            "createdAt"
+          ],
+          "type": "object"
+        },
+        "createdAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "credentialRecoveriesRemaining": {
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "currentTargetIndex": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "deadlineAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "decisions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "start",
+                  "retry_same_target",
+                  "recover_credential",
+                  "switch_target",
+                  "skip_target",
+                  "wait",
+                  "wake",
+                  "probe",
+                  "failback",
+                  "hold",
+                  "success",
+                  "composed_failure",
+                  "exhausted",
+                  "reconcile"
+                ],
+                "type": "string"
+              },
+              "compatibilitySnapshotId": {
+                "const": "provider-continuity-1.0.0-rm-20260722",
+                "type": "string"
+              },
+              "createdAt": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "decisionId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "fromTargetIndex": {
+                "anyOf": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "holdReason": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "unknown_evidence",
+                      "missing_evidence",
+                      "stale_evidence",
+                      "conflicting_evidence",
+                      "known_invalid_evidence",
+                      "effect_started",
+                      "effect_ambiguous",
+                      "context_loss",
+                      "snapshot_conflict",
+                      "deadline_expired",
+                      "idempotency_collision"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "logicalRequestId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "reasonCode": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "rejectionReasons": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "sequence": {
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991,
+                "type": "integer"
+              },
+              "toTargetIndex": {
+                "anyOf": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "decisionId",
+              "logicalRequestId",
+              "sequence",
+              "action",
+              "fromTargetIndex",
+              "toTargetIndex",
+              "reasonCode",
+              "rejectionReasons",
+              "holdReason",
+              "createdAt",
+              "compatibilitySnapshotId"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "deliveryId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "deliveryState": {
+          "enum": [
+            "pending",
+            "started",
+            "delivered",
+            "failed",
+            "ambiguous"
+          ],
+          "type": "string"
+        },
+        "effectBoundary": {
+          "enum": [
+            "none",
+            "intention",
+            "started",
+            "terminal",
+            "ambiguous"
+          ],
+          "type": "string"
+        },
+        "globalAttemptsRemaining": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "holdReason": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown_evidence",
+                "missing_evidence",
+                "stale_evidence",
+                "conflicting_evidence",
+                "known_invalid_evidence",
+                "effect_started",
+                "effect_ambiguous",
+                "context_loss",
+                "snapshot_conflict",
+                "deadline_expired",
+                "idempotency_collision"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "logicalRequestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "normalAttemptsRemaining": {
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "policySnapshot": {
+          "additionalProperties": false,
+          "properties": {
+            "compatibilitySnapshotId": {
+              "const": "provider-continuity-1.0.0-rm-20260722",
+              "type": "string"
+            },
+            "deadlineMs": {
+              "default": 120000,
+              "maximum": 3600000,
+              "minimum": 1000,
+              "type": "integer"
+            },
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "specVersion": {
+              "const": "1.0.0",
+              "type": "string"
+            },
+            "strategy": {
+              "const": "ordered",
+              "type": "string"
+            },
+            "targets": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "model": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "specVersion",
+            "compatibilitySnapshotId",
+            "strategy",
+            "targets",
+            "deadlineMs",
+            "enabled"
+          ],
+          "type": "object"
+        },
+        "policyVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "sessionName": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "running",
+            "waiting",
+            "hold",
+            "reconciliation_required",
+            "succeeded",
+            "failed",
+            "exhausted"
+          ],
+          "type": "string"
+        },
+        "terminalDetail": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "terminalOutcome": {
+          "anyOf": [
+            {
+              "enum": [
+                "success",
+                "failure",
+                "exhaustion",
+                "hold"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "wakeAt": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "logicalRequestId",
+        "agentId",
+        "sessionName",
+        "policyVersion",
+        "policySnapshot",
+        "contextSnapshot",
+        "currentTargetIndex",
+        "attempts",
+        "decisions",
+        "normalAttemptsRemaining",
+        "credentialRecoveriesRemaining",
+        "globalAttemptsRemaining",
+        "effectBoundary",
+        "activeEffectId",
+        "state",
+        "holdReason",
+        "terminalOutcome",
+        "terminalDetail",
+        "deliveryId",
+        "deliveryState",
+        "deadlineAt",
+        "wakeAt",
+        "createdAt",
+        "updatedAt",
+        "compatibilitySnapshotId"
+      ],
+      "type": "object"
+    },
+    "reason": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "resumed": {
+      "type": "boolean"
+    },
+    "specVersion": {
+      "const": "1.0.0",
+      "type": "string"
+    },
+    "target": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "model": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "provider": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "provider",
+            "model"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "specVersion",
+    "compatibilitySnapshotId",
+    "resumed",
+    "journal",
+    "target",
+    "reason"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.continuity.set`. */
+export const RuntimeContinuitySetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "description": "Canonical Ravi agent id",
+      "type": "string"
+    },
+    "approvalRef": {
+      "description": "External approval/change reference",
+      "type": "string"
+    },
+    "deadlineMs": {
+      "description": "Logical request deadline in milliseconds",
+      "type": "string"
+    },
+    "disabled": {
+      "description": "Store the policy disabled",
+      "type": "boolean"
+    },
+    "expectedVersion": {
+      "description": "Required CAS version (0 means absent)",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Stable key for this exact mutation",
+      "type": "string"
+    },
+    "targets": {
+      "description": "Ordered JSON array of {provider,model}",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agentId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.continuity.set`. */
+export const RuntimeContinuitySetReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "changed": {
+      "type": "boolean"
+    },
+    "compatibilitySnapshotId": {
+      "const": "provider-continuity-1.0.0-rm-20260722",
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "applied",
+        "no_op",
+        "invalid",
+        "stale",
+        "temporary_failure",
+        "permanent_failure"
+      ],
+      "type": "string"
+    },
+    "plan": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "compatibilitySnapshotId": {
+              "const": "provider-continuity-1.0.0-rm-20260722",
+              "type": "string"
+            },
+            "createdAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "desiredPolicy": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "compatibilitySnapshotId": {
+                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "type": "string"
+                    },
+                    "deadlineMs": {
+                      "default": 120000,
+                      "maximum": 3600000,
+                      "minimum": 1000,
+                      "type": "integer"
+                    },
+                    "enabled": {
+                      "default": true,
+                      "type": "boolean"
+                    },
+                    "specVersion": {
+                      "const": "1.0.0",
+                      "type": "string"
+                    },
+                    "strategy": {
+                      "const": "ordered",
+                      "type": "string"
+                    },
+                    "targets": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "model": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "provider": {
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "provider",
+                          "model"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "specVersion",
+                    "compatibilitySnapshotId",
+                    "strategy",
+                    "targets",
+                    "deadlineMs",
+                    "enabled"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "exactAgentIds": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "expiresAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "items": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "create",
+                      "update",
+                      "no_op",
+                      "clear"
+                    ],
+                    "type": "string"
+                  },
+                  "agentId": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "beforeVersion": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "errors": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "valid": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "agentId",
+                  "beforeVersion",
+                  "action",
+                  "valid",
+                  "errors"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "planHash": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "planId": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "selector": {
+              "additionalProperties": false,
+              "properties": {
+                "agentIds": {
+                  "items": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "kind": {
+                  "enum": [
+                    "single",
+                    "selected",
+                    "all"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "agentIds"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "planId",
+            "planHash",
+            "selector",
+            "exactAgentIds",
+            "desiredPolicy",
+            "items",
+            "expiresAt",
+            "createdAt",
+            "compatibilitySnapshotId"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "policy": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "compatibilitySnapshotId": {
+              "const": "provider-continuity-1.0.0-rm-20260722",
+              "type": "string"
+            },
+            "createdAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "deadlineMs": {
+              "default": 120000,
+              "maximum": 3600000,
+              "minimum": 1000,
+              "type": "integer"
+            },
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "specVersion": {
+              "const": "1.0.0",
+              "type": "string"
+            },
+            "strategy": {
+              "const": "ordered",
+              "type": "string"
+            },
+            "targets": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "model": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "updatedAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "version": {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "specVersion",
+            "compatibilitySnapshotId",
+            "strategy",
+            "targets",
+            "deadlineMs",
+            "enabled",
+            "agentId",
+            "version",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "specVersion": {
+      "const": "1.0.0",
+      "type": "string"
+    }
+  },
+  "required": [
+    "specVersion",
+    "compatibilitySnapshotId",
+    "changed",
+    "outcome",
+    "policy",
+    "plan"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.continuity.show`. */
+export const RuntimeContinuityShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "description": "Canonical Ravi agent id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agentId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.continuity.show`. */
+export const RuntimeContinuityShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "compatibilitySnapshotId": {
+      "const": "provider-continuity-1.0.0-rm-20260722",
+      "type": "string"
+    },
+    "health": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "consecutiveQualifiedFailures": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lastFailureAt": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastSuccessAt": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "openedAt": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "probationSuccesses": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "probeEligibleAt": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "probeLeaseExpiresAt": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "probeLeaseId": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "stableSince": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "enum": [
+              "closed",
+              "open",
+              "half_open"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agentId",
+          "provider",
+          "model",
+          "state",
+          "consecutiveQualifiedFailures",
+          "probationSuccesses",
+          "openedAt",
+          "probeEligibleAt",
+          "probeLeaseId",
+          "probeLeaseExpiresAt",
+          "stableSince",
+          "lastFailureAt",
+          "lastSuccessAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "liveActivation": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "gate": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "enabled",
+        "gate",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "policy": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "compatibilitySnapshotId": {
+              "const": "provider-continuity-1.0.0-rm-20260722",
+              "type": "string"
+            },
+            "createdAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "deadlineMs": {
+              "default": 120000,
+              "maximum": 3600000,
+              "minimum": 1000,
+              "type": "integer"
+            },
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "specVersion": {
+              "const": "1.0.0",
+              "type": "string"
+            },
+            "strategy": {
+              "const": "ordered",
+              "type": "string"
+            },
+            "targets": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "model": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "updatedAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "version": {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "specVersion",
+            "compatibilitySnapshotId",
+            "strategy",
+            "targets",
+            "deadlineMs",
+            "enabled",
+            "agentId",
+            "version",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "specVersion": {
+      "const": "1.0.0",
+      "type": "string"
+    }
+  },
+  "required": [
+    "specVersion",
+    "compatibilitySnapshotId",
+    "policy",
+    "health",
+    "liveActivation"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.continuity.trace`. */
+export const RuntimeContinuityTraceInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "cursor": {
+      "description": "Opaque cursor returned by the previous page",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default 50, max 500)",
+      "type": "string"
+    },
+    "logicalRequestId": {
+      "description": "Stable logical request id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "logicalRequestId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.continuity.trace`. */
+export const RuntimeContinuityTraceReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "compatibilitySnapshotId": {
+      "const": "provider-continuity-1.0.0-rm-20260722",
+      "type": "string"
+    },
+    "events": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "compatibilitySnapshotId": {
+            "const": "provider-continuity-1.0.0-rm-20260722",
+            "type": "string"
+          },
+          "createdAt": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "eventId": {
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "logicalRequestId": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "payload": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "specVersion": {
+            "const": "1.0.0",
+            "type": "string"
+          },
+          "type": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "eventId",
+          "logicalRequestId",
+          "agentId",
+          "type",
+          "payload",
+          "createdAt",
+          "specVersion",
+          "compatibilitySnapshotId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "journal": {
+      "additionalProperties": false,
+      "properties": {
+        "activeEffectId": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agentId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "attempts": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "attemptId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "completedAt": {
+                "anyOf": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "failure": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "confidence": {
+                        "enum": [
+                          "high",
+                          "medium",
+                          "low"
+                        ],
+                        "type": "string"
+                      },
+                      "credentialRecoveryEligible": {
+                        "type": "boolean"
+                      },
+                      "fingerprint": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "quota",
+                          "rate_limit",
+                          "authentication",
+                          "timeout",
+                          "overload",
+                          "network",
+                          "permanent_request",
+                          "cancellation",
+                          "unknown"
+                        ],
+                        "type": "string"
+                      },
+                      "message": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "observedAt": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "qualifiedForCircuit": {
+                        "type": "boolean"
+                      },
+                      "retryAfterMs": {
+                        "anyOf": [
+                          {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "safeToRetry": {
+                        "type": "boolean"
+                      },
+                      "safeToSwitch": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "confidence",
+                      "safeToRetry",
+                      "safeToSwitch",
+                      "credentialRecoveryEligible",
+                      "qualifiedForCircuit",
+                      "code",
+                      "message",
+                      "retryAfterMs",
+                      "observedAt",
+                      "fingerprint"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "enum": [
+                  "normal",
+                  "credential_recovery",
+                  "probe"
+                ],
+                "type": "string"
+              },
+              "outcome": {
+                "enum": [
+                  "running",
+                  "succeeded",
+                  "failed",
+                  "skipped",
+                  "hold"
+                ],
+                "type": "string"
+              },
+              "probeLeaseId": {
+                "anyOf": [
+                  {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "startedAt": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "target": {
+                "additionalProperties": false,
+                "properties": {
+                  "model": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ],
+                "type": "object"
+              },
+              "targetIndex": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "attemptId",
+              "targetIndex",
+              "target",
+              "kind",
+              "probeLeaseId",
+              "startedAt",
+              "completedAt",
+              "outcome",
+              "failure"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "compatibilitySnapshotId": {
+          "const": "provider-continuity-1.0.0-rm-20260722",
+          "type": "string"
+        },
+        "contextSnapshot": {
+          "additionalProperties": false,
+          "properties": {
+            "attachments": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "fingerprint": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "mediaType": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reference": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "reference",
+                  "mediaType",
+                  "fingerprint"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "createdAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "fingerprint": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "forbiddenLosses": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "messages": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "anyOf": [
+                      {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "role": {
+                    "enum": [
+                      "system",
+                      "user",
+                      "assistant",
+                      "tool"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "role",
+                  "content",
+                  "createdAt"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "runtimeControls": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "safetyControls": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "toolRecords": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "input": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "inputFingerprint": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "output": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "outputFingerprint": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "enum": [
+                      "requested",
+                      "started",
+                      "succeeded",
+                      "failed",
+                      "ambiguous"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "input",
+                  "output",
+                  "inputFingerprint",
+                  "outputFingerprint",
+                  "status"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "transformations": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "preserved",
+                      "rewritten",
+                      "dropped"
+                    ],
+                    "type": "string"
+                  },
+                  "approvedLoss": {
+                    "type": "boolean"
+                  },
+                  "path": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "reason": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path",
+                  "action",
+                  "reason",
+                  "approvedLoss"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "translationVersion": {
+              "const": "ravi-portable-context-v1",
+              "type": "string"
+            }
+          },
+          "required": [
+            "translationVersion",
+            "fingerprint",
+            "messages",
+            "toolRecords",
+            "attachments",
+            "safetyControls",
+            "runtimeControls",
+            "transformations",
+            "forbiddenLosses",
+            "createdAt"
+          ],
+          "type": "object"
+        },
+        "createdAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "credentialRecoveriesRemaining": {
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "currentTargetIndex": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "deadlineAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "decisions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "start",
+                  "retry_same_target",
+                  "recover_credential",
+                  "switch_target",
+                  "skip_target",
+                  "wait",
+                  "wake",
+                  "probe",
+                  "failback",
+                  "hold",
+                  "success",
+                  "composed_failure",
+                  "exhausted",
+                  "reconcile"
+                ],
+                "type": "string"
+              },
+              "compatibilitySnapshotId": {
+                "const": "provider-continuity-1.0.0-rm-20260722",
+                "type": "string"
+              },
+              "createdAt": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "decisionId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "fromTargetIndex": {
+                "anyOf": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "holdReason": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "unknown_evidence",
+                      "missing_evidence",
+                      "stale_evidence",
+                      "conflicting_evidence",
+                      "known_invalid_evidence",
+                      "effect_started",
+                      "effect_ambiguous",
+                      "context_loss",
+                      "snapshot_conflict",
+                      "deadline_expired",
+                      "idempotency_collision"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "logicalRequestId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "reasonCode": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "rejectionReasons": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "sequence": {
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991,
+                "type": "integer"
+              },
+              "toTargetIndex": {
+                "anyOf": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "decisionId",
+              "logicalRequestId",
+              "sequence",
+              "action",
+              "fromTargetIndex",
+              "toTargetIndex",
+              "reasonCode",
+              "rejectionReasons",
+              "holdReason",
+              "createdAt",
+              "compatibilitySnapshotId"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "deliveryId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "deliveryState": {
+          "enum": [
+            "pending",
+            "started",
+            "delivered",
+            "failed",
+            "ambiguous"
+          ],
+          "type": "string"
+        },
+        "effectBoundary": {
+          "enum": [
+            "none",
+            "intention",
+            "started",
+            "terminal",
+            "ambiguous"
+          ],
+          "type": "string"
+        },
+        "globalAttemptsRemaining": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "holdReason": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown_evidence",
+                "missing_evidence",
+                "stale_evidence",
+                "conflicting_evidence",
+                "known_invalid_evidence",
+                "effect_started",
+                "effect_ambiguous",
+                "context_loss",
+                "snapshot_conflict",
+                "deadline_expired",
+                "idempotency_collision"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "logicalRequestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "normalAttemptsRemaining": {
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "policySnapshot": {
+          "additionalProperties": false,
+          "properties": {
+            "compatibilitySnapshotId": {
+              "const": "provider-continuity-1.0.0-rm-20260722",
+              "type": "string"
+            },
+            "deadlineMs": {
+              "default": 120000,
+              "maximum": 3600000,
+              "minimum": 1000,
+              "type": "integer"
+            },
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "specVersion": {
+              "const": "1.0.0",
+              "type": "string"
+            },
+            "strategy": {
+              "const": "ordered",
+              "type": "string"
+            },
+            "targets": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "model": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "specVersion",
+            "compatibilitySnapshotId",
+            "strategy",
+            "targets",
+            "deadlineMs",
+            "enabled"
+          ],
+          "type": "object"
+        },
+        "policyVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "sessionName": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "running",
+            "waiting",
+            "hold",
+            "reconciliation_required",
+            "succeeded",
+            "failed",
+            "exhausted"
+          ],
+          "type": "string"
+        },
+        "terminalDetail": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "terminalOutcome": {
+          "anyOf": [
+            {
+              "enum": [
+                "success",
+                "failure",
+                "exhaustion",
+                "hold"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "wakeAt": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "logicalRequestId",
+        "agentId",
+        "sessionName",
+        "policyVersion",
+        "policySnapshot",
+        "contextSnapshot",
+        "currentTargetIndex",
+        "attempts",
+        "decisions",
+        "normalAttemptsRemaining",
+        "credentialRecoveriesRemaining",
+        "globalAttemptsRemaining",
+        "effectBoundary",
+        "activeEffectId",
+        "state",
+        "holdReason",
+        "terminalOutcome",
+        "terminalDetail",
+        "deliveryId",
+        "deliveryState",
+        "deadlineAt",
+        "wakeAt",
+        "createdAt",
+        "updatedAt",
+        "compatibilitySnapshotId"
+      ],
+      "type": "object"
+    },
+    "logicalRequestId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "limit",
+        "cursor",
+        "nextCursor",
+        "hasMore"
+      ],
+      "type": "object"
+    },
+    "specVersion": {
+      "const": "1.0.0",
+      "type": "string"
+    }
+  },
+  "required": [
+    "specVersion",
+    "compatibilitySnapshotId",
+    "logicalRequestId",
+    "journal",
+    "events",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.continuity.wait`. */
+export const RuntimeContinuityWaitInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "logicalRequestId": {
+      "description": "Stable logical request id",
+      "type": "string"
+    },
+    "until": {
+      "description": "Wake time; must precede request deadline",
+      "type": "string"
+    }
+  },
+  "required": [
+    "logicalRequestId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.continuity.wait`. */
+export const RuntimeContinuityWaitReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "changed": {
+      "type": "boolean"
+    },
+    "compatibilitySnapshotId": {
+      "const": "provider-continuity-1.0.0-rm-20260722",
+      "type": "string"
+    },
+    "journal": {
+      "additionalProperties": false,
+      "properties": {
+        "activeEffectId": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agentId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "attempts": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "attemptId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "completedAt": {
+                "anyOf": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "failure": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "confidence": {
+                        "enum": [
+                          "high",
+                          "medium",
+                          "low"
+                        ],
+                        "type": "string"
+                      },
+                      "credentialRecoveryEligible": {
+                        "type": "boolean"
+                      },
+                      "fingerprint": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "quota",
+                          "rate_limit",
+                          "authentication",
+                          "timeout",
+                          "overload",
+                          "network",
+                          "permanent_request",
+                          "cancellation",
+                          "unknown"
+                        ],
+                        "type": "string"
+                      },
+                      "message": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "observedAt": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "qualifiedForCircuit": {
+                        "type": "boolean"
+                      },
+                      "retryAfterMs": {
+                        "anyOf": [
+                          {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "safeToRetry": {
+                        "type": "boolean"
+                      },
+                      "safeToSwitch": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "confidence",
+                      "safeToRetry",
+                      "safeToSwitch",
+                      "credentialRecoveryEligible",
+                      "qualifiedForCircuit",
+                      "code",
+                      "message",
+                      "retryAfterMs",
+                      "observedAt",
+                      "fingerprint"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "enum": [
+                  "normal",
+                  "credential_recovery",
+                  "probe"
+                ],
+                "type": "string"
+              },
+              "outcome": {
+                "enum": [
+                  "running",
+                  "succeeded",
+                  "failed",
+                  "skipped",
+                  "hold"
+                ],
+                "type": "string"
+              },
+              "probeLeaseId": {
+                "anyOf": [
+                  {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "startedAt": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "target": {
+                "additionalProperties": false,
+                "properties": {
+                  "model": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ],
+                "type": "object"
+              },
+              "targetIndex": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "attemptId",
+              "targetIndex",
+              "target",
+              "kind",
+              "probeLeaseId",
+              "startedAt",
+              "completedAt",
+              "outcome",
+              "failure"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "compatibilitySnapshotId": {
+          "const": "provider-continuity-1.0.0-rm-20260722",
+          "type": "string"
+        },
+        "contextSnapshot": {
+          "additionalProperties": false,
+          "properties": {
+            "attachments": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "fingerprint": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "mediaType": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reference": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "reference",
+                  "mediaType",
+                  "fingerprint"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "createdAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "fingerprint": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "forbiddenLosses": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "messages": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "anyOf": [
+                      {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "role": {
+                    "enum": [
+                      "system",
+                      "user",
+                      "assistant",
+                      "tool"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "role",
+                  "content",
+                  "createdAt"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "runtimeControls": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "safetyControls": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "toolRecords": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "input": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "inputFingerprint": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "output": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "outputFingerprint": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "enum": [
+                      "requested",
+                      "started",
+                      "succeeded",
+                      "failed",
+                      "ambiguous"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "input",
+                  "output",
+                  "inputFingerprint",
+                  "outputFingerprint",
+                  "status"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "transformations": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "preserved",
+                      "rewritten",
+                      "dropped"
+                    ],
+                    "type": "string"
+                  },
+                  "approvedLoss": {
+                    "type": "boolean"
+                  },
+                  "path": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "reason": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path",
+                  "action",
+                  "reason",
+                  "approvedLoss"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "translationVersion": {
+              "const": "ravi-portable-context-v1",
+              "type": "string"
+            }
+          },
+          "required": [
+            "translationVersion",
+            "fingerprint",
+            "messages",
+            "toolRecords",
+            "attachments",
+            "safetyControls",
+            "runtimeControls",
+            "transformations",
+            "forbiddenLosses",
+            "createdAt"
+          ],
+          "type": "object"
+        },
+        "createdAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "credentialRecoveriesRemaining": {
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "currentTargetIndex": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "deadlineAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "decisions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "start",
+                  "retry_same_target",
+                  "recover_credential",
+                  "switch_target",
+                  "skip_target",
+                  "wait",
+                  "wake",
+                  "probe",
+                  "failback",
+                  "hold",
+                  "success",
+                  "composed_failure",
+                  "exhausted",
+                  "reconcile"
+                ],
+                "type": "string"
+              },
+              "compatibilitySnapshotId": {
+                "const": "provider-continuity-1.0.0-rm-20260722",
+                "type": "string"
+              },
+              "createdAt": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "decisionId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "fromTargetIndex": {
+                "anyOf": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "holdReason": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "unknown_evidence",
+                      "missing_evidence",
+                      "stale_evidence",
+                      "conflicting_evidence",
+                      "known_invalid_evidence",
+                      "effect_started",
+                      "effect_ambiguous",
+                      "context_loss",
+                      "snapshot_conflict",
+                      "deadline_expired",
+                      "idempotency_collision"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "logicalRequestId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "reasonCode": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "rejectionReasons": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "sequence": {
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991,
+                "type": "integer"
+              },
+              "toTargetIndex": {
+                "anyOf": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "decisionId",
+              "logicalRequestId",
+              "sequence",
+              "action",
+              "fromTargetIndex",
+              "toTargetIndex",
+              "reasonCode",
+              "rejectionReasons",
+              "holdReason",
+              "createdAt",
+              "compatibilitySnapshotId"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "deliveryId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "deliveryState": {
+          "enum": [
+            "pending",
+            "started",
+            "delivered",
+            "failed",
+            "ambiguous"
+          ],
+          "type": "string"
+        },
+        "effectBoundary": {
+          "enum": [
+            "none",
+            "intention",
+            "started",
+            "terminal",
+            "ambiguous"
+          ],
+          "type": "string"
+        },
+        "globalAttemptsRemaining": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "holdReason": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown_evidence",
+                "missing_evidence",
+                "stale_evidence",
+                "conflicting_evidence",
+                "known_invalid_evidence",
+                "effect_started",
+                "effect_ambiguous",
+                "context_loss",
+                "snapshot_conflict",
+                "deadline_expired",
+                "idempotency_collision"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "logicalRequestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "normalAttemptsRemaining": {
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "policySnapshot": {
+          "additionalProperties": false,
+          "properties": {
+            "compatibilitySnapshotId": {
+              "const": "provider-continuity-1.0.0-rm-20260722",
+              "type": "string"
+            },
+            "deadlineMs": {
+              "default": 120000,
+              "maximum": 3600000,
+              "minimum": 1000,
+              "type": "integer"
+            },
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "specVersion": {
+              "const": "1.0.0",
+              "type": "string"
+            },
+            "strategy": {
+              "const": "ordered",
+              "type": "string"
+            },
+            "targets": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "model": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "specVersion",
+            "compatibilitySnapshotId",
+            "strategy",
+            "targets",
+            "deadlineMs",
+            "enabled"
+          ],
+          "type": "object"
+        },
+        "policyVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "sessionName": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "running",
+            "waiting",
+            "hold",
+            "reconciliation_required",
+            "succeeded",
+            "failed",
+            "exhausted"
+          ],
+          "type": "string"
+        },
+        "terminalDetail": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "terminalOutcome": {
+          "anyOf": [
+            {
+              "enum": [
+                "success",
+                "failure",
+                "exhaustion",
+                "hold"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "wakeAt": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "logicalRequestId",
+        "agentId",
+        "sessionName",
+        "policyVersion",
+        "policySnapshot",
+        "contextSnapshot",
+        "currentTargetIndex",
+        "attempts",
+        "decisions",
+        "normalAttemptsRemaining",
+        "credentialRecoveriesRemaining",
+        "globalAttemptsRemaining",
+        "effectBoundary",
+        "activeEffectId",
+        "state",
+        "holdReason",
+        "terminalOutcome",
+        "terminalDetail",
+        "deliveryId",
+        "deliveryState",
+        "deadlineAt",
+        "wakeAt",
+        "createdAt",
+        "updatedAt",
+        "compatibilitySnapshotId"
+      ],
+      "type": "object"
+    },
+    "specVersion": {
+      "const": "1.0.0",
+      "type": "string"
+    }
+  },
+  "required": [
+    "specVersion",
+    "compatibilitySnapshotId",
+    "changed",
+    "journal"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.continuity.wake`. */
+export const RuntimeContinuityWakeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "logicalRequestId": {
+      "description": "Stable logical request id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "logicalRequestId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.continuity.wake`. */
+export const RuntimeContinuityWakeReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "changed": {
+      "type": "boolean"
+    },
+    "compatibilitySnapshotId": {
+      "const": "provider-continuity-1.0.0-rm-20260722",
+      "type": "string"
+    },
+    "journal": {
+      "additionalProperties": false,
+      "properties": {
+        "activeEffectId": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agentId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "attempts": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "attemptId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "completedAt": {
+                "anyOf": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "failure": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "confidence": {
+                        "enum": [
+                          "high",
+                          "medium",
+                          "low"
+                        ],
+                        "type": "string"
+                      },
+                      "credentialRecoveryEligible": {
+                        "type": "boolean"
+                      },
+                      "fingerprint": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "quota",
+                          "rate_limit",
+                          "authentication",
+                          "timeout",
+                          "overload",
+                          "network",
+                          "permanent_request",
+                          "cancellation",
+                          "unknown"
+                        ],
+                        "type": "string"
+                      },
+                      "message": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "observedAt": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "qualifiedForCircuit": {
+                        "type": "boolean"
+                      },
+                      "retryAfterMs": {
+                        "anyOf": [
+                          {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "safeToRetry": {
+                        "type": "boolean"
+                      },
+                      "safeToSwitch": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "confidence",
+                      "safeToRetry",
+                      "safeToSwitch",
+                      "credentialRecoveryEligible",
+                      "qualifiedForCircuit",
+                      "code",
+                      "message",
+                      "retryAfterMs",
+                      "observedAt",
+                      "fingerprint"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "enum": [
+                  "normal",
+                  "credential_recovery",
+                  "probe"
+                ],
+                "type": "string"
+              },
+              "outcome": {
+                "enum": [
+                  "running",
+                  "succeeded",
+                  "failed",
+                  "skipped",
+                  "hold"
+                ],
+                "type": "string"
+              },
+              "probeLeaseId": {
+                "anyOf": [
+                  {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "startedAt": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "target": {
+                "additionalProperties": false,
+                "properties": {
+                  "model": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ],
+                "type": "object"
+              },
+              "targetIndex": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "attemptId",
+              "targetIndex",
+              "target",
+              "kind",
+              "probeLeaseId",
+              "startedAt",
+              "completedAt",
+              "outcome",
+              "failure"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "compatibilitySnapshotId": {
+          "const": "provider-continuity-1.0.0-rm-20260722",
+          "type": "string"
+        },
+        "contextSnapshot": {
+          "additionalProperties": false,
+          "properties": {
+            "attachments": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "fingerprint": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "mediaType": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reference": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "reference",
+                  "mediaType",
+                  "fingerprint"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "createdAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "fingerprint": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "forbiddenLosses": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "messages": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "anyOf": [
+                      {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "role": {
+                    "enum": [
+                      "system",
+                      "user",
+                      "assistant",
+                      "tool"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "role",
+                  "content",
+                  "createdAt"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "runtimeControls": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "safetyControls": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "toolRecords": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "input": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "inputFingerprint": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "output": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "outputFingerprint": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "enum": [
+                      "requested",
+                      "started",
+                      "succeeded",
+                      "failed",
+                      "ambiguous"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "input",
+                  "output",
+                  "inputFingerprint",
+                  "outputFingerprint",
+                  "status"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "transformations": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "preserved",
+                      "rewritten",
+                      "dropped"
+                    ],
+                    "type": "string"
+                  },
+                  "approvedLoss": {
+                    "type": "boolean"
+                  },
+                  "path": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "reason": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path",
+                  "action",
+                  "reason",
+                  "approvedLoss"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "translationVersion": {
+              "const": "ravi-portable-context-v1",
+              "type": "string"
+            }
+          },
+          "required": [
+            "translationVersion",
+            "fingerprint",
+            "messages",
+            "toolRecords",
+            "attachments",
+            "safetyControls",
+            "runtimeControls",
+            "transformations",
+            "forbiddenLosses",
+            "createdAt"
+          ],
+          "type": "object"
+        },
+        "createdAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "credentialRecoveriesRemaining": {
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "currentTargetIndex": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "deadlineAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "decisions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "enum": [
+                  "start",
+                  "retry_same_target",
+                  "recover_credential",
+                  "switch_target",
+                  "skip_target",
+                  "wait",
+                  "wake",
+                  "probe",
+                  "failback",
+                  "hold",
+                  "success",
+                  "composed_failure",
+                  "exhausted",
+                  "reconcile"
+                ],
+                "type": "string"
+              },
+              "compatibilitySnapshotId": {
+                "const": "provider-continuity-1.0.0-rm-20260722",
+                "type": "string"
+              },
+              "createdAt": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "decisionId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "fromTargetIndex": {
+                "anyOf": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "holdReason": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "unknown_evidence",
+                      "missing_evidence",
+                      "stale_evidence",
+                      "conflicting_evidence",
+                      "known_invalid_evidence",
+                      "effect_started",
+                      "effect_ambiguous",
+                      "context_loss",
+                      "snapshot_conflict",
+                      "deadline_expired",
+                      "idempotency_collision"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "logicalRequestId": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "reasonCode": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "rejectionReasons": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "sequence": {
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991,
+                "type": "integer"
+              },
+              "toTargetIndex": {
+                "anyOf": [
+                  {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "decisionId",
+              "logicalRequestId",
+              "sequence",
+              "action",
+              "fromTargetIndex",
+              "toTargetIndex",
+              "reasonCode",
+              "rejectionReasons",
+              "holdReason",
+              "createdAt",
+              "compatibilitySnapshotId"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "deliveryId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "deliveryState": {
+          "enum": [
+            "pending",
+            "started",
+            "delivered",
+            "failed",
+            "ambiguous"
+          ],
+          "type": "string"
+        },
+        "effectBoundary": {
+          "enum": [
+            "none",
+            "intention",
+            "started",
+            "terminal",
+            "ambiguous"
+          ],
+          "type": "string"
+        },
+        "globalAttemptsRemaining": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "holdReason": {
+          "anyOf": [
+            {
+              "enum": [
+                "unknown_evidence",
+                "missing_evidence",
+                "stale_evidence",
+                "conflicting_evidence",
+                "known_invalid_evidence",
+                "effect_started",
+                "effect_ambiguous",
+                "context_loss",
+                "snapshot_conflict",
+                "deadline_expired",
+                "idempotency_collision"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "logicalRequestId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "normalAttemptsRemaining": {
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "policySnapshot": {
+          "additionalProperties": false,
+          "properties": {
+            "compatibilitySnapshotId": {
+              "const": "provider-continuity-1.0.0-rm-20260722",
+              "type": "string"
+            },
+            "deadlineMs": {
+              "default": 120000,
+              "maximum": 3600000,
+              "minimum": 1000,
+              "type": "integer"
+            },
+            "enabled": {
+              "default": true,
+              "type": "boolean"
+            },
+            "specVersion": {
+              "const": "1.0.0",
+              "type": "string"
+            },
+            "strategy": {
+              "const": "ordered",
+              "type": "string"
+            },
+            "targets": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "model": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "provider": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": [
+            "specVersion",
+            "compatibilitySnapshotId",
+            "strategy",
+            "targets",
+            "deadlineMs",
+            "enabled"
+          ],
+          "type": "object"
+        },
+        "policyVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "sessionName": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "running",
+            "waiting",
+            "hold",
+            "reconciliation_required",
+            "succeeded",
+            "failed",
+            "exhausted"
+          ],
+          "type": "string"
+        },
+        "terminalDetail": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "terminalOutcome": {
+          "anyOf": [
+            {
+              "enum": [
+                "success",
+                "failure",
+                "exhaustion",
+                "hold"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "wakeAt": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "logicalRequestId",
+        "agentId",
+        "sessionName",
+        "policyVersion",
+        "policySnapshot",
+        "contextSnapshot",
+        "currentTargetIndex",
+        "attempts",
+        "decisions",
+        "normalAttemptsRemaining",
+        "credentialRecoveriesRemaining",
+        "globalAttemptsRemaining",
+        "effectBoundary",
+        "activeEffectId",
+        "state",
+        "holdReason",
+        "terminalOutcome",
+        "terminalDetail",
+        "deliveryId",
+        "deliveryState",
+        "deadlineAt",
+        "wakeAt",
+        "createdAt",
+        "updatedAt",
+        "compatibilitySnapshotId"
+      ],
+      "type": "object"
+    },
+    "specVersion": {
+      "const": "1.0.0",
+      "type": "string"
+    }
+  },
+  "required": [
+    "specVersion",
+    "compatibilitySnapshotId",
+    "changed",
+    "journal"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `runtime.credentials.add`. */
 export const RuntimeCredentialsAddInputSchema = {
   "additionalProperties": false,

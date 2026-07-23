@@ -22,6 +22,7 @@ import {
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { querySessionTrace } from "../session-trace/query.js";
 import { dbCompleteTask, dbCreateTask, dbDispatchTask } from "../tasks/task-db.js";
+import { PROVIDER_CONTINUITY_SNAPSHOT } from "./provider-continuity/types.js";
 
 function createDispatcher(maxConcurrentSessions = 10, interactiveReservedSessions = 0) {
   return new RuntimeSessionDispatcher({
@@ -560,6 +561,60 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     expect(restartPrompt?._resumeStashedMessages).toBe(true);
     expect(restartPrompt?.prompt).toContain("continue the user work");
     expect(restartPrompt?.prompt).toContain("Daemon reiniciou");
+  });
+
+  it("preserves the frozen continuity envelope when rebuilding stashed work", () => {
+    const continuity = {
+      logicalRequestId: "pcr_dispatcher_restart",
+      policyVersion: 2,
+      targetIndex: 1,
+      target: { provider: "claude" as const, model: "sonnet" },
+      attemptId: "pca_dispatcher_restart",
+      contextFingerprint: "context-dispatcher-restart",
+      deliveryId: "pcdly_dispatcher_restart",
+      probeLeaseId: null,
+      synthetic: true,
+      compatibilitySnapshotId: PROVIDER_CONTINUITY_SNAPSHOT,
+    };
+    const original = createQueuedRuntimeUserMessage({
+      prompt: "continue the continuity request",
+      _agentId: "main",
+      _continuity: continuity,
+      source: {
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "chat-continuity",
+        actorType: "contact",
+        contactId: "contact-continuity",
+      },
+      context: {
+        channelId: "whatsapp",
+        channelName: "WhatsApp",
+        accountId: "main",
+        chatId: "chat-continuity",
+        messageId: "message-continuity",
+        senderId: "sender-continuity",
+        isGroup: false,
+        timestamp: Date.now(),
+        actorType: "contact",
+        contactId: "contact-continuity",
+      },
+    });
+    const resume = createQueuedRuntimeUserMessage({
+      prompt: "[System] Daemon reiniciou (test). Continue de onde parou.",
+      deliveryBarrier: "after_response",
+      _daemonRestartResume: {
+        restartEpoch: "restart-continuity-test",
+        sessionKey: "agent:main:test:continuity",
+      },
+    });
+
+    const restartPrompt = buildStashedRestartPrompt([original, resume]);
+
+    expect(restartPrompt?._continuity).toEqual(continuity);
+    expect(restartPrompt?._runtimeProviderId).toBeUndefined();
+    expect(restartPrompt?._runtimeModel).toBeUndefined();
+    expect(restartPrompt?._resumeStashedMessages).toBe(true);
   });
 
   it("selects the stashed agent envelope when daemon restart metadata is appended", () => {

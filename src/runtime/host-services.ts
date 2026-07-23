@@ -34,6 +34,13 @@ import type {
   RuntimeCapabilities,
 } from "./types.js";
 import { evaluateRuntimeCommandSkillGate, evaluateRuntimeToolSkillGate } from "./skill-gate.js";
+import {
+  completeProviderContinuityEffect,
+  findActiveProviderContinuityEffectContext,
+  markProviderContinuityEffectAmbiguous,
+  markProviderContinuityEffectStarted,
+  prepareProviderContinuityEffect,
+} from "./provider-continuity/effects.js";
 
 const RUNTIME_BUILTIN_EXECUTABLES = new Set(["ravi"]);
 let cachedRuntimeDynamicTools: ExportedTool[] | null = null;
@@ -84,6 +91,10 @@ function getRuntimeDynamicToolDefinitions(): ExportedTool[] {
     cachedRuntimeDynamicTools = extractTools(getAllCommandClasses());
   }
   return cachedRuntimeDynamicTools;
+}
+
+export function isRuntimeDynamicToolName(toolName: string): boolean {
+  return getRuntimeDynamicToolDefinitions().some((tool) => tool.name === toolName);
 }
 
 function getRuntimeDynamicToolSpecs(): RuntimeDynamicToolSpec[] {
@@ -271,6 +282,39 @@ async function executeRuntimeDynamicTool(
   }
 
   const args = normalizeDynamicToolArguments(request.arguments);
+  const continuityContext =
+    tool.metadata.access?.kind === "mutate" && request.callId
+      ? findActiveProviderContinuityEffectContext(options.sessionName)
+      : null;
+  const continuityEffect = continuityContext
+    ? prepareProviderContinuityEffect({
+        logicalRequestId: continuityContext.journal.logicalRequestId,
+        toolCallId: request.callId!,
+        operation: tool.name,
+        arguments: args,
+      })
+    : null;
+  if (continuityEffect && !continuityEffect.execute) {
+    const stored = continuityEffect.effect.result as RuntimeDynamicToolCallResult | null;
+    return (
+      stored ?? {
+        success: false,
+        reason: continuityEffect.reason,
+        contentItems: [
+          {
+            type: "inputText",
+            text:
+              continuityEffect.reason === "reconciliation_required"
+                ? `Effect ${continuityEffect.effect.effectId} requires reconciliation before retry.`
+                : `Effect ${continuityEffect.effect.effectId} was already ${continuityEffect.effect.status}.`,
+          },
+        ],
+      }
+    );
+  }
+  if (continuityEffect) {
+    markProviderContinuityEffectStarted(continuityEffect.effect.effectId);
+  }
   const DYNAMIC_TOOL_TIMEOUT_MS = 60_000;
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   const timeoutError = new Promise<never>((_, reject) => {
@@ -281,7 +325,23 @@ async function executeRuntimeDynamicTool(
   });
   try {
     const result = await Promise.race([runWithContext(options.toolContext, () => tool.handler(args)), timeoutError]);
-    return buildRuntimeDynamicToolResult(result);
+    const runtimeResult = buildRuntimeDynamicToolResult(result);
+    if (continuityEffect) {
+      completeProviderContinuityEffect({
+        effectId: continuityEffect.effect.effectId,
+        outcome: runtimeResult.success ? "succeeded" : "failed",
+        result: runtimeResult,
+      });
+    }
+    return runtimeResult;
+  } catch (error) {
+    if (continuityEffect) {
+      markProviderContinuityEffectAmbiguous({
+        effectId: continuityEffect.effect.effectId,
+        error,
+      });
+    }
+    throw error;
   } finally {
     clearTimeout(timeoutHandle);
   }

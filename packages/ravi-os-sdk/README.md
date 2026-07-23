@@ -121,6 +121,106 @@ import { RaviClient } from "@ravi-os/sdk/client";
 import { createHttpTransport } from "@ravi-os/sdk/transport/http";
 ```
 
+## Provider Continuity
+
+Spec `runtime/providers/continuity` v1.0.0 exposes an ordered provider-and-model
+policy per agent. The host freezes the policy and portable context for each
+logical request, journals every decision, bounds attempts, and prevents an
+automatic retry or target switch after an external effect has started.
+
+The compatibility snapshot carried by requests, responses, events, OpenAPI, and
+the generated SDK is:
+
+```text
+provider-continuity-1.0.0-rm-20260722
+```
+
+Local setup uses the normal Ravi gateway variables:
+
+```bash
+RAVI_HTTP_HOST=127.0.0.1
+RAVI_HTTP_PORT=7777
+RAVI_CONTEXT_KEY=rctx_redacted
+```
+
+`RAVI_PROVIDER_CONTINUITY_LIVE` is the activation gate. Leave it unset: live
+activation remains blocked until the required owner/steward, retention,
+deletion-proof, and incident-path approvals exist. Policy configuration and
+synthetic tests do not require live activation. The isolated SQLite tables are
+created lazily through Ravi's existing database path; there is no separate
+database or migration command.
+
+Preview and apply a single-agent policy:
+
+```ts
+const targets = JSON.stringify([
+  { provider: "codex", model: "gpt-5" },
+  { provider: "claude", model: "sonnet" },
+]);
+
+const preview = await ravi.runtime.continuity.preview("main", {
+  targets,
+  expectedVersion: "0",
+  deadlineMs: "120000",
+});
+
+const applied = await ravi.runtime.continuity.apply("main", {
+  planHash: preview.plan.planHash,
+  approvalRef: "change-123",
+  idempotencyKey: "change-123-main",
+});
+
+console.log(applied.compatibilitySnapshotId, applied.outcome);
+```
+
+Batch changes use an immutable preview containing the exact selected agents and
+their policy versions:
+
+```ts
+const preview = await ravi.runtime.continuity.batchPreview({
+  agents: "main,researcher",
+  targets,
+});
+
+const applied = await ravi.runtime.continuity.batchApply(preview.batch.batchId, {
+  planHash: preview.batch.plan.planHash,
+  approvalRef: "change-124",
+  idempotencyKey: "change-124",
+});
+
+console.log(applied.batch.status, applied.batch.outcomes);
+```
+
+The generated surface also provides `show`, `explain`, `set`, `reorder`,
+`clear`, `batchStatus`, `decision`, `resume`, `wait`, `wake`, `reconcile`, and
+cursor-paginated `trace`.
+
+Every gateway command is an authenticated `POST` under `/api/v1`. A direct
+read-only call looks like:
+
+```bash
+curl --fail-with-body \
+  -X POST http://127.0.0.1:7777/api/v1/runtime/continuity/show \
+  -H "Authorization: Bearer ${RAVI_CONTEXT_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"agentId":"main"}'
+```
+
+Previewing by curl does not write policy state:
+
+```bash
+curl --fail-with-body \
+  -X POST http://127.0.0.1:7777/api/v1/runtime/continuity/preview \
+  -H "Authorization: Bearer ${RAVI_CONTEXT_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agentId": "main",
+    "expectedVersion": "0",
+    "deadlineMs": "120000",
+    "targets": "[{\"provider\":\"codex\",\"model\":\"gpt-5\"},{\"provider\":\"claude\",\"model\":\"sonnet\"}]"
+  }'
+```
+
 ## Inherit The Calling Ravi Runtime
 
 Handlers launched by Ravi already receive `RAVI_CONTEXT_KEY` plus the local

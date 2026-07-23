@@ -7,6 +7,11 @@ import type {
   RuntimeCredentialLimitPressure,
 } from "./credential-types.js";
 import type { RuntimeProviderId } from "./types.js";
+import { createHash } from "node:crypto";
+import {
+  providerContinuityFailureEvidenceSchema,
+  type ProviderContinuityFailureEvidence,
+} from "./provider-continuity/types.js";
 
 export interface RuntimeCredentialClassifierInput {
   runtimeProvider: RuntimeProviderId;
@@ -105,6 +110,203 @@ export function evaluateCredentialLimitPressure(
     ...(minRemainingRatio !== undefined ? { minRemainingRatio } : {}),
     dimensions,
   };
+}
+
+/**
+ * Host-owned normalization used by provider continuity.
+ *
+ * Provider adapters remain unaware of chain policy. This classifier consumes
+ * the same sanitized envelope regardless of adapter and defaults uncertain
+ * evidence to a non-retryable `unknown` result, which the coordinator turns
+ * into an explainable HOLD.
+ */
+export function classifyProviderContinuityFailure(input: {
+  runtimeProvider: RuntimeProviderId;
+  model: string;
+  error?: unknown;
+  rawEvent?: Record<string, unknown>;
+  observedAt?: number;
+}): ProviderContinuityFailureEvidence {
+  const raw = input.rawEvent ?? {};
+  const errorRecord =
+    input.error && typeof input.error === "object" && !Array.isArray(input.error)
+      ? (input.error as Record<string, unknown>)
+      : undefined;
+  const message = firstNonEmptyString(
+    typeof input.error === "string" ? input.error : undefined,
+    errorRecord?.message,
+    raw.message,
+    raw.error,
+    raw.result,
+  );
+  const httpStatus = firstFiniteNumber(
+    errorRecord?.status,
+    errorRecord?.statusCode,
+    raw.status,
+    raw.statusCode,
+    raw.httpStatus,
+  );
+  const providerCode = firstNonEmptyString(errorRecord?.code, raw.code, raw.error_code);
+  const providerType = firstNonEmptyString(errorRecord?.type, raw.type, raw.error_type);
+  const headers = normalizeUnknownHeaders(errorRecord?.headers ?? raw.headers);
+  const signal = classifyRuntimeCredentialFailure({
+    runtimeProvider: input.runtimeProvider,
+    model: input.model,
+    httpStatus,
+    providerCode,
+    providerType,
+    message,
+    headers,
+    source: httpStatus ? "http" : "heuristic",
+  });
+  const text = `${providerCode ?? ""} ${providerType ?? ""} ${message ?? ""}`.toLowerCase();
+  const timeout = /\b(timeout|timed out|deadline exceeded|etimedout|socket hang up)\b/i.test(text);
+  const cancellation = /\b(cancelled|canceled|aborted|interrupt(?:ed)?)\b/i.test(text);
+
+  const mapped = (() => {
+    if (timeout) {
+      return {
+        kind: "timeout" as const,
+        confidence: "high" as const,
+        safeToRetry: true,
+        safeToSwitch: true,
+        credentialRecoveryEligible: false,
+        qualifiedForCircuit: true,
+        code: "runtime_timeout",
+      };
+    }
+    if (cancellation) {
+      return {
+        kind: "cancellation" as const,
+        confidence: "high" as const,
+        safeToRetry: false,
+        safeToSwitch: false,
+        credentialRecoveryEligible: false,
+        qualifiedForCircuit: false,
+        code: "runtime_cancelled",
+      };
+    }
+    switch (signal.kind) {
+      case "quota_exhausted":
+      case "billing_blocked":
+        return {
+          kind: "quota" as const,
+          confidence: signal.confidence,
+          safeToRetry: false,
+          safeToSwitch: true,
+          credentialRecoveryEligible: signal.retryableByCredential,
+          qualifiedForCircuit: true,
+          code: signal.kind,
+        };
+      case "rate_limited":
+        return {
+          kind: "rate_limit" as const,
+          confidence: signal.confidence,
+          safeToRetry: true,
+          safeToSwitch: true,
+          credentialRecoveryEligible: signal.retryableByCredential,
+          qualifiedForCircuit: true,
+          code: signal.kind,
+        };
+      case "auth_invalid":
+      case "permission_denied":
+        return {
+          kind: "authentication" as const,
+          confidence: signal.confidence,
+          safeToRetry: false,
+          safeToSwitch: true,
+          credentialRecoveryEligible: signal.retryableByCredential,
+          qualifiedForCircuit: false,
+          code: signal.kind,
+        };
+      case "provider_overloaded":
+        return {
+          kind: "overload" as const,
+          confidence: signal.confidence,
+          safeToRetry: true,
+          safeToSwitch: true,
+          credentialRecoveryEligible: false,
+          qualifiedForCircuit: true,
+          code: signal.kind,
+        };
+      case "network_transient":
+        return {
+          kind: "network" as const,
+          confidence: signal.confidence,
+          safeToRetry: true,
+          safeToSwitch: true,
+          credentialRecoveryEligible: false,
+          qualifiedForCircuit: true,
+          code: signal.kind,
+        };
+      case "context_limit":
+      case "invalid_request":
+        return {
+          kind: "permanent_request" as const,
+          confidence: signal.confidence,
+          safeToRetry: false,
+          safeToSwitch: false,
+          credentialRecoveryEligible: false,
+          qualifiedForCircuit: false,
+          code: signal.kind,
+        };
+      default:
+        return {
+          kind: "unknown" as const,
+          confidence: "low" as const,
+          safeToRetry: false,
+          safeToSwitch: false,
+          credentialRecoveryEligible: false,
+          qualifiedForCircuit: false,
+          code: "unknown_failure",
+        };
+    }
+  })();
+  const redactedMessage = redactSecretLikeText(message ?? "Runtime failure evidence unavailable.");
+  const observedAt = input.observedAt ?? Date.now();
+  const fingerprint = createHash("sha256")
+    .update(
+      JSON.stringify({
+        runtimeProvider: input.runtimeProvider,
+        model: input.model,
+        httpStatus: httpStatus ?? null,
+        code: mapped.code,
+        message: redactedMessage,
+      }),
+    )
+    .digest("hex");
+  return providerContinuityFailureEvidenceSchema.parse({
+    ...mapped,
+    message: redactedMessage,
+    retryAfterMs: signal.retryAfterMs ?? null,
+    observedAt,
+    fingerprint,
+  });
+}
+
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (value instanceof Error && value.message.trim()) return value.message.trim();
+  }
+  return undefined;
+}
+
+function firstFiniteNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  }
+  return undefined;
+}
+
+function normalizeUnknownHeaders(value: unknown): Record<string, string | number | undefined> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const headers: Record<string, string | number | undefined> = {};
+  for (const [key, header] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof header === "string" || typeof header === "number") headers[key] = header;
+  }
+  return Object.keys(headers).length > 0 ? headers : undefined;
 }
 
 function classifyKind(input: { status?: number; providerCode?: string; providerType?: string; text: string }): {
@@ -291,6 +493,14 @@ function firstNumber(headers: Record<string, string>, keys: string[]): number | 
 
 function redactSecretLikeText(value: string): string {
   return value
-    .replace(/\b(sk-[A-Za-z0-9_-]{8,})\b/g, "[redacted-secret]")
+    .replace(
+      /\b(?:(?:sk|rk|pk|rctx|ghp|github_pat|xox[baprs])[-_][A-Za-z0-9+/=_-]{6,}|(?:AKIA|ASIA)[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{20,})\b/gi,
+      "[redacted-secret]",
+    )
+    .replace(/\bbearer\s+[A-Za-z0-9._~+/-]{6,}\b/gi, "Bearer [redacted-token]")
+    .replace(
+      /(\b(?:api[-_]?key|access[-_]?token|refresh[-_]?token|password|secret)\s*[:=]\s*["']?)[^&\s"',;]{6,}/gi,
+      "$1[redacted-secret]",
+    )
     .replace(/\b([A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{12,})\b/g, "[redacted-token]");
 }

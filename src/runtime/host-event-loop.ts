@@ -71,6 +71,20 @@ import type {
   RuntimeSkillVisibilitySnapshot,
 } from "./types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
+import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { isRuntimeDynamicToolName } from "./host-services.js";
+import {
+  applyProviderContinuityTargetToPrompt,
+  buildProviderContinuityResumePrompt,
+  handleProviderContinuityFailure,
+  markProviderContinuityDelivery,
+  markProviderContinuitySuccess,
+  markProviderContinuityToolCompleted,
+  markProviderContinuityToolStarted,
+} from "./provider-continuity/coordinator.js";
+import { PROVIDER_CONTINUITY_SNAPSHOT, PROVIDER_CONTINUITY_SPEC_VERSION } from "./provider-continuity/types.js";
+import { getActiveProviderContinuityJournalForSession } from "./provider-continuity/store.js";
+import { providerContinuityFingerprint } from "./provider-continuity/events.js";
 
 const log = logger.child("bot");
 
@@ -1096,8 +1110,23 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     return runtimeSessionParams;
   };
 
-  const emitResponse = async (text: string, metadata?: RuntimeEventMetadata) => {
-    const emitId = Math.random().toString(36).slice(2, 8);
+  const emitResponse = async (
+    text: string,
+    metadata?: RuntimeEventMetadata,
+    continuityDelivery?: { logicalRequestId: string; deliveryId: string },
+  ) => {
+    const activeContinuity = continuityDelivery ? null : getActiveProviderContinuityJournalForSession(sessionName);
+    const continuityIdentity =
+      continuityDelivery ??
+      (activeContinuity
+        ? {
+            logicalRequestId: activeContinuity.logicalRequestId,
+            deliveryId: activeContinuity.deliveryId,
+          }
+        : null);
+    const emitId = continuityIdentity
+      ? `${continuityIdentity.deliveryId}_${providerContinuityFingerprint(text).slice(0, 12)}`
+      : Math.random().toString(36).slice(2, 8);
     // Resolve the target chat per `.ravi/specs/sessions/attach/SPEC.md`.
     // Attach selects the chat that receives this session's external output.
     // Sentinel agents observe silently → no target.
@@ -1124,15 +1153,37 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       textLen: text.length,
       targetSource: resolvedSource,
     });
-    await nats.emit(`ravi.session.${sessionName}.response`, {
-      response: text,
-      target: resolvedTarget,
-      ...(metadata ? { metadata } : {}),
-      _emitId: emitId,
-      _instanceId: instanceId,
-      _pid: process.pid,
-      _v: 2,
-    });
+    if (continuityIdentity) {
+      markProviderContinuityDelivery({
+        logicalRequestId: continuityIdentity.logicalRequestId,
+        state: "started",
+      });
+    }
+    try {
+      await nats.emit(`ravi.session.${sessionName}.response`, {
+        response: text,
+        target: resolvedTarget,
+        ...(metadata ? { metadata } : {}),
+        _emitId: emitId,
+        _instanceId: instanceId,
+        _pid: process.pid,
+        _v: 2,
+      });
+      if (continuityIdentity) {
+        markProviderContinuityDelivery({
+          logicalRequestId: continuityIdentity.logicalRequestId,
+          state: "delivered",
+        });
+      }
+    } catch (error) {
+      if (continuityIdentity) {
+        markProviderContinuityDelivery({
+          logicalRequestId: continuityIdentity.logicalRequestId,
+          state: "ambiguous",
+        });
+      }
+      throw error;
+    }
   };
 
   const emitChunk = async (text: string, metadata?: RuntimeEventMetadata) => {
@@ -1417,6 +1468,26 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.currentToolName = event.toolUse.name;
         streaming.currentToolInput = event.toolUse.input;
         streaming.toolStartTime = Date.now();
+        streaming.currentToolSafety = getToolSafety(
+          event.toolUse.name,
+          (event.toolUse.input as Record<string, unknown> | undefined) ?? {},
+        );
+        if (!isRuntimeDynamicToolName(event.toolUse.name) && streaming.currentToolSafety === "unsafe") {
+          try {
+            markProviderContinuityToolStarted({
+              sessionName,
+              toolCallId: event.toolUse.id,
+              toolName: event.toolUse.name,
+              arguments: event.toolUse.input,
+            });
+          } catch (error) {
+            log.warn("Failed to persist provider continuity effect start", {
+              sessionName,
+              toolId: event.toolUse.id,
+              error: publicRuntimeFailureDetail(error),
+            });
+          }
+        }
         log.info("Tool started", {
           sessionName,
           tool: event.toolUse.name,
@@ -1443,10 +1514,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             streaming.abortController.abort();
           }
         }, STUCK_TOOL_TIMEOUT_MS);
-        streaming.currentToolSafety = getToolSafety(
-          event.toolUse.name,
-          (event.toolUse.input as Record<string, unknown> | undefined) ?? {},
-        );
         ensureCurrentTurnUserObservation();
         pushObservationEvent("tool.start", {
           preview: event.toolUse.name,
@@ -1619,6 +1686,24 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const toolName = streaming.currentToolName ?? event.toolName ?? "unknown";
         const toolInput = streaming.currentToolInput;
         const output = truncateOutput(event.content);
+        if (!isRuntimeDynamicToolName(toolName) && streaming.currentToolSafety === "unsafe") {
+          try {
+            markProviderContinuityToolCompleted({
+              sessionName,
+              toolCallId: toolId,
+              toolName,
+              arguments: toolInput,
+              content: event.content,
+              isError: event.isError,
+            });
+          } catch (error) {
+            log.warn("Failed to persist provider continuity effect completion", {
+              sessionName,
+              toolId,
+              error: publicRuntimeFailureDetail(error),
+            });
+          }
+        }
         ensureCurrentTurnUserObservation();
         pushObservationEvent("tool.end", {
           preview: toolName,
@@ -1785,6 +1870,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
       // Handle result (turn complete - save and wait for next message)
       if (event.type === "turn.complete") {
+        try {
+          markProviderContinuitySuccess({ sessionName });
+        } catch (error) {
+          log.warn("Failed to persist provider continuity success", {
+            sessionName,
+            error: publicRuntimeFailureDetail(error),
+          });
+        }
         const inputTokens = event.usage.inputTokens;
         const outputTokens = event.usage.outputTokens;
         const cacheRead = event.usage.cacheReadTokens ?? 0;
@@ -2096,6 +2189,134 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           clearTraceTurnState();
           streaming.done = true;
           break;
+        }
+
+        const continuityFailure = handleProviderContinuityFailure({
+          sessionName,
+          runtimeProvider: runtimeSession.provider,
+          model,
+          error: event.error,
+          rawEvent: event.rawEvent,
+        });
+        if (
+          (continuityFailure.action === "recover_credential" || continuityFailure.action === "switch_target") &&
+          continuityFailure.metadata &&
+          continuityFailure.journal
+        ) {
+          let stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages);
+          if (stashedCount === 0) {
+            const basePrompt: RuntimeLaunchPrompt = {
+              prompt: "",
+              _agentId: agent.id,
+              source: streaming.currentSource,
+              deliveryBarrier: "after_tool",
+              deliveryBarrierSource: "inferred",
+              taskBarrierTaskId: streaming.currentTaskBarrierTaskId,
+            };
+            const resumePrompt = buildProviderContinuityResumePrompt(continuityFailure.journal, basePrompt);
+            stashedMessages.set(sessionName, [createQueuedRuntimeUserMessage(resumePrompt)]);
+            stashedCount = 1;
+          } else {
+            const stashed = stashedMessages.get(sessionName) ?? [];
+            stashedMessages.set(
+              sessionName,
+              stashed.map((message) => ({
+                ...message,
+                launchPrompt: message.launchPrompt
+                  ? applyProviderContinuityTargetToPrompt(
+                      { ...message.launchPrompt, _resumeStashedMessages: true },
+                      continuityFailure.metadata!,
+                    )
+                  : message.launchPrompt,
+              })),
+            );
+          }
+          if (continuityFailure.action === "recover_credential" && streaming.currentRuntimeCredential?.credentialId) {
+            try {
+              await refreshRuntimeCredential(streaming.currentRuntimeCredential.credentialId, {
+                reason: "retryable_failure",
+              });
+            } catch (error) {
+              log.warn("Provider continuity credential refresh failed", {
+                runId,
+                sessionName,
+                error: publicRuntimeFailureDetail(error),
+              });
+            }
+          }
+          restartStashedReason = `provider_continuity_${continuityFailure.action}`;
+          await safeEmit(`ravi.session.${sessionName}.runtime`, {
+            type: `continuity.${continuityFailure.action}`,
+            logicalRequestId: continuityFailure.journal.logicalRequestId,
+            fromProvider: runtimeSession.provider,
+            toProvider: continuityFailure.metadata.target.provider,
+            toModel: continuityFailure.metadata.target.model,
+            reason: continuityFailure.reason,
+            pendingMessages: stashedCount,
+            specVersion: PROVIDER_CONTINUITY_SPEC_VERSION,
+            compatibilitySnapshotId: PROVIDER_CONTINUITY_SNAPSHOT,
+          });
+          streaming.currentTurnToolStarted = false;
+          streaming.interrupted = true;
+          clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
+          signalTurnComplete();
+          clearTraceTurnState();
+          streaming.done = true;
+          break;
+        }
+
+        if (continuityFailure.active && continuityFailure.journal) {
+          await emitRuntimeEvent({
+            ...event,
+            provider: runtimeSession.provider,
+          });
+          recordTerminalTraceOnce({
+            status: "failed",
+            eventType: "turn.failed",
+            abortReason: continuityFailure.reason,
+            error: continuityFailure.reason,
+            payloadJson: {
+              continuity: true,
+              logicalRequestId: continuityFailure.journal.logicalRequestId,
+              state: continuityFailure.journal.state,
+              action: continuityFailure.action,
+              compatibilitySnapshotId: PROVIDER_CONTINUITY_SNAPSHOT,
+            },
+          });
+          flushObservationEvents("turn.failed", {
+            provider: runtimeSession.provider,
+            recoverable: false,
+            suppressedRecoverable: false,
+            error: continuityFailure.reason,
+            abortReason: continuityFailure.reason,
+          });
+          clearTraceTurnState();
+          streaming.currentTurnToolStarted = false;
+          clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
+
+          if (streaming.agentMode !== "sentinel") {
+            const label =
+              continuityFailure.action === "wait"
+                ? "Provider continuity is waiting"
+                : continuityFailure.action === "hold"
+                  ? "Provider continuity is on HOLD"
+                  : "Provider continuity stopped";
+            await emitResponse(`${label}: ${continuityFailure.reason}.`, event.metadata, {
+              logicalRequestId: continuityFailure.journal.logicalRequestId,
+              deliveryId: continuityFailure.journal.deliveryId,
+            });
+          }
+          updateRuntimeLiveState(sessionName, {
+            activity: continuityFailure.action === "wait" ? "thinking" : "blocked",
+            summary: continuityFailure.reason,
+            agentId: agent.id,
+            runId,
+            provider: runtimeSession.provider,
+            model,
+            source: streaming.currentSource,
+          });
+          signalTurnComplete();
+          continue;
         }
 
         if (credentialFailureSignal?.retryableByCredential) {

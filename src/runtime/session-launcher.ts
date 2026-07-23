@@ -28,6 +28,13 @@ import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./tas
 import { updateRuntimeLiveState } from "./live-state.js";
 import { ensureObserverBindingsForSession } from "./observation-plane.js";
 import { formatUserFacingTurnFailure, publicRuntimeFailureDetail } from "./public-failure.js";
+import {
+  applyProviderContinuityTargetToPrompt,
+  handleProviderContinuityFailure,
+  markProviderContinuityDelivery,
+} from "./provider-continuity/coordinator.js";
+import { PROVIDER_CONTINUITY_SNAPSHOT, PROVIDER_CONTINUITY_SPEC_VERSION } from "./provider-continuity/types.js";
+import { refreshRuntimeCredential } from "./credential-refresh.js";
 
 const log = logger.child("runtime:session-launcher");
 
@@ -343,6 +350,13 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     });
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
+    const continuityFailure = handleProviderContinuityFailure({
+      metadata: prompt._continuity,
+      sessionName,
+      runtimeProvider: runtimeProviderId,
+      model,
+      error: err,
+    });
     completeRuntimeCredentialAttempt(runtimeCredentialAttempt?.attemptId, {
       status: "abandoned",
       metadata: { phase: "runtime.start", error: errorMessage },
@@ -361,9 +375,53 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     }
     streamingSessions.delete(sessionName);
     drainPendingStarts();
+
+    if (
+      (continuityFailure.action === "recover_credential" || continuityFailure.action === "switch_target") &&
+      continuityFailure.metadata
+    ) {
+      if (continuityFailure.action === "recover_credential" && runtimeCredentialAttempt?.credentialId) {
+        try {
+          await refreshRuntimeCredential(runtimeCredentialAttempt.credentialId, {
+            reason: "retryable_failure",
+          });
+        } catch (error) {
+          log.warn("Continuity credential recovery refresh failed", {
+            sessionName,
+            error: publicRuntimeFailureDetail(error),
+          });
+        }
+      }
+      const restartPrompt = applyProviderContinuityTargetToPrompt(
+        { ...prompt, _resumeStashedMessages: true },
+        continuityFailure.metadata,
+      );
+      stashedMessages.set(sessionName, [createQueuedRuntimeUserMessage(restartPrompt)]);
+      await safeEmit(`ravi.session.${sessionName}.runtime`, {
+        type: `continuity.${continuityFailure.action}`,
+        logicalRequestId: continuityFailure.metadata.logicalRequestId,
+        fromProvider: runtimeProviderId,
+        toProvider: continuityFailure.metadata.target.provider,
+        toModel: continuityFailure.metadata.target.model,
+        reason: continuityFailure.reason,
+        specVersion: PROVIDER_CONTINUITY_SPEC_VERSION,
+        compatibilitySnapshotId: PROVIDER_CONTINUITY_SNAPSHOT,
+      });
+      if (restartStashedSession) {
+        await restartStashedSession({
+          sessionName,
+          reason: `provider_continuity_${continuityFailure.action}`,
+        });
+      }
+      return;
+    }
+
     updateRuntimeLiveState(sessionName, {
       activity: "blocked",
-      summary: publicRuntimeFailureDetail(err),
+      summary:
+        continuityFailure.active && continuityFailure.reason
+          ? continuityFailure.reason
+          : publicRuntimeFailureDetail(err),
       agentId: agent.id,
       runId,
       provider: runtimeProviderId,
@@ -392,20 +450,52 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     await safeEmit(`ravi.session.${sessionName}.runtime`, {
       type: "turn.failed",
       provider: runtimeProviderId,
-      error: errorMessage,
+      error: continuityFailure.active ? continuityFailure.reason : errorMessage,
       recoverable: false,
+      ...(continuityFailure.journal
+        ? {
+            logicalRequestId: continuityFailure.journal.logicalRequestId,
+            continuityState: continuityFailure.journal.state,
+            specVersion: PROVIDER_CONTINUITY_SPEC_VERSION,
+            compatibilitySnapshotId: PROVIDER_CONTINUITY_SNAPSHOT,
+          }
+        : {}),
       ...(resolvedSource ? { _source: resolvedSource } : {}),
     });
 
     if (resolvedSource && agent.mode !== "sentinel") {
-      await nats.emit(`ravi.session.${sessionName}.response`, {
-        response: formatUserFacingTurnFailure(err),
-        target: resolvedSource,
-        _emitId: Math.random().toString(36).slice(2, 8),
-        _instanceId: instanceId,
-        _pid: process.pid,
-        _v: 2,
-      });
+      if (continuityFailure.journal) {
+        markProviderContinuityDelivery({
+          logicalRequestId: continuityFailure.journal.logicalRequestId,
+          state: "started",
+        });
+      }
+      try {
+        await nats.emit(`ravi.session.${sessionName}.response`, {
+          response: continuityFailure.active
+            ? `Provider continuity stopped: ${continuityFailure.reason}.`
+            : formatUserFacingTurnFailure(err),
+          target: resolvedSource,
+          _emitId: continuityFailure.journal?.deliveryId ?? Math.random().toString(36).slice(2, 8),
+          _instanceId: instanceId,
+          _pid: process.pid,
+          _v: 2,
+        });
+        if (continuityFailure.journal) {
+          markProviderContinuityDelivery({
+            logicalRequestId: continuityFailure.journal.logicalRequestId,
+            state: "delivered",
+          });
+        }
+      } catch (error) {
+        if (continuityFailure.journal) {
+          markProviderContinuityDelivery({
+            logicalRequestId: continuityFailure.journal.logicalRequestId,
+            state: "ambiguous",
+          });
+        }
+        throw error;
+      }
     }
   }
 }

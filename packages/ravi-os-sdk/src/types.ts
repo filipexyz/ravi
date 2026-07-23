@@ -9787,6 +9787,1340 @@ export type RulesSourcesReturn = {
   sources: Array<Record<string, unknown>>;
 };
 
+/** Input shape for `runtime.continuity.apply`. */
+export type RuntimeContinuityApplyInput = {
+  agentId: string;
+  approvalRef?: string;
+  idempotencyKey?: string;
+  planHash?: string;
+};
+
+/** Return shape for `runtime.continuity.apply`. */
+export type RuntimeContinuityApplyReturn = {
+  changed: boolean;
+  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  outcome: "applied" | "no_op" | "invalid" | "stale" | "temporary_failure" | "permanent_failure";
+  plan: ({
+    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    createdAt: number;
+    desiredPolicy: ({
+      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      deadlineMs: number;
+      enabled: boolean;
+      specVersion: "1.0.0";
+      strategy: "ordered";
+      targets: Array<{
+        model: string;
+        provider: string;
+      }>;
+    }) | null;
+    exactAgentIds: string[];
+    expiresAt: number;
+    items: Array<{
+      action: "create" | "update" | "no_op" | "clear";
+      agentId: string;
+      beforeVersion: number;
+      errors: string[];
+      valid: boolean;
+    }>;
+    planHash: string;
+    planId: string;
+    selector: {
+      agentIds: string[];
+      kind: "single" | "selected" | "all";
+    };
+  }) | null;
+  policy: ({
+    agentId: string;
+    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    createdAt: number;
+    deadlineMs: number;
+    enabled: boolean;
+    specVersion: "1.0.0";
+    strategy: "ordered";
+    targets: Array<{
+      model: string;
+      provider: string;
+    }>;
+    updatedAt: number;
+    version: number;
+  }) | null;
+  specVersion: "1.0.0";
+};
+
+/** Input shape for `runtime.continuity.batch-apply`. */
+export type RuntimeContinuityBatchApplyInput = {
+  approvalRef?: string;
+  batchId: string;
+  idempotencyKey?: string;
+  planHash?: string;
+};
+
+/** Return shape for `runtime.continuity.batch-apply`. */
+export type RuntimeContinuityBatchApplyReturn = {
+  batch: {
+    appliedAt: number | null;
+    approvalRef: string | null;
+    batchId: string;
+    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    createdAt: number;
+    idempotencyKey: string | null;
+    outcomes: Array<{
+      afterVersion: number;
+      agentId: string;
+      beforeVersion: number;
+      message: string;
+      outcome: "applied" | "no_op" | "invalid" | "stale" | "temporary_failure" | "permanent_failure";
+    }>;
+    plan: {
+      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      createdAt: number;
+      desiredPolicy: ({
+        compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+        deadlineMs: number;
+        enabled: boolean;
+        specVersion: "1.0.0";
+        strategy: "ordered";
+        targets: Array<{
+          model: string;
+          provider: string;
+        }>;
+      }) | null;
+      exactAgentIds: string[];
+      expiresAt: number;
+      items: Array<{
+        action: "create" | "update" | "no_op" | "clear";
+        agentId: string;
+        beforeVersion: number;
+        errors: string[];
+        valid: boolean;
+      }>;
+      planHash: string;
+      planId: string;
+      selector: {
+        agentIds: string[];
+        kind: "single" | "selected" | "all";
+      };
+    };
+    requestFingerprint: string | null;
+    status: "preview" | "success" | "partial_success" | "failed" | "stale" | "expired";
+  };
+  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  specVersion: "1.0.0";
+};
+
+/** Input shape for `runtime.continuity.batch-preview`. */
+export type RuntimeContinuityBatchPreviewInput = {
+  agents?: string;
+  all?: boolean;
+  deadlineMs?: string;
+  disabled?: boolean;
+  targets?: string;
+};
+
+/** Return shape for `runtime.continuity.batch-preview`. */
+export type RuntimeContinuityBatchPreviewReturn = {
+  batch: {
+    appliedAt: number | null;
+    approvalRef: string | null;
+    batchId: string;
+    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    createdAt: number;
+    idempotencyKey: string | null;
+    outcomes: Array<{
+      afterVersion: number;
+      agentId: string;
+      beforeVersion: number;
+      message: string;
+      outcome: "applied" | "no_op" | "invalid" | "stale" | "temporary_failure" | "permanent_failure";
+    }>;
+    plan: {
+      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      createdAt: number;
+      desiredPolicy: ({
+        compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+        deadlineMs: number;
+        enabled: boolean;
+        specVersion: "1.0.0";
+        strategy: "ordered";
+        targets: Array<{
+          model: string;
+          provider: string;
+        }>;
+      }) | null;
+      exactAgentIds: string[];
+      expiresAt: number;
+      items: Array<{
+        action: "create" | "update" | "no_op" | "clear";
+        agentId: string;
+        beforeVersion: number;
+        errors: string[];
+        valid: boolean;
+      }>;
+      planHash: string;
+      planId: string;
+      selector: {
+        agentIds: string[];
+        kind: "single" | "selected" | "all";
+      };
+    };
+    requestFingerprint: string | null;
+    status: "preview" | "success" | "partial_success" | "failed" | "stale" | "expired";
+  };
+  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  specVersion: "1.0.0";
+};
+
+/** Input shape for `runtime.continuity.batch-status`. */
+export type RuntimeContinuityBatchStatusInput = {
+  batchId: string;
+};
+
+/** Return shape for `runtime.continuity.batch-status`. */
+export type RuntimeContinuityBatchStatusReturn = {
+  batch: {
+    appliedAt: number | null;
+    approvalRef: string | null;
+    batchId: string;
+    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    createdAt: number;
+    idempotencyKey: string | null;
+    outcomes: Array<{
+      afterVersion: number;
+      agentId: string;
+      beforeVersion: number;
+      message: string;
+      outcome: "applied" | "no_op" | "invalid" | "stale" | "temporary_failure" | "permanent_failure";
+    }>;
+    plan: {
+      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      createdAt: number;
+      desiredPolicy: ({
+        compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+        deadlineMs: number;
+        enabled: boolean;
+        specVersion: "1.0.0";
+        strategy: "ordered";
+        targets: Array<{
+          model: string;
+          provider: string;
+        }>;
+      }) | null;
+      exactAgentIds: string[];
+      expiresAt: number;
+      items: Array<{
+        action: "create" | "update" | "no_op" | "clear";
+        agentId: string;
+        beforeVersion: number;
+        errors: string[];
+        valid: boolean;
+      }>;
+      planHash: string;
+      planId: string;
+      selector: {
+        agentIds: string[];
+        kind: "single" | "selected" | "all";
+      };
+    };
+    requestFingerprint: string | null;
+    status: "preview" | "success" | "partial_success" | "failed" | "stale" | "expired";
+  };
+  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  specVersion: "1.0.0";
+};
+
+/** Input shape for `runtime.continuity.clear`. */
+export type RuntimeContinuityClearInput = {
+  agentId: string;
+  approvalRef?: string;
+  expectedVersion?: string;
+  idempotencyKey?: string;
+};
+
+/** Return shape for `runtime.continuity.clear`. */
+export type RuntimeContinuityClearReturn = {
+  changed: boolean;
+  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  outcome: "applied" | "no_op" | "invalid" | "stale" | "temporary_failure" | "permanent_failure";
+  plan: ({
+    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    createdAt: number;
+    desiredPolicy: ({
+      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      deadlineMs: number;
+      enabled: boolean;
+      specVersion: "1.0.0";
+      strategy: "ordered";
+      targets: Array<{
+        model: string;
+        provider: string;
+      }>;
+    }) | null;
+    exactAgentIds: string[];
+    expiresAt: number;
+    items: Array<{
+      action: "create" | "update" | "no_op" | "clear";
+      agentId: string;
+      beforeVersion: number;
+      errors: string[];
+      valid: boolean;
+    }>;
+    planHash: string;
+    planId: string;
+    selector: {
+      agentIds: string[];
+      kind: "single" | "selected" | "all";
+    };
+  }) | null;
+  policy: ({
+    agentId: string;
+    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    createdAt: number;
+    deadlineMs: number;
+    enabled: boolean;
+    specVersion: "1.0.0";
+    strategy: "ordered";
+    targets: Array<{
+      model: string;
+      provider: string;
+    }>;
+    updatedAt: number;
+    version: number;
+  }) | null;
+  specVersion: "1.0.0";
+};
+
+/** Input shape for `runtime.continuity.decision`. */
+export type RuntimeContinuityDecisionInput = {
+  logicalRequestId: string;
+};
+
+/** Return shape for `runtime.continuity.decision`. */
+export type RuntimeContinuityDecisionReturn = {
+  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  decision: ({
+    action: "start" | "retry_same_target" | "recover_credential" | "switch_target" | "skip_target" | "wait" | "wake" | "probe" | "failback" | "hold" | "success" | "composed_failure" | "exhausted" | "reconcile";
+    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    createdAt: number;
+    decisionId: string;
+    fromTargetIndex: number | null;
+    holdReason: ("unknown_evidence" | "missing_evidence" | "stale_evidence" | "conflicting_evidence" | "known_invalid_evidence" | "effect_started" | "effect_ambiguous" | "context_loss" | "snapshot_conflict" | "deadline_expired" | "idempotency_collision") | null;
+    logicalRequestId: string;
+    reasonCode: string;
+    rejectionReasons: string[];
+    sequence: number;
+    toTargetIndex: number | null;
+  }) | null;
+  journal: {
+    activeEffectId: string | null;
+    agentId: string;
+    attempts: Array<{
+      attemptId: string;
+      completedAt: number | null;
+      failure: ({
+        code: string;
+        confidence: "high" | "medium" | "low";
+        credentialRecoveryEligible: boolean;
+        fingerprint: string;
+        kind: "quota" | "rate_limit" | "authentication" | "timeout" | "overload" | "network" | "permanent_request" | "cancellation" | "unknown";
+        message: string;
+        observedAt: number;
+        qualifiedForCircuit: boolean;
+        retryAfterMs: number | null;
+        safeToRetry: boolean;
+        safeToSwitch: boolean;
+      }) | null;
+      kind: "normal" | "credential_recovery" | "probe";
+      outcome: "running" | "succeeded" | "failed" | "skipped" | "hold";
+      probeLeaseId: string | null;
+      startedAt: number;
+      target: {
+        model: string;
+        provider: string;
+      };
+      targetIndex: number;
+    }>;
+    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    contextSnapshot: {
+      attachments: Array<{
+        fingerprint: string | null;
+        id: string;
+        mediaType: string | null;
+        reference: string;
+      }>;
+      createdAt: number;
+      fingerprint: string;
+      forbiddenLosses: string[];
+      messages: Array<{
+        content: string;
+        createdAt: number | null;
+        id: string;
+        role: "system" | "user" | "assistant" | "tool";
+      }>;
+      runtimeControls: Record<string, unknown>;
+      safetyControls: Record<string, unknown>;
+      toolRecords: Array<{
+        id: string;
+        input: unknown;
+        inputFingerprint: string | null;
+        name: string;
+        output: unknown;
+        outputFingerprint: string | null;
+        status: "requested" | "started" | "succeeded" | "failed" | "ambiguous";
+      }>;
+      transformations: Array<{
+        action: "preserved" | "rewritten" | "dropped";
+        approvedLoss: boolean;
+        path: string;
+        reason: string;
+      }>;
+      translationVersion: "ravi-portable-context-v1";
+    };
+    createdAt: number;
+    credentialRecoveriesRemaining: number[];
+    currentTargetIndex: number;
+    deadlineAt: number;
+    decisions: Array<{
+      action: "start" | "retry_same_target" | "recover_credential" | "switch_target" | "skip_target" | "wait" | "wake" | "probe" | "failback" | "hold" | "success" | "composed_failure" | "exhausted" | "reconcile";
+      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      createdAt: number;
+      decisionId: string;
+      fromTargetIndex: number | null;
+      holdReason: ("unknown_evidence" | "missing_evidence" | "stale_evidence" | "conflicting_evidence" | "known_invalid_evidence" | "effect_started" | "effect_ambiguous" | "context_loss" | "snapshot_conflict" | "deadline_expired" | "idempotency_collision") | null;
+      logicalRequestId: string;
+      reasonCode: string;
+      rejectionReasons: string[];
+      sequence: number;
+      toTargetIndex: number | null;
+    }>;
+    deliveryId: string;
+    deliveryState: "pending" | "started" | "delivered" | "failed" | "ambiguous";
+    effectBoundary: "none" | "intention" | "started" | "terminal" | "ambiguous";
+    globalAttemptsRemaining: number;
+    holdReason: ("unknown_evidence" | "missing_evidence" | "stale_evidence" | "conflicting_evidence" | "known_invalid_evidence" | "effect_started" | "effect_ambiguous" | "context_loss" | "snapshot_conflict" | "deadline_expired" | "idempotency_collision") | null;
+    logicalRequestId: string;
+    normalAttemptsRemaining: number[];
+    policySnapshot: {
+      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      deadlineMs: number;
+      enabled: boolean;
+      specVersion: "1.0.0";
+      strategy: "ordered";
+      targets: Array<{
+        model: string;
+        provider: string;
+      }>;
+    };
+    policyVersion: number;
+    sessionName: string;
+    state: "pending" | "running" | "waiting" | "hold" | "reconciliation_required" | "succeeded" | "failed" | "exhausted";
+    terminalDetail: string | null;
+    terminalOutcome: ("success" | "failure" | "exhaustion" | "hold") | null;
+    updatedAt: number;
+    wakeAt: number | null;
+  };
+  specVersion: "1.0.0";
+};
+
+/** Input shape for `runtime.continuity.explain`. */
+export type RuntimeContinuityExplainInput = {
+  agentId: string;
+};
+
+/** Return shape for `runtime.continuity.explain`. */
+export type RuntimeContinuityExplainReturn = {
+  agentId: string;
+  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  decision: string;
+  enabled: boolean;
+  orderedTargets: Array<{
+    eligible: boolean;
+    index: number;
+    recovery: ({
+      agentId: string;
+      consecutiveQualifiedFailures: number;
+      lastFailureAt: number | null;
+      lastSuccessAt: number | null;
+      model: string;
+      openedAt: number | null;
+      probationSuccesses: number;
+      probeEligibleAt: number | null;
+      probeLeaseExpiresAt: number | null;
+      probeLeaseId: string | null;
+      provider: string;
+      stableSince: number | null;
+      state: "closed" | "open" | "half_open";
+      updatedAt: number;
+    }) | null;
+    rejectionReasons: string[];
+    target: {
+      model: string;
+      provider: string;
+    };
+  }>;
+  policyVersion: number;
+  selectedTargetIndex: number | null;
+  specVersion: "1.0.0";
+};
+
+/** Input shape for `runtime.continuity.preview`. */
+export type RuntimeContinuityPreviewInput = {
+  agentId: string;
+  deadlineMs?: string;
+  disabled?: boolean;
+  expectedVersion?: string;
+  targets?: string;
+};
+
+/** Return shape for `runtime.continuity.preview`. */
+export type RuntimeContinuityPreviewReturn = {
+  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  plan: {
+    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    createdAt: number;
+    desiredPolicy: ({
+      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      deadlineMs: number;
+      enabled: boolean;
+      specVersion: "1.0.0";
+      strategy: "ordered";
+      targets: Array<{
+        model: string;
+        provider: string;
+      }>;
+    }) | null;
+    exactAgentIds: string[];
+    expiresAt: number;
+    items: Array<{
+      action: "create" | "update" | "no_op" | "clear";
+      agentId: string;
+      beforeVersion: number;
+      errors: string[];
+      valid: boolean;
+    }>;
+    planHash: string;
+    planId: string;
+    selector: {
+      agentIds: string[];
+      kind: "single" | "selected" | "all";
+    };
+  };
+  specVersion: "1.0.0";
+};
+
+/** Input shape for `runtime.continuity.reconcile`. */
+export type RuntimeContinuityReconcileInput = {
+  effectId: string;
+  evidenceRef?: string;
+  outcome?: string;
+};
+
+/** Return shape for `runtime.continuity.reconcile`. */
+export type RuntimeContinuityReconcileReturn = {
+  changed: boolean;
+  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  effect: {
+    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    createdAt: number;
+    effectId: string;
+    evidenceFingerprint: string | null;
+    inputFingerprint: string;
+    logicalRequestId: string;
+    operation: string;
+    result: unknown;
+    status: "intention" | "started" | "succeeded" | "failed" | "ambiguous" | "reconciled";
+    toolCallId: string;
+    updatedAt: number;
+  };
+  journal: {
+    activeEffectId: string | null;
+    agentId: string;
+    attempts: Array<{
+      attemptId: string;
+      completedAt: number | null;
+      failure: ({
+        code: string;
+        confidence: "high" | "medium" | "low";
+        credentialRecoveryEligible: boolean;
+        fingerprint: string;
+        kind: "quota" | "rate_limit" | "authentication" | "timeout" | "overload" | "network" | "permanent_request" | "cancellation" | "unknown";
+        message: string;
+        observedAt: number;
+        qualifiedForCircuit: boolean;
+        retryAfterMs: number | null;
+        safeToRetry: boolean;
+        safeToSwitch: boolean;
+      }) | null;
+      kind: "normal" | "credential_recovery" | "probe";
+      outcome: "running" | "succeeded" | "failed" | "skipped" | "hold";
+      probeLeaseId: string | null;
+      startedAt: number;
+      target: {
+        model: string;
+        provider: string;
+      };
+      targetIndex: number;
+    }>;
+    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    contextSnapshot: {
+      attachments: Array<{
+        fingerprint: string | null;
+        id: string;
+        mediaType: string | null;
+        reference: string;
+      }>;
+      createdAt: number;
+      fingerprint: string;
+      forbiddenLosses: string[];
+      messages: Array<{
+        content: string;
+        createdAt: number | null;
+        id: string;
+        role: "system" | "user" | "assistant" | "tool";
+      }>;
+      runtimeControls: Record<string, unknown>;
+      safetyControls: Record<string, unknown>;
+      toolRecords: Array<{
+        id: string;
+        input: unknown;
+        inputFingerprint: string | null;
+        name: string;
+        output: unknown;
+        outputFingerprint: string | null;
+        status: "requested" | "started" | "succeeded" | "failed" | "ambiguous";
+      }>;
+      transformations: Array<{
+        action: "preserved" | "rewritten" | "dropped";
+        approvedLoss: boolean;
+        path: string;
+        reason: string;
+      }>;
+      translationVersion: "ravi-portable-context-v1";
+    };
+    createdAt: number;
+    credentialRecoveriesRemaining: number[];
+    currentTargetIndex: number;
+    deadlineAt: number;
+    decisions: Array<{
+      action: "start" | "retry_same_target" | "recover_credential" | "switch_target" | "skip_target" | "wait" | "wake" | "probe" | "failback" | "hold" | "success" | "composed_failure" | "exhausted" | "reconcile";
+      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      createdAt: number;
+      decisionId: string;
+      fromTargetIndex: number | null;
+      holdReason: ("unknown_evidence" | "missing_evidence" | "stale_evidence" | "conflicting_evidence" | "known_invalid_evidence" | "effect_started" | "effect_ambiguous" | "context_loss" | "snapshot_conflict" | "deadline_expired" | "idempotency_collision") | null;
+      logicalRequestId: string;
+      reasonCode: string;
+      rejectionReasons: string[];
+      sequence: number;
+      toTargetIndex: number | null;
+    }>;
+    deliveryId: string;
+    deliveryState: "pending" | "started" | "delivered" | "failed" | "ambiguous";
+    effectBoundary: "none" | "intention" | "started" | "terminal" | "ambiguous";
+    globalAttemptsRemaining: number;
+    holdReason: ("unknown_evidence" | "missing_evidence" | "stale_evidence" | "conflicting_evidence" | "known_invalid_evidence" | "effect_started" | "effect_ambiguous" | "context_loss" | "snapshot_conflict" | "deadline_expired" | "idempotency_collision") | null;
+    logicalRequestId: string;
+    normalAttemptsRemaining: number[];
+    policySnapshot: {
+      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      deadlineMs: number;
+      enabled: boolean;
+      specVersion: "1.0.0";
+      strategy: "ordered";
+      targets: Array<{
+        model: string;
+        provider: string;
+      }>;
+    };
+    policyVersion: number;
+    sessionName: string;
+    state: "pending" | "running" | "waiting" | "hold" | "reconciliation_required" | "succeeded" | "failed" | "exhausted";
+    terminalDetail: string | null;
+    terminalOutcome: ("success" | "failure" | "exhaustion" | "hold") | null;
+    updatedAt: number;
+    wakeAt: number | null;
+  };
+  specVersion: "1.0.0";
+};
+
+/** Input shape for `runtime.continuity.reorder`. */
+export type RuntimeContinuityReorderInput = {
+  agentId: string;
+  approvalRef?: string;
+  expectedVersion?: string;
+  fromIndex: number;
+  idempotencyKey?: string;
+  toIndex: number;
+};
+
+/** Return shape for `runtime.continuity.reorder`. */
+export type RuntimeContinuityReorderReturn = {
+  changed: boolean;
+  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  outcome: "applied" | "no_op" | "invalid" | "stale" | "temporary_failure" | "permanent_failure";
+  plan: ({
+    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    createdAt: number;
+    desiredPolicy: ({
+      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      deadlineMs: number;
+      enabled: boolean;
+      specVersion: "1.0.0";
+      strategy: "ordered";
+      targets: Array<{
+        model: string;
+        provider: string;
+      }>;
+    }) | null;
+    exactAgentIds: string[];
+    expiresAt: number;
+    items: Array<{
+      action: "create" | "update" | "no_op" | "clear";
+      agentId: string;
+      beforeVersion: number;
+      errors: string[];
+      valid: boolean;
+    }>;
+    planHash: string;
+    planId: string;
+    selector: {
+      agentIds: string[];
+      kind: "single" | "selected" | "all";
+    };
+  }) | null;
+  policy: ({
+    agentId: string;
+    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    createdAt: number;
+    deadlineMs: number;
+    enabled: boolean;
+    specVersion: "1.0.0";
+    strategy: "ordered";
+    targets: Array<{
+      model: string;
+      provider: string;
+    }>;
+    updatedAt: number;
+    version: number;
+  }) | null;
+  specVersion: "1.0.0";
+};
+
+/** Input shape for `runtime.continuity.resume`. */
+export type RuntimeContinuityResumeInput = {
+  logicalRequestId: string;
+};
+
+/** Return shape for `runtime.continuity.resume`. */
+export type RuntimeContinuityResumeReturn = {
+  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  journal: {
+    activeEffectId: string | null;
+    agentId: string;
+    attempts: Array<{
+      attemptId: string;
+      completedAt: number | null;
+      failure: ({
+        code: string;
+        confidence: "high" | "medium" | "low";
+        credentialRecoveryEligible: boolean;
+        fingerprint: string;
+        kind: "quota" | "rate_limit" | "authentication" | "timeout" | "overload" | "network" | "permanent_request" | "cancellation" | "unknown";
+        message: string;
+        observedAt: number;
+        qualifiedForCircuit: boolean;
+        retryAfterMs: number | null;
+        safeToRetry: boolean;
+        safeToSwitch: boolean;
+      }) | null;
+      kind: "normal" | "credential_recovery" | "probe";
+      outcome: "running" | "succeeded" | "failed" | "skipped" | "hold";
+      probeLeaseId: string | null;
+      startedAt: number;
+      target: {
+        model: string;
+        provider: string;
+      };
+      targetIndex: number;
+    }>;
+    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    contextSnapshot: {
+      attachments: Array<{
+        fingerprint: string | null;
+        id: string;
+        mediaType: string | null;
+        reference: string;
+      }>;
+      createdAt: number;
+      fingerprint: string;
+      forbiddenLosses: string[];
+      messages: Array<{
+        content: string;
+        createdAt: number | null;
+        id: string;
+        role: "system" | "user" | "assistant" | "tool";
+      }>;
+      runtimeControls: Record<string, unknown>;
+      safetyControls: Record<string, unknown>;
+      toolRecords: Array<{
+        id: string;
+        input: unknown;
+        inputFingerprint: string | null;
+        name: string;
+        output: unknown;
+        outputFingerprint: string | null;
+        status: "requested" | "started" | "succeeded" | "failed" | "ambiguous";
+      }>;
+      transformations: Array<{
+        action: "preserved" | "rewritten" | "dropped";
+        approvedLoss: boolean;
+        path: string;
+        reason: string;
+      }>;
+      translationVersion: "ravi-portable-context-v1";
+    };
+    createdAt: number;
+    credentialRecoveriesRemaining: number[];
+    currentTargetIndex: number;
+    deadlineAt: number;
+    decisions: Array<{
+      action: "start" | "retry_same_target" | "recover_credential" | "switch_target" | "skip_target" | "wait" | "wake" | "probe" | "failback" | "hold" | "success" | "composed_failure" | "exhausted" | "reconcile";
+      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      createdAt: number;
+      decisionId: string;
+      fromTargetIndex: number | null;
+      holdReason: ("unknown_evidence" | "missing_evidence" | "stale_evidence" | "conflicting_evidence" | "known_invalid_evidence" | "effect_started" | "effect_ambiguous" | "context_loss" | "snapshot_conflict" | "deadline_expired" | "idempotency_collision") | null;
+      logicalRequestId: string;
+      reasonCode: string;
+      rejectionReasons: string[];
+      sequence: number;
+      toTargetIndex: number | null;
+    }>;
+    deliveryId: string;
+    deliveryState: "pending" | "started" | "delivered" | "failed" | "ambiguous";
+    effectBoundary: "none" | "intention" | "started" | "terminal" | "ambiguous";
+    globalAttemptsRemaining: number;
+    holdReason: ("unknown_evidence" | "missing_evidence" | "stale_evidence" | "conflicting_evidence" | "known_invalid_evidence" | "effect_started" | "effect_ambiguous" | "context_loss" | "snapshot_conflict" | "deadline_expired" | "idempotency_collision") | null;
+    logicalRequestId: string;
+    normalAttemptsRemaining: number[];
+    policySnapshot: {
+      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      deadlineMs: number;
+      enabled: boolean;
+      specVersion: "1.0.0";
+      strategy: "ordered";
+      targets: Array<{
+        model: string;
+        provider: string;
+      }>;
+    };
+    policyVersion: number;
+    sessionName: string;
+    state: "pending" | "running" | "waiting" | "hold" | "reconciliation_required" | "succeeded" | "failed" | "exhausted";
+    terminalDetail: string | null;
+    terminalOutcome: ("success" | "failure" | "exhaustion" | "hold") | null;
+    updatedAt: number;
+    wakeAt: number | null;
+  };
+  reason: string;
+  resumed: boolean;
+  specVersion: "1.0.0";
+  target: ({
+    model: string;
+    provider: string;
+  }) | null;
+};
+
+/** Input shape for `runtime.continuity.set`. */
+export type RuntimeContinuitySetInput = {
+  agentId: string;
+  approvalRef?: string;
+  deadlineMs?: string;
+  disabled?: boolean;
+  expectedVersion?: string;
+  idempotencyKey?: string;
+  targets?: string;
+};
+
+/** Return shape for `runtime.continuity.set`. */
+export type RuntimeContinuitySetReturn = {
+  changed: boolean;
+  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  outcome: "applied" | "no_op" | "invalid" | "stale" | "temporary_failure" | "permanent_failure";
+  plan: ({
+    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    createdAt: number;
+    desiredPolicy: ({
+      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      deadlineMs: number;
+      enabled: boolean;
+      specVersion: "1.0.0";
+      strategy: "ordered";
+      targets: Array<{
+        model: string;
+        provider: string;
+      }>;
+    }) | null;
+    exactAgentIds: string[];
+    expiresAt: number;
+    items: Array<{
+      action: "create" | "update" | "no_op" | "clear";
+      agentId: string;
+      beforeVersion: number;
+      errors: string[];
+      valid: boolean;
+    }>;
+    planHash: string;
+    planId: string;
+    selector: {
+      agentIds: string[];
+      kind: "single" | "selected" | "all";
+    };
+  }) | null;
+  policy: ({
+    agentId: string;
+    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    createdAt: number;
+    deadlineMs: number;
+    enabled: boolean;
+    specVersion: "1.0.0";
+    strategy: "ordered";
+    targets: Array<{
+      model: string;
+      provider: string;
+    }>;
+    updatedAt: number;
+    version: number;
+  }) | null;
+  specVersion: "1.0.0";
+};
+
+/** Input shape for `runtime.continuity.show`. */
+export type RuntimeContinuityShowInput = {
+  agentId: string;
+};
+
+/** Return shape for `runtime.continuity.show`. */
+export type RuntimeContinuityShowReturn = {
+  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  health: Array<{
+    agentId: string;
+    consecutiveQualifiedFailures: number;
+    lastFailureAt: number | null;
+    lastSuccessAt: number | null;
+    model: string;
+    openedAt: number | null;
+    probationSuccesses: number;
+    probeEligibleAt: number | null;
+    probeLeaseExpiresAt: number | null;
+    probeLeaseId: string | null;
+    provider: string;
+    stableSince: number | null;
+    state: "closed" | "open" | "half_open";
+    updatedAt: number;
+  }>;
+  liveActivation: {
+    enabled: boolean;
+    gate: string;
+    reason: string | null;
+  };
+  policy: ({
+    agentId: string;
+    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    createdAt: number;
+    deadlineMs: number;
+    enabled: boolean;
+    specVersion: "1.0.0";
+    strategy: "ordered";
+    targets: Array<{
+      model: string;
+      provider: string;
+    }>;
+    updatedAt: number;
+    version: number;
+  }) | null;
+  specVersion: "1.0.0";
+};
+
+/** Input shape for `runtime.continuity.trace`. */
+export type RuntimeContinuityTraceInput = {
+  cursor?: string;
+  limit?: string;
+  logicalRequestId: string;
+};
+
+/** Return shape for `runtime.continuity.trace`. */
+export type RuntimeContinuityTraceReturn = {
+  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  events: Array<{
+    agentId: string | null;
+    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    createdAt: number;
+    eventId: number;
+    logicalRequestId: string | null;
+    payload: Record<string, unknown>;
+    specVersion: "1.0.0";
+    type: string;
+  }>;
+  journal: {
+    activeEffectId: string | null;
+    agentId: string;
+    attempts: Array<{
+      attemptId: string;
+      completedAt: number | null;
+      failure: ({
+        code: string;
+        confidence: "high" | "medium" | "low";
+        credentialRecoveryEligible: boolean;
+        fingerprint: string;
+        kind: "quota" | "rate_limit" | "authentication" | "timeout" | "overload" | "network" | "permanent_request" | "cancellation" | "unknown";
+        message: string;
+        observedAt: number;
+        qualifiedForCircuit: boolean;
+        retryAfterMs: number | null;
+        safeToRetry: boolean;
+        safeToSwitch: boolean;
+      }) | null;
+      kind: "normal" | "credential_recovery" | "probe";
+      outcome: "running" | "succeeded" | "failed" | "skipped" | "hold";
+      probeLeaseId: string | null;
+      startedAt: number;
+      target: {
+        model: string;
+        provider: string;
+      };
+      targetIndex: number;
+    }>;
+    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    contextSnapshot: {
+      attachments: Array<{
+        fingerprint: string | null;
+        id: string;
+        mediaType: string | null;
+        reference: string;
+      }>;
+      createdAt: number;
+      fingerprint: string;
+      forbiddenLosses: string[];
+      messages: Array<{
+        content: string;
+        createdAt: number | null;
+        id: string;
+        role: "system" | "user" | "assistant" | "tool";
+      }>;
+      runtimeControls: Record<string, unknown>;
+      safetyControls: Record<string, unknown>;
+      toolRecords: Array<{
+        id: string;
+        input: unknown;
+        inputFingerprint: string | null;
+        name: string;
+        output: unknown;
+        outputFingerprint: string | null;
+        status: "requested" | "started" | "succeeded" | "failed" | "ambiguous";
+      }>;
+      transformations: Array<{
+        action: "preserved" | "rewritten" | "dropped";
+        approvedLoss: boolean;
+        path: string;
+        reason: string;
+      }>;
+      translationVersion: "ravi-portable-context-v1";
+    };
+    createdAt: number;
+    credentialRecoveriesRemaining: number[];
+    currentTargetIndex: number;
+    deadlineAt: number;
+    decisions: Array<{
+      action: "start" | "retry_same_target" | "recover_credential" | "switch_target" | "skip_target" | "wait" | "wake" | "probe" | "failback" | "hold" | "success" | "composed_failure" | "exhausted" | "reconcile";
+      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      createdAt: number;
+      decisionId: string;
+      fromTargetIndex: number | null;
+      holdReason: ("unknown_evidence" | "missing_evidence" | "stale_evidence" | "conflicting_evidence" | "known_invalid_evidence" | "effect_started" | "effect_ambiguous" | "context_loss" | "snapshot_conflict" | "deadline_expired" | "idempotency_collision") | null;
+      logicalRequestId: string;
+      reasonCode: string;
+      rejectionReasons: string[];
+      sequence: number;
+      toTargetIndex: number | null;
+    }>;
+    deliveryId: string;
+    deliveryState: "pending" | "started" | "delivered" | "failed" | "ambiguous";
+    effectBoundary: "none" | "intention" | "started" | "terminal" | "ambiguous";
+    globalAttemptsRemaining: number;
+    holdReason: ("unknown_evidence" | "missing_evidence" | "stale_evidence" | "conflicting_evidence" | "known_invalid_evidence" | "effect_started" | "effect_ambiguous" | "context_loss" | "snapshot_conflict" | "deadline_expired" | "idempotency_collision") | null;
+    logicalRequestId: string;
+    normalAttemptsRemaining: number[];
+    policySnapshot: {
+      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      deadlineMs: number;
+      enabled: boolean;
+      specVersion: "1.0.0";
+      strategy: "ordered";
+      targets: Array<{
+        model: string;
+        provider: string;
+      }>;
+    };
+    policyVersion: number;
+    sessionName: string;
+    state: "pending" | "running" | "waiting" | "hold" | "reconciliation_required" | "succeeded" | "failed" | "exhausted";
+    terminalDetail: string | null;
+    terminalOutcome: ("success" | "failure" | "exhaustion" | "hold") | null;
+    updatedAt: number;
+    wakeAt: number | null;
+  };
+  logicalRequestId: string;
+  pagination: {
+    cursor: string | null;
+    hasMore: boolean;
+    limit: number;
+    nextCursor: string | null;
+  };
+  specVersion: "1.0.0";
+};
+
+/** Input shape for `runtime.continuity.wait`. */
+export type RuntimeContinuityWaitInput = {
+  logicalRequestId: string;
+  until?: string;
+};
+
+/** Return shape for `runtime.continuity.wait`. */
+export type RuntimeContinuityWaitReturn = {
+  changed: boolean;
+  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  journal: {
+    activeEffectId: string | null;
+    agentId: string;
+    attempts: Array<{
+      attemptId: string;
+      completedAt: number | null;
+      failure: ({
+        code: string;
+        confidence: "high" | "medium" | "low";
+        credentialRecoveryEligible: boolean;
+        fingerprint: string;
+        kind: "quota" | "rate_limit" | "authentication" | "timeout" | "overload" | "network" | "permanent_request" | "cancellation" | "unknown";
+        message: string;
+        observedAt: number;
+        qualifiedForCircuit: boolean;
+        retryAfterMs: number | null;
+        safeToRetry: boolean;
+        safeToSwitch: boolean;
+      }) | null;
+      kind: "normal" | "credential_recovery" | "probe";
+      outcome: "running" | "succeeded" | "failed" | "skipped" | "hold";
+      probeLeaseId: string | null;
+      startedAt: number;
+      target: {
+        model: string;
+        provider: string;
+      };
+      targetIndex: number;
+    }>;
+    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    contextSnapshot: {
+      attachments: Array<{
+        fingerprint: string | null;
+        id: string;
+        mediaType: string | null;
+        reference: string;
+      }>;
+      createdAt: number;
+      fingerprint: string;
+      forbiddenLosses: string[];
+      messages: Array<{
+        content: string;
+        createdAt: number | null;
+        id: string;
+        role: "system" | "user" | "assistant" | "tool";
+      }>;
+      runtimeControls: Record<string, unknown>;
+      safetyControls: Record<string, unknown>;
+      toolRecords: Array<{
+        id: string;
+        input: unknown;
+        inputFingerprint: string | null;
+        name: string;
+        output: unknown;
+        outputFingerprint: string | null;
+        status: "requested" | "started" | "succeeded" | "failed" | "ambiguous";
+      }>;
+      transformations: Array<{
+        action: "preserved" | "rewritten" | "dropped";
+        approvedLoss: boolean;
+        path: string;
+        reason: string;
+      }>;
+      translationVersion: "ravi-portable-context-v1";
+    };
+    createdAt: number;
+    credentialRecoveriesRemaining: number[];
+    currentTargetIndex: number;
+    deadlineAt: number;
+    decisions: Array<{
+      action: "start" | "retry_same_target" | "recover_credential" | "switch_target" | "skip_target" | "wait" | "wake" | "probe" | "failback" | "hold" | "success" | "composed_failure" | "exhausted" | "reconcile";
+      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      createdAt: number;
+      decisionId: string;
+      fromTargetIndex: number | null;
+      holdReason: ("unknown_evidence" | "missing_evidence" | "stale_evidence" | "conflicting_evidence" | "known_invalid_evidence" | "effect_started" | "effect_ambiguous" | "context_loss" | "snapshot_conflict" | "deadline_expired" | "idempotency_collision") | null;
+      logicalRequestId: string;
+      reasonCode: string;
+      rejectionReasons: string[];
+      sequence: number;
+      toTargetIndex: number | null;
+    }>;
+    deliveryId: string;
+    deliveryState: "pending" | "started" | "delivered" | "failed" | "ambiguous";
+    effectBoundary: "none" | "intention" | "started" | "terminal" | "ambiguous";
+    globalAttemptsRemaining: number;
+    holdReason: ("unknown_evidence" | "missing_evidence" | "stale_evidence" | "conflicting_evidence" | "known_invalid_evidence" | "effect_started" | "effect_ambiguous" | "context_loss" | "snapshot_conflict" | "deadline_expired" | "idempotency_collision") | null;
+    logicalRequestId: string;
+    normalAttemptsRemaining: number[];
+    policySnapshot: {
+      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      deadlineMs: number;
+      enabled: boolean;
+      specVersion: "1.0.0";
+      strategy: "ordered";
+      targets: Array<{
+        model: string;
+        provider: string;
+      }>;
+    };
+    policyVersion: number;
+    sessionName: string;
+    state: "pending" | "running" | "waiting" | "hold" | "reconciliation_required" | "succeeded" | "failed" | "exhausted";
+    terminalDetail: string | null;
+    terminalOutcome: ("success" | "failure" | "exhaustion" | "hold") | null;
+    updatedAt: number;
+    wakeAt: number | null;
+  };
+  specVersion: "1.0.0";
+};
+
+/** Input shape for `runtime.continuity.wake`. */
+export type RuntimeContinuityWakeInput = {
+  logicalRequestId: string;
+};
+
+/** Return shape for `runtime.continuity.wake`. */
+export type RuntimeContinuityWakeReturn = {
+  changed: boolean;
+  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  journal: {
+    activeEffectId: string | null;
+    agentId: string;
+    attempts: Array<{
+      attemptId: string;
+      completedAt: number | null;
+      failure: ({
+        code: string;
+        confidence: "high" | "medium" | "low";
+        credentialRecoveryEligible: boolean;
+        fingerprint: string;
+        kind: "quota" | "rate_limit" | "authentication" | "timeout" | "overload" | "network" | "permanent_request" | "cancellation" | "unknown";
+        message: string;
+        observedAt: number;
+        qualifiedForCircuit: boolean;
+        retryAfterMs: number | null;
+        safeToRetry: boolean;
+        safeToSwitch: boolean;
+      }) | null;
+      kind: "normal" | "credential_recovery" | "probe";
+      outcome: "running" | "succeeded" | "failed" | "skipped" | "hold";
+      probeLeaseId: string | null;
+      startedAt: number;
+      target: {
+        model: string;
+        provider: string;
+      };
+      targetIndex: number;
+    }>;
+    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    contextSnapshot: {
+      attachments: Array<{
+        fingerprint: string | null;
+        id: string;
+        mediaType: string | null;
+        reference: string;
+      }>;
+      createdAt: number;
+      fingerprint: string;
+      forbiddenLosses: string[];
+      messages: Array<{
+        content: string;
+        createdAt: number | null;
+        id: string;
+        role: "system" | "user" | "assistant" | "tool";
+      }>;
+      runtimeControls: Record<string, unknown>;
+      safetyControls: Record<string, unknown>;
+      toolRecords: Array<{
+        id: string;
+        input: unknown;
+        inputFingerprint: string | null;
+        name: string;
+        output: unknown;
+        outputFingerprint: string | null;
+        status: "requested" | "started" | "succeeded" | "failed" | "ambiguous";
+      }>;
+      transformations: Array<{
+        action: "preserved" | "rewritten" | "dropped";
+        approvedLoss: boolean;
+        path: string;
+        reason: string;
+      }>;
+      translationVersion: "ravi-portable-context-v1";
+    };
+    createdAt: number;
+    credentialRecoveriesRemaining: number[];
+    currentTargetIndex: number;
+    deadlineAt: number;
+    decisions: Array<{
+      action: "start" | "retry_same_target" | "recover_credential" | "switch_target" | "skip_target" | "wait" | "wake" | "probe" | "failback" | "hold" | "success" | "composed_failure" | "exhausted" | "reconcile";
+      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      createdAt: number;
+      decisionId: string;
+      fromTargetIndex: number | null;
+      holdReason: ("unknown_evidence" | "missing_evidence" | "stale_evidence" | "conflicting_evidence" | "known_invalid_evidence" | "effect_started" | "effect_ambiguous" | "context_loss" | "snapshot_conflict" | "deadline_expired" | "idempotency_collision") | null;
+      logicalRequestId: string;
+      reasonCode: string;
+      rejectionReasons: string[];
+      sequence: number;
+      toTargetIndex: number | null;
+    }>;
+    deliveryId: string;
+    deliveryState: "pending" | "started" | "delivered" | "failed" | "ambiguous";
+    effectBoundary: "none" | "intention" | "started" | "terminal" | "ambiguous";
+    globalAttemptsRemaining: number;
+    holdReason: ("unknown_evidence" | "missing_evidence" | "stale_evidence" | "conflicting_evidence" | "known_invalid_evidence" | "effect_started" | "effect_ambiguous" | "context_loss" | "snapshot_conflict" | "deadline_expired" | "idempotency_collision") | null;
+    logicalRequestId: string;
+    normalAttemptsRemaining: number[];
+    policySnapshot: {
+      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      deadlineMs: number;
+      enabled: boolean;
+      specVersion: "1.0.0";
+      strategy: "ordered";
+      targets: Array<{
+        model: string;
+        provider: string;
+      }>;
+    };
+    policyVersion: number;
+    sessionName: string;
+    state: "pending" | "running" | "waiting" | "hold" | "reconciliation_required" | "succeeded" | "failed" | "exhausted";
+    terminalDetail: string | null;
+    terminalOutcome: ("success" | "failure" | "exhaustion" | "hold") | null;
+    updatedAt: number;
+    wakeAt: number | null;
+  };
+  specVersion: "1.0.0";
+};
+
 /** Input shape for `runtime.credentials.add`. */
 export type RuntimeCredentialsAddInput = {
   agents?: string;

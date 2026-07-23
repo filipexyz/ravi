@@ -2,6 +2,7 @@ import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barrier
 import type { ThreadHandoffPromptMetadata } from "../threads/types.js";
 import type { RuntimeEventMetadata } from "./types.js";
 import type { RuntimeProviderId } from "./types.js";
+import type { ProviderContinuityPromptMetadata } from "./provider-continuity/types.js";
 
 export interface MessageActorMetadata {
   /** Canonical chat id from the Ravi chat model. Raw chat ids remain in chatId as provenance. */
@@ -137,6 +138,8 @@ export interface PromptMessage {
   _runtimeProviderId?: RuntimeProviderId;
   /** Explicit runtime model override for internal dispatch paths such as observers. */
   _runtimeModel?: string;
+  /** Host-owned provider continuity envelope frozen for one logical request. */
+  _continuity?: ProviderContinuityPromptMetadata;
   /** Observation Plane metadata for observer-session prompts. */
   _observation?: ObservationPromptMetadata;
   /** Heartbeat runner prompt marker. */

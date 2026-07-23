@@ -40,7 +40,7 @@ import {
   type PendingRuntimeSessionStart,
 } from "./session-launcher.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
-import { formatUserFacingTurnFailure } from "./public-failure.js";
+import { formatUserFacingTurnFailure, publicRuntimeFailureDetail } from "./public-failure.js";
 import { resolveSessionOutputTarget } from "./session-output-target.js";
 import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-runtime-context.js";
 import {
@@ -50,6 +50,8 @@ import {
   type RuntimeSessionPoolSnapshot,
   type RuntimeStreamingSessionIdentity,
 } from "./session-pool.js";
+import { markProviderContinuityDelivery, prepareProviderContinuityRequest } from "./provider-continuity/coordinator.js";
+import { PROVIDER_CONTINUITY_SNAPSHOT, PROVIDER_CONTINUITY_SPEC_VERSION } from "./provider-continuity/types.js";
 
 const log = logger.child("runtime:session-dispatcher");
 const RUNTIME_EVENT_LOOP_CLOSED_REASON = "runtime_event_loop_closed";
@@ -652,11 +654,74 @@ export class RuntimeSessionDispatcher {
       log.error("No agent found for prompt", { sessionName, agentId });
       return;
     }
+    const continuity = prepareProviderContinuityRequest({
+      agentId: agent.id,
+      sessionName,
+      prompt,
+    });
+    if (continuity.active) {
+      if (!continuity.ready) {
+        await this.options
+          .safeEmit(`ravi.session.${sessionName}.runtime`, {
+            type: `continuity.${continuity.reason}`,
+            logicalRequestId: continuity.journal.logicalRequestId,
+            state: continuity.journal.state,
+            reason: continuity.journal.terminalDetail ?? continuity.journal.holdReason,
+            specVersion: PROVIDER_CONTINUITY_SPEC_VERSION,
+            compatibilitySnapshotId: PROVIDER_CONTINUITY_SNAPSHOT,
+            timestamp: new Date().toISOString(),
+          })
+          .catch((error) =>
+            log.warn("Failed to emit continuity stop event", {
+              sessionName,
+              error: publicRuntimeFailureDetail(error),
+            }),
+          );
+        const outputTarget = resolveSessionOutputTarget({
+          sessionKey: sessionEntry?.sessionKey ?? sessionName,
+          fallback: prompt.source,
+        }).target;
+        if (outputTarget && agent.mode !== "sentinel") {
+          markProviderContinuityDelivery({
+            logicalRequestId: continuity.journal.logicalRequestId,
+            state: "started",
+          });
+          try {
+            await nats.emit(`ravi.session.${sessionName}.response`, {
+              response: continuity.userMessage,
+              target: outputTarget,
+              _emitId: continuity.journal.deliveryId,
+              _instanceId: this.options.instanceId,
+              _pid: process.pid,
+              _v: 2,
+            });
+            markProviderContinuityDelivery({
+              logicalRequestId: continuity.journal.logicalRequestId,
+              state: "delivered",
+            });
+          } catch (error) {
+            markProviderContinuityDelivery({
+              logicalRequestId: continuity.journal.logicalRequestId,
+              state: "ambiguous",
+            });
+            log.warn("Failed to emit continuity stop response", {
+              sessionName,
+              error: publicRuntimeFailureDetail(error),
+            });
+          }
+        }
+        return;
+      }
+      prompt = continuity.prompt;
+    }
     const agentSelection = resolveAgentModelSelection(agent);
     const sessionRuntimeProviderOverride =
-      prompt._observation && prompt._runtimeProviderId ? undefined : sessionEntry?.runtimeProviderOverride;
-    const requestedProvider: RuntimeProviderId =
-      prompt._observation && prompt._runtimeProviderId
+      prompt._continuity || (prompt._observation && prompt._runtimeProviderId)
+        ? undefined
+        : sessionEntry?.runtimeProviderOverride;
+    const requestedProvider: RuntimeProviderId = prompt._continuity
+      ? prompt._continuity.target.provider
+      : prompt._observation && prompt._runtimeProviderId
         ? prompt._runtimeProviderId
         : sessionRuntimeProviderOverride
           ? sessionRuntimeProviderOverride

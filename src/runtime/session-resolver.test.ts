@@ -12,6 +12,7 @@ import { configStore } from "../config-store.js";
 import { resolveRuntimeSession } from "./session-resolver.js";
 import { registerRuntimeProvider, unregisterRuntimeProvider } from "./provider-registry.js";
 import type { RuntimeCapabilities, SessionRuntimeProvider } from "./types.js";
+import { PROVIDER_CONTINUITY_SNAPSHOT } from "./provider-continuity/types.js";
 
 const SESSION_KEY = "agent:main:dm:resolver";
 const SESSION_NAME = "main-dm-resolver";
@@ -127,6 +128,38 @@ describe("runtime session resolver", () => {
     const resolved = resolveRuntimeSession({
       sessionName: SESSION_NAME,
       prompt: { prompt: "use session provider override" },
+      defaultRuntimeProviderId: "codex",
+    });
+
+    expect(resolved?.runtimeProviderId).toBe("claude");
+    expect(resolved?.resumeDecision).toMatchObject({
+      requestedRuntimeProvider: "claude",
+      reason: "missing_provider_session",
+    });
+  });
+
+  it("uses the frozen continuity target before session and prompt provider overrides", () => {
+    getOrCreateSession(SESSION_KEY, "main", stateDir ?? "/tmp", { name: SESSION_NAME });
+    updateSessionRuntimeProviderOverride(SESSION_KEY, "codex");
+
+    const resolved = resolveRuntimeSession({
+      sessionName: SESSION_NAME,
+      prompt: {
+        prompt: "resume on frozen continuity target",
+        _runtimeProviderId: "codex",
+        _continuity: {
+          logicalRequestId: "pcr_session_resolver",
+          policyVersion: 1,
+          targetIndex: 1,
+          target: { provider: "claude", model: "sonnet" },
+          attemptId: "pca_session_resolver",
+          contextFingerprint: "context-session-resolver",
+          deliveryId: "pcdly_session_resolver",
+          probeLeaseId: null,
+          synthetic: true,
+          compatibilitySnapshotId: PROVIDER_CONTINUITY_SNAPSHOT,
+        },
+      },
       defaultRuntimeProviderId: "codex",
     });
 

@@ -8,10 +8,13 @@ import type {
   RuntimeProviderId,
   SessionRuntimeProvider,
 } from "./types.js";
+import { validateRuntimeModelSelector } from "./model-validation.js";
+import { PROVIDER_CONTINUITY_SNAPSHOT, type ProviderContinuityTarget } from "./provider-continuity/types.js";
 
 type RuntimeProviderFactory = () => SessionRuntimeProvider;
 
 export const DEFAULT_RUNTIME_PROVIDER_ID: RuntimeProviderId = "codex";
+export const PROVIDER_CONTINUITY_REGISTRY_SNAPSHOT = PROVIDER_CONTINUITY_SNAPSHOT;
 
 const runtimeProviderFactories = new Map<RuntimeProviderId, RuntimeProviderFactory>([
   ["claude", createClaudeRuntimeProvider],
@@ -90,4 +93,36 @@ export function assertRuntimeCompatibility(
   if (issues.length > 0) {
     throw new Error(issues.map((issue) => issue.message).join("; "));
   }
+}
+
+export interface RuntimeProviderTargetValidation {
+  valid: boolean;
+  target: ProviderContinuityTarget;
+  errors: string[];
+  compatibilitySnapshotId: typeof PROVIDER_CONTINUITY_SNAPSHOT;
+}
+
+/** Host-owned target validation used by ordered continuity policy previews. */
+export function validateRuntimeProviderTarget(
+  target: ProviderContinuityTarget,
+  request: RuntimeCompatibilityRequest = {
+    requiresMcpServers: false,
+    requiresRemoteSpawn: false,
+    toolAccessMode: "unrestricted",
+  },
+): RuntimeProviderTargetValidation {
+  const errors: string[] = [];
+  if (!runtimeProviderFactories.has(target.provider)) {
+    errors.push(`Unknown runtime provider '${target.provider}'`);
+  } else {
+    const model = validateRuntimeModelSelector(target.provider, target.model);
+    if (!model.ok) errors.push(model.error ?? `Invalid model selector '${target.model}'`);
+    errors.push(...getRuntimeCompatibilityIssues(target.provider, request).map((issue) => issue.message));
+  }
+  return {
+    valid: errors.length === 0,
+    target,
+    errors,
+    compatibilitySnapshotId: PROVIDER_CONTINUITY_SNAPSHOT,
+  };
 }
