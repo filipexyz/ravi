@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 mock.module("../config-store.js", () => ({
   configStore: {
-    resolveInstanceId: (accountId: string) => accountId,
+    resolveInstanceId: (accountId: string) => (accountId === "hana-slack" ? undefined : accountId),
   },
 }));
 
@@ -78,6 +78,65 @@ printf '{"success":true,"message":"Media sent","data":{"messageId":"msg-test","s
       message: "Media sent",
       messageId: "msg-test",
       status: "sent",
+    });
+  });
+
+  it("uses native Slack delivery when the source channel is Slack", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-media-send-"));
+    tempDirs.push(dir);
+    const mediaPath = join(dir, "sample.png");
+    writeFileSync(mediaPath, "image");
+    const slackCalls: unknown[] = [];
+
+    const result = await sendMediaWithOmniCli(
+      {
+        filePath: mediaPath,
+        caption: "native upload",
+        target: {
+          channel: "slack",
+          accountId: "hana-slack",
+          chatId: "C123",
+          threadId: "1783999999.000099",
+        },
+      },
+      {
+        sendSlackMedia: async (input) => {
+          slackCalls.push(input);
+          return {
+            transport: "slack-native",
+            provider: "slack",
+            success: true,
+            status: "sent",
+            fileId: "F123",
+            messageId: "1784000000.000100",
+            raw: { ok: true },
+          };
+        },
+      },
+    );
+
+    expect(slackCalls).toEqual([
+      {
+        accountId: "hana-slack",
+        chatId: "C123",
+        filePath: mediaPath,
+        filename: "sample.png",
+        caption: "native upload",
+        threadId: "1783999999.000099",
+      },
+    ]);
+    expect(result.target).toEqual({
+      channel: "slack",
+      accountId: "hana-slack",
+      instanceId: "hana-slack",
+      chatId: "C123",
+      threadId: "1783999999.000099",
+    });
+    expect(result.delivery).toMatchObject({
+      transport: "slack-native",
+      provider: "slack",
+      fileId: "F123",
+      messageId: "1784000000.000100",
     });
   });
 });

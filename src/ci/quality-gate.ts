@@ -25,6 +25,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/channels/": [
     "src/channels/health.test.ts",
     "src/channels/runner.test.ts",
+    "src/channels/slack/media.test.ts",
     "src/channels/slack/socket-mode.test.ts",
   ],
   "src/omni/": [

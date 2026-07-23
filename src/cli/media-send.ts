@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { resolve, basename, extname } from "node:path";
 import { getContext } from "./context.js";
 import { configStore } from "../config-store.js";
+import { sendSlackMedia, type SlackMediaSendInput, type SlackNativeMediaDelivery } from "../channels/slack/media.js";
 
 const MIME_MAP: Record<string, string> = {
   ".jpg": "image/jpeg",
@@ -47,6 +48,12 @@ export interface OmniSendExecution {
   messageId?: string;
   status?: string;
   raw?: unknown;
+}
+
+export type MediaSendExecution = OmniSendExecution | SlackNativeMediaDelivery;
+
+export interface MediaSendDependencies {
+  sendSlackMedia?: (input: SlackMediaSendInput) => Promise<SlackNativeMediaDelivery>;
 }
 
 function parseJsonObject(text: string): Record<string, unknown> | null {
@@ -98,7 +105,7 @@ export function resolveMediaSendTarget(input: MediaSendTargetInput = {}): Resolv
     throw new Error("No target context available — use --account and --to, or run from a chat session.");
   }
 
-  const instanceId = configStore.resolveInstanceId(accountId);
+  const instanceId = channel?.toLowerCase() === "slack" ? accountId : configStore.resolveInstanceId(accountId);
   if (!instanceId) {
     throw new Error(`No omni instance mapped for account "${accountId}".`);
   }
@@ -112,20 +119,23 @@ export function resolveMediaSendTarget(input: MediaSendTargetInput = {}): Resolv
   };
 }
 
-export async function sendMediaWithOmniCli(args: {
-  filePath: string;
-  caption?: string;
-  type?: MediaType;
-  filename?: string;
-  voiceNote?: boolean;
-  target?: MediaSendTargetInput;
-}): Promise<{
+export async function sendMediaWithOmniCli(
+  args: {
+    filePath: string;
+    caption?: string;
+    type?: MediaType;
+    filename?: string;
+    voiceNote?: boolean;
+    target?: MediaSendTargetInput;
+  },
+  dependencies: MediaSendDependencies = {},
+): Promise<{
   filePath: string;
   filename: string;
   mimeType: string;
   type: MediaType;
   target: ResolvedMediaSendTarget;
-  delivery: OmniSendExecution;
+  delivery: MediaSendExecution;
 }> {
   const absPath = resolve(args.filePath);
   if (!existsSync(absPath)) {
@@ -136,6 +146,25 @@ export async function sendMediaWithOmniCli(args: {
   const type = args.type ?? inferMediaType(mimeType);
   const filename = args.filename ?? basename(absPath);
   const target = resolveMediaSendTarget(args.target);
+
+  if (target.channel?.toLowerCase() === "slack") {
+    const delivery = await (dependencies.sendSlackMedia ?? sendSlackMedia)({
+      accountId: target.accountId,
+      chatId: target.chatId,
+      filePath: absPath,
+      filename,
+      ...(args.caption ? { caption: args.caption } : {}),
+      ...(target.threadId ? { threadId: target.threadId } : {}),
+    });
+    return {
+      filePath: absPath,
+      filename,
+      mimeType,
+      type,
+      target,
+      delivery,
+    };
+  }
 
   const omniArgs = ["send", "--instance", target.instanceId, "--to", target.chatId, "--media", absPath];
 
