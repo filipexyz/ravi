@@ -327,6 +327,15 @@ describe("runCoverageGate", () => {
     expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
   });
 
+  it("passes when the Codex provider focused test is in the diff", () => {
+    const cwd = makeWorkspace();
+
+    const result = runCoverageGate(["src/runtime/codex-provider.ts", "src/runtime/codex-provider.test.ts"], cwd);
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
+  });
+
   it("accepts approval service focused tests for approval service changes", () => {
     const cwd = makeWorkspace();
 
