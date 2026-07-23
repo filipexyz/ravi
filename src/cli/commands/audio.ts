@@ -158,7 +158,7 @@ export class AudioCommands {
         voiceNote: boolean;
       };
       sent?: {
-        transport: "omni-send";
+        transport: "omni-send" | "slack-native";
         channel?: string;
         accountId: string;
         instanceId: string;

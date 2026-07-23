@@ -656,7 +656,7 @@ export class ImageCommands {
         outputDir?: string;
       };
       sent: Array<{
-        transport: "omni-send";
+        transport: "omni-send" | "slack-native";
         channel?: string;
         accountId: string;
         instanceId: string;
