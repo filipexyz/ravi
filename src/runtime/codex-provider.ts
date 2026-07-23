@@ -916,6 +916,30 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   let intentionalChildRestart = false;
   let closePromise: Promise<void> | null = null;
 
+  // The app-server broadcasts notifications for the top-level turn and every
+  // multi-agent child over the same connection. Child events must never mutate
+  // or complete the canonical Ravi turn that owns provider session continuity.
+  const notificationThreadId = (params: Record<string, unknown>): string | undefined =>
+    firstString(params.threadId, params.thread_id);
+
+  const notificationTurnId = (params: Record<string, unknown>): string | undefined =>
+    firstString(params.turnId, params.turn_id, asRecord(params.turn)?.id);
+
+  const notificationMatchesActiveTurn = (turn: AppServerTurnState, params: Record<string, unknown>): boolean => {
+    const eventThreadId = notificationThreadId(params);
+    const activeThreadId = turn.threadId ?? currentThreadId;
+    if (eventThreadId && activeThreadId && eventThreadId !== activeThreadId) {
+      return false;
+    }
+
+    const eventTurnId = notificationTurnId(params);
+    if (eventTurnId && turn.turnId && eventTurnId !== turn.turnId) {
+      return false;
+    }
+
+    return true;
+  };
+
   const clearForcedKillTimer = () => {
     if (forcedKillTimer) {
       clearTimeout(forcedKillTimer);
@@ -1401,7 +1425,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
 
     switch (method) {
       case "error": {
-        if (turn) {
+        if (turn && notificationMatchesActiveTurn(turn, params)) {
           turn.queue.push({
             type: "error",
             message: extractAppServerErrorMessage(params) ?? "Codex app-server error",
@@ -1413,6 +1437,10 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         const thread = normalizeAppServerThread(params.thread);
         const threadId = thread?.id;
         if (threadId) {
+          const activeThreadId = turn?.threadId ?? currentThreadId;
+          if (activeThreadId && threadId !== activeThreadId) {
+            break;
+          }
           currentThreadId = threadId;
           if (turn) {
             turn.threadId = threadId;
@@ -1430,7 +1458,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         break;
       }
       case "turn/started": {
-        if (turn) {
+        if (turn && notificationMatchesActiveTurn(turn, params)) {
           const startedTurn = normalizeAppServerTurn(params.turn);
           turn.threadId = firstString(params.threadId, turn.threadId, currentThreadId);
           turn.turnId = firstString(startedTurn?.id, turn.turnId);
@@ -1448,23 +1476,25 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         break;
       }
       case "item/started": {
-        if (turn) {
+        if (turn && notificationMatchesActiveTurn(turn, params)) {
           const item = normalizeAppServerItem(params.item);
           if (item) {
+            const threadId = firstString(notificationThreadId(params), turn.threadId, currentThreadId);
+            const turnId = firstString(notificationTurnId(params), turn.turnId);
             if (item.type === "context_compaction") {
               turn.queue.push({
                 type: "thread.compaction.started",
                 source: "codex.app-server",
-                thread_id: turn.threadId ?? currentThreadId,
-                turn_id: turn.turnId,
+                thread_id: threadId,
+                turn_id: turnId,
                 item,
               });
             }
             turn.queue.push({
               type: "item.started",
               source: "codex.app-server",
-              thread_id: turn.threadId ?? currentThreadId,
-              turn_id: turn.turnId,
+              thread_id: threadId,
+              turn_id: turnId,
               item,
             });
           }
@@ -1472,22 +1502,24 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         break;
       }
       case "item/completed": {
-        if (turn) {
+        if (turn && notificationMatchesActiveTurn(turn, params)) {
           const item = applyPendingDynamicToolResult(normalizeAppServerItem(params.item), pendingDynamicToolResults);
           if (item) {
+            const threadId = firstString(notificationThreadId(params), turn.threadId, currentThreadId);
+            const turnId = firstString(notificationTurnId(params), turn.turnId);
             turn.queue.push({
               type: "item.completed",
               source: "codex.app-server",
-              thread_id: turn.threadId ?? currentThreadId,
-              turn_id: turn.turnId,
+              thread_id: threadId,
+              turn_id: turnId,
               item,
             });
             if (item.type === "context_compaction") {
               turn.queue.push({
                 type: "thread.compacted",
                 source: "codex.app-server",
-                thread_id: turn.threadId ?? currentThreadId,
-                turn_id: turn.turnId,
+                thread_id: threadId,
+                turn_id: turnId,
                 item,
               });
             }
@@ -1496,14 +1528,14 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         break;
       }
       case "item/agentMessage/delta": {
-        if (turn) {
+        if (turn && notificationMatchesActiveTurn(turn, params)) {
           const delta = firstString(params.delta);
           if (delta) {
             turn.queue.push({
               type: "agent_message.delta",
               source: "codex.app-server",
-              thread_id: turn.threadId ?? currentThreadId,
-              turn_id: turn.turnId,
+              thread_id: firstString(notificationThreadId(params), turn.threadId, currentThreadId),
+              turn_id: firstString(notificationTurnId(params), turn.turnId),
               delta,
               item_id: firstString(params.itemId),
             });
@@ -1512,36 +1544,38 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         break;
       }
       case "thread/tokenUsage/updated": {
-        if (turn) {
+        if (turn && notificationMatchesActiveTurn(turn, params)) {
           turn.lastUsage = extractAppServerUsage(params.tokenUsage);
         }
         break;
       }
       case "thread/compacted": {
-        if (turn) {
-          const threadId = firstString(params.threadId, params.thread_id, turn.threadId, currentThreadId);
+        if (turn && notificationMatchesActiveTurn(turn, params)) {
+          const threadId = firstString(notificationThreadId(params), turn.threadId, currentThreadId);
           turn.queue.push({
             type: "thread.compacted",
             source: "codex.app-server",
             thread_id: threadId,
-            turn_id: turn.turnId,
+            turn_id: firstString(notificationTurnId(params), turn.turnId),
           });
         }
         break;
       }
       case "turn/completed": {
-        if (!turn) {
+        if (!turn || !notificationMatchesActiveTurn(turn, params)) {
           break;
         }
 
         const completedTurn = asRecord(params.turn);
+        const threadId = firstString(notificationThreadId(params), turn.threadId, currentThreadId);
+        const turnId = firstString(notificationTurnId(params), turn.turnId);
         const status = typeof completedTurn?.status === "string" ? completedTurn.status : "completed";
         if (status === "completed") {
           turn.queue.push({
             type: "turn.completed",
             source: "codex.app-server",
-            thread_id: turn.threadId ?? currentThreadId,
-            turn_id: turn.turnId,
+            thread_id: threadId,
+            turn_id: turnId,
             turn: normalizeAppServerTurn(completedTurn),
             usage: turn.lastUsage ?? {},
             model: resolvedModel,
@@ -1552,16 +1586,16 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           turn.queue.push({
             type: "turn.interrupted",
             source: "codex.app-server",
-            thread_id: turn.threadId ?? currentThreadId,
-            turn_id: turn.turnId,
+            thread_id: threadId,
+            turn_id: turnId,
             turn: normalizeAppServerTurn(completedTurn),
           });
         } else {
           turn.queue.push({
             type: "turn.failed",
             source: "codex.app-server",
-            thread_id: turn.threadId ?? currentThreadId,
-            turn_id: turn.turnId,
+            thread_id: threadId,
+            turn_id: turnId,
             turn: normalizeAppServerTurn(completedTurn),
             error: extractAppServerTurnError(completedTurn) ?? `Codex turn ${status}`,
           });
