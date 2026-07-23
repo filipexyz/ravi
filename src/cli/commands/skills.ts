@@ -3,6 +3,7 @@
  */
 
 import "reflect-metadata";
+import { existsSync, readFileSync } from "node:fs";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
@@ -29,14 +30,19 @@ import {
   withResolvedSkillSource,
   type RaviSkill,
 } from "../../skills/manager.js";
+import { acceptSkillCreate } from "../../skills/skill-acceptance.js";
+import { applySkillGuard, archiveAgentCreatedSkill, type SkillGuardOp } from "../../skills/skill-guard.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { resolveAgentSkills } from "../../runtime/allowed-skills.js";
+import { getTaskDetails } from "../../tasks/service.js";
 import {
   skillGrantBatchReturnSchema,
   skillGrantMutationReturnSchema,
   skillGrantWhoReturnSchema,
   skillInspectReturnSchema,
   skillShowReturnSchema,
+  skillsArchiveReturnSchema,
+  skillsGuardReturnSchema,
   skillsInstallReturnSchema,
   skillsListReturnSchema,
   skillsSyncReturnSchema,
@@ -388,6 +394,70 @@ FONTES
   src/cli/commands/skills.ts · 2026-07-10
 `;
 
+const SKILLS_GUARD_HELP_AFTER = `
+DETERMINISTIC WRITE GATE — routes skill create/patch through the enforcement layer.
+The curator decides skill, op and markdown content; runtime facts stamp provenance.
+
+USE
+  ✓ curador-skills learned a durable technique and will patch an agent-created skill
+  ✓ no skill covers the class yet and the loop needs a new agent-created umbrella
+
+NÃO USE
+  ✗ edit SKILL.md directly from the curator
+  ✗ patch catalog, hub-installed or hand-authored skills — rejected as protected
+
+REGRAS HARD
+  • Content must come from --content-file; inline shell content is intentionally unsupported.
+  • PATCH requires origin: agent-created in SKILL.md frontmatter.
+  • CREATE requires --description and fails if the skill already exists.
+  • Writes are atomic and stamp date/session/cadence/task provenance when available.
+
+EXAMPLES
+  ravi skills guard --skill minha-skill --op patch --content-file /tmp/learned.md --dry-run --json
+  ravi skills guard --skill nova-umbrella --op create --description "quando usar" --content-file /tmp/body.md --json
+
+ON ERROR
+  not-found → patch target is absent; create a new skill or skip.
+  protected → target was not created by this loop; create a new umbrella instead.
+  exists → create target already exists; use patch.
+
+SEE ALSO
+  ravi skills show · ravi skills list · ravi memory guard
+
+FONTES
+  src/cli/commands/skills.ts · src/skills/skill-guard.ts · 2026-07-22
+`;
+
+const SKILLS_ARCHIVE_HELP_AFTER = `
+RECOVERABLE ARCHIVE — moves an agent-created skill to the user skills archive.
+Default is dry-run; pass --force to actually move the directory.
+
+USE
+  ✓ retire a skill created by the learning loop that became obsolete
+
+NÃO USE
+  ✗ archive catalog, hub-installed or hand-authored skills — rejected as protected
+  ✗ irreversible deletion — this command never hard-deletes a skill
+
+REGRAS HARD
+  • Only origin: agent-created skills can be archived.
+  • Without --force, no filesystem mutation is performed.
+
+EXAMPLES
+  ravi skills archive loop-example --json
+  ravi skills archive loop-example --force --json
+
+ON ERROR
+  not-found → no editable skill with that name exists.
+  protected → skill is not agent-created.
+
+SEE ALSO
+  ravi skills guard · ravi skills list
+
+FONTES
+  src/cli/commands/skills.ts · src/skills/skill-guard.ts · 2026-07-22
+`;
+
 @Group({
   name: "skills",
   description: "Skill discovery, install and inspection tools",
@@ -597,6 +667,122 @@ export class SkillsCommands {
       printJson(payload);
     } else {
       console.log(`✓ Synced Codex skills: ${codexSynced.length}`);
+    }
+    return payload;
+  }
+
+  @Command({
+    name: "guard",
+    description:
+      "Route an agent-created skill write through the deterministic guard. Supports patch/create, enforces protected-skill allowlist and writes atomically.",
+    helpAfter: SKILLS_GUARD_HELP_AFTER,
+  })
+  @CommandAccess({ kind: "mutate", resource: "skills", action: "guard", risk: "medium" })
+  @Returns(skillsGuardReturnSchema)
+  guard(
+    @Option({ flags: "--skill <name>", description: "Skill name to patch/create" }) skill?: string,
+    @Option({ flags: "--op <op>", description: "patch|create" }) op?: string,
+    @Option({ flags: "--content-file <path>", description: "Markdown file with patch/create content" })
+    contentFile?: string,
+    @Option({ flags: "--description <text>", description: "Skill description; required for create" })
+    description?: string,
+    @Option({ flags: "--agent <id>", description: "Override provenance agent id" }) agentId?: string,
+    @Option({ flags: "--session-key <key>", description: "Override provenance session key" }) sessionKey?: string,
+    @Option({ flags: "--cadence-turn <n>", description: "Override provenance cadence turn" }) cadenceTurn?: string,
+    @Option({ flags: "--task-id <id>", description: "Override provenance curator task id" }) taskId?: string,
+    @Option({ flags: "--date <iso>", description: "Override provenance date (YYYY-MM-DD)" }) date?: string,
+    @Option({ flags: "--dry-run", description: "Compute result without writing" }) dryRun?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const skillName = skill?.trim();
+    if (!skillName) fail("--skill is required");
+    const normalizedOp = op?.trim();
+    if (normalizedOp !== "patch" && normalizedOp !== "create") {
+      fail("--op must be 'patch' or 'create'");
+    }
+    const file = contentFile?.trim();
+    if (!file) fail("--content-file is required");
+    if (!existsSync(file)) fail(`--content-file not found: ${file}`);
+    const content = readFileSync(file, "utf-8");
+    if (!content.trim()) fail("--content-file is empty");
+
+    const provenance = resolveDeterministicProvenance({ agentId, sessionKey, cadenceTurn, taskId, date });
+    const guardInput = {
+      skillName,
+      op: normalizedOp as SkillGuardOp,
+      content,
+      agentId: provenance.agentId,
+      ...(description?.trim() ? { description: description.trim() } : {}),
+      provenance: {
+        ...(provenance.sessionKey ? { sessionKey: provenance.sessionKey } : {}),
+        ...(provenance.cadenceTurn ? { cadenceTurn: provenance.cadenceTurn } : {}),
+        ...(provenance.taskId ? { taskId: provenance.taskId } : {}),
+        date: provenance.date,
+      },
+      dryRun: dryRun === true,
+    };
+    const decision =
+      normalizedOp === "create"
+        ? acceptSkillCreate({ ...guardInput, op: "create" })
+        : applySkillGuard({ ...guardInput, op: "patch" });
+    const payload = {
+      outcome: decision.outcome,
+      op: normalizedOp as SkillGuardOp,
+      skill: skillName,
+      ...("reason" in decision ? { reason: decision.reason } : {}),
+      ...("detail" in decision ? { detail: decision.detail } : {}),
+      ...("path" in decision ? { path: decision.path } : {}),
+      ...("finalChars" in decision ? { finalChars: decision.finalChars } : {}),
+      ...("grant" in decision ? { grant: decision.grant } : {}),
+      ...("visibleToAgent" in decision ? { visibleToAgent: decision.visibleToAgent } : {}),
+      ...("idempotent" in decision ? { idempotent: decision.idempotent } : {}),
+      dryRun: dryRun === true,
+    };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`skills guard${payload.dryRun ? " (dry-run)" : ""}: ${payload.outcome} (${payload.op})`);
+      if (payload.reason) console.log(`  reason: ${payload.reason}`);
+      if (payload.detail) console.log(`  detail: ${payload.detail}`);
+      if (payload.path) console.log(`  path: ${payload.path}`);
+    }
+    return payload;
+  }
+
+  @Command({
+    name: "archive",
+    description: "Archive an agent-created skill recoverably; default is dry-run unless --force is passed.",
+    helpAfter: SKILLS_ARCHIVE_HELP_AFTER,
+  })
+  @CommandAccess({ kind: "mutate", resource: "skills", action: "archive", risk: "medium" })
+  @Returns(skillsArchiveReturnSchema)
+  archive(
+    @Arg("name", { required: false, description: "Skill name to archive" }) name?: string,
+    @Option({ flags: "--skill <name>", description: "Skill name; alternative to positional" }) skillFlag?: string,
+    @Option({ flags: "--force", description: "Actually archive; without this, dry-run only" }) force?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const skillName = normalizeRequestedSkillName(name, skillFlag);
+    if (!skillName) fail("skill name is required");
+    const decision = archiveAgentCreatedSkill(skillName, undefined, force !== true);
+    const payload = {
+      outcome: decision.outcome,
+      skill: "skill" in decision ? decision.skill : skillName,
+      ...("reason" in decision ? { reason: decision.reason } : {}),
+      ...("detail" in decision ? { detail: decision.detail } : {}),
+      ...("path" in decision ? { path: decision.path } : {}),
+      ...("archivedTo" in decision ? { archivedTo: decision.archivedTo } : {}),
+      dryRun: force !== true,
+    };
+    if (asJson) {
+      printJson(payload);
+    } else if (payload.outcome === "archived") {
+      console.log(
+        `skills archive${payload.dryRun ? " (dry-run)" : ""}: ${payload.skill}${payload.archivedTo ? ` -> ${payload.archivedTo}` : ""}`,
+      );
+    } else {
+      console.log(`skills archive: rejected (${payload.reason})`);
+      if (payload.detail) console.log(`  detail: ${payload.detail}`);
     }
     return payload;
   }
@@ -929,6 +1115,43 @@ export class SkillsCommands {
     }
     return payload;
   }
+}
+
+export function resolveDeterministicProvenance(
+  overrides: {
+    agentId?: string;
+    sessionKey?: string;
+    cadenceTurn?: string;
+    taskId?: string;
+    date?: string;
+  },
+  env: NodeJS.ProcessEnv = process.env,
+): { agentId: string; sessionKey?: string; cadenceTurn?: string; taskId?: string; date: string } {
+  const date = overrides.date?.trim() || new Date().toISOString().slice(0, 10);
+  const taskId = overrides.taskId?.trim() || env.RAVI_TASK_ID?.trim();
+  let sessionKey = overrides.sessionKey?.trim();
+  let cadenceTurn = overrides.cadenceTurn?.trim();
+  let agentId = overrides.agentId?.trim();
+
+  if (taskId) {
+    try {
+      const details = getTaskDetails(taskId);
+      const profileInput = details?.task?.profileInput as Record<string, string> | undefined;
+      sessionKey = sessionKey || profileInput?.originator_session_key || profileInput?.originator_session;
+      cadenceTurn = cadenceTurn || profileInput?.cadence_turn;
+      agentId = agentId || profileInput?.agent_id;
+    } catch {
+      // Provenance is best-effort for manual/test invocations.
+    }
+  }
+
+  return {
+    agentId: agentId || env.RAVI_AGENT_ID?.trim() || "unknown",
+    ...(sessionKey ? { sessionKey } : {}),
+    ...(cadenceTurn ? { cadenceTurn } : {}),
+    ...(taskId ? { taskId } : {}),
+    date,
+  };
 }
 
 function normalizeRequestedSkillName(name?: string, skillName?: string): string | undefined {

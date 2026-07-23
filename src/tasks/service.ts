@@ -1,9 +1,11 @@
 import { getContext } from "../cli/context.js";
+import { advanceWatermarkForCompletedCuratorTask } from "../memory/index.js";
 import { nats } from "../nats.js";
 import { getAgent } from "../router/config.js";
 import { expandHome } from "../router/resolver.js";
 import { findSessionByChatId, getOrCreateSession, getSessionByName, resolveSession } from "../router/sessions.js";
 import { getProjectSurfaceByWorkflowRunId, type ProjectTaskSurface } from "../projects/index.js";
+import { advanceSkillWatermarkForCompletedCuratorTask } from "../skills/skill-watermark-commit.js";
 import { logger } from "../utils/logger.js";
 import { loadConfig } from "../utils/config.js";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
@@ -3062,6 +3064,9 @@ export async function completeTask(
   const documentedTask = result.wasNoop
     ? result.task
     : syncRequiredTaskDocumentAfterRuntimeEvent(result.task, profile, result.event);
+  if (!result.wasNoop) {
+    advanceLearningLoopWatermarksOnCuratorCompletion(taskId, result.task);
+  }
   syncWorkflowNodeRunForTask(taskId);
   const dependencyRelatedEvents = result.wasNoop
     ? []
@@ -3073,4 +3078,23 @@ export async function completeTask(
       ? []
       : [...buildChildStateRelatedEvents(result.task, result.event), ...dependencyRelatedEvents],
   };
+}
+
+function advanceLearningLoopWatermarksOnCuratorCompletion(taskId: string, task: TaskRecord): void {
+  try {
+    advanceWatermarkForCompletedCuratorTask(task);
+  } catch (err) {
+    log.warn("Failed to advance memory curation cursor on task completion (best-effort)", {
+      taskId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  try {
+    advanceSkillWatermarkForCompletedCuratorTask(task);
+  } catch (err) {
+    log.warn("Failed to advance skill curation cursor on task completion (best-effort)", {
+      taskId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }

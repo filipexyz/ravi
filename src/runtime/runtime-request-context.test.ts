@@ -358,6 +358,75 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "mutate", "tasks", "report")).toBe(false);
   });
 
+  it("adds only turn-scoped memory guard authority for an active memory curator task", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    const curatorTask = dbCreateTask({
+      title: "Curate Memory",
+      instructions: "Internal memory curator",
+      profileId: "curador-memoria",
+      createdBy: "runtime:memory-nudge",
+      createdByAgentId: agent.id,
+      createdBySessionName: "origin",
+      profileInput: {
+        agent_id: agent.id,
+        originator_session_key: sessionKey,
+        originator_session: "origin",
+      },
+    }).task;
+    dbDispatchTask(curatorTask.id, {
+      agentId: agent.id,
+      sessionName,
+      assignedBy: "runtime:memory-nudge",
+    });
+
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: agent.cwd,
+      agent,
+      prompt: {
+        prompt: "Curate memory",
+        taskBarrierTaskId: curatorTask.id,
+      },
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+    });
+
+    expect(canWithCapabilities(runtimeContext.capabilities, "mutate", "memory", "guard")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "memory")).toBe(false);
+
+    const normalTask = dbCreateTask({
+      title: "Normal",
+      instructions: "No memory authority",
+      createdBy: "test",
+      createdByAgentId: agent.id,
+      createdBySessionName: "origin",
+    }).task;
+    dbDispatchTask(normalTask.id, {
+      agentId: agent.id,
+      sessionName: "normal-task-session",
+      assignedBy: "test",
+    });
+    getOrCreateSession("agent:provider-agent:normal", agent.id, agent.cwd, { name: "normal-task-session" });
+    const normal = buildRuntimeRequestContext({
+      dbSessionKey: "agent:provider-agent:normal",
+      sessionName: "normal-task-session",
+      sessionCwd: agent.cwd,
+      agent,
+      prompt: {
+        prompt: "Do normal work",
+        taskBarrierTaskId: normalTask.id,
+      },
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+    }).runtimeContext;
+    expect(canWithCapabilities(normal.capabilities, "mutate", "memory", "guard")).toBe(false);
+    expect(canWithCapabilities(normal.capabilities, "execute", "group", "memory")).toBe(false);
+  });
+
   it("allows turn permission grants when the agent identity already has the capability", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     dbUpdateAgent(agent.id, {

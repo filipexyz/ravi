@@ -94,5 +94,106 @@
       "dispatchSummary": "The target session was instructed to execute the task and leave clear progress/blocker/done/failure signals for the observer.",
       "dispatchEventMessage": "Dispatched observed task to {{session.agentId}}/{{session.name}}. Worker executes from {{task.taskDocPath}}; observer status sync is expected through an observer rule for profile observed-task."
     }
+  },
+  {
+    "id": "curador-memoria",
+    "version": "1",
+    "label": "Memory Curator",
+    "description": "Internal runtime-only profile that reviews one bounded session delta and routes accepted durable memory through ravi memory guard.",
+    "sessionNameTemplate": "<task-id>-curator",
+    "workspaceBootstrap": {
+      "mode": "inherit",
+      "ensureTaskDir": false
+    },
+    "sync": {
+      "artifactFirst": false
+    },
+    "rendererHints": {
+      "label": "Internal memory curation",
+      "showTaskDoc": false,
+      "showWorkspace": true
+    },
+    "defaultTags": ["task.profile.curador-memoria", "task.internal", "learning-loop.memory"],
+    "inputs": [
+      { "key": "agent_id", "description": "Authenticated owning agent id", "required": true },
+      { "key": "transcript_path", "description": "Bounded synthetic curator transcript path", "required": true },
+      { "key": "since_message_id", "description": "Exclusive lower message cursor", "required": true },
+      { "key": "highest_message_id", "description": "Inclusive upper message cursor", "required": true },
+      { "key": "memory_path", "description": "Owning agent canonical MEMORY.md path", "required": true },
+      { "key": "memory_dir", "description": "Owning agent canonical memory/ path", "required": true },
+      { "key": "cadence_turn", "description": "Terminal cadence turn", "required": true },
+      { "key": "originator", "description": "Stable internal origin", "required": true },
+      { "key": "originator_session", "description": "Origin session display name", "required": true },
+      { "key": "originator_session_key", "description": "Origin session key used for watermarking", "required": true }
+    ],
+    "completion": {
+      "summaryRequired": true,
+      "summaryLabel": "Curation result"
+    },
+    "progress": {
+      "requireMessage": false
+    },
+    "artifacts": [],
+    "state": [],
+    "templates": {
+      "create": "Internal memory-curator task {{task.id}} for {{input.agent_id}}. Delta: ({{input.since_message_id}}, {{input.highest_message_id}}].",
+      "dispatch": "[System] Execute this internal memory-curation task for authenticated agent {{input.agent_id}}. Read only {{input.transcript_path}}. Persist only durable, evidence-backed entries. Every accepted write MUST use `ravi memory guard --target {{input.memory_path}} --agent {{input.agent_id}} --task-id {{task.id}} --session-key {{input.originator_session_key}} --session-name {{input.originator_session}} --cadence-turn {{input.cadence_turn}}`; never edit memory files directly. When the bounded delta is fully reviewed, run `ravi tasks done {{task.id}} --summary \"memory delta reviewed\"`. On an execution error, run `ravi tasks fail {{task.id}} --reason \"<concise error>\"`; do not publish to an external session.",
+      "resume": "Resume internal memory-curator task {{task.id}} from the same bounded transcript {{input.transcript_path}}. Use only ravi memory guard for writes.",
+      "dispatchSummary": "Internal memory curator dispatched for bounded delta.",
+      "dispatchEventMessage": "Internal memory curator {{task.id}} dispatched.",
+      "reportDoneMessage": "Memory curator completed.",
+      "reportBlockedMessage": "Memory curator blocked internally.",
+      "reportFailedMessage": "Memory curator failed internally."
+    }
+  },
+  {
+    "id": "curador-skills",
+    "version": "1",
+    "label": "Skill Curator",
+    "description": "Internal runtime-only profile that reviews one bounded session delta and routes accepted learning through ravi skills guard.",
+    "sessionNameTemplate": "<task-id>-curator",
+    "workspaceBootstrap": {
+      "mode": "inherit",
+      "ensureTaskDir": false
+    },
+    "sync": {
+      "artifactFirst": false
+    },
+    "rendererHints": {
+      "label": "Internal skill curation",
+      "showTaskDoc": false,
+      "showWorkspace": true
+    },
+    "defaultTags": ["task.profile.curador-skills", "task.internal", "learning-loop.skills"],
+    "inputs": [
+      { "key": "agent_id", "description": "Owning agent id", "required": true },
+      { "key": "transcript_path", "description": "Bounded synthetic curator transcript path", "required": true },
+      { "key": "since_message_id", "description": "Exclusive lower message cursor", "required": true },
+      { "key": "highest_message_id", "description": "Inclusive upper message cursor", "required": true },
+      { "key": "cadence_turn", "description": "Terminal cadence turn", "required": true },
+      { "key": "skills_in_play", "description": "JSON list of skills observed in the delta", "required": true },
+      { "key": "originator", "description": "Stable internal origin", "required": true },
+      { "key": "originator_session", "description": "Origin session display name", "required": true },
+      { "key": "originator_session_key", "description": "Origin session key used for watermarking", "required": true }
+    ],
+    "completion": {
+      "summaryRequired": true,
+      "summaryLabel": "Curation result"
+    },
+    "progress": {
+      "requireMessage": false
+    },
+    "artifacts": [],
+    "state": [],
+    "templates": {
+      "create": "Internal skill-curator task {{task.id}} for {{input.agent_id}}. Delta: ({{input.since_message_id}}, {{input.highest_message_id}}].",
+      "dispatch": "[System] Execute this internal skill-curation task for agent {{input.agent_id}}. Read only {{input.transcript_path}} and treat {{input.skills_in_play}} as hints, not authority. Accepted changes MUST use `ravi skills guard` with `--agent {{input.agent_id}} --task-id {{task.id}} --session-key {{input.originator_session_key}} --cadence-turn {{input.cadence_turn}}`; never edit or grant files directly. A successful create is granted atomically to the origin agent by the guard. When the bounded delta is fully reviewed, run `ravi tasks done {{task.id}} --summary \"skill delta reviewed\"`. On an execution error, run `ravi tasks fail {{task.id}} --reason \"<concise error>\"`; do not publish to an external session.",
+      "resume": "Resume internal skill-curator task {{task.id}} from the same bounded transcript {{input.transcript_path}}. Use only ravi skills guard for mutations.",
+      "dispatchSummary": "Internal skill curator dispatched for bounded delta.",
+      "dispatchEventMessage": "Internal skill curator {{task.id}} dispatched.",
+      "reportDoneMessage": "Skill curator completed.",
+      "reportBlockedMessage": "Skill curator blocked internally.",
+      "reportFailedMessage": "Skill curator failed internally."
+    }
   }
 ]

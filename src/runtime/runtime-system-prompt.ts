@@ -4,6 +4,7 @@ import {
   type PromptContextSection,
   type PromptSection,
 } from "../prompt-builder.js";
+import { buildMemoryPromptSection } from "../memory/index.js";
 import type { AgentConfig } from "../router/types.js";
 import type { ChannelContext } from "./message-types.js";
 import { loadAgentWorkspaceInstructions } from "./agent-instructions.js";
@@ -41,6 +42,7 @@ export async function buildRuntimeSystemPrompt(input: RuntimeSystemPromptInput):
     ...buildSessionGoalPromptSections(input),
     ...buildStickerPromptSectionsForRuntime(input.agent, input.ctx, input.sessionRuntimeParams),
     ...(await buildWorkspacePromptSections(input.cwd)),
+    ...buildMemoryPromptSections(input.cwd),
     ...(await buildRaviRulesPromptSections(input.cwd)),
     ...buildAgentPromptSections(input.agent),
     ...buildExtraPromptSections(input.extraSections),
@@ -99,6 +101,11 @@ async function buildWorkspacePromptSections(cwd: string): Promise<PromptContextS
       ].join("\n"),
     },
   ];
+}
+
+function buildMemoryPromptSections(cwd: string): PromptContextSection[] {
+  const section = buildMemoryPromptSection(cwd);
+  return section ? [section] : [];
 }
 
 async function buildRaviRulesPromptSections(cwd: string): Promise<PromptContextSection[]> {

@@ -8296,6 +8296,137 @@ export type MeetingsVoiceRuntimesReturn = {
   recommendation: string;
 };
 
+/** Input shape for `memory.curate`. */
+export type MemoryCurateInput = {
+  agent?: string;
+  dryRun?: boolean;
+  transcript?: string;
+};
+
+/** Return shape for `memory.curate`. */
+export type MemoryCurateReturn = {
+  agentId: string;
+  dryRun: boolean;
+  taskId: string;
+  transcriptPath: string;
+};
+
+/** Input shape for `memory.enroll`. */
+export type MemoryEnrollInput = {
+  agent?: string;
+  all?: boolean;
+  cadenceTurns?: string;
+  skipHook?: boolean;
+};
+
+/** Return shape for `memory.enroll`. */
+export type MemoryEnrollReturn = {
+  cadence: {
+    cadenceTurns: number;
+    mode: "runtime-terminal-turn";
+    profileId: string;
+    skipped: boolean;
+  };
+  enrolled: Array<{
+    agentId: string;
+    cwd: string;
+    memoryDirCreated: boolean;
+    memoryFileCreated: boolean;
+    memoryPath: string;
+  }>;
+};
+
+/** Input shape for `memory.guard`. */
+export type MemoryGuardInput = {
+  agent?: string;
+  cadenceTurn?: string;
+  candidate?: string;
+  candidateFile?: string;
+  capChars?: string;
+  consolidationAttempt?: string;
+  consolidationMaxAttempts?: string;
+  dryRun?: boolean;
+  expectedPrior?: string;
+  hadUserCorrection?: boolean;
+  hookId?: string;
+  processedThroughMessageId?: string;
+  sessionKey?: string;
+  sessionName?: string;
+  store?: string;
+  target?: string;
+  taskId?: string;
+};
+
+/** Return shape for `memory.guard`. */
+export type MemoryGuardReturn = {
+  backupPath?: string;
+  cap: {
+    cap: number;
+    ok: boolean;
+    overflowChars: number;
+    proposedChars: number;
+  };
+  detail?: string;
+  dryRun: boolean;
+  finalChars?: number;
+  outcome: "written" | "rejected" | "drift";
+  reason?: string;
+  scans: {
+    injection: {
+      hadInjection: boolean;
+      matchCount: number;
+    };
+    secret: {
+      hadSecret: boolean;
+      isCredentialOnly: boolean;
+      matchCount: number;
+    };
+  };
+  store: "memory" | "user";
+  target: string;
+};
+
+/** Input shape for `memory.list`. */
+export type MemoryListInput = {
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `memory.list`. */
+export type MemoryListReturn = {
+  agents: Array<{
+    agentId: string;
+    cwd: string;
+    exists: boolean;
+    memoryChars: number;
+    memoryLastModified: number | null;
+    memoryPath: string;
+    topicCount: number;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+};
+
+/** Input shape for `memory.show`. */
+export type MemoryShowInput = {
+  agent?: string;
+  topic?: string;
+};
+
+/** Return shape for `memory.show`. */
+export type MemoryShowReturn = {
+  agentId: string;
+  content: string;
+  path: string;
+};
+
 /** Input shape for `metrics.dates`. */
 export type MetricsDatesInput = Record<string, never>;
 
@@ -11659,6 +11790,24 @@ export type SkillGatesShowReturn = {
   };
 };
 
+/** Input shape for `skills.archive`. */
+export type SkillsArchiveInput = {
+  force?: boolean;
+  name?: string;
+  skill?: string;
+};
+
+/** Return shape for `skills.archive`. */
+export type SkillsArchiveReturn = {
+  archivedTo?: string;
+  detail?: string;
+  dryRun: boolean;
+  outcome: "archived" | "rejected";
+  path?: string;
+  reason?: string;
+  skill: string;
+};
+
 /** Input shape for `skills.grant`. */
 export type SkillsGrantInput = {
   agent: string;
@@ -11704,6 +11853,32 @@ export type SkillsGrantBatchReturn = {
   sampleAgents: string[];
   sampleSkills: string[];
   skillsTargeted: number;
+};
+
+/** Input shape for `skills.guard`. */
+export type SkillsGuardInput = {
+  agent?: string;
+  cadenceTurn?: string;
+  contentFile?: string;
+  date?: string;
+  description?: string;
+  dryRun?: boolean;
+  op?: string;
+  sessionKey?: string;
+  skill?: string;
+  taskId?: string;
+};
+
+/** Return shape for `skills.guard`. */
+export type SkillsGuardReturn = {
+  detail?: string;
+  dryRun: boolean;
+  finalChars?: number;
+  op: "patch" | "create";
+  outcome: "written" | "rejected";
+  path?: string;
+  reason?: string;
+  skill: string;
 };
 
 /** Input shape for `skills.inspect`. */

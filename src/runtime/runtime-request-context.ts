@@ -170,6 +170,7 @@ function buildRuntimeContextCapabilities(
   return dedupeContextCapabilities([
     ...snapshotAgentCapabilities(agentId),
     ...buildTaskSelfCapabilities(sessionName, prompt),
+    ...buildLearningLoopCuratorCapabilities(agentId, sessionName, prompt),
   ]);
 }
 
@@ -191,6 +192,43 @@ function buildTaskSelfCapabilities(sessionName?: string, prompt?: RuntimeLaunchP
       objectType: "task",
       objectId: binding.task.id,
       source,
+    },
+  ];
+}
+
+/**
+ * Exact, turn-scoped authority for the automatic memory curator. This is
+ * derived from the active task binding instead of being persisted on the agent,
+ * so terminal/blocked lifecycle transitions remove it on the next context
+ * rotation without granting the broad memory command group.
+ */
+function buildLearningLoopCuratorCapabilities(
+  agentId: string,
+  sessionName?: string,
+  prompt?: RuntimeLaunchPrompt,
+): ContextCapability[] {
+  const taskId = cleanStringValue(prompt?.taskBarrierTaskId);
+  if (!sessionName || !taskId) return [];
+  const binding = dbResolveActiveTaskBindingForSession(sessionName, taskId);
+  const task = binding?.task;
+  if (
+    !binding ||
+    !task ||
+    !["dispatched", "in_progress"].includes(task.status) ||
+    task.profileId !== "curador-memoria" ||
+    task.createdBy !== "runtime:memory-nudge" ||
+    task.assigneeAgentId !== agentId ||
+    binding.assignment.agentId !== agentId ||
+    task.profileInput?.agent_id !== agentId
+  ) {
+    return [];
+  }
+  return [
+    {
+      permission: "mutate",
+      objectType: "memory",
+      objectId: "guard",
+      source: `task-runtime:curator-memory:${task.id}`,
     },
   ];
 }

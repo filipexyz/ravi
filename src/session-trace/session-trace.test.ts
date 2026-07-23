@@ -5,10 +5,12 @@ import { recordDeliveryTrace } from "./channel-trace.js";
 import { querySessionTrace } from "./query.js";
 import { recordAdapterRequestTrace } from "./runtime-trace.js";
 import {
+  countSessionTerminalTurns,
   getSessionTraceBlob,
   listRecentSessionEventsByType,
   listSessionEvents,
   recordSessionEvent,
+  upsertSessionTurn,
 } from "./session-trace-db.js";
 
 let stateDir: string | null = null;
@@ -90,6 +92,30 @@ describe("session trace query", () => {
         (event) => event.preview,
       ),
     ).toEqual(["newer complete", "old complete"]);
+  });
+
+  it("counts only terminal turns for the requested session", () => {
+    const sessionKey = "agent:main:terminal-turn-count";
+    for (const [turnId, status] of [
+      ["turn-complete", "complete"],
+      ["turn-interrupted", "interrupted"],
+      ["turn-failed", "failed"],
+      ["turn-running", "running"],
+    ] as const) {
+      upsertSessionTurn({
+        turnId,
+        sessionKey,
+        status,
+      });
+    }
+    upsertSessionTurn({
+      turnId: "turn-other-session",
+      sessionKey: "agent:main:other-session",
+      status: "complete",
+    });
+
+    expect(countSessionTerminalTurns(sessionKey)).toBe(3);
+    expect(countSessionTerminalTurns("agent:main:missing-session")).toBe(0);
   });
 
   it("records runtime option sources in the adapter request payload", () => {

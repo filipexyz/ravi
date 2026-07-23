@@ -117,6 +117,18 @@ export interface ContactSessionEventPage extends ListPage<SessionEventRecord> {
   contactId: string;
 }
 
+export function countSessionTerminalTurns(sessionKey: string): number {
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS count
+       FROM session_turns
+       WHERE session_key = ?
+         AND status IN ('complete', 'interrupted', 'failed')`,
+    )
+    .get(sessionKey) as { count?: number } | undefined;
+  return typeof row?.count === "number" && Number.isFinite(row.count) ? Math.max(0, Math.floor(row.count)) : 0;
+}
+
 const CONTACT_ACTIVITY_GROUP_SQL = "'channel', 'routing', 'prompt', 'dispatch', 'response', 'delivery', 'session'";
 
 type StoredTurn = {

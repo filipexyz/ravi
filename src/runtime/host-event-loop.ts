@@ -48,6 +48,9 @@ import { resolveSessionOutputTarget } from "./session-output-target.js";
 import { resolveRuntimeIdleSessionTtlMs } from "./session-pool.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
 import { formatUserFacingTurnFailure, publicRuntimeFailureDetail } from "./public-failure.js";
+import { preserveMemoryCurationState } from "../memory/curation-state.js";
+import { preserveSkillCurationState } from "../skills/skill-curation-state.js";
+import { noteTerminalTurnForLearningLoop, preserveLearningLoopCadenceState } from "./learning-loop-cadence.js";
 import {
   createObservationEvent,
   deliverObservationEvents,
@@ -559,6 +562,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     restartStashedSession,
   } = options;
   prewarmPricingCatalog();
+  const noteTerminalTurnForCadence = () => {
+    noteTerminalTurnForLearningLoop({
+      sessionKey: session.sessionKey,
+      sessionName,
+      agentId: agent.id,
+      agentCwd: agent.cwd,
+      skillsInPlay: runtimeSession.skillVisibility?.loadedSkills,
+    });
+  };
   const recordTraceEvent = (
     input: Omit<Parameters<typeof recordRuntimeTraceEvent>[0], "sessionKey" | "sessionName" | "agentId" | "runId">,
   ) => {
@@ -1054,8 +1066,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const mergeRuntimeSessionParams = (
     params: Record<string, unknown> | undefined,
   ): Record<string, unknown> | undefined => {
+    const existing = session.runtimeSessionParams;
     if (!isRecord(session.runtimeSessionParams?.skillVisibility) && !isRecord(params?.skillVisibility)) {
-      return params;
+      return preserveLearningLoopCadenceState(
+        existing,
+        preserveSkillCurationState(existing, preserveMemoryCurationState(existing, params)),
+      );
     }
     const storedSkillVisibility = isRecord(session.runtimeSessionParams?.skillVisibility)
       ? readSkillVisibilityFromParams(session.runtimeSessionParams)
@@ -1064,10 +1080,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       ? readSkillVisibilityFromParams(params)
       : undefined;
     const skillVisibility = mergeSkillVisibilitySnapshots(storedSkillVisibility, incomingSkillVisibility);
-    return {
-      ...(params ?? {}),
-      skillVisibility,
-    };
+    return preserveLearningLoopCadenceState(
+      existing,
+      preserveSkillCurationState(
+        existing,
+        preserveMemoryCurationState(existing, {
+          ...(params ?? {}),
+          skillVisibility,
+        }),
+      ),
+    );
   };
 
   const persistRuntimeSkillVisibility = (skillVisibility: RuntimeSkillVisibilitySnapshot) => {
@@ -1830,6 +1852,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         }
         clearRuntimeCredentialAttempt(streaming, completedCredentialAttemptId);
         updateTokens(session.sessionKey, inputTokens, outputTokens, inputTokens + cacheRead + cacheCreation);
+        noteTerminalTurnForCadence();
 
         const executionModel = resolveCostTrackingModel(runtimeSession.provider, event.execution?.model, model);
         const cost = executionModel
@@ -1979,6 +2002,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
 
       if (event.type === "turn.interrupted") {
+        noteTerminalTurnForCadence();
         log.info("Turn interrupted", { runId, sessionName });
         recordTerminalTraceOnce({
           status: "interrupted",
@@ -2008,6 +2032,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
 
       if (event.type === "turn.failed") {
+        noteTerminalTurnForCadence();
         const interruptedRecoverable = streaming.interrupted && isRecoverableInterruptionFailure(event);
         const internalAbortReason = streaming.internalAbortReason;
         const internalRecoverable = Boolean(internalAbortReason) && isRecoverableInterruptionFailure(event);
@@ -2161,11 +2186,23 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             history,
           });
           const resetApplied = resetSession(session.sessionKey);
+          const resetParams = preserveLearningLoopCadenceState(
+            session.runtimeSessionParams,
+            preserveSkillCurationState(
+              session.runtimeSessionParams,
+              preserveMemoryCurationState(session.runtimeSessionParams, undefined),
+            ),
+          );
+          if (resetParams) {
+            updateRuntimeProviderState(session.sessionKey, runtimeSession.provider, {
+              runtimeSessionParams: resetParams,
+            });
+          }
           session.sdkSessionId = undefined;
           session.providerSessionId = undefined;
           session.runtimeProvider = undefined;
           session.runtimeSessionDisplayId = undefined;
-          session.runtimeSessionParams = undefined;
+          session.runtimeSessionParams = resetParams;
           revokeAgentRuntimeContextsForSession(session.sessionKey, {
             reason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
           });
