@@ -805,7 +805,7 @@ export class Gateway {
   }
 
   private isPresenceStartEvent(type: string | undefined, nativeEvent?: string): boolean {
-    if (type === "turn.started" || type === "thread.started") return true;
+    if (type === "prompt.published" || type === "turn.started" || type === "thread.started") return true;
     if (nativeEvent === "turn.started" || nativeEvent === "thread.started") return true;
     return false;
   }

@@ -941,7 +941,37 @@ describe("Gateway session trace instrumentation", () => {
     ]);
   });
 
-  it("starts the next native Slack turn on the new inbound message even when an outbound anchor is remembered", async () => {
+  it("starts native Slack presence as soon as a sourced prompt is published", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        renewActiveTarget: mock(async () => false),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, {
+      type: "prompt.published",
+      _source: target,
+    });
+
+    expect(emitted).toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        sessionName,
+        active: true,
+        reason: "runtime-prompt.published",
+        target: expect.objectContaining({
+          channel: "slack",
+          chatId: "C123",
+          sourceMessageId: "1783268187.075159",
+        }),
+      }),
+    ]);
+  });
+
+  it("starts the next native Slack prompt on the new inbound message even when an outbound anchor is remembered", async () => {
     const { sessionName } = seedSession();
     const target = makeSlackTarget();
     delete target.threadId;
@@ -963,19 +993,21 @@ describe("Gateway session trace instrumentation", () => {
     emitted.length = 0;
 
     await handleRuntimePresence(gateway, sessionName, {
-      type: "turn.started",
+      type: "prompt.published",
       _source: { ...target, sourceMessageId: "1783269584.402329" },
     });
 
     const startPresence = emitted.find(
       ([topic, payload]) =>
-        topic === "ravi.channel.presence.slack" && payload.active === true && payload.reason === "runtime-turn.started",
+        topic === "ravi.channel.presence.slack" &&
+        payload.active === true &&
+        payload.reason === "runtime-prompt.published",
     );
     expect(startPresence?.[1]).toEqual(
       expect.objectContaining({
         sessionName,
         active: true,
-        reason: "runtime-turn.started",
+        reason: "runtime-prompt.published",
         target: expect.objectContaining({
           channel: "slack",
           chatId: "C123",
@@ -1259,7 +1291,7 @@ describe("Gateway session trace instrumentation", () => {
       },
     );
 
-    await handleRuntimePresence(gateway, sessionName, { type: "turn.started", _source: target });
+    await handleRuntimePresence(gateway, sessionName, { type: "prompt.published", _source: target });
     await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: target });
 
     expect(renewActiveTarget).not.toHaveBeenCalled();

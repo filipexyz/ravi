@@ -15,8 +15,9 @@
  */
 
 import { AckPolicy, DeliverPolicy, RetentionPolicy, StringCodec, type JetStreamManager } from "nats";
-import { getNats, ensureConnected } from "../nats.js";
+import { getNats, ensureConnected, nats } from "../nats.js";
 import { inferDeliveryBarrier, requireDeliveryBarrier, type DeliveryBarrierSource } from "../delivery-barriers.js";
+import type { MessageTarget } from "../runtime/message-types.js";
 import { recordPromptPublishedTrace } from "../session-trace/channel-trace.js";
 import { logger } from "../utils/logger.js";
 
@@ -243,11 +244,40 @@ export async function publishSessionPrompt(sessionName: string, payload: Record<
     await ensureSessionPromptInfrastructure(undefined, { force: true });
     await js.publish(`ravi.session.${sessionName}.prompt`, sc.encode(JSON.stringify(enrichedPayload)));
   }
+  emitPromptPublishedRuntimeEvent(sessionName, enrichedPayload);
   try {
     recordPromptPublishedTrace({ sessionName, payload: enrichedPayload });
   } catch (error) {
     log.warn("Failed to record prompt published trace", { sessionName, error });
   }
+}
+
+function emitPromptPublishedRuntimeEvent(sessionName: string, payload: Record<string, unknown>): void {
+  if (!isMessageTarget(payload.source)) return;
+
+  nats
+    .emit(`ravi.session.${sessionName}.runtime`, {
+      type: "prompt.published",
+      sessionName,
+      _source: payload.source,
+      deliveryBarrier: payload.deliveryBarrier,
+      deliveryBarrierSource: payload.deliveryBarrierSource,
+      timestamp: new Date().toISOString(),
+    })
+    .catch((error) => {
+      log.warn("Failed to emit prompt published runtime event", {
+        sessionName,
+        error,
+      });
+    });
+}
+
+function isMessageTarget(value: unknown): value is MessageTarget {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const target = value as Record<string, unknown>;
+  return (
+    typeof target.channel === "string" && typeof target.accountId === "string" && typeof target.chatId === "string"
+  );
 }
 
 function isDeliveryBarrierSource(value: string): value is DeliveryBarrierSource {

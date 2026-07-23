@@ -1,11 +1,35 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 let currentJsm: PromptJsm;
+const promptPublishMock = mock(async (_subject: string, _payload: Uint8Array) => ({}));
+const runtimeEmitMock = mock(async (_topic: string, _payload: Record<string, unknown>) => {});
+const recordPromptPublishedTraceMock = mock(() => null);
+const actualChannelTraceModule = await import("../session-trace/channel-trace.js");
+
+mock.module("../nats.js", () => ({
+  ensureConnected: mock(async () => ({
+    jetstream: () => ({
+      publish: promptPublishMock,
+    }),
+  })),
+  getNats: mock(() => ({
+    jetstreamManager: async () => currentJsm,
+  })),
+  nats: {
+    emit: runtimeEmitMock,
+  },
+}));
+
+mock.module("../session-trace/channel-trace.js", () => ({
+  ...actualChannelTraceModule,
+  recordPromptPublishedTrace: recordPromptPublishedTraceMock,
+}));
 
 const {
   ensureSessionConsumer,
   ensureSessionPromptInfrastructure,
   ensureSessionPromptsStream,
+  publishSessionPrompt,
   resetSessionPromptInfrastructureCacheForTests,
 } = await import("./session-stream.js");
 
@@ -16,6 +40,9 @@ afterAll(() => {
 beforeEach(() => {
   resetSessionPromptInfrastructureCacheForTests();
   currentJsm = makePromptJsm();
+  promptPublishMock.mockClear();
+  runtimeEmitMock.mockClear();
+  recordPromptPublishedTraceMock.mockClear();
 });
 
 describe("session prompt JetStream infrastructure", () => {
@@ -139,6 +166,43 @@ describe("session prompt JetStream infrastructure", () => {
 
     expect(consumerAdd).toHaveBeenCalledTimes(1);
     expect(consumerInfo).toHaveBeenCalledTimes(2);
+  });
+
+  it("announces a sourced prompt to the runtime after its durable publish", async () => {
+    const callOrder: string[] = [];
+    promptPublishMock.mockImplementationOnce(async () => {
+      callOrder.push("prompt");
+      return {};
+    });
+    runtimeEmitMock.mockImplementationOnce(async () => {
+      callOrder.push("runtime");
+    });
+    const source = {
+      channel: "slack",
+      accountId: "hana-slack",
+      instanceId: "slack-main",
+      chatId: "C123",
+      sourceMessageId: "1784824412.623669",
+    };
+
+    await publishSessionPrompt("ravi-slack-channel", {
+      prompt: "deixa eu testar",
+      source,
+      deliveryBarrier: "after_tool",
+      deliveryBarrierSource: "default",
+    });
+
+    expect(callOrder).toEqual(["prompt", "runtime"]);
+    expect(runtimeEmitMock).toHaveBeenCalledWith(
+      "ravi.session.ravi-slack-channel.runtime",
+      expect.objectContaining({
+        type: "prompt.published",
+        sessionName: "ravi-slack-channel",
+        _source: source,
+        deliveryBarrier: "after_tool",
+        deliveryBarrierSource: "default",
+      }),
+    );
   });
 });
 
