@@ -33,6 +33,13 @@ let legacyConsumerCleanupComplete = false;
 let legacyConsumerCleanupInFlight: Promise<void> | null = null;
 let sessionPromptInfrastructureInFlight: Promise<void> | null = null;
 let sessionPromptInfrastructureReady = false;
+let sessionPromptPublishHooksForTests: SessionPromptPublishHooks | undefined;
+
+interface SessionPromptPublishHooks {
+  publishPrompt(subject: string, payload: Uint8Array): Promise<unknown>;
+  emitRuntimeEvent(topic: string, payload: Record<string, unknown>): Promise<unknown>;
+  recordPublishedTrace(input: { sessionName: string; payload: Record<string, unknown> }): unknown;
+}
 
 export interface EnsureSessionPromptInfrastructureOptions {
   force?: boolean;
@@ -200,6 +207,10 @@ export function resetSessionPromptInfrastructureCacheForTests(): void {
   sessionPromptInfrastructureReady = false;
 }
 
+export function setSessionPromptPublishHooksForTests(hooks?: SessionPromptPublishHooks): void {
+  sessionPromptPublishHooksForTests = hooks;
+}
+
 async function ensureSessionPromptInfrastructureOnce(existingJsm?: JetStreamManager): Promise<void> {
   const jsm = existingJsm ?? (await getNats().jetstreamManager());
   await ensureSessionPromptsStream(jsm);
@@ -211,9 +222,14 @@ async function ensureSessionPromptInfrastructureOnce(existingJsm?: JetStreamMana
  * Replaces: nats.emit(`ravi.session.${sessionName}.prompt`, payload)
  */
 export async function publishSessionPrompt(sessionName: string, payload: Record<string, unknown>): Promise<void> {
-  const nc = await ensureConnected();
-  await ensureSessionPromptInfrastructure();
-  const js = nc.jetstream();
+  const testHooks = sessionPromptPublishHooksForTests;
+  let publishPrompt = testHooks?.publishPrompt;
+  if (!publishPrompt) {
+    const nc = await ensureConnected();
+    await ensureSessionPromptInfrastructure();
+    const js = nc.jetstream();
+    publishPrompt = (subject, encodedPayload) => js.publish(subject, encodedPayload);
+  }
   const explicitDeliveryBarrier = typeof payload.deliveryBarrier === "string" ? payload.deliveryBarrier : undefined;
   const hasExplicitBarrier = Boolean(explicitDeliveryBarrier?.trim());
   const deliveryBarrier = hasExplicitBarrier
@@ -230,10 +246,12 @@ export async function publishSessionPrompt(sessionName: string, payload: Record<
     deliveryBarrier,
     deliveryBarrierSource,
   };
+  const subject = `ravi.session.${sessionName}.prompt`;
+  const encodedPayload = sc.encode(JSON.stringify(enrichedPayload));
   try {
-    await js.publish(`ravi.session.${sessionName}.prompt`, sc.encode(JSON.stringify(enrichedPayload)));
+    await publishPrompt(subject, encodedPayload);
   } catch (error) {
-    if (!isPromptPublishInfrastructureError(error)) {
+    if (testHooks || !isPromptPublishInfrastructureError(error)) {
       throw error;
     }
     sessionPromptInfrastructureReady = false;
@@ -242,34 +260,37 @@ export async function publishSessionPrompt(sessionName: string, payload: Record<
       error,
     });
     await ensureSessionPromptInfrastructure(undefined, { force: true });
-    await js.publish(`ravi.session.${sessionName}.prompt`, sc.encode(JSON.stringify(enrichedPayload)));
+    await publishPrompt(subject, encodedPayload);
   }
-  emitPromptPublishedRuntimeEvent(sessionName, enrichedPayload);
+  emitPromptPublishedRuntimeEvent(sessionName, enrichedPayload, testHooks?.emitRuntimeEvent);
   try {
-    recordPromptPublishedTrace({ sessionName, payload: enrichedPayload });
+    (testHooks?.recordPublishedTrace ?? recordPromptPublishedTrace)({ sessionName, payload: enrichedPayload });
   } catch (error) {
     log.warn("Failed to record prompt published trace", { sessionName, error });
   }
 }
 
-function emitPromptPublishedRuntimeEvent(sessionName: string, payload: Record<string, unknown>): void {
+function emitPromptPublishedRuntimeEvent(
+  sessionName: string,
+  payload: Record<string, unknown>,
+  emitRuntimeEvent: SessionPromptPublishHooks["emitRuntimeEvent"] = (topic, eventPayload) =>
+    nats.emit(topic, eventPayload),
+): void {
   if (!isMessageTarget(payload.source)) return;
 
-  nats
-    .emit(`ravi.session.${sessionName}.runtime`, {
-      type: "prompt.published",
+  emitRuntimeEvent(`ravi.session.${sessionName}.runtime`, {
+    type: "prompt.published",
+    sessionName,
+    _source: payload.source,
+    deliveryBarrier: payload.deliveryBarrier,
+    deliveryBarrierSource: payload.deliveryBarrierSource,
+    timestamp: new Date().toISOString(),
+  }).catch((error) => {
+    log.warn("Failed to emit prompt published runtime event", {
       sessionName,
-      _source: payload.source,
-      deliveryBarrier: payload.deliveryBarrier,
-      deliveryBarrierSource: payload.deliveryBarrierSource,
-      timestamp: new Date().toISOString(),
-    })
-    .catch((error) => {
-      log.warn("Failed to emit prompt published runtime event", {
-        sessionName,
-        error,
-      });
+      error,
     });
+  });
 }
 
 function isMessageTarget(value: unknown): value is MessageTarget {

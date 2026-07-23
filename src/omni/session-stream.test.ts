@@ -1,44 +1,26 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
-
-let currentJsm: PromptJsm;
-const promptPublishMock = mock(async (_subject: string, _payload: Uint8Array) => ({}));
-const runtimeEmitMock = mock(async (_topic: string, _payload: Record<string, unknown>) => {});
-const recordPromptPublishedTraceMock = mock(() => null);
-const actualChannelTraceModule = await import("../session-trace/channel-trace.js");
-
-mock.module("../nats.js", () => ({
-  ensureConnected: mock(async () => ({
-    jetstream: () => ({
-      publish: promptPublishMock,
-    }),
-  })),
-  getNats: mock(() => ({
-    jetstreamManager: async () => currentJsm,
-  })),
-  nats: {
-    emit: runtimeEmitMock,
-  },
-}));
-
-mock.module("../session-trace/channel-trace.js", () => ({
-  ...actualChannelTraceModule,
-  recordPromptPublishedTrace: recordPromptPublishedTraceMock,
-}));
-
-const {
+import {
   ensureSessionConsumer,
   ensureSessionPromptInfrastructure,
   ensureSessionPromptsStream,
   publishSessionPrompt,
   resetSessionPromptInfrastructureCacheForTests,
-} = await import("./session-stream.js");
+  setSessionPromptPublishHooksForTests,
+} from "./session-stream.js";
+
+let currentJsm: PromptJsm;
+const promptPublishMock = mock(async (_subject: string, _payload: Uint8Array) => ({}));
+const runtimeEmitMock = mock(async (_topic: string, _payload: Record<string, unknown>) => {});
+const recordPromptPublishedTraceMock = mock(() => null);
 
 afterAll(() => {
+  setSessionPromptPublishHooksForTests();
   mock.restore();
 });
 
 beforeEach(() => {
   resetSessionPromptInfrastructureCacheForTests();
+  setSessionPromptPublishHooksForTests();
   currentJsm = makePromptJsm();
   promptPublishMock.mockClear();
   runtimeEmitMock.mockClear();
@@ -176,6 +158,11 @@ describe("session prompt JetStream infrastructure", () => {
     });
     runtimeEmitMock.mockImplementationOnce(async () => {
       callOrder.push("runtime");
+    });
+    setSessionPromptPublishHooksForTests({
+      publishPrompt: promptPublishMock,
+      emitRuntimeEvent: runtimeEmitMock,
+      recordPublishedTrace: recordPromptPublishedTraceMock,
     });
     const source = {
       channel: "slack",
