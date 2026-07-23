@@ -10,10 +10,10 @@ ravi specs get apps/import-cli --mode rules --json
 
 Expected:
 
-- returns inherited `apps` rules plus `apps/import-cli`;
-- includes self-description preference;
-- includes dry-run safety;
-- includes review-required behavior.
+- Command MUST return inherited `apps` rules plus `apps/import-cli`.
+- Output MUST include self-description preference.
+- Output MUST include dry-run safety.
+- Output MUST include review-required behavior.
 
 ### Dry-Run Safety
 
@@ -23,10 +23,10 @@ ravi apps import-cli "demo-cli" --id demo-app --dry-run --json
 
 Expected:
 
-- writes no files;
-- executes no domain commands;
-- reports source, confidence, warnings, review-required fields, and planned
-  files.
+- Dry-run MUST write no files.
+- Dry-run MUST execute no domain commands.
+- JSON output MUST report source, confidence, warnings, review-required fields,
+  and planned files.
 
 ### Self-Description Preference
 
@@ -38,9 +38,9 @@ demo-cli manifest --json
 
 Expected:
 
-- importer uses that metadata before help parsing;
-- generated command candidates carry higher confidence;
-- args/options and JSON support are taken from structured metadata.
+- Importer MUST use that metadata before help parsing.
+- Generated command candidates SHOULD carry higher confidence.
+- Args/options and JSON support MUST be taken from structured metadata.
 
 ### Help Fallback Guard
 
@@ -48,9 +48,10 @@ For a CLI that only exposes `--help`:
 
 Expected:
 
-- import still previews candidates when practical;
-- output marks fields as low confidence;
-- permissions, mutation risk, schemas, storage, events, and UI require review.
+- Import SHOULD still preview candidates when practical.
+- Output MUST mark help-derived fields as low confidence.
+- Permissions, mutation risk, schemas, storage, events, and UI MUST require
+  review.
 
 ### JSON Contract Guard
 
@@ -58,8 +59,8 @@ For every imported operation consumed by agents/UI:
 
 Expected:
 
-- command supports `--json`, or importer emits a warning;
-- commands without JSON are not presented as ready machine operations.
+- Command MUST support `--json`, or importer MUST emit a warning.
+- Commands without JSON MUST NOT be presented as ready machine operations.
 
 ### Mutation Review Guard
 
@@ -68,6 +69,6 @@ behavior:
 
 Expected:
 
-- generated operation is marked review-required;
-- permission suggestion is present when possible;
-- operation is not silently treated as safe read-only.
+- Generated operation MUST be marked review-required.
+- Permission suggestion SHOULD be present when possible.
+- Operation MUST NOT be silently treated as safe read-only.

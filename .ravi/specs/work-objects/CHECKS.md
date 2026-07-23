@@ -8,6 +8,16 @@ bun test src/cli/registry-snapshot.test.ts
 bun run typecheck
 ```
 
+- `bun test src/work-objects` MUST pass after changing domain adapters.
+- `bun test src/cli/registry-snapshot.test.ts` MUST pass after exposing command
+  surfaces.
+- Work Object IDs MUST remain provider-owned external references.
+- Domain adapters MUST own validation, authorization hooks, mapping, and
+  mutation semantics.
+- Transport adapters MUST NOT contain task, artifact, page, or session business
+  logic.
+- Unsupported fields or transitions MUST return structured field errors.
+
 Smoke flow:
 
 1. Create or pick a task.

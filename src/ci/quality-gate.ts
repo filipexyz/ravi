@@ -60,7 +60,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   ],
   "src/session-trace/": ["src/session-trace/session-trace.test.ts"],
   "src/triggers/": ["src/triggers/triggers.test.ts"],
-  "src/approval/": ["src/approval/approval.test.ts"],
+  "src/approval/": ["src/approval/service.test.ts"],
   "src/devin/": ["src/devin/client.test.ts", "src/devin/store.test.ts"],
 };
 

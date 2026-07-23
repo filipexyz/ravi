@@ -327,6 +327,15 @@ describe("runCoverageGate", () => {
     expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
   });
 
+  it("accepts approval service focused tests for approval service changes", () => {
+    const cwd = makeWorkspace();
+
+    const result = runCoverageGate(["src/approval/service.ts", "src/approval/service.test.ts"], cwd);
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/approval/"]);
+  });
+
   it("passes when the observation plane focused test is in the diff", () => {
     const cwd = makeWorkspace();
 
