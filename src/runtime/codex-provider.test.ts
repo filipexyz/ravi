@@ -402,6 +402,156 @@ rl.on("line", (line) => {
     ).toBe(true);
   });
 
+  it("keeps multi-agent child notifications from replacing the top-level thread", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-sub-agent-notifications-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+let threadStartCount = 0;
+let acceptedTurnCount = 0;
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && message.method === "thread/start") {
+    threadStartCount += 1;
+    const threadId = threadStartCount === 1 ? "thread_main" : "thread_recovered";
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({ id: message.id, result: { thread: { id: threadId }, model: "gpt-5", modelProvider: "openai" } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    if (message.params.threadId === "thread_child") {
+      send({
+        id: message.id,
+        error: { code: -32600, message: "direct app-server input is not allowed for multi-agent v2 sub-agents" },
+      });
+      return;
+    }
+
+    acceptedTurnCount += 1;
+    const threadId = message.params.threadId;
+    const turnId = \`turn_\${acceptedTurnCount}\`;
+    send({ id: message.id, result: {} });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/started",
+      params: { threadId, turn: { id: turnId, status: "inProgress" } },
+    });
+
+    if (acceptedTurnCount === 1) {
+      send({
+        jsonrpc: "2.0",
+        method: "thread/started",
+        params: { thread: { id: "thread_child", title: "Explorer" } },
+      });
+      send({
+        jsonrpc: "2.0",
+        method: "turn/started",
+        params: { threadId: "thread_child", turn: { id: "turn_child", status: "inProgress" } },
+      });
+      send({
+        jsonrpc: "2.0",
+        method: "thread/tokenUsage/updated",
+        params: {
+          threadId: "thread_child",
+          turnId: "turn_child",
+          tokenUsage: { last: { inputTokens: 999, cachedInputTokens: 999, outputTokens: 999 } },
+        },
+      });
+      send({
+        jsonrpc: "2.0",
+        method: "item/agentMessage/delta",
+        params: { threadId: "thread_child", turnId: "turn_child", itemId: "message_child", delta: "child" },
+      });
+      send({
+        jsonrpc: "2.0",
+        method: "item/completed",
+        params: {
+          threadId: "thread_child",
+          turnId: "turn_child",
+          item: { id: "message_child", type: "agentMessage", text: "child", status: "completed" },
+        },
+      });
+      send({
+        jsonrpc: "2.0",
+        method: "turn/completed",
+        params: { threadId: "thread_child", turn: { id: "turn_child", status: "completed" } },
+      });
+    }
+
+    send({
+      jsonrpc: "2.0",
+      method: "item/completed",
+      params: {
+        threadId,
+        turnId,
+        item: {
+          id: \`message_\${acceptedTurnCount}\`,
+          type: "agentMessage",
+          text: \`root_\${acceptedTurnCount}\`,
+          status: "completed",
+        },
+      },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "thread/tokenUsage/updated",
+      params: {
+        threadId,
+        turnId,
+        tokenUsage: { last: { inputTokens: acceptedTurnCount, cachedInputTokens: 0, outputTokens: 1 } },
+      },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/completed",
+      params: { threadId, turn: { id: turnId, status: "completed" } },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["first", "second"], { cwd }));
+
+    const events = await collectEvents(session.events);
+    const requests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    const turnStarts = requests.filter((request) => request.method === "turn/start");
+    const completions = findEventsByType(events, "turn.complete");
+    const assistantMessages = findEventsByType(events, "assistant.message");
+
+    expect(requests.filter((request) => request.method === "thread/start")).toHaveLength(1);
+    expect(turnStarts.map((request) => request.params.threadId)).toEqual(["thread_main", "thread_main"]);
+    expect(completions.map((event) => event.providerSessionId)).toEqual(["thread_main", "thread_main"]);
+    expect(assistantMessages.map((event) => event.text)).toEqual(["root_1", "root_2"]);
+    expect(completions[0]?.usage.inputTokens).toBe(1);
+    expect(
+      findEventsByType(events, "provider.raw").some(
+        (event) => (event.rawEvent as { type?: string })?.type === "thread.resume_recovered",
+      ),
+    ).toBe(false);
+  });
+
   it("forks an app-server thread before the first turn when forkSession is requested", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-fork-appserver-"));
     const command = join(cwd, "fake-codex-app-server.mjs");
@@ -516,8 +666,8 @@ rl.on("line", (line) => {
   }
   if (message.id && message.method === "turn/start") {
     send({ id: message.id, result: {} });
-    send({ jsonrpc: "2.0", method: "turn/started", params: { threadId: "thread_effort", turn: { id: "turn_effort", status: "inProgress" } } });
-    send({ jsonrpc: "2.0", method: "turn/completed", params: { threadId: "thread_effort", turn: { id: "turn_effort", status: "completed" } } });
+    send({ jsonrpc: "2.0", method: "turn/started", params: { threadId: message.params.threadId, turn: { id: "turn_effort", status: "inProgress" } } });
+    send({ jsonrpc: "2.0", method: "turn/completed", params: { threadId: message.params.threadId, turn: { id: "turn_effort", status: "completed" } } });
   }
 });
 `,
