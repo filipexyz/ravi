@@ -1,5 +1,6 @@
 import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barriers.js";
 import type { SessionEntry } from "../router/index.js";
+import { logger } from "../utils/logger.js";
 import type { TurnProvenance } from "./turn-provenance.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
 import type { MessageActorMetadata, RaviCommandPromptMetadata, RuntimeLaunchPrompt } from "./message-types.js";
@@ -11,6 +12,51 @@ import type {
   RuntimeSessionHandle,
   RuntimeThinking,
 } from "./types.js";
+
+const log = logger.child("runtime:host-session");
+
+export interface RuntimeSessionCleanupResult {
+  provider: RuntimeProviderId;
+  success: boolean;
+  method: "close" | "interrupt";
+  durationMs: number;
+  error?: string;
+}
+
+export function cleanupRuntimeSessionHandle(
+  handle: RuntimeSessionHandle,
+  reason?: string,
+): Promise<RuntimeSessionCleanupResult> {
+  const startedAt = Date.now();
+  const method = handle.close ? "close" : "interrupt";
+  return (async (): Promise<RuntimeSessionCleanupResult> => {
+    try {
+      if (handle.close) {
+        await handle.close();
+      } else {
+        await handle.interrupt();
+      }
+      const result: RuntimeSessionCleanupResult = {
+        provider: handle.provider,
+        success: true,
+        method,
+        durationMs: Date.now() - startedAt,
+      };
+      log.info("Runtime process cleanup completed", { ...result, reason });
+      return result;
+    } catch (error) {
+      const result: RuntimeSessionCleanupResult = {
+        provider: handle.provider,
+        success: false,
+        method,
+        durationMs: Date.now() - startedAt,
+        error: error instanceof Error ? error.message : String(error),
+      };
+      log.error("Runtime process cleanup failed", { ...result, reason });
+      return result;
+    }
+  })();
+}
 
 export interface RuntimeMessageTarget extends MessageActorMetadata {
   channel: string;
@@ -65,6 +111,10 @@ export interface RuntimeHostStreamingSession {
   currentThinking?: RuntimeThinking;
   /** Explicit task context used to start this runtime process, if any. */
   currentTaskBarrierTaskId?: string;
+  /** Canonical writer identity captured before task state can become terminal. */
+  writerSessionKey?: string;
+  writerTaskId?: string;
+  writerWorktreePath?: string;
   /** Tool tracking */
   toolRunning: boolean;
   currentToolId?: string;
@@ -126,6 +176,10 @@ export interface RuntimeHostStreamingSession {
   idleGapRecoveryTimer?: ReturnType<typeof setTimeout>;
   /** Timer that evicts an idle provider process from the runtime pool. */
   idleSessionEvictionTimer?: ReturnType<typeof setTimeout>;
+  /** Single observable cleanup completion shared by all shutdown callers. */
+  cleanupPromise?: Promise<RuntimeSessionCleanupResult>;
+  /** Dispatcher owns removal from the live map while a replacement waits. */
+  cleanupManagedExternally?: boolean;
 }
 
 async function* emptyRuntimeEvents(): AsyncGenerator<never> {}
@@ -175,7 +229,10 @@ export function stashCurrentTurnRuntimeMessages(
   return messages.length;
 }
 
-export function shutdownRuntimeStreamingSession(session: RuntimeHostStreamingSession, reason?: string): void {
+export function shutdownRuntimeStreamingSession(
+  session: RuntimeHostStreamingSession,
+  reason?: string,
+): Promise<RuntimeSessionCleanupResult> {
   if (reason) {
     session.internalAbortReason = reason;
   }
@@ -190,8 +247,6 @@ export function shutdownRuntimeStreamingSession(session: RuntimeHostStreamingSes
     session.idleSessionEvictionTimer = undefined;
   }
 
-  session.queryHandle.interrupt().catch(() => {});
-
   if (session.pushMessage) {
     session.pushMessage(null);
     session.pushMessage = null;
@@ -205,6 +260,14 @@ export function shutdownRuntimeStreamingSession(session: RuntimeHostStreamingSes
   if (!session.abortController.signal.aborted) {
     session.abortController.abort();
   }
+
+  if (session.cleanupPromise) {
+    return session.cleanupPromise;
+  }
+
+  const cleanup = cleanupRuntimeSessionHandle(session.queryHandle, reason);
+  session.cleanupPromise = cleanup;
+  return cleanup;
 }
 
 export function resolveStoredRuntimeProvider(

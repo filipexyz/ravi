@@ -9227,6 +9227,7 @@ export type ProjectsTasksAttachReturn = {
 export type ProjectsTasksCreateInput = {
   agent?: string;
   dispatch?: boolean;
+  input?: string[];
   instructions?: string;
   nodeKey: string;
   priority?: string;
@@ -9235,6 +9236,8 @@ export type ProjectsTasksCreateInput = {
   session?: string;
   title: string;
   workflow?: string;
+  worktree?: string;
+  worktreeBranch?: string;
 };
 
 /** Return shape for `projects.tasks.create`. */

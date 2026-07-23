@@ -133,6 +133,7 @@ const TaskProfileManifestSchema = z.object({
   version: z.string().trim().min(1),
   label: z.string().trim().min(1),
   description: z.string().trim().min(1),
+  strictHandoff: z.boolean().optional(),
   sessionNameTemplate: z.string().trim().min(1),
   runtimeDefaults: TaskRuntimeDefaultsSchema.optional(),
   workspaceBootstrap: z.object({
@@ -447,6 +448,7 @@ function resolveManifestToProfile(manifest: TaskProfileManifest, source: Profile
     version: manifest.version,
     label: manifest.label,
     description: manifest.description,
+    ...(manifest.strictHandoff ? { strictHandoff: true } : {}),
     sessionNameTemplate: manifest.sessionNameTemplate,
     ...(manifest.runtimeDefaults ? { runtimeDefaults: normalizeTaskRuntimeOptions(manifest.runtimeDefaults) } : {}),
     workspaceBootstrap: manifest.workspaceBootstrap,
@@ -496,6 +498,7 @@ function toResolvedTaskProfile(definition: TaskProfileDefinition, requestedId: s
   const sync = normalizeTaskProfileSyncPolicy(definition.sync);
   return {
     ...definition,
+    ...(definition.strictHandoff ? { strictHandoff: true } : {}),
     sync,
     templates: normalizeTaskProfileTemplates(definition.templates ?? {}),
     ...(definition.runtimeDefaults ? { runtimeDefaults: normalizeTaskRuntimeOptions(definition.runtimeDefaults) } : {}),
@@ -1561,6 +1564,18 @@ export function buildTaskReportMessageForProfile(
   },
 ): string {
   const profile = options.taskProfile ?? resolveTaskProfileForTask(task);
+  const defaultMessage =
+    reportEvent === "blocked"
+      ? (task.blockerReason ?? task.summary ?? null)
+      : (task.summary ?? task.blockerReason ?? null);
+  const report = buildTaskReportTemplateModel(reportEvent, {
+    taskId: task.id,
+    title: task.title,
+    message: options.message ?? defaultMessage,
+    assigneeAgentId: task.assigneeAgentId ?? null,
+    assigneeSessionName: task.assigneeSessionName ?? null,
+    sourceSessionName: options.sourceSessionName,
+  });
   const context = buildTemplateContext(task, {
     effectiveCwd: options.effectiveCwd,
     ...(options.worktree ? { worktree: options.worktree } : {}),
@@ -1570,16 +1585,21 @@ export function buildTaskReportMessageForProfile(
     ...(options.agentId ? { agentId: options.agentId } : {}),
     sessionName: options.sessionName ?? options.sourceSessionName,
     ...(options.input ? { input: options.input } : {}),
-    report: buildTaskReportTemplateModel(reportEvent, {
-      taskId: task.id,
-      title: task.title,
-      message: options.message ?? task.summary ?? task.blockerReason ?? null,
-      assigneeAgentId: task.assigneeAgentId ?? null,
-      assigneeSessionName: task.assigneeSessionName ?? null,
-      sourceSessionName: options.sourceSessionName,
-    }),
+    report,
   });
-  return renderProfileTemplate(profile, TASK_REPORT_TEMPLATE_KEYS[reportEvent], context);
+  const rendered = renderProfileTemplate(profile, TASK_REPORT_TEMPLATE_KEYS[reportEvent], context).trim();
+  const evidence: string[] = [];
+  const message = report.message?.trim();
+  if (message && !rendered.includes(message)) {
+    evidence.push(report.detail);
+  }
+
+  const recordPath = options.taskDocPath?.trim() || options.primaryArtifact?.path?.trim() || "";
+  if (recordPath && !rendered.includes(recordPath)) {
+    evidence.push(`Record: \`${recordPath}\``);
+  }
+
+  return [rendered, ...evidence].filter(Boolean).join("\n\n");
 }
 
 function resolvePreviewWorktreeContext(

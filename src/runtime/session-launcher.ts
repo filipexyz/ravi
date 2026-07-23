@@ -16,6 +16,7 @@ import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import { runRuntimeEventLoop, type RuntimeSafeEmit } from "./host-event-loop.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import {
+  shutdownRuntimeStreamingSession,
   createPendingRuntimeHandle,
   type RuntimeHostStreamingSession,
   type RuntimeUserMessage,
@@ -30,6 +31,13 @@ import { ensureObserverBindingsForSession } from "./observation-plane.js";
 import { formatUserFacingTurnFailure, publicRuntimeFailureDetail } from "./public-failure.js";
 
 const log = logger.child("runtime:session-launcher");
+
+class RuntimeSessionStartCancelledError extends Error {
+  constructor() {
+    super("Runtime session start cancelled before handoff");
+    this.name = "RuntimeSessionStartCancelledError";
+  }
+}
 
 export interface PendingRuntimeSessionStart {
   sessionName: string;
@@ -46,6 +54,11 @@ export interface StartRuntimeSessionOptions {
   streamingSessions: Map<string, RuntimeHostStreamingSession>;
   stashedMessages: Map<string, RuntimeUserMessage[]>;
   safeEmit: RuntimeSafeEmit;
+  writerIdentity?: {
+    sessionKey?: string;
+    taskId?: string;
+    worktreePath?: string;
+  };
   drainPendingStarts(): void;
   restartStashedSession?(input: { sessionName: string; reason: string }): void | Promise<void>;
 }
@@ -80,6 +93,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     streamingSessions,
     stashedMessages,
     safeEmit,
+    writerIdentity,
     drainPendingStarts,
     restartStashedSession,
   } = options;
@@ -186,6 +200,9 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     currentEffort: runtimeResolution.options.effort,
     currentThinking: runtimeResolution.options.thinking,
     currentTaskBarrierTaskId: normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId),
+    writerSessionKey: writerIdentity?.sessionKey,
+    writerTaskId: writerIdentity?.taskId,
+    writerWorktreePath: writerIdentity?.worktreePath,
     toolRunning: false,
     lastActivity: Date.now(),
     done: false,
@@ -287,7 +304,12 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     runtimeCredentialAttempt = builtRuntimeRequest.runtimeCredentialAttempt;
     const { runtimeRequest, toolContext } = builtRuntimeRequest;
 
+    if (streamingSession.done || streamingSession.abortController.signal.aborted) {
+      throw new RuntimeSessionStartCancelledError();
+    }
+
     const runtimeSession = runtimeProvider.startSession(runtimeRequest);
+    streamingSession.queryHandle = runtimeSession;
     markRuntimeCredentialAttemptStarted(runtimeCredentialAttempt?.attemptId);
     streamingSession.currentRuntimeCredential = runtimeCredentialAttempt;
     const persistedRuntimeProviderSessionId = canResumeStoredSession ? storedProviderSessionId : undefined;
@@ -312,7 +334,9 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
 
     await markRuntimeTaskAcceptedForPrompt(sessionName, prompt);
 
-    streamingSession.queryHandle = runtimeSession;
+    if (streamingSession.done || streamingSession.abortController.signal.aborted) {
+      throw new RuntimeSessionStartCancelledError();
+    }
     streamingSession.starting = false;
 
     runWithContext(toolContext, () =>
@@ -343,10 +367,33 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     });
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
+    const cancelled = err instanceof RuntimeSessionStartCancelledError;
     completeRuntimeCredentialAttempt(runtimeCredentialAttempt?.attemptId, {
       status: "abandoned",
       metadata: { phase: "runtime.start", error: errorMessage },
     });
+
+    const cleanup = await shutdownRuntimeStreamingSession(
+      streamingSession,
+      cancelled ? "runtime_start_cancelled" : "runtime_start_failed",
+    );
+    const released =
+      cleanup.success &&
+      !streamingSession.cleanupManagedExternally &&
+      streamingSessions.get(sessionName) === streamingSession &&
+      streamingSessions.delete(sessionName);
+    if (released) {
+      drainPendingStarts();
+    }
+
+    if (cancelled) {
+      log.info("Cancelled streaming session start before provider handoff", {
+        sessionName,
+        provider: runtimeProviderId,
+        cleanup,
+      });
+      return;
+    }
 
     log.error("Failed to start streaming session", {
       sessionName,
@@ -354,13 +401,6 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       error: err,
     });
 
-    streamingSession.done = true;
-    streamingSession.starting = false;
-    if (!streamingSession.abortController.signal.aborted) {
-      streamingSession.abortController.abort();
-    }
-    streamingSessions.delete(sessionName);
-    drainPendingStarts();
     updateRuntimeLiveState(sessionName, {
       activity: "blocked",
       summary: publicRuntimeFailureDetail(err),

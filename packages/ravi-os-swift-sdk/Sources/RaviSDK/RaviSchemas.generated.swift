@@ -13100,6 +13100,36 @@ public enum RaviSchemas {
             ],
             "type": "object"
           },
+          "health": {
+            "additionalProperties": false,
+            "properties": {
+              "checkedAt": {
+                "type": "number"
+              },
+              "reachable": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "ready",
+                  "starting",
+                  "degraded",
+                  "unreachable",
+                  "stopped"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "reachable",
+              "checkedAt"
+            ],
+            "type": "object"
+          },
           "pm2Available": {
             "type": "boolean"
           },
@@ -13187,6 +13217,190 @@ public enum RaviSchemas {
               "type": "object"
             },
             "type": "array"
+          },
+          "runner": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "adapters": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channelId": {
+                          "type": "string"
+                        },
+                        "connectedAt": {
+                          "type": "number"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "lastPongAt": {
+                          "type": "number"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "reconnectCount": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "status": {
+                          "enum": [
+                            "disabled",
+                            "starting",
+                            "connected",
+                            "degraded",
+                            "reconnecting",
+                            "disconnected",
+                            "failed"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "channelId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "observedAt": {
+                    "type": "number"
+                  },
+                  "outbound": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "consumer": {
+                        "type": "string"
+                      },
+                      "consuming": {
+                        "type": "boolean"
+                      },
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "infrastructureReady": {
+                        "type": "boolean"
+                      },
+                      "lastError": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "at": {
+                            "type": "number"
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "phase": {
+                            "const": "consume_loop",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "phase",
+                          "message",
+                          "at"
+                        ],
+                        "type": "object"
+                      },
+                      "lastMessageAt": {
+                        "type": "number"
+                      },
+                      "publishOutbox": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "lastError": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "at": {
+                                "type": "number"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "message",
+                              "at"
+                            ],
+                            "type": "object"
+                          },
+                          "lastPublishedAt": {
+                            "type": "number"
+                          },
+                          "nextAttemptAt": {
+                            "type": "number"
+                          },
+                          "oldestPendingAt": {
+                            "type": "number"
+                          },
+                          "pendingCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "pendingCount"
+                        ],
+                        "type": "object"
+                      },
+                      "stream": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "stream",
+                      "consumer",
+                      "enabled",
+                      "infrastructureReady",
+                      "consuming"
+                    ],
+                    "type": "object"
+                  },
+                  "pid": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "type": "integer"
+                  },
+                  "running": {
+                    "type": "boolean"
+                  },
+                  "schemaVersion": {
+                    "const": 1,
+                    "type": "number"
+                  },
+                  "startedAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "schemaVersion",
+                  "observedAt",
+                  "running",
+                  "startedAt",
+                  "pid",
+                  "outbound",
+                  "adapters"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -13582,6 +13796,36 @@ public enum RaviSchemas {
             ],
             "type": "object"
           },
+          "health": {
+            "additionalProperties": false,
+            "properties": {
+              "checkedAt": {
+                "type": "number"
+              },
+              "reachable": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "ready",
+                  "starting",
+                  "degraded",
+                  "unreachable",
+                  "stopped"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "reachable",
+              "checkedAt"
+            ],
+            "type": "object"
+          },
           "pm2Available": {
             "type": "boolean"
           },
@@ -13669,6 +13913,190 @@ public enum RaviSchemas {
               "type": "object"
             },
             "type": "array"
+          },
+          "runner": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "adapters": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channelId": {
+                          "type": "string"
+                        },
+                        "connectedAt": {
+                          "type": "number"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "lastPongAt": {
+                          "type": "number"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "reconnectCount": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "status": {
+                          "enum": [
+                            "disabled",
+                            "starting",
+                            "connected",
+                            "degraded",
+                            "reconnecting",
+                            "disconnected",
+                            "failed"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "channelId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "observedAt": {
+                    "type": "number"
+                  },
+                  "outbound": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "consumer": {
+                        "type": "string"
+                      },
+                      "consuming": {
+                        "type": "boolean"
+                      },
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "infrastructureReady": {
+                        "type": "boolean"
+                      },
+                      "lastError": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "at": {
+                            "type": "number"
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "phase": {
+                            "const": "consume_loop",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "phase",
+                          "message",
+                          "at"
+                        ],
+                        "type": "object"
+                      },
+                      "lastMessageAt": {
+                        "type": "number"
+                      },
+                      "publishOutbox": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "lastError": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "at": {
+                                "type": "number"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "message",
+                              "at"
+                            ],
+                            "type": "object"
+                          },
+                          "lastPublishedAt": {
+                            "type": "number"
+                          },
+                          "nextAttemptAt": {
+                            "type": "number"
+                          },
+                          "oldestPendingAt": {
+                            "type": "number"
+                          },
+                          "pendingCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "pendingCount"
+                        ],
+                        "type": "object"
+                      },
+                      "stream": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "stream",
+                      "consumer",
+                      "enabled",
+                      "infrastructureReady",
+                      "consuming"
+                    ],
+                    "type": "object"
+                  },
+                  "pid": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "type": "integer"
+                  },
+                  "running": {
+                    "type": "boolean"
+                  },
+                  "schemaVersion": {
+                    "const": 1,
+                    "type": "number"
+                  },
+                  "startedAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "schemaVersion",
+                  "observedAt",
+                  "running",
+                  "startedAt",
+                  "pid",
+                  "outbound",
+                  "adapters"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -13798,6 +14226,36 @@ public enum RaviSchemas {
         ],
         "type": "object"
       },
+      "health": {
+        "additionalProperties": false,
+        "properties": {
+          "checkedAt": {
+            "type": "number"
+          },
+          "reachable": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "starting",
+              "degraded",
+              "unreachable",
+              "stopped"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "reachable",
+          "checkedAt"
+        ],
+        "type": "object"
+      },
       "pm2Available": {
         "type": "boolean"
       },
@@ -13885,6 +14343,190 @@ public enum RaviSchemas {
           "type": "object"
         },
         "type": "array"
+      },
+      "runner": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "adapters": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "channelId": {
+                      "type": "string"
+                    },
+                    "connectedAt": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "lastPongAt": {
+                      "type": "number"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "reconnectCount": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "status": {
+                      "enum": [
+                        "disabled",
+                        "starting",
+                        "connected",
+                        "degraded",
+                        "reconnecting",
+                        "disconnected",
+                        "failed"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "channelId",
+                    "status"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "observedAt": {
+                "type": "number"
+              },
+              "outbound": {
+                "additionalProperties": false,
+                "properties": {
+                  "consumer": {
+                    "type": "string"
+                  },
+                  "consuming": {
+                    "type": "boolean"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "infrastructureReady": {
+                    "type": "boolean"
+                  },
+                  "lastError": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "at": {
+                        "type": "number"
+                      },
+                      "message": {
+                        "type": "string"
+                      },
+                      "phase": {
+                        "const": "consume_loop",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "phase",
+                      "message",
+                      "at"
+                    ],
+                    "type": "object"
+                  },
+                  "lastMessageAt": {
+                    "type": "number"
+                  },
+                  "publishOutbox": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "lastError": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "at": {
+                            "type": "number"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "message",
+                          "at"
+                        ],
+                        "type": "object"
+                      },
+                      "lastPublishedAt": {
+                        "type": "number"
+                      },
+                      "nextAttemptAt": {
+                        "type": "number"
+                      },
+                      "oldestPendingAt": {
+                        "type": "number"
+                      },
+                      "pendingCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "pendingCount"
+                    ],
+                    "type": "object"
+                  },
+                  "stream": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "stream",
+                  "consumer",
+                  "enabled",
+                  "infrastructureReady",
+                  "consuming"
+                ],
+                "type": "object"
+              },
+              "pid": {
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991,
+                "type": "integer"
+              },
+              "running": {
+                "type": "boolean"
+              },
+              "schemaVersion": {
+                "const": 1,
+                "type": "number"
+              },
+              "startedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "schemaVersion",
+              "observedAt",
+              "running",
+              "startedAt",
+              "pid",
+              "outbound",
+              "adapters"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
     "required": [
@@ -14026,6 +14668,36 @@ public enum RaviSchemas {
             ],
             "type": "object"
           },
+          "health": {
+            "additionalProperties": false,
+            "properties": {
+              "checkedAt": {
+                "type": "number"
+              },
+              "reachable": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "ready",
+                  "starting",
+                  "degraded",
+                  "unreachable",
+                  "stopped"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "reachable",
+              "checkedAt"
+            ],
+            "type": "object"
+          },
           "pm2Available": {
             "type": "boolean"
           },
@@ -14113,6 +14785,190 @@ public enum RaviSchemas {
               "type": "object"
             },
             "type": "array"
+          },
+          "runner": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "adapters": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channelId": {
+                          "type": "string"
+                        },
+                        "connectedAt": {
+                          "type": "number"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "lastPongAt": {
+                          "type": "number"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "reconnectCount": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "status": {
+                          "enum": [
+                            "disabled",
+                            "starting",
+                            "connected",
+                            "degraded",
+                            "reconnecting",
+                            "disconnected",
+                            "failed"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "channelId",
+                        "status"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "observedAt": {
+                    "type": "number"
+                  },
+                  "outbound": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "consumer": {
+                        "type": "string"
+                      },
+                      "consuming": {
+                        "type": "boolean"
+                      },
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "infrastructureReady": {
+                        "type": "boolean"
+                      },
+                      "lastError": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "at": {
+                            "type": "number"
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "phase": {
+                            "const": "consume_loop",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "phase",
+                          "message",
+                          "at"
+                        ],
+                        "type": "object"
+                      },
+                      "lastMessageAt": {
+                        "type": "number"
+                      },
+                      "publishOutbox": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "lastError": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "at": {
+                                "type": "number"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "message",
+                              "at"
+                            ],
+                            "type": "object"
+                          },
+                          "lastPublishedAt": {
+                            "type": "number"
+                          },
+                          "nextAttemptAt": {
+                            "type": "number"
+                          },
+                          "oldestPendingAt": {
+                            "type": "number"
+                          },
+                          "pendingCount": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "pendingCount"
+                        ],
+                        "type": "object"
+                      },
+                      "stream": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "stream",
+                      "consumer",
+                      "enabled",
+                      "infrastructureReady",
+                      "consuming"
+                    ],
+                    "type": "object"
+                  },
+                  "pid": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991,
+                    "type": "integer"
+                  },
+                  "running": {
+                    "type": "boolean"
+                  },
+                  "schemaVersion": {
+                    "const": 1,
+                    "type": "number"
+                  },
+                  "startedAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "schemaVersion",
+                  "observedAt",
+                  "running",
+                  "startedAt",
+                  "pid",
+                  "outbound",
+                  "adapters"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -46439,6 +47295,13 @@ public enum RaviSchemas {
         "description": "Dispatch after create using project defaults",
         "type": "boolean"
       },
+      "input": {
+        "description": "Profile input values pinned to the task",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
       "instructions": {
         "description": "Task instructions",
         "type": "string"
@@ -46469,6 +47332,14 @@ public enum RaviSchemas {
       },
       "workflow": {
         "description": "Linked workflow run id (defaults to project focus)",
+        "type": "string"
+      },
+      "worktree": {
+        "description": "Absolute worktree path pinned to the task",
+        "type": "string"
+      },
+      "worktreeBranch": {
+        "description": "Optional branch label for the pinned worktree",
         "type": "string"
       }
     },

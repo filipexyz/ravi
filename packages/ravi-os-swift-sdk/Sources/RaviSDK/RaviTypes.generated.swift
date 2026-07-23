@@ -3407,22 +3407,28 @@ public struct ChannelsStartReturn: Codable, Sendable {
 
 public struct ChannelsStatusReturn: Codable, Sendable {
   public var channels: RaviJSON
+  public var health: RaviJSON?
   public var pm2Available: Bool
   public var processName: String
   public var processes: [RaviJSON]
+  public var runner: RaviJSON?
 
-  public init(channels: RaviJSON, pm2Available: Bool, processName: String, processes: [RaviJSON]) {
+  public init(channels: RaviJSON, health: RaviJSON? = nil, pm2Available: Bool, processName: String, processes: [RaviJSON], runner: RaviJSON? = nil) {
     self.channels = channels
+    self.health = health
     self.pm2Available = pm2Available
     self.processName = processName
     self.processes = processes
+    self.runner = runner
   }
 
   enum CodingKeys: String, CodingKey {
     case channels = "channels"
+    case health = "health"
     case pm2Available = "pm2Available"
     case processName = "processName"
     case processes = "processes"
+    case runner = "runner"
   }
 }
 
@@ -14455,30 +14461,39 @@ public struct ProjectsTasksAttachReturn: Codable, Sendable {
 public struct ProjectsTasksCreateOptions: Codable, Sendable {
   public var agent: String?
   public var dispatch: Bool?
+  public var input: [String]?
   public var instructions: String?
   public var priority: String?
   public var profile: String?
   public var session: String?
   public var workflow: String?
+  public var worktree: String?
+  public var worktreeBranch: String?
 
-  public init(agent: String? = nil, dispatch: Bool? = nil, instructions: String? = nil, priority: String? = nil, profile: String? = nil, session: String? = nil, workflow: String? = nil) {
+  public init(agent: String? = nil, dispatch: Bool? = nil, input: [String]? = nil, instructions: String? = nil, priority: String? = nil, profile: String? = nil, session: String? = nil, workflow: String? = nil, worktree: String? = nil, worktreeBranch: String? = nil) {
     self.agent = agent
     self.dispatch = dispatch
+    self.input = input
     self.instructions = instructions
     self.priority = priority
     self.profile = profile
     self.session = session
     self.workflow = workflow
+    self.worktree = worktree
+    self.worktreeBranch = worktreeBranch
   }
 
   enum CodingKeys: String, CodingKey {
     case agent = "agent"
     case dispatch = "dispatch"
+    case input = "input"
     case instructions = "instructions"
     case priority = "priority"
     case profile = "profile"
     case session = "session"
     case workflow = "workflow"
+    case worktree = "worktree"
+    case worktreeBranch = "worktreeBranch"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
@@ -14487,6 +14502,9 @@ public struct ProjectsTasksCreateOptions: Codable, Sendable {
     }
     if let value = self.dispatch {
       body["dispatch"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.input {
+      body["input"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.instructions {
       body["instructions"] = try RaviJSON.fromEncodable(value)
@@ -14502,6 +14520,12 @@ public struct ProjectsTasksCreateOptions: Codable, Sendable {
     }
     if let value = self.workflow {
       body["workflow"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.worktree {
+      body["worktree"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.worktreeBranch {
+      body["worktreeBranch"] = try RaviJSON.fromEncodable(value)
     }
   }
 }

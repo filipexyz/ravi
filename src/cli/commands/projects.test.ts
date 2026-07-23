@@ -727,6 +727,9 @@ describe("ProjectCommands", () => {
         undefined,
         undefined,
         true,
+        ["goal=Ship the exact reviewed change", "sources=official docs only"],
+        "/tmp/project-delivery-worktree",
+        "fix/project-delivery",
       );
     } finally {
       console.log = originalLog;
@@ -741,6 +744,15 @@ describe("ProjectCommands", () => {
         instructions: "Run the project smoke test",
         priority: "high",
         profileId: "default",
+        profileInput: {
+          goal: "Ship the exact reviewed change",
+          sources: "official docs only",
+        },
+        worktree: {
+          mode: "path",
+          path: "/tmp/project-delivery-worktree",
+          branch: "fix/project-delivery",
+        },
         dispatch: true,
       }),
     ]);

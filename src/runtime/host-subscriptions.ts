@@ -84,6 +84,9 @@ export class RuntimeHostSubscriptions {
           },
         },
       );
+      if (aborted) {
+        await this.options.dispatcher.waitForRuntimeSessionCleanup({ sessionName: releaseSessionName });
+      }
       await this.options.safeEmit(`ravi.session.${releaseSessionName}.runtime`, {
         type: "task.runtime.release",
         taskId: data.taskId,

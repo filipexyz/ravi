@@ -7,7 +7,7 @@ import { buildTaskCheckpointReminderPrompt, emitTaskEvent } from "./service.js";
 const log = logger.child("tasks:checkpoint-runner");
 
 export interface TaskCheckpointRunnerOptions {
-  canPublishSessionPrompt?(sessionName: string): boolean;
+  canPublishSessionPrompt?(sessionName: string, taskId: string): boolean;
 }
 
 export class TaskCheckpointRunner {
@@ -67,7 +67,7 @@ export class TaskCheckpointRunner {
             continue;
           }
 
-          if (this.options.canPublishSessionPrompt && !this.options.canPublishSessionPrompt(assignment.sessionName)) {
+          if (!this.options.canPublishSessionPrompt?.(assignment.sessionName, task.id)) {
             log.warn("Task checkpoint reminder delayed by runtime session pool backpressure", {
               taskId: task.id,
               sessionName: assignment.sessionName,

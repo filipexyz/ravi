@@ -667,6 +667,47 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
   });
 
+  it("keeps executor capabilities for an internal task turn that replies into an unresolved external surface", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    const ownTask = dbCreateTask({
+      title: "Automatic task result",
+      instructions: "Continue after the task result",
+      createdBy: "test",
+      createdByAgentId: agent.id,
+      createdBySessionName: "launcher",
+    }).task;
+    dbDispatchTask(ownTask.id, {
+      agentId: agent.id,
+      sessionName,
+      assignedBy: "test",
+    });
+    const prompt = promptForContact("", "automatic task result");
+    prompt.taskBarrierTaskId = ownTask.id;
+    prompt.source!.actorType = "unknown";
+    prompt.context!.actorType = "unknown";
+
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      actorPrincipal: "unknown",
+      actorResolution: "not_applicable",
+      taskSelfTaskId: ownTask.id,
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "mutate", "task", ownTask.id)).toBe(true);
+  });
+
   it("resolves a verified external agent actor without stripping executor capabilities", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     dbCreateAgent({ id: "foreign-agent", cwd: "/tmp/foreign-agent" });

@@ -4305,11 +4305,14 @@ export class RaviClient {
       create: async (project: string, nodeKey: string, title: string, options?: {
         agent?: string;
         dispatch?: boolean;
+        input?: string[];
         instructions?: string;
         priority?: string;
         profile?: string;
         session?: string;
         workflow?: string;
+        worktree?: string;
+        worktreeBranch?: string;
       }): Promise<ProjectsTasksCreateReturn> => {
         return this.transport.call({
           groupSegments: ["projects","tasks"],

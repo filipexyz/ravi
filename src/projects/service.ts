@@ -862,12 +862,49 @@ export async function dispatchProjectTask(input: DispatchProjectTaskInput): Prom
   };
 }
 
+function assertProjectWorkflowsClosed(projectRef: string): void {
+  const details = requireProjectDetails(projectRef);
+  const violations: string[] = [];
+
+  for (const linked of details.linkedWorkflows) {
+    const workflow = getWorkflowRunDetails(linked.workflowRunId);
+    if (!workflow) {
+      violations.push(`${linked.workflowRunId} is missing`);
+      continue;
+    }
+    if (!["done", "archived"].includes(workflow.run.status)) {
+      violations.push(`${workflow.run.id} is ${workflow.run.status}`);
+    }
+    for (const node of workflow.nodes) {
+      if (node.requirement === "required" && !["done", "archived"].includes(node.status)) {
+        violations.push(`${workflow.run.id}/${node.specNodeKey} is ${node.status}`);
+      }
+      if (node.currentTask && !["done", "failed"].includes(node.currentTask.status)) {
+        violations.push(
+          `${workflow.run.id}/${node.specNodeKey} task ${node.currentTask.id} is ${node.currentTask.status}`,
+        );
+      }
+    }
+  }
+
+  if (violations.length > 0) {
+    throw new Error(
+      `Project ${details.project.slug} cannot be marked done while linked work is open: ${violations.join("; ")}.`,
+    );
+  }
+}
+
 export function updateProject(ref: string, input: UpdateProjectInput): ProjectRecord {
   const normalizedRef = normalizeText(ref, "Project reference");
   const normalizedInput: UpdateProjectInput = {};
 
   if (input.title !== undefined) normalizedInput.title = normalizeText(input.title, "Project title");
-  if (input.status !== undefined) normalizedInput.status = normalizeProjectStatus(input.status);
+  if (input.status !== undefined) {
+    normalizedInput.status = normalizeProjectStatus(input.status);
+    if (normalizedInput.status === "done") {
+      assertProjectWorkflowsClosed(normalizedRef);
+    }
+  }
   if (input.summary !== undefined) normalizedInput.summary = normalizeText(input.summary, "Project summary");
   if (input.hypothesis !== undefined)
     normalizedInput.hypothesis = normalizeText(input.hypothesis, "Project hypothesis");

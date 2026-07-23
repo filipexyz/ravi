@@ -440,6 +440,21 @@ function parseTaskPriority(value?: string): TaskPriority | undefined {
   return normalized as TaskPriority;
 }
 
+function parseProjectTaskProfileInputs(raw?: string[] | string): Record<string, string> | undefined {
+  const values = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  if (values.length === 0) return undefined;
+
+  const resolved: Record<string, string> = {};
+  for (const value of values) {
+    const separator = value.indexOf("=");
+    if (separator <= 0) {
+      fail(`Invalid --input value: ${value}. Use key=value.`);
+    }
+    resolved[value.slice(0, separator).trim()] = value.slice(separator + 1).trim();
+  }
+  return resolved;
+}
+
 function shouldDispatchProjectTask(dispatch?: boolean, agentId?: string, sessionName?: string): boolean {
   return dispatch === true || Boolean(agentId?.trim()) || Boolean(sessionName?.trim());
 }
@@ -1254,6 +1269,12 @@ export class ProjectTaskCommands {
     @Option({ flags: "--session <name>", description: "Override project operator session for dispatch" })
     sessionName?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--input <key=value...>", description: "Profile input values pinned to the task" })
+    profileInputRaw?: string[] | string,
+    @Option({ flags: "--worktree <path>", description: "Absolute worktree path pinned to the task" })
+    worktreePath?: string,
+    @Option({ flags: "--worktree-branch <name>", description: "Optional branch label for the pinned worktree" })
+    worktreeBranch?: string,
   ) {
     if (!instructions?.trim()) {
       fail("--instructions is required");
@@ -1261,6 +1282,8 @@ export class ProjectTaskCommands {
 
     try {
       const actor = resolveActor();
+      const profileInput = parseProjectTaskProfileInputs(profileInputRaw);
+      const normalizedWorktreePath = worktreePath?.trim() ? resolvePath(expandHome(worktreePath.trim())) : undefined;
       const result = await createProjectTask({
         projectRef,
         nodeKey,
@@ -1269,6 +1292,16 @@ export class ProjectTaskCommands {
         ...(workflowRunId?.trim() ? { workflowRunId: workflowRunId.trim() } : {}),
         ...(priority?.trim() ? { priority: parseTaskPriority(priority) } : {}),
         ...(profileId?.trim() ? { profileId: profileId.trim() } : {}),
+        ...(profileInput ? { profileInput } : {}),
+        ...(normalizedWorktreePath
+          ? {
+              worktree: {
+                mode: "path" as const,
+                path: normalizedWorktreePath,
+                ...(worktreeBranch?.trim() ? { branch: worktreeBranch.trim() } : {}),
+              },
+            }
+          : {}),
         dispatch: shouldDispatchProjectTask(dispatch, agentId, sessionName),
         ...(agentId?.trim() ? { agentId: agentId.trim() } : {}),
         ...(sessionName?.trim() ? { sessionName: sessionName.trim() } : {}),
