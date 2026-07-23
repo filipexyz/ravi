@@ -149,6 +149,7 @@ describe("session trace query", () => {
         platformMessageId: "1713000000.000100",
         providerMessageId: "1713000000.000100",
         providerTimestamp: 1_713_000_000_000,
+        responsePhase: "commentary",
         idempotencyKey: "runtime:main:emit-1:slack:T1:C123:thread",
         target: { channel: "slack", accountId: "T1", chatId: "C123" },
         emitId: "emit-1",
@@ -161,6 +162,7 @@ describe("session trace query", () => {
       platformMessageId: "1713000000.000100",
       providerMessageId: "1713000000.000100",
       providerTimestamp: 1_713_000_000_000,
+      responsePhase: "commentary",
       idempotencyKey: "runtime:main:emit-1:slack:T1:C123:thread",
     });
   });

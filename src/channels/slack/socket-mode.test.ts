@@ -455,6 +455,7 @@ describe("Slack Socket Mode routing", () => {
         accountId: "ravi-rbbt-slack",
         instanceId: "slack-instance-1",
         chatId: "C123",
+        sourceMessageId: "1713000000.000100",
       },
     });
     expect(
