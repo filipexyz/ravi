@@ -52,7 +52,12 @@ jobs:
       - name: Test
         run: bun run test
 
+      # The quality gate is diff-based and must evaluate the pull request delta.
+      # Push events on long-lived branches can include merge commits or branch
+      # divergence that make `origin/<base>...HEAD` much broader than the change
+      # being validated; build/typecheck/test still run for those pushes.
       - name: Quality Gate (specs + coverage)
+        if: github.event_name == 'pull_request'
         run: bun src/ci/run-quality-gate.ts
         env:
-          GITHUB_BASE_REF: ${{ github.base_ref || 'main' }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}

@@ -1,0 +1,43 @@
+# Slack Adapter Checks
+
+- [ ] Inbound channel message MUST persist chat, message and participant records.
+- [ ] Thread reply MUST include the Slack thread target.
+- [ ] Outbound response MUST use Slack native delivery.
+- [ ] Human message admission MUST remain unchanged.
+- [ ] The local bot MUST be ignored when either event `bot_id` or `user` matches `auth.test`.
+- [ ] Foreign bot messages MUST fail closed unless `auth.test` returns `ok=true` with complete `bot_id`, `user_id`, and `team_id`.
+- [ ] When `authorizations` is present, it MUST be a usable array with a `team_id` matching the authenticated local team; empty, malformed, team-less, non-matching, or truncated values without that match MUST fail closed.
+- [ ] The received authorization list MUST NOT be treated as complete; supporting a truncated non-match requires `apps.event.authorizations.list`, not legacy fallback.
+- [ ] Only when `authorizations` is absent MAY outer `payload.team_id` / inner `event.team` prove the installation; they MUST identify one team equal to authenticated `team_id`, without logical-account fallback.
+- [ ] `source_team` MUST define message origin when present; otherwise outer/inner team values MUST identify one origin. Missing origin or conflicting outer/inner origin MUST fail closed.
+- [ ] Resolved origin, `source_team`, `user_team`, `event.team`, `payload.team_id`, received authorization team ids, and local authenticated team MUST remain separate provenance fields.
+- [ ] Successful `auth.test` discovery MUST be cached, concurrent calls coalesced, and failures retried only after a bounded backoff.
+- [ ] A stuck `auth.test` MUST receive an abort signal, time out, fail closed, release the shared in-flight slot, and permit a later retry.
+- [ ] A foreign bot MUST require an explicit local-user mention or a chat-scoped alias at the beginning with a Unicode whitespace/punctuation boundary.
+- [ ] Aliases MUST come only from the current channel account's `defaults.botMessageAliasesByChat`; wrong-chat, wrong-account, middle, partial-word, and env aliases MUST be rejected.
+- [ ] Raw bot/user ids and `senderKind=bot` MUST survive chat, message, participant, source, and context provenance.
+- [ ] Bot/user candidate identities MAY produce `actorType=agent` only when all resolved ids identify one consistent agent; contact-only and owner conflicts MUST be unknown with no authority.
+- [ ] A resolved bot agent MUST become runtime principal `agent:<actorAgentId>` without stripping the executor agent's effective capabilities.
+- [ ] Daemon-restart resume MUST select stashed agent actor metadata and preserve its `agent:<actorAgentId>` authority principal.
+- [ ] Bot actor lookup MUST preserve canonical UUID/slug aliases, exact-empty fallback, cross-workspace isolation, and alias-collision fail-closed behavior.
+- [ ] Admitted bot messages MUST preserve root/thread routing and duplicate-envelope suppression.
+- [ ] Missing credentials MUST disable the adapter.
+- [ ] Env fallback MUST be opt-in.
+- [ ] Tests MUST cover routing policy and native delivery.
+- [ ] A newly started Socket Mode service MUST remain connecting until the active socket opens and receives its bounded initial `hello`.
+- [ ] A quiet healthy workspace MUST remain connected through WebSocket ping/pong heartbeats without requiring application messages.
+- [ ] A missing `hello` or pong MUST terminate and replace the stale socket without waiting for its `close` callback.
+- [ ] Socket errors and Slack `disconnect` warnings or `refresh_requested` envelopes MUST trigger bounded reconnection.
+- [ ] Late callbacks from a retired socket generation MUST NOT replace, close, or regress the health state of the active socket.
+- [ ] Explicit shutdown MUST cancel heartbeat/deadline timers and MUST NOT reconnect afterward.
+- [ ] Explicit shutdown MUST settle while `apps.connections.open` is pending and MUST ignore its late result.
+- [ ] Socket lifecycle snapshots MUST report connecting, connected, and reconnecting with non-secret reasons and health timestamps.
+- [ ] An identity stored under the configured UUID MUST resolve when inbound Slack uses the account slug for that same instance.
+- [ ] An identity stored under the configured slug MUST resolve when inbound Slack uses the configured UUID for that same instance.
+- [ ] The same Slack user id in another workspace MUST NOT be selected.
+- [ ] The empty legacy scope MUST be consulted only after scoped alias misses and MUST NOT act as a wildcard.
+- [ ] Conflicting owners across equivalent aliases MUST fail closed with `ambiguous_instance_alias`, no actor, and zero capabilities.
+- [ ] Resolution provenance MUST carry the received alias, canonical instance reference, matched scope, and reason code using concrete schemas.
+- [ ] New writes MUST use the canonical instance reference and stay duplicate-free across retries.
+- [ ] An explicit alias owner collision MUST fail closed even when a chat participant was cached from an earlier non-conflicting resolution; the participant fast path MUST NOT mask a later slug/UUID conflict.
+- [ ] A resolved Slack actor MUST keep the same owner, non-zero agent-identity authority, and allowed representative capability across consecutive turns and turn-context rotations.

@@ -47,7 +47,7 @@ describe("cloud trace export", () => {
     expect(result.exportedEvents).toBe(2);
     const outbox = getOutboxById(result.outboxId!)!;
     const payload = outbox.payload as Record<string, unknown>;
-    expect(payload.session).toMatchObject({ sessionKey: "agent:dev", runtimeProvider: "claude", provider: "claude" });
+    expect(payload.session).toMatchObject({ sessionKey: "agent:dev", runtimeProvider: "codex", provider: "codex" });
     expect(Array.isArray(payload.turns)).toBe(true);
     expect(Array.isArray(payload.toolCalls)).toBe(true);
     expect(Array.isArray(payload.blobs)).toBe(true);

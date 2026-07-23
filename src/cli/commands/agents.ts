@@ -5,7 +5,8 @@
 import "reflect-metadata";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { isDeepStrictEqual } from "node:util";
+import { Group, Command, CommandAccess, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -14,6 +15,7 @@ import {
   agentDebugReturnSchema,
   agentDeleteReturnSchema,
   agentInstructionSyncReturnSchema,
+  agentPermissionsReturnSchema,
   agentResetReturnSchema,
   agentSessionReturnSchema,
   agentSetReturnSchema,
@@ -36,9 +38,20 @@ import {
   setAgentSpecMode,
 } from "../../router/config.js";
 import { DmScopeSchema } from "../../router/router-db.js";
-import { deleteSession, getSessionsByAgent, getMainSession, resolveSession } from "../../router/sessions.js";
+import {
+  deleteSession,
+  getSessionTurnUsageSummary,
+  getSessionsByAgent,
+  getMainSession,
+  resolveSession,
+  type SessionTurnUsageSummary,
+} from "../../router/sessions.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID } from "../../runtime/provider-registry.js";
 import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
+import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
+import { resolveEffectiveAgentModel } from "../../runtime/model-preset-resolver.js";
+import { loadConfig } from "../../utils/config.js";
+import { formatRuntimeEffortLevels, parseRuntimeEffort } from "../../runtime/effort.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
 import {
   ensureAgentInstructionFiles,
@@ -46,10 +59,17 @@ import {
   type AgentInstructionState,
 } from "../../runtime/agent-instructions.js";
 import { formatCliRuntimeTarget, getCliRuntimeMismatchMessage, inspectCliRuntimeTarget } from "../runtime-target.js";
-import type { AgentConfig } from "../../router/types.js";
+import type { AgentConfig, AgentUpdateInput, SessionEntry } from "../../router/types.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { searchTagBindingsForSelector } from "../../tags/service.js";
 import type { TagBinding } from "../../tags/types.js";
+import {
+  buildAgentRuntimePermissionsDefaults,
+  ensureAgentCanViewAgent,
+  getAgentRuntimePermissionsConfigFromDefaults,
+  normalizeAgentRuntimePermissionProfile,
+  type AgentRuntimePermissionsConfig,
+} from "../../permissions/agent-default-capabilities-provider.js";
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
@@ -91,6 +111,13 @@ interface DebugSessionSummary {
   outputTokens?: number;
   totalTokens?: number;
   contextTokens?: number;
+  lifetimeTokens?: {
+    input: number;
+    output: number;
+    total: number;
+    context: number;
+  };
+  turnUsage?: SessionTurnUsageSummary;
   compactionCount?: number;
   tags: TagBinding[];
   createdAt: number;
@@ -105,9 +132,30 @@ interface AgentInstructionSyncSummary {
   changed: boolean;
 }
 
-type AgentJsonSummary = AgentConfig & {
+interface AgentSessionOverrideSummary {
+  sessionName: string;
+  model?: string;
+  effort?: NonNullable<SessionEntry["effortOverride"]>;
+  thinking?: NonNullable<SessionEntry["thinkingLevel"]>;
+}
+
+interface AgentSetMutationPayload {
+  action: "set";
+  changed: boolean;
+  agentId: string;
+  key: string;
+  value: unknown;
+  agent?: AgentConfig;
+  sessionOverrides: AgentSessionOverrideSummary[];
+}
+
+type AgentJsonSummary = Omit<AgentConfig, "modelPresetId"> & {
   isDefault: boolean;
   effectiveProvider: string;
+  effectiveModel: string | null;
+  modelSource: "agent_preset" | "agent_default" | "global_default" | null;
+  modelPresetId: string | null;
+  modelPresetVersion: number | null;
   tags: TagBinding[];
 };
 
@@ -115,8 +163,89 @@ function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
 
+function listActiveAgentSessionOverrides(agentId: string): AgentSessionOverrideSummary[] {
+  return getSessionsByAgent(agentId)
+    .flatMap((session) => {
+      const summary: AgentSessionOverrideSummary = {
+        sessionName: session.name?.trim() || "(canonical name unavailable)",
+      };
+
+      if (typeof session.modelOverride === "string" && session.modelOverride.length > 0) {
+        summary.model = session.modelOverride;
+      }
+      if (session.effortOverride !== null && session.effortOverride !== undefined) {
+        summary.effort = session.effortOverride;
+      }
+      if (session.thinkingLevel !== null && session.thinkingLevel !== undefined) {
+        summary.thinking = session.thinkingLevel;
+      }
+
+      return summary.model !== undefined || summary.effort !== undefined || summary.thinking !== undefined
+        ? [summary]
+        : [];
+    })
+    .sort((left, right) => left.sessionName.localeCompare(right.sessionName));
+}
+
+function buildAgentSetMutationPayload(input: {
+  before: AgentConfig;
+  agentId: string;
+  key: string;
+  value: unknown;
+}): AgentSetMutationPayload {
+  const updatedAgent = getAgent(input.agentId) ?? undefined;
+  return {
+    action: "set",
+    changed: !isDeepStrictEqual(input.before, updatedAgent),
+    agentId: input.agentId,
+    key: input.key,
+    value: input.value ?? null,
+    agent: updatedAgent,
+    sessionOverrides: listActiveAgentSessionOverrides(input.agentId),
+  };
+}
+
+function printAgentSessionOverrideSummary(sessionOverrides: AgentSessionOverrideSummary[]): void {
+  if (sessionOverrides.length === 0) {
+    console.log("  Session overrides: none");
+    return;
+  }
+
+  const subject = sessionOverrides.length === 1 ? "session has" : "sessions have";
+  console.log(`Warning: ${sessionOverrides.length} ${subject} runtime overrides:`);
+  for (const session of sessionOverrides) {
+    const fields = (["model", "effort", "thinking"] as const)
+      .flatMap((field) => (session[field] === undefined ? [] : [`${field}=${session[field]}`]))
+      .join(", ");
+    console.log(`  - ${session.sessionName}: ${fields}`);
+  }
+}
+
 function formatTagSlugs(tags: TagBinding[]): string {
   return tags.length > 0 ? tags.map((tag) => tag.tagSlug).join(", ") : "-";
+}
+
+function sessionLifetimeTokens(session: { inputTokens?: number | null; outputTokens?: number | null }): number {
+  return (session.inputTokens ?? 0) + (session.outputTokens ?? 0);
+}
+
+function formatTokenCount(value: number | null | undefined): string {
+  const n = Math.round(value ?? 0);
+  return n.toLocaleString("en-US");
+}
+
+function formatDurationMs(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "-";
+  if (value < 1000) return `${Math.round(value)}ms`;
+  if (value < 60_000) return `${(value / 1000).toFixed(1)}s`;
+  return `${(value / 60_000).toFixed(1)}m`;
+}
+
+function formatCostUsd(value: number | null | undefined): string {
+  const n = value ?? 0;
+  if (n <= 0) return "$0";
+  if (n < 0.01) return `$${n.toFixed(4)}`;
+  return `$${n.toFixed(2)}`;
 }
 
 function listAgentTags(agentId: string): TagBinding[] {
@@ -128,7 +257,9 @@ function listSessionTagsForSummary(session: { sessionKey: string; name?: string 
   const seen = new Set<string>();
   const tags: TagBinding[] = [];
   for (const id of ids) {
-    for (const binding of searchTagBindingsForSelector({ selector: { target: `session:${id}` } }).bindings) {
+    for (const binding of searchTagBindingsForSelector({
+      selector: { target: `session:${id}` },
+    }).bindings) {
       const key = `${binding.tagSlug}:${binding.assetType}:${binding.assetId}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -139,10 +270,15 @@ function listSessionTagsForSummary(session: { sessionKey: string; name?: string 
 }
 
 function buildAgentJson(agent: AgentConfig, defaultAgent: string): AgentJsonSummary {
+  const effective = resolveEffectiveAgentModel(agent, loadConfig().model);
   return {
     ...agent,
     isDefault: agent.id === defaultAgent,
-    effectiveProvider: agent.provider ?? DEFAULT_RUNTIME_PROVIDER_ID,
+    effectiveProvider: effective.effectiveProvider,
+    effectiveModel: effective.effectiveModel,
+    modelSource: effective.modelSource,
+    modelPresetId: effective.modelPresetId,
+    modelPresetVersion: effective.modelPresetVersion,
     tags: listAgentTags(agent.id),
   };
 }
@@ -152,6 +288,37 @@ function validateAgentModelValue(providerId: string | undefined, model: string):
   if (!result.ok) {
     fail(result.error ?? `Invalid model: ${model}`);
   }
+}
+
+function parseRuntimePermissionCapabilities(value: string | undefined): AgentRuntimePermissionsConfig["capabilities"] {
+  if (value === undefined) return undefined;
+  const raw = value.trim();
+  if (!raw) return [];
+  return raw.split(",").map((entry) => {
+    const parts = entry.trim().split(":");
+    if (parts.length < 3) {
+      fail(`Invalid capability '${entry}'. Expected permission:objectType:objectId`);
+    }
+    const [permission, objectType, ...objectIdParts] = parts;
+    const objectId = objectIdParts.join(":").trim();
+    if (!permission?.trim() || !objectType?.trim() || !objectId) {
+      fail(`Invalid capability '${entry}'. Expected permission:objectType:objectId`);
+    }
+    return {
+      permission: permission.trim(),
+      objectType: objectType.trim(),
+      objectId,
+    };
+  });
+}
+
+function describeRuntimePermissionConfig(config: AgentRuntimePermissionsConfig | null): string {
+  if (!config) return "bootstrap";
+  const parts = [config.profile ?? "custom"];
+  if (config.capabilities?.length) {
+    parts.push(`${config.capabilities.length} explicit`);
+  }
+  return parts.join(" + ");
 }
 
 function buildDebugSessionSummary(session: {
@@ -172,13 +339,19 @@ function buildDebugSessionSummary(session: {
   createdAt: number;
   updatedAt: number;
 }): DebugSessionSummary {
+  const turnUsage = getSessionTurnUsageSummary(session.sessionKey);
+  const input = session.inputTokens ?? 0;
+  const output = session.outputTokens ?? 0;
+  const context = session.contextTokens ?? 0;
   return {
     sessionKey: session.sessionKey,
     ...(session.name ? { name: session.name } : {}),
     agentId: session.agentId,
     agentCwd: session.agentCwd,
     ...((session.providerSessionId ?? session.sdkSessionId)
-      ? { runtimeId: session.providerSessionId ?? session.sdkSessionId ?? undefined }
+      ? {
+          runtimeId: session.providerSessionId ?? session.sdkSessionId ?? undefined,
+        }
       : {}),
     ...(session.runtimeProvider ? { runtimeProvider: session.runtimeProvider } : {}),
     ...(session.lastChannel ? { channel: session.lastChannel } : {}),
@@ -191,6 +364,13 @@ function buildDebugSessionSummary(session: {
     ...(session.contextTokens !== undefined && session.contextTokens !== null
       ? { contextTokens: session.contextTokens }
       : {}),
+    lifetimeTokens: {
+      input,
+      output,
+      total: input + output,
+      context,
+    },
+    turnUsage,
     ...(session.compactionCount !== undefined && session.compactionCount !== null
       ? { compactionCount: session.compactionCount }
       : {}),
@@ -200,7 +380,10 @@ function buildDebugSessionSummary(session: {
   };
 }
 
-function parseTranscriptEntries(raw: string): { parsedEntries: Record<string, unknown>[]; turns: DebugTurn[] } {
+function parseTranscriptEntries(raw: string): {
+  parsedEntries: Record<string, unknown>[];
+  turns: DebugTurn[];
+} {
   const lines = raw.trim().split("\n").filter(Boolean);
   const parsedEntries: Record<string, unknown>[] = [];
   const turns: DebugTurn[] = [];
@@ -221,7 +404,12 @@ function parseTranscriptEntries(raw: string): { parsedEntries: Record<string, un
           text: content.slice(0, 300),
         });
       } else if (entry.type === "assistant" && entry.message?.content) {
-        const parts = entry.message.content as Array<{ type: string; text?: string; name?: string; input?: unknown }>;
+        const parts = entry.message.content as Array<{
+          type: string;
+          text?: string;
+          name?: string;
+          input?: unknown;
+        }>;
         const textParts = parts
           .filter((p: { type: string }) => p.type === "text")
           .map((p: { text?: string }) => p.text ?? "");
@@ -250,11 +438,30 @@ function parseTranscriptEntries(raw: string): { parsedEntries: Record<string, un
 })
 export class AgentsCommands {
   @Command({ name: "list", description: "List all agents" })
+  @CommandAccess({
+    kind: "read",
+    resource: "agents",
+    action: "list",
+    risk: "low",
+  })
   list(
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-    @Option({ flags: "--tag <slug>", description: "Filter by canonical tag slug" }) tagSlug?: string,
-    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
-    @Option({ flags: "--offset <n>", description: "Number of matching agents to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+    @Option({
+      flags: "--tag <slug>",
+      description: "Filter by canonical tag slug",
+    })
+    tagSlug?: string,
+    @Option({
+      flags: "--limit <n>",
+      description: "Page size (default: 50, max: 500)",
+    })
+    limit?: string,
+    @Option({
+      flags: "--offset <n>",
+      description: "Number of matching agents to skip (default: 0)",
+    })
+    offset?: string,
   ) {
     const ctx = getScopeContext();
     const agents = filterItemsByCanonicalTag(
@@ -316,9 +523,16 @@ export class AgentsCommands {
   }
 
   @Command({ name: "show", description: "Show agent details" })
+  @CommandAccess({
+    kind: "read",
+    resource: "agents",
+    action: "show",
+    risk: "low",
+  })
   show(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const ctx = getScopeContext();
     if (!canViewAgent(ctx, id)) {
@@ -332,9 +546,11 @@ export class AgentsCommands {
     }
 
     const isDefault = agent.id === config.defaultAgent;
+    const runtimePermissions = getAgentRuntimePermissionsConfigFromDefaults(agent.defaults);
     const payload = {
       agent: buildAgentJson(agent, config.defaultAgent),
-      permissionsCommand: `ravi permissions list --subject agent:${agent.id}`,
+      runtimePermissions,
+      permissionsCommand: `ravi agents permissions ${agent.id}`,
     };
 
     if (asJson) {
@@ -344,16 +560,18 @@ export class AgentsCommands {
       console.log(`  Name:          ${agent.name || "-"}`);
       console.log(`  CWD:           ${agent.cwd}`);
       console.log(`  Model:         ${agent.model || "-"}`);
+      console.log(`  Effort:        ${agent.effort || "-"}`);
       console.log(`  Provider:      ${agent.provider || DEFAULT_RUNTIME_PROVIDER_ID}`);
       console.log(`  DM Scope:      ${agent.dmScope || "-"}`);
       console.log(`  Mode:          ${agent.mode ?? "active"}`);
+      console.log(`  Permissions:   ${describeRuntimePermissionConfig(runtimePermissions)}`);
       console.log(`  Debounce:      ${agent.debounceMs ? `${agent.debounceMs}ms` : "disabled"}`);
       console.log(`  Group Debounce:${agent.groupDebounceMs ? ` ${agent.groupDebounceMs}ms` : " -"}`);
       console.log(`  Matrix:        ${agent.matrixAccount || "-"}`);
 
       console.log(`  Spec Mode:     ${agent.specMode ? "enabled" : "disabled"}`);
       console.log(`  Tags:          ${formatTagSlugs(payload.agent.tags)}`);
-      console.log(`  Permissions:   ravi permissions list --subject agent:${agent.id}`);
+      console.log(`  Permissions:   ravi agents permissions ${agent.id}`);
 
       if (agent.remote) {
         console.log(`  Remote:        ${agent.remote}${agent.remoteUser ? ` (user: ${agent.remoteUser})` : ""}`);
@@ -371,22 +589,71 @@ export class AgentsCommands {
   }
 
   @Command({ name: "create", description: "Create a new agent" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "agents",
+    action: "create",
+    risk: "medium",
+  })
   create(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("cwd", { description: "Working directory" }) cwd: string,
-    @Option({ flags: "--provider <provider>", description: "Runtime provider id" }) provider?: string,
+    @Option({
+      flags: "--provider <provider>",
+      description: "Runtime provider id",
+    })
+    provider?: string,
+    @Option({ flags: "--model <model>", description: "Runtime model selector" })
+    model?: string,
     @Option({
       flags: "--allow-runtime-mismatch",
       description: "Allow mutation even when the CLI bundle differs from the live daemon runtime",
     })
     allowRuntimeMismatch?: boolean,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+    @Option({
+      flags: "--model-preset <preset>",
+      description: "Reference a runtime model preset (mutually exclusive with --model)",
+    })
+    modelPreset?: string,
   ) {
     const normalizedProvider = provider?.trim() || undefined;
+    const normalizedModel = model?.trim() || undefined;
+    const normalizedModelPreset = modelPreset?.trim() || undefined;
+    if (normalizedModel && normalizedModelPreset) {
+      fail("--model and --model-preset are mutually exclusive. Provide only one.");
+    }
+    if (normalizedModel) validateAgentModelValue(normalizedProvider, normalizedModel);
+    let resolvedPresetProvider: string | undefined;
+    if (normalizedModelPreset) {
+      const preset = getRuntimeModelPreset(normalizedModelPreset);
+      if (!preset) {
+        fail(`Model preset not found: ${normalizedModelPreset}. Run: ravi runtime presets list`);
+      }
+      if (!preset.enabled) {
+        fail(`Model preset is disabled: ${preset.id}. Run: ravi runtime presets enable ${preset.id}`);
+      }
+      if (normalizedProvider && normalizedProvider !== preset.provider) {
+        fail(
+          `Provider '${normalizedProvider}' is incompatible with preset provider '${preset.provider}'. Omit --provider or choose a matching preset.`,
+        );
+      }
+      resolvedPresetProvider = preset.provider;
+    }
     assertAgentMutationRuntime(allowRuntimeMismatch);
 
     try {
-      createAgent({ id, cwd, ...(normalizedProvider ? { provider: normalizedProvider } : {}) });
+      createAgent({
+        id,
+        cwd,
+        ...(normalizedProvider ? { provider: normalizedProvider } : {}),
+        ...(normalizedModel ? { model: normalizedModel } : {}),
+        ...(normalizedModelPreset ? { modelPresetId: normalizedModelPreset } : {}),
+      });
+      const creatorAgentId = getScopeContext()?.agentId;
+      const creatorVisibilityChanged =
+        creatorAgentId && creatorAgentId !== id ? ensureAgentCanViewAgent(creatorAgentId, id) : false;
 
       // Ensure directory exists
       const config = loadRouterConfig();
@@ -396,15 +663,31 @@ export class AgentsCommands {
       });
 
       const createdAgent =
-        getAgent(id) ?? ({ id, cwd, ...(normalizedProvider ? { provider: normalizedProvider } : {}) } as AgentConfig);
+        getAgent(id) ??
+        ({
+          id,
+          cwd,
+          ...((normalizedProvider ?? resolvedPresetProvider)
+            ? { provider: normalizedProvider ?? resolvedPresetProvider }
+            : {}),
+          ...(normalizedModel ? { model: normalizedModel } : {}),
+          ...(normalizedModelPreset ? { modelPresetId: normalizedModelPreset } : {}),
+        } as AgentConfig);
       const payload = {
         action: "create" as const,
         changed: true as const,
         agent: buildAgentJson(createdAgent, config.defaultAgent),
         runtimeTarget: inspectCliRuntimeTarget(),
         permissions: {
-          default: "closed" as const,
-          initCommand: `ravi permissions init agent:${id} full-access`,
+          default: "bootstrap" as const,
+          configureCommand: `ravi agents permissions ${id}`,
+          inspectCommand: `ravi permissions materialize --subject-type agent --subject-id ${id} --json`,
+          leastPrivilegeExample: `ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId>`,
+          breakGlassCommand: `ravi agents permissions ${id} full-access`,
+          visibility: {
+            defaultAgent: config.defaultAgent,
+            ...(creatorAgentId ? { creatorAgentId, creatorVisibilityChanged } : {}),
+          },
         },
       };
       if (asJson) {
@@ -416,8 +699,18 @@ export class AgentsCommands {
         if (normalizedProvider) {
           console.log(`  Provider: ${normalizedProvider}`);
         }
-        console.log(`  Permissions: closed (no tools, no executables)`);
-        console.log(`  Use 'ravi permissions init agent:${id} full-access' to configure`);
+        if (normalizedModel) {
+          console.log(`  Model: ${normalizedModel}`);
+        }
+        if (normalizedModelPreset) {
+          console.log(`  Model preset: ${normalizedModelPreset}`);
+        }
+        console.log(`  Permissions: bootstrap`);
+        console.log(`  Inspect: ravi permissions materialize --subject-type agent --subject-id ${id} --json`);
+        console.log(
+          `  Configure least privilege: ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId>`,
+        );
+        console.log(`  Break-glass only: ravi agents permissions ${id} full-access`);
       }
       emitConfigChanged();
       return payload;
@@ -426,15 +719,26 @@ export class AgentsCommands {
     }
   }
 
-  @Command({ name: "sync-instructions", description: "Migrate agent workspaces to AGENTS.md as the canonical file" })
+  @Command({
+    name: "sync-instructions",
+    description: "Migrate agent workspaces to AGENTS.md as the canonical file",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "agents",
+    action: "sync-instructions",
+    risk: "high",
+  })
   syncInstructions(
-    @Option({ flags: "--agent <id>", description: "Sync only one agent" }) agentId?: string,
+    @Option({ flags: "--agent <id>", description: "Sync only one agent" })
+    agentId?: string,
     @Option({
       flags: "--materialize-missing",
       description: "Create a default AGENTS.md stub when both instruction files are missing",
     })
     materializeMissing?: boolean,
-    @Option({ flags: "--json", description: "Print machine-readable output" }) json?: boolean,
+    @Option({ flags: "--json", description: "Print machine-readable output" })
+    json?: boolean,
   ) {
     const ctx = getScopeContext();
     const visibleAgents = filterVisibleAgents(ctx, getAllAgents());
@@ -450,7 +754,9 @@ export class AgentsCommands {
       ensureAgentInstructionFiles(
         cwd,
         materializeMissing && before.state === "missing-both"
-          ? { createAgentsStub: `# ${agent.id}\n\nInstruções do agente aqui.\n` }
+          ? {
+              createAgentsStub: `# ${agent.id}\n\nInstruções do agente aqui.\n`,
+            }
           : {},
       );
       const after = inspectAgentInstructionFiles(cwd);
@@ -506,9 +812,16 @@ export class AgentsCommands {
   }
 
   @Command({ name: "delete", description: "Delete an agent" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "agents",
+    action: "delete",
+    risk: "destructive",
+  })
   delete(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     try {
       const before = getAgent(id);
@@ -534,12 +847,19 @@ export class AgentsCommands {
     }
   }
 
-  @Command({ name: "set", description: "Set agent property" })
+  @Command({ name: "set", description: "Set agent property and report active session runtime overrides" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "agents",
+    action: "set",
+    risk: "medium",
+  })
   async set(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("key", { description: "Property key" }) key: string,
     @Arg("value", { description: "Property value" }) value: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -550,6 +870,8 @@ export class AgentsCommands {
       "name",
       "cwd",
       "model",
+      "modelPreset",
+      "effort",
       "provider",
       "dmScope",
       "systemPromptAppend",
@@ -565,6 +887,60 @@ export class AgentsCommands {
       fail(`Invalid key: ${key}. Valid keys: ${validKeys.join(", ")}`);
     }
 
+    // modelPreset: indirect reference to a centrally managed runtime model
+    // preset. Mutually exclusive with a direct `model`; assigning a preset
+    // clears the direct model in the same update.
+    if (key === "modelPreset") {
+      const cleared = value === "clear" || value === "null" || value === "";
+      if (cleared) {
+        try {
+          updateAgent(id, { modelPresetId: null });
+        } catch (err) {
+          fail(`Error: ${err instanceof Error ? err.message : err}`);
+        }
+      } else {
+        const preset = getRuntimeModelPreset(value);
+        if (!preset) {
+          fail(`Model preset not found: ${value}. Run: ravi runtime presets list`);
+        }
+        if (!preset.enabled) {
+          fail(`Model preset is disabled: ${preset.id}. Run: ravi runtime presets enable ${preset.id}`);
+        }
+        if (agent.provider && agent.provider !== preset.provider) {
+          fail(
+            `Agent provider '${agent.provider}' is incompatible with preset provider '${preset.provider}'. Clear the agent provider or choose a matching preset.`,
+          );
+        }
+        try {
+          updateAgent(id, { modelPresetId: preset.id, model: null });
+        } catch (err) {
+          fail(`Error: ${err instanceof Error ? err.message : err}`);
+        }
+      }
+      const presetPayload = buildAgentSetMutationPayload({
+        before: agent,
+        agentId: id,
+        key,
+        value: cleared ? null : value,
+      });
+      if (asJson) {
+        printJson(presetPayload);
+      } else {
+        console.log(
+          presetPayload.changed
+            ? cleared
+              ? `\u2713 modelPreset cleared: ${id}`
+              : `\u2713 modelPreset set: ${id} -> ${value}`
+            : cleared
+              ? `\u2713 modelPreset already clear: ${id}`
+              : `\u2713 modelPreset unchanged: ${id} -> ${value}`,
+        );
+        printAgentSessionOverrideSummary(presetPayload.sessionOverrides);
+      }
+      emitConfigChanged();
+      return presetPayload;
+    }
+
     // Parse groupDebounceMs as integer
     if (key === "groupDebounceMs") {
       const parsed = parseInt(value, 10);
@@ -573,22 +949,25 @@ export class AgentsCommands {
       }
       try {
         updateAgent(id, { groupDebounceMs: parsed === 0 ? undefined : parsed });
-        const debouncePayload = {
-          action: "set" as const,
-          changed: true as const,
+        const debouncePayload = buildAgentSetMutationPayload({
+          before: agent,
           agentId: id,
           key,
           value: parsed === 0 ? null : parsed,
-          agent: getAgent(id),
-        };
+        });
         if (asJson) {
           printJson(debouncePayload);
         } else {
           console.log(
-            parsed === 0
-              ? `\u2713 groupDebounceMs disabled: ${id}`
-              : `\u2713 groupDebounceMs set: ${id} -> ${parsed}ms`,
+            debouncePayload.changed
+              ? parsed === 0
+                ? `\u2713 groupDebounceMs disabled: ${id}`
+                : `\u2713 groupDebounceMs set: ${id} -> ${parsed}ms`
+              : parsed === 0
+                ? `\u2713 groupDebounceMs already disabled: ${id}`
+                : `\u2713 groupDebounceMs unchanged: ${id} -> ${parsed}ms`,
           );
+          printAgentSessionOverrideSummary(debouncePayload.sessionOverrides);
         }
         emitConfigChanged();
         return debouncePayload;
@@ -609,8 +988,32 @@ export class AgentsCommands {
     if (key === "model") {
       validateAgentModelValue(agent.provider, value);
     }
-    if (key === "provider" && agent.model) {
-      validateAgentModelValue(value, agent.model);
+    if (key === "provider") {
+      if (agent.model) {
+        validateAgentModelValue(value, agent.model);
+      }
+      // A provider write must stay compatible with any selected preset.
+      if (agent.modelPresetId) {
+        const preset = getRuntimeModelPreset(agent.modelPresetId);
+        if (preset && preset.provider !== value) {
+          fail(
+            `Cannot set provider '${value}': agent references preset '${preset.id}' (provider '${preset.provider}'). Clear the preset first: ravi agents set ${id} modelPreset clear`,
+          );
+        }
+      }
+    }
+    const normalizedEffortValue = key === "effort" ? value.trim().toLowerCase() : value;
+    if (
+      key === "effort" &&
+      normalizedEffortValue !== "clear" &&
+      normalizedEffortValue !== "null" &&
+      normalizedEffortValue !== ""
+    ) {
+      try {
+        parseRuntimeEffort(normalizedEffortValue);
+      } catch {
+        fail(`Invalid effort: ${value}. Valid values: ${formatRuntimeEffortLevels()}, clear`);
+      }
     }
 
     // Validate matrixAccount (will be validated in updateAgent, but give better error)
@@ -641,6 +1044,12 @@ export class AgentsCommands {
 
     // Parse settingSources as JSON array
     let parsedValue: unknown = value;
+    if (key === "effort") {
+      parsedValue =
+        normalizedEffortValue === "clear" || normalizedEffortValue === "null" || normalizedEffortValue === ""
+          ? undefined
+          : parseRuntimeEffort(normalizedEffortValue);
+    }
     if (key === "settingSources") {
       try {
         parsedValue = JSON.parse(value);
@@ -671,24 +1080,33 @@ export class AgentsCommands {
     }
 
     try {
-      updateAgent(id, { [key]: parsedValue });
+      // A direct model write clears any existing preset reference atomically so
+      // the two never coexist (mutual exclusion).
+      const updates: AgentUpdateInput =
+        key === "model"
+          ? agent.modelPresetId
+            ? { model: parsedValue as string, modelPresetId: null }
+            : { model: parsedValue as string }
+          : { [key]: parsedValue };
+      updateAgent(id, updates);
       if (key === "cwd" || key === "provider") {
         ensureAgentDirs(loadRouterConfig());
       }
-      const payload = {
-        action: "set" as const,
-        changed: true as const,
+      const payload = buildAgentSetMutationPayload({
+        before: agent,
         agentId: id,
         key,
         value: parsedValue,
-        agent: getAgent(id),
-      };
+      });
       if (asJson) {
         printJson(payload);
       } else {
         console.log(
-          `\u2713 ${key} set: ${id} -> ${typeof parsedValue === "string" ? parsedValue : JSON.stringify(parsedValue)}`,
+          `\u2713 ${key} ${payload.changed ? "set" : "unchanged"}: ${id} -> ${
+            typeof parsedValue === "string" ? parsedValue : JSON.stringify(parsedValue)
+          }`,
         );
+        printAgentSessionOverrideSummary(payload.sessionOverrides);
       }
       emitConfigChanged();
       return payload;
@@ -697,11 +1115,140 @@ export class AgentsCommands {
     }
   }
 
+  @Command({
+    name: "permissions",
+    description: "Set or show an agent runtime permission profile",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "agents",
+    action: "permissions",
+    risk: "high",
+  })
+  permissions(
+    @Arg("id", { description: "Agent ID" }) id: string,
+    @Arg("profile", {
+      required: false,
+      description: "Profile: bootstrap, full-access, none",
+    })
+    profile?: string,
+    @Option({
+      flags: "--capabilities <list>",
+      description: "Comma-separated explicit capabilities (permission:objectType:objectId)",
+    })
+    capabilitiesInput?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+    @Option({
+      flags: "--clear-capabilities",
+      description: "Remove explicit capabilities while preserving profile",
+    })
+    clearCapabilities?: boolean,
+  ) {
+    const agent = getAgent(id);
+    if (!agent) {
+      fail(`Agent not found: ${id}`);
+    }
+
+    const before = getAgentRuntimePermissionsConfigFromDefaults(agent.defaults);
+    if (clearCapabilities && capabilitiesInput !== undefined) {
+      fail("Use either --capabilities or --clear-capabilities, not both");
+    }
+    const explicitCapabilities = clearCapabilities ? [] : parseRuntimePermissionCapabilities(capabilitiesInput);
+
+    if (profile === undefined && explicitCapabilities === undefined) {
+      const payload = {
+        action: "permissions" as const,
+        changed: false as const,
+        agentId: id,
+        profile: before?.profile ?? "bootstrap",
+        runtimePermissions: before,
+        command: `ravi agents permissions ${id}`,
+        inspectCommand: `ravi permissions materialize --subject-type agent --subject-id ${id} --json`,
+        leastPrivilegeExample: `ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId>`,
+        breakGlassCommand: `ravi agents permissions ${id} full-access`,
+        agent: buildAgentJson(agent, loadRouterConfig().defaultAgent),
+      };
+      if (asJson) {
+        printJson(payload);
+      } else {
+        console.log(`Runtime permissions for ${id}: ${describeRuntimePermissionConfig(before)}`);
+        console.log(`  Inspect effective: ravi permissions materialize --subject-type agent --subject-id ${id} --json`);
+        console.log(
+          `  Least privilege:   ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId>`,
+        );
+        console.log(`  Clear:             ravi agents permissions ${id} none`);
+        console.log(`  Break-glass only:  ravi agents permissions ${id} full-access`);
+      }
+      return payload;
+    }
+
+    const normalizedProfile = profile === undefined ? before?.profile : normalizeAgentRuntimePermissionProfile(profile);
+    if (profile !== undefined && normalizedProfile === null) {
+      fail(`Invalid runtime permission profile: ${profile}. Valid profiles: bootstrap, full-access, none`);
+    }
+
+    const nextConfig =
+      normalizedProfile === "none"
+        ? null
+        : {
+            ...(before ?? {}),
+            ...(normalizedProfile ? { profile: normalizedProfile } : {}),
+          };
+    if (nextConfig && explicitCapabilities !== undefined) {
+      if (explicitCapabilities.length > 0) {
+        nextConfig.capabilities = explicitCapabilities;
+      } else {
+        delete nextConfig.capabilities;
+      }
+    }
+    const after: AgentRuntimePermissionsConfig | null =
+      nextConfig && Object.keys(nextConfig).length > 0 ? nextConfig : null;
+
+    const nextDefaults = buildAgentRuntimePermissionsDefaults(agent.defaults, after);
+    updateAgent(id, { defaults: nextDefaults });
+    const updated = getAgent(id) ?? { ...agent, defaults: nextDefaults };
+    const payload = {
+      action: "permissions" as const,
+      changed: true as const,
+      agentId: id,
+      before,
+      after,
+      defaults: nextDefaults ?? null,
+      agent: buildAgentJson(updated, loadRouterConfig().defaultAgent),
+    };
+
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`\u2713 Runtime permissions set: ${id} -> ${describeRuntimePermissionConfig(after)}`);
+      if (after?.profile === "full-access") {
+        console.log("  Break-glass: materializes admin system:* for the agent and its own automation turns");
+        console.log(
+          "  Prefer replacing this with a provider-owned permission profile or narrow explicit capabilities.",
+        );
+      }
+    }
+    emitConfigChanged();
+    return payload;
+  }
+
   @Command({ name: "debounce", description: "Set message debounce time" })
+  @CommandAccess({
+    kind: "read",
+    resource: "agents",
+    action: "debounce",
+    risk: "low",
+  })
   debounce(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Arg("ms", { required: false, description: "Debounce time in ms (0 to disable)" }) ms?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Arg("ms", {
+      required: false,
+      description: "Debounce time in ms (0 to disable)",
+    })
+    ms?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -766,11 +1313,22 @@ export class AgentsCommands {
     }
   }
 
-  @Command({ name: "spec-mode", description: "Enable or disable spec mode for an agent" })
+  @Command({
+    name: "spec-mode",
+    description: "Enable or disable spec mode for an agent",
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "agents",
+    action: "spec-mode",
+    risk: "low",
+  })
   specMode(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Arg("enabled", { required: false, description: "true/false" }) enabled?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Arg("enabled", { required: false, description: "true/false" })
+    enabled?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -820,9 +1378,16 @@ export class AgentsCommands {
   }
 
   @Command({ name: "session", description: "Show agent session status" })
+  @CommandAccess({
+    kind: "read",
+    resource: "agents",
+    action: "session",
+    risk: "low",
+  })
   session(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -850,12 +1415,39 @@ export class AgentsCommands {
     }
 
     for (const session of sessions) {
-      const tokens = (session.inputTokens || 0) + (session.outputTokens || 0);
+      const lifetimeTokens = sessionLifetimeTokens(session);
+      const turnUsage = getSessionTurnUsageSummary(session.sessionKey);
+      const lastTurn = turnUsage.lastTurn;
+      const recent = turnUsage.recent;
+      const contextTokens = session.contextTokens || lastTurn?.effectiveContextTokens || 0;
       const updated = new Date(session.updatedAt).toLocaleString();
 
       console.log(`  ${session.name ?? session.sessionKey}`);
       console.log(`    Runtime: ${session.providerSessionId ?? session.sdkSessionId ?? "(none)"}`);
-      console.log(`    Tokens: ${tokens}`);
+      console.log(
+        `    Lifetime tokens: ${formatTokenCount(lifetimeTokens)} (input=${formatTokenCount(
+          session.inputTokens ?? 0,
+        )} output=${formatTokenCount(session.outputTokens ?? 0)})`,
+      );
+      console.log(`    Effective context: ${formatTokenCount(contextTokens)}`);
+      if (lastTurn) {
+        console.log(
+          `    Last turn: context=${formatTokenCount(lastTurn.effectiveContextTokens)} input=${formatTokenCount(
+            lastTurn.inputTokens,
+          )} cache=${formatTokenCount(lastTurn.cacheReadTokens + lastTurn.cacheCreationTokens)} output=${formatTokenCount(
+            lastTurn.outputTokens,
+          )} duration=${formatDurationMs(lastTurn.durationMs)}`,
+        );
+      } else {
+        console.log("    Last turn: (none)");
+      }
+      console.log(
+        `    Recent 24h: turns=${recent.completeTurns} avgContext=${formatTokenCount(
+          recent.effectiveContextTokensAvg,
+        )} maxContext=${formatTokenCount(recent.effectiveContextTokensMax)} avgInput=${formatTokenCount(
+          recent.inputTokensAvg,
+        )} cost=${formatCostUsd(recent.costUsdTotal)}`,
+      );
       console.log(`    Updated: ${updated}`);
       console.log();
     }
@@ -863,11 +1455,21 @@ export class AgentsCommands {
   }
 
   @Command({ name: "reset", description: "Reset agent session" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "agents",
+    action: "reset",
+    risk: "medium",
+  })
   async reset(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Arg("nameOrKey", { required: false, description: "Session name/key, 'all' to reset all, or omit for main" })
+    @Arg("nameOrKey", {
+      required: false,
+      description: "Session name/key, 'all' to reset all, or omit for main",
+    })
     nameOrKey?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -909,7 +1511,11 @@ export class AgentsCommands {
         return emptyPayload;
       }
       let count = 0;
-      const resetSessions: Array<{ sessionKey: string; name?: string; deleted: boolean }> = [];
+      const resetSessions: Array<{
+        sessionKey: string;
+        name?: string;
+        deleted: boolean;
+      }> = [];
       for (const s of sessions) {
         const deleted = await resetOne(s.sessionKey, s.name);
         if (deleted) count++;
@@ -994,13 +1600,30 @@ export class AgentsCommands {
     }
   }
 
-  @Command({ name: "debug", description: "Show last turns of an agent session (what it received, what it responded)" })
+  @Command({
+    name: "debug",
+    description: "Show last turns of an agent session (what it received, what it responded)",
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "agents",
+    action: "debug",
+    risk: "low",
+  })
   debug(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Arg("nameOrKey", { required: false, description: "Session name/key (omit for main)" }) nameOrKey?: string,
-    @Option({ flags: "-n, --turns <count>", description: "Number of recent turns to show (default: 5)" })
+    @Arg("nameOrKey", {
+      required: false,
+      description: "Session name/key (omit for main)",
+    })
+    nameOrKey?: string,
+    @Option({
+      flags: "-n, --turns <count>",
+      description: "Number of recent turns to show (default: 5)",
+    })
     turnsStr?: string,
-    @Option({ flags: "--json", description: "Output raw debug data as JSON" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Output raw debug data as JSON" })
+    asJson?: boolean,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -1046,7 +1669,7 @@ export class AgentsCommands {
       console.log(`  Runtime ID:  ${session.providerSessionId ?? session.sdkSessionId ?? "(none)"}`);
       console.log(`  Channel:     ${session.lastChannel ?? "-"} → ${session.lastTo ?? "-"}`);
       console.log(
-        `  Tokens:      in=${session.inputTokens} out=${session.outputTokens} total=${session.totalTokens} ctx=${session.contextTokens}`,
+        `  Lifetime:    in=${session.inputTokens} out=${session.outputTokens} total=${session.totalTokens} ctx=${session.contextTokens}`,
       );
       console.log(`  Compactions:  ${session.compactionCount}`);
       console.log(`  Created:     ${new Date(session.createdAt).toLocaleString()}`);
@@ -1147,6 +1770,7 @@ declareCommandReturns(AgentsCommands, {
   debug: agentDebugReturnSchema,
   delete: agentDeleteReturnSchema,
   list: agentsListReturnSchema,
+  permissions: agentPermissionsReturnSchema,
   reset: agentResetReturnSchema,
   session: agentSessionReturnSchema,
   set: agentSetReturnSchema,

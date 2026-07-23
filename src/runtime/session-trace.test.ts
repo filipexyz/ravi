@@ -1,7 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { saveMessage } from "../db.js";
+import { nats } from "../nats.js";
+import { attachChatToSession } from "../router/sessions.js";
+import { classifyTurnProvenance } from "./turn-provenance.js";
 import {
   getOrCreateSession,
   getSession,
@@ -9,7 +12,7 @@ import {
   type AgentConfig,
   type SessionEntry,
 } from "../router/index.js";
-import { getDb } from "../router/router-db.js";
+import { dbUpsertChat, getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { getSessionTraceBlob, getSessionTurn, listSessionEvents } from "../session-trace/session-trace-db.js";
 import { recordAdapterRequestTrace } from "../session-trace/runtime-trace.js";
@@ -23,7 +26,12 @@ import {
 import { RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON } from "./context-window-recovery.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import type { RuntimeHostStreamingSession, RuntimeMessageTarget, RuntimeUserMessage } from "./host-session.js";
-import { runRuntimeEventLoop } from "./host-event-loop.js";
+import {
+  classifyUserFacingRuntimeLimitFailure,
+  resetUserFacingRuntimeLimitSuppressionsForTest,
+  runRuntimeEventLoop,
+  shouldSuppressUserFacingRuntimeLimitFailure,
+} from "./host-event-loop.js";
 import { getRuntimeLiveStateForSession } from "./live-state.js";
 import { buildRuntimeStartRequest, resolveRuntimeCredentialUpstreamProvider } from "./runtime-request-builder.js";
 import type {
@@ -140,6 +148,30 @@ function makeRuntimeSession(events: RuntimeEvent[]): RuntimeSessionHandle {
       }
     })(),
     interrupt: async () => {},
+  };
+}
+
+function makeNeverEndingRuntimeSession(): RuntimeSessionHandle {
+  let resolveClose!: () => void;
+  const closed = new Promise<void>((resolve) => {
+    resolveClose = resolve;
+  });
+  return {
+    provider: PROVIDER,
+    events: {
+      [Symbol.asyncIterator]() {
+        return {
+          next: async () => {
+            await closed;
+            return { done: true, value: undefined };
+          },
+        };
+      },
+    },
+    interrupt: async () => {},
+    close: async () => {
+      resolveClose();
+    },
   };
 }
 
@@ -310,9 +342,11 @@ describe("runtime session trace instrumentation", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-runtime-trace-test-");
     getOrCreateSession(SESSION_KEY, AGENT_ID, stateDir ?? "/tmp");
+    resetUserFacingRuntimeLimitSuppressionsForTest();
   });
 
   afterEach(async () => {
+    resetUserFacingRuntimeLimitSuppressionsForTest();
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
   });
@@ -402,11 +436,24 @@ describe("runtime session trace instrumentation", () => {
       session_key: SESSION_KEY,
       provider: PROVIDER,
       model: MODEL,
+      effort: "high",
+      thinking: "normal",
+      model_source: "agent_default",
+      effort_source: "task_override",
+      thinking_source: "task_override",
       cwd: stateDir,
       delivery_barrier: "after_tool",
       task_barrier_task_id: "task-1",
       tool_access_mode: "restricted",
+      turn_provenance: {
+        origin: "task",
+        background: true,
+        automationOriginated: true,
+        automationId: "task:task-1",
+        reason: "prompt.taskBarrierTaskId",
+      },
     });
+    expect(streaming.currentTurnProvenance).toMatchObject({ origin: "task", background: true });
 
     const turn = getSessionTurn(streaming.currentTraceTurnId ?? "");
     expect(turn?.status).toBe("running");
@@ -775,6 +822,29 @@ describe("runtime session trace instrumentation", () => {
     expect(streaming.turnActive).toBe(false);
   });
 
+  it("clears live busy state when the provider emits idle status", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming);
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "status",
+          status: "idle",
+        },
+      ]),
+    );
+
+    const live = getRuntimeLiveStateForSession(makeSession());
+    expect(live).toMatchObject({
+      activity: "idle",
+      summary: "runtime idle",
+    });
+    expect(live?.busySince).toBeUndefined();
+    expect(live?.toolName).toBeUndefined();
+  });
+
   it("clears compaction at terminal boundaries even without an idle status", async () => {
     const streaming = makeStreamingSession();
     seedAdapterTrace(streaming);
@@ -797,6 +867,109 @@ describe("runtime session trace instrumentation", () => {
     expect(streaming.compacting).toBe(false);
     expect(streaming.turnActive).toBe(false);
   });
+
+  function collectRuntimeStatusCompacting(): Array<unknown> {
+    return listSessionEvents(SESSION_KEY)
+      .filter((event) => event.eventType === "runtime.status")
+      .map((event) => {
+        const payload = event.payloadJson;
+        if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+        return payload.compacting;
+      });
+  }
+
+  function attachSpeakingOutputChat(): void {
+    const outputChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "compaction-gate@s.whatsapp.net",
+      chatType: "dm",
+      title: "compaction-gate",
+    });
+    attachChatToSession({ sessionKey: SESSION_KEY, chatId: outputChat.id, setOutputTarget: true });
+  }
+
+  const compactingThenIdle: RuntimeEvent[] = [
+    { type: "status", status: "compacting" },
+    { type: "status", status: "idle" },
+    {
+      type: "turn.complete",
+      providerSessionId: "provider-after",
+      usage: { inputTokens: 1, outputTokens: 1 },
+    },
+  ];
+
+  it("emits external compaction announcements for a human/channel turn", async () => {
+    attachSpeakingOutputChat();
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentTurnProvenance: classifyTurnProvenance({ source }),
+    });
+    seedAdapterTrace(streaming);
+
+    const responses: string[] = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        const response = (data as { response?: unknown }).response;
+        if (typeof response === "string") responses.push(response);
+      }
+    });
+
+    try {
+      await runTraceLoop(streaming, makeRuntimeSession(compactingThenIdle));
+    } finally {
+      emitSpy.mockRestore();
+    }
+
+    expect(responses.some((text) => text.includes("Compactando"))).toBe(true);
+    expect(responses.some((text) => text.includes("compactada"))).toBe(true);
+    expect(collectRuntimeStatusCompacting()).toEqual([true, false]);
+  });
+
+  for (const scenario of [
+    { name: "cron", prompt: { _cron: true } },
+    { name: "trigger", prompt: { _trigger: true } },
+    { name: "session followup", prompt: { _sessionFollowup: true } },
+    { name: "heartbeat", prompt: { _heartbeat: true } },
+  ] as const) {
+    it(`suppresses external compaction announcements for a ${scenario.name} turn while preserving trace observability`, async () => {
+      attachSpeakingOutputChat();
+      const streaming = makeStreamingSession({
+        agentMode: "active",
+        currentTurnProvenance: classifyTurnProvenance({
+          prompt: scenario.prompt,
+          source,
+        }),
+      });
+      seedAdapterTrace(streaming);
+
+      const responses: string[] = [];
+      const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
+        if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+          const response = (data as { response?: unknown }).response;
+          if (typeof response === "string") responses.push(response);
+        }
+      });
+
+      try {
+        await runTraceLoop(streaming, makeRuntimeSession(compactingThenIdle));
+      } finally {
+        emitSpy.mockRestore();
+      }
+
+      expect(responses.some((text) => text.includes("Compactando") || text.includes("compactada"))).toBe(false);
+      // Internal observability MUST be preserved for automation origins.
+      expect(collectRuntimeStatusCompacting()).toEqual([true, false]);
+      const statusEvents = listSessionEvents(SESSION_KEY).filter((event) => event.eventType === "runtime.status");
+      expect(
+        statusEvents.every((event) => {
+          const payload = event.payloadJson;
+          if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+          return payload.externalAnnouncementsAllowed === false;
+        }),
+      ).toBe(true);
+    });
+  }
 
   it("marks a skill loaded when a ravi skills show command completes", async () => {
     const streaming = makeStreamingSession();
@@ -964,12 +1137,18 @@ describe("runtime session trace instrumentation", () => {
           text: "ok",
           metadata: { nativeEvent: "item.completed", item: { id: "msg-1", type: "agent_message" } },
         },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
       ]),
     );
 
     expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).toEqual([
       "adapter.request",
       "assistant.message",
+      "turn.complete",
     ]);
   });
 
@@ -983,6 +1162,120 @@ describe("runtime session trace instrumentation", () => {
     expect(terminal?.status).toBe("interrupted");
     expect(terminal?.payloadJson).toMatchObject({ abort_reason: "provider_interrupted" });
     expect(getSessionTurn("turn-interrupted")?.status).toBe("interrupted");
+  });
+
+  it("replays a pending user turn when the provider stream closes without a terminal event before tools", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "received from slack",
+      deliveryBarrier: "after_response",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      currentTurnToolStarted: false,
+      toolRunning: false,
+    });
+    seedAdapterTrace(streaming, "turn-stream-closed-before-tool");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(streaming, makeRuntimeSession([]), {
+      stashedMessages,
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+    });
+
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual([
+      "received from slack",
+    ]);
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "runtime_event_loop_closed" }]);
+
+    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
+    expect(terminal?.status).toBe("aborted");
+    expect(terminal?.payloadJson).toMatchObject({
+      abort_reason: "runtime_event_loop_closed",
+      autoRecovered: true,
+    });
+    expect(getSessionTurn("turn-stream-closed-before-tool")?.status).toBe("aborted");
+  });
+
+  it("closes the provider handle and event iterator when the host session is aborted", async () => {
+    let handleCloseCalls = 0;
+    let iteratorReturnCalls = 0;
+    let releaseHandleClose!: () => void;
+    const handleClosed = new Promise<void>((resolve) => {
+      releaseHandleClose = resolve;
+    });
+    const iterator: AsyncIterator<RuntimeEvent> & AsyncIterable<RuntimeEvent> = {
+      next: () => new Promise<IteratorResult<RuntimeEvent>>(() => {}),
+      return: async () => {
+        iteratorReturnCalls++;
+        return { done: true, value: undefined };
+      },
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+    };
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: PROVIDER,
+      events: iterator,
+      interrupt: async () => {},
+      close: async () => {
+        handleCloseCalls++;
+        await handleClosed;
+      },
+    };
+    const streaming = makeStreamingSession();
+
+    const loop = runTraceLoop(streaming, runtimeSession);
+    await Promise.resolve();
+    streaming.abortController.abort();
+    for (let attempt = 0; attempt < 20 && iteratorReturnCalls === 0; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+
+    expect(iteratorReturnCalls).toBe(1);
+    releaseHandleClose();
+    await loop;
+
+    expect(handleCloseCalls).toBe(1);
+  });
+
+  it("does not replay an unterminated turn after a tool has started", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "do not replay after side effects",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      currentTurnToolStarted: true,
+      toolRunning: false,
+    });
+    seedAdapterTrace(streaming, "turn-stream-closed-after-tool");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(streaming, makeRuntimeSession([]), {
+      stashedMessages,
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+    });
+
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(restartRequests).toEqual([]);
+
+    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.interrupted");
+    expect(terminal?.payloadJson).toMatchObject({
+      abort_reason: "runtime_event_loop_closed",
+      autoRecovered: false,
+    });
   });
 
   it("records failed turns with error details", async () => {
@@ -1009,6 +1302,136 @@ describe("runtime session trace instrumentation", () => {
       rawEvent: { type: "error", message: "provider down" },
     });
     expect(getSessionTurn("turn-failed")?.status).toBe("failed");
+  });
+
+  it("keeps raw failure diagnostics internal while sanitizing the external response and live state", async () => {
+    attachSpeakingOutputChat();
+    const rawError =
+      "ENOENT: no such file or directory, scandir '/Users/luis/.cache/ravi/plugins/ravi-system/skills/slack'";
+    const streaming = makeStreamingSession({ agentMode: "active" });
+    seedAdapterTrace(streaming, "turn-internal-failure");
+    const responses: string[] = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        const response = (data as { response?: unknown }).response;
+        if (typeof response === "string") responses.push(response);
+      }
+    });
+
+    try {
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          {
+            type: "turn.failed",
+            error: rawError,
+            recoverable: false,
+          },
+        ]),
+      );
+    } finally {
+      emitSpy.mockRestore();
+    }
+
+    expect(responses).toEqual([
+      "Error: The agent could not complete this request because of an internal runtime error. Please try again.",
+    ]);
+    expect(responses.join("\n")).not.toContain("/Users/luis");
+    expect(getRuntimeLiveStateForSession(makeSession())?.summary).toBe(
+      "The agent could not complete this request because of an internal runtime error. Please try again.",
+    );
+
+    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.failed");
+    expect(terminal?.error).toBe(rawError);
+  });
+
+  it("deduplicates user-facing provider session limit failures within the same reset window", () => {
+    const now = new Date("2026-06-16T15:56:00-03:00").getTime();
+    const scope = "codex:whatsapp:main:120363424772797713@g.us";
+    const error = "You've hit your session limit - resets 4:20pm (America/Sao_Paulo)";
+
+    const classified = classifyUserFacingRuntimeLimitFailure(error, now);
+    expect(classified?.kind).toBe("session_limit");
+    expect(classified?.windowKey).toContain("4:20pm");
+    expect(classified?.expiresAt ?? 0).toBeGreaterThan(now);
+
+    expect(shouldSuppressUserFacingRuntimeLimitFailure({ error, scope, now }).suppressed).toBe(false);
+    expect(shouldSuppressUserFacingRuntimeLimitFailure({ error, scope, now: now + 1_000 }).suppressed).toBe(true);
+    expect(
+      shouldSuppressUserFacingRuntimeLimitFailure({
+        error: "You've hit your session limit - resets 5:20pm (America/Sao_Paulo)",
+        scope,
+        now: now + 2_000,
+      }).suppressed,
+    ).toBe(false);
+    expect(
+      shouldSuppressUserFacingRuntimeLimitFailure({
+        error,
+        scope: "codex:whatsapp:main:other-chat",
+        now: now + 3_000,
+      }).suppressed,
+    ).toBe(false);
+  });
+
+  it("does not deduplicate ordinary provider failures that mention limits", () => {
+    const scope = "codex:whatsapp:main:120363424772797713@g.us";
+    const error = "Tool output exceeded the size limit.";
+
+    expect(classifyUserFacingRuntimeLimitFailure(error)).toBeUndefined();
+    expect(shouldSuppressUserFacingRuntimeLimitFailure({ error, scope }).suppressed).toBe(false);
+    expect(shouldSuppressUserFacingRuntimeLimitFailure({ error, scope }).suppressed).toBe(false);
+  });
+
+  it("times out active provider turns that stop emitting runtime events", async () => {
+    const previousTimeout = process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS;
+    process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS = "1000";
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "stuck audit alert",
+      deliveryBarrier: "after_task",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      lastActivity: Date.now() - 2_000,
+    });
+    seedAdapterTrace(streaming, "turn-provider-inactive");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    try {
+      await runTraceLoop(streaming, makeNeverEndingRuntimeSession(), {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      });
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS;
+      } else {
+        process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS = previousTimeout;
+      }
+    }
+
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "provider_turn_inactive" }]);
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual(["stuck audit alert"]);
+    expect(emitted.some((event) => event.data.type === "provider.inactive")).toBe(true);
+
+    const events = listSessionEvents(SESSION_KEY);
+    expect(events.some((event) => event.eventType === "session.timeout" && event.status === "timeout")).toBe(true);
+    const terminal = events.find((event) => event.eventType === "turn.failed");
+    expect(terminal?.status).toBe("timeout");
+    expect(terminal?.payloadJson).toMatchObject({
+      abort_reason: "provider_turn_inactive",
+      autoRecovered: true,
+    });
+    expect(getSessionTurn("turn-provider-inactive")?.status).toBe("timeout");
   });
 
   it("stashes the current turn and restarts after retryable credential failure before tools", async () => {

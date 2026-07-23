@@ -47,6 +47,16 @@ function makeChat(suffix: string) {
   });
 }
 
+function makeSlackThreadChat() {
+  return dbUpsertChat({
+    channel: "slack",
+    instanceId: "ravi-rbbt-slack",
+    platformChatId: "D0BAFQ90A78#1781574894.010449",
+    chatType: "thread",
+    title: "luis",
+  });
+}
+
 describe("resolveSessionOutputTarget", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-output-target-");
@@ -94,6 +104,27 @@ describe("resolveSessionOutputTarget", () => {
     expect(result.target).toMatchObject({
       chatId: "source-speak@s.whatsapp.net",
       canonicalChatId: sourceChat.id,
+    });
+  });
+
+  it("splits Slack thread chats into channel and thread targets", () => {
+    const session = getOrCreateSession("agent:dev:s-slack-thread-output", "dev", "/tmp/dev");
+    const outputChat = makeSlackThreadChat();
+    attachChatToSession({ sessionKey: session.sessionKey, chatId: outputChat.id, setOutputTarget: true });
+
+    const result = resolveSessionOutputTarget({
+      sessionKey: session.sessionKey,
+      fallback: makeFallback("inbound@s.whatsapp.net"),
+    });
+
+    expect(result.source).toBe("attached-output");
+    expect(result.target).toMatchObject({
+      channel: "slack",
+      accountId: "ravi-rbbt-slack",
+      instanceId: "ravi-rbbt-slack",
+      chatId: "D0BAFQ90A78",
+      threadId: "1781574894.010449",
+      canonicalChatId: outputChat.id,
     });
   });
 

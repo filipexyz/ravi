@@ -16,7 +16,8 @@ Use esta skill para compor primitives do Ravi em rotinas repetiveis. Uma receita
 
 - Separe trigger de contexto: o evento que acorda a rotina raramente contem todo o estado necessario.
 - Grave state duravel antes de esperar eventos externos.
-- Prefira `ravi cron --shell` para trabalho deterministico e envolva agent apenas em erro ou decisao.
+- Prefira `ravi cron --shell` para trabalho periodico deterministico e `ravi triggers --shell` para reacoes deterministicas a eventos.
+- Envolva agent apenas em erro, decisao semantica ou quando a resposta precisa de linguagem natural.
 - Defina a politica de fala: default silencioso, falar apenas quando houver acao ou falha relevante.
 - Toda acao externa deve ser idempotente ou ter marcador de processamento.
 
@@ -91,3 +92,50 @@ Nao filtre por `data.chatId` nesse topic: reaction events normalizados carregam 
 - O publicador e idempotente.
 - Falhas do cron notificam uma sessao; sucessos ficam silenciosos.
 - Dados sensiveis nao entram em prompt, logs ou docs.
+
+## Receita: Block Kit + Trigger Shell + State Local
+
+Use quando um clique/select do Slack deve executar uma automacao previsivel:
+criar ticket, aprovar item, trocar status, atualizar mensagem ou iniciar uma
+rotina externa.
+
+### Componentes
+
+1. Mensagem Block Kit
+   - `action_id` e `block_id` estaveis;
+   - `value` pequeno e sem segredo;
+   - fallback `text` acessivel.
+2. Trigger shell
+   - topic: `ravi.inbound.interaction`;
+   - filtro por `data.provider`, `data.interactionType`, `data.blockId` e
+     `data.actionId`;
+   - comando shell versionado no repo.
+3. State local
+   - JSON ou SQLite sob `.ravi/state/<rotina>`;
+   - chave por `messageTs` ou id de dominio;
+   - status e timestamps para idempotencia.
+4. Publicador/atualizador
+   - atualiza a propria mensagem com `blocks-update` ou cliente Slack nativo;
+   - nao chama agent em sucesso;
+   - notifica uma sessao apenas em erro operacional.
+
+### Exemplo
+
+```bash
+ravi triggers add "Slack ticket flow" \
+  --topic "ravi.inbound.interaction" \
+  --filter 'data.provider == "slack" && data.interactionType == "block_actions" && data.blockId startsWith "ravi_ticket_"' \
+  --shell 'bun scripts/slack-ticket-flow.ts' \
+  --timeout 30 \
+  --on-error notify-session:ravi-channels
+```
+
+### Checklist
+
+- O trigger shell recebe `RAVI_TRIGGER_EVENT_FILE` e nao parseia prompt.
+- A conexao Slack deve ser resolvida pelo contexto nativo; defina conexao explicita apenas em execucoes fora desse contexto.
+- O script trata evento repetido como idempotente.
+- O state e gravado antes de depender de novo clique.
+- A mensagem e atualizada para refletir o estado atual.
+- O payload interativo nao carrega segredo.
+- A automacao fala no canal somente quando isso faz parte do fluxo.

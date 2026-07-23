@@ -31,13 +31,20 @@ export {
 } from "./inbox-client.js";
 
 export {
+  acquireInboxPollLock,
   countPendingItems,
   ensureSubscriptionRow,
   getItemById,
   getItemByItemId,
   getSubscriptionByOrg,
+  inboxPollLockKey,
+  incrementItemReplayCount,
+  listItemsByItemId,
   listRecentItems,
   listSubscriptions,
+  reconcileDeliveredItemsAckedThroughSequence,
+  releaseInboxPollLock,
+  renewInboxPollLock,
   setSubscriptionEnabled,
   upsertDeliveredItem,
 } from "./inbox-db.js";
@@ -45,6 +52,7 @@ export {
 export {
   getInboxRunner,
   getStatusSnapshot,
+  publishInboxNatsEvents,
   runSingleTick,
   setEnabledForCurrentOrg,
   startInboxRunner,

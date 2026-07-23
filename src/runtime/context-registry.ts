@@ -13,8 +13,7 @@ import {
   type ContextSource,
   type RevokeContextResult,
 } from "../router/router-db.js";
-import { canWithCapabilityContext } from "../permissions/capability-context.js";
-import { listRelations } from "../permissions/relations.js";
+import { canWithCapabilityContext, materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 
 export const RAVI_CONTEXT_KEY_ENV = "RAVI_CONTEXT_KEY";
 export const DEFAULT_CONTEXT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -143,14 +142,7 @@ export function revokeAgentRuntimeContextsForSession(
 }
 
 export function snapshotAgentCapabilities(agentId: string): ContextCapability[] {
-  return dedupeCapabilities(
-    listRelations({ subjectType: "agent", subjectId: agentId }).map((relation) => ({
-      permission: relation.relation,
-      objectType: relation.objectType,
-      objectId: relation.objectId,
-      source: relation.source,
-    })),
-  );
+  return dedupeCapabilities(materializeSubjectCapabilities("agent", agentId));
 }
 
 export function resolveRuntimeContext(
@@ -305,8 +297,7 @@ export function getContextLineage(contextId: string): ContextLineage | null {
  */
 export function listLiveAdminContexts(): ContextRecord[] {
   const now = Date.now();
-  return dbListContexts({ includeInactive: false }).filter((ctx) => {
-    if (ctx.kind !== ADMIN_BOOTSTRAP_KIND) return false;
+  return dbListContexts({ kind: ADMIN_BOOTSTRAP_KIND, includeInactive: false }).filter((ctx) => {
     if (ctx.revokedAt && ctx.revokedAt <= now) return false;
     if (ctx.expiresAt && ctx.expiresAt <= now) return false;
     return ctx.capabilities.some(

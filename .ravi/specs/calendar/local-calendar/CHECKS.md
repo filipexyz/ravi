@@ -37,7 +37,7 @@ owners:
 - `calendar:write` is required to create or update events in a calendar.
 - `calendar:respond` is required to respond to an invite as a participant.
 - `calendar:manage` is required to share, disable, or reassign a calendar.
-- Stale `calendar_members` rows cannot bypass a denied REBAC check.
+- Stale `calendar_members` rows cannot bypass a denied Permission Provider Runtime check.
 
 ## Events
 

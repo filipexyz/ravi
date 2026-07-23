@@ -1,5 +1,7 @@
 import { emitCliAuditEvent } from "../../../cli/audit.js";
-import { canWithCapabilityContext } from "../../../permissions/engine.js";
+import { buildAuditContextProvenance } from "../../../permissions/audit-provenance.js";
+import { flushPermissionAuditEvents, recordAndEmitPermissionDenial } from "../../../permissions/denials.js";
+import { canWithCapabilityContext } from "../../../permissions/provider-runtime.js";
 import { publish } from "../../../nats.js";
 import type { ContextRecord } from "../../../router/router-db.js";
 import { methodNotAllowed, notFound, permissionDenied, unauthorized } from "../errors.js";
@@ -17,7 +19,6 @@ import type {
 
 export interface StreamingHandlerOptions {
   auth: GatewayAuthConfig;
-  hasLiveAdminContext: () => boolean;
   authFailureMessage: (reason: AuthFailureReason) => string;
   streaming?: StreamingGatewayConfig;
 }
@@ -37,11 +38,6 @@ export async function handleStreamingRequest(
   }
 
   const resolved = resolveAuth(request, options.auth);
-  if (!options.hasLiveAdminContext()) {
-    return unauthorized(
-      "no admin context configured; run 'ravi daemon init-admin-key' on the daemon host before issuing gateway requests",
-    );
-  }
   if (!resolved.authenticated || !resolved.contextRecord) {
     return unauthorized(options.authFailureMessage(resolved.reason));
   }
@@ -206,16 +202,45 @@ async function publishDeniedAudit(
   override?: (event: StreamAuditEvent) => Promise<void> | void,
 ): Promise<void> {
   if (override) return;
-  await publish("ravi.audit.denied", {
-    type: "sdk_gateway_stream",
-    agentId: event.agentId,
-    denied: `${event.scope?.permission}:${event.scope?.objectType}:${event.scope?.objectId}`,
+  const scope = event.scope;
+  const agentId = event.agentId ?? "unknown";
+  const denied = scope
+    ? `${scope.permission}:${scope.objectType}:${scope.objectId}`
+    : `sdk_gateway_stream:${event.channel}`;
+  const provenance = buildAuditContextProvenance({
+    contextId: event.contextId,
+    agentId,
+  });
+  recordAndEmitPermissionDenial({
+    subjectType: "agent",
+    subjectId: event.agentId ?? undefined,
+    agentId,
+    contextId: event.contextId,
+    relation: scope?.permission ?? "access",
+    objectType: scope?.objectType ?? "sdk_gateway_stream",
+    objectId: scope?.objectId ?? event.channel,
     reason: event.reason ?? "permission_denied",
     detail: {
       channel: event.channel,
       channelPath: event.channelPath,
       path: event.path,
       contextId: event.contextId,
+      ...(provenance ? { context: provenance } : {}),
     },
-  }).catch(() => undefined);
+    audit: {
+      type: "sdk_gateway_stream",
+      agentId,
+      denied,
+      reason: event.reason ?? "permission_denied",
+      detail: {
+        channel: event.channel,
+        channelPath: event.channelPath,
+        path: event.path,
+        contextId: event.contextId,
+      },
+      blockType: "sdk_gateway_stream_permission_denied",
+      ...(provenance ? { context: provenance } : {}),
+    },
+  });
+  await flushPermissionAuditEvents();
 }

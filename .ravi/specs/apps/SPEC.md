@@ -5,12 +5,15 @@ kind: domain
 domain: apps
 capabilities:
   - cli
+  - lifecycle
   - manifest
   - router
   - scaffold
+  - import-cli
   - context
   - packaging
   - agent-operation
+  - permission-providers
 tags:
   - apps
   - ecosystem
@@ -61,6 +64,24 @@ This domain protects the distinction between:
   of requiring build-time command registration for each app.
 - A Ravi App MUST declare the Ravi permissions or context capabilities needed
   to perform mutating or sensitive operations.
+- A Ravi App MAY declare an App Permission Provider for app-owned domain
+  authorization. Provider decisions specialize app resource policy inside the
+  Permission Provider Runtime; they MUST NOT bypass required provider denials,
+  context-key authorization, agent ceilings, skill gates, or audit rules.
+- A Ravi App MUST be isolated as `app:<app-id>` through the Permission Provider
+  Runtime when executed in a Ravi runtime context.
+- A Ravi App MUST be isolated during discovery as well as execution.
+- Non-mutating app operations require a provider-runtime decision equivalent to
+  `use app:<app-id>` for the executing agent/runtime principal.
+- Mutating app operations require a provider-runtime decision equivalent to
+  `execute app:<app-id>` for the executing agent/runtime principal and MUST
+  declare operation-level permission metadata.
+- A provider-runtime decision equivalent to `use app:<app-id>` is required for
+  runtime app list/show/check/help and dynamic alias discovery. An app that is
+  not visible MUST NOT appear in broad catalogs, autocomplete, UI pickers, SDK
+  discovery, or root aliases.
+- Manifest permission declarations are requirements and audit metadata; they
+  MUST NOT be treated as grants.
 - A Ravi App running inside Ravi runtime MUST use `RAVI_CONTEXT_KEY` as its
   canonical identity and authorization bridge. It MUST NOT reconstruct identity
   from `RAVI_AGENT_ID`, `RAVI_SESSION_KEY`, or ad-hoc environment variables.
@@ -70,6 +91,13 @@ This domain protects the distinction between:
 - New first-party Ravi Apps SHOULD be created with `ravi apps scaffold` so the
   manifest, spec, skill, operations, storage/events contract, and follow-up
   commands start from the same app contract.
+- Existing CLIs that should become Ravi Apps SHOULD be imported or scaffolded
+  from CLI metadata when available. Generated app contracts MUST be treated as
+  drafts until product operations, permissions, storage, events, UI, and skills
+  are reviewed.
+- App generation from a CLI MUST NOT blindly expose every raw command as an app
+  operation. The app surface should represent daily, safe, machine-readable
+  operations; debug-only and rare commands may remain CLI-only.
 - A Ravi App MAY be packaged inside a plugin, but the plugin is only the
   container. Packaging a skill or CLI in a plugin does not grant permissions and
   does not make the plugin itself the app.
@@ -89,6 +117,7 @@ SHOULD document:
 - `name`: human display name;
 - `interfaces`: CLI commands, SDK routes, stream channels, UIs, or tools;
 - `permissions`: required Ravi capabilities/scopes;
+- `permission provider`: optional app-owned authorization decision hook;
 - `storage`: tables/files owned by the app;
 - `artifacts`: durable outputs the app creates;
 - `events`: events the app emits or consumes;
@@ -104,14 +133,21 @@ SHOULD document:
   conversational behavior; apps define reusable capability surfaces.
 - Apps are not Ravi Commands. Ravi Commands are user-invoked prompt templates;
   apps can include commands, CLIs, storage, events, and skills.
-- Apps do not bypass REBAC, context-key authorization, skill gates, or runtime
-  provider boundaries.
+- Apps do not bypass the Permission Provider Runtime, context-key
+  authorization, skill gates, or runtime provider boundaries.
+- Direct local CLI execution with no resolved principal MAY remain an operator
+  break-glass path, but any execution carrying `agentId` or `RAVI_CONTEXT_KEY`
+  MUST authorize through the Permission Provider Runtime. Runtime discovery
+  carrying `agentId` or `RAVI_CONTEXT_KEY` MUST filter to app-visible decisions
+  equivalent to `use app:<app-id>`.
 
 ## Validation
 
 - A new app spec SHOULD be retrievable with `ravi specs get apps/<capability>`.
 - A stateful app SHOULD expose a health/check command or documented check.
 - A CLI-backed app SHOULD satisfy `apps/cli` before agents rely on it.
+- A CLI-imported app SHOULD satisfy `apps/import-cli` before generated
+  manifests are written or trusted.
 
 ## Known Failure Modes
 

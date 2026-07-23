@@ -2,7 +2,16 @@ import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 
-import { Arg, Command, Group, Option, Returns, getReturnsMetadata } from "./decorators.js";
+import {
+  Arg,
+  Command,
+  CommandAccess,
+  Group,
+  Option,
+  Returns,
+  getCommandAccessMetadata,
+  getReturnsMetadata,
+} from "./decorators.js";
 import { buildRegistry } from "./registry-snapshot.js";
 import {
   inferRaviCommandSkillGate,
@@ -14,6 +23,7 @@ import {
 @Group({ name: "demo", description: "Demo commands", scope: "open" })
 class DemoCommands {
   @Command({ name: "hello", description: "Say hi" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "hello", risk: "low" })
   @Returns(z.object({ ok: z.literal(true), message: z.string() }))
   hello(
     @Arg("name", { description: "Recipient name" }) name: string,
@@ -35,6 +45,24 @@ class DemoCommands {
     void noColor;
     void asJson;
   }
+}
+
+@Group({ name: "aliased", description: "Aliased group", scope: "open", aliases: ["alias"] })
+class AliasedGroupCommands {
+  @Command({ name: "show", description: "Show aliased group" })
+  show() {}
+}
+
+@Group({ name: "aliased", description: "Aliased group extension", scope: "open", aliases: ["legacy"] })
+class AliasedGroupExtensionCommands {
+  @Command({ name: "list", description: "List aliased group" })
+  list() {}
+}
+
+@Group({ name: "hidden", description: "Hidden group", scope: "open", hidden: true })
+class HiddenSnapshotCommands {
+  @Command({ name: "debug", description: "Hidden debug command" })
+  debug() {}
 }
 
 @Group({ name: "demo.nested", description: "Nested demo", scope: "admin" })
@@ -83,8 +111,20 @@ describe("buildRegistry", () => {
     const helloCmd = reg.commands.find((c) => c.fullName === "demo.hello");
     expect(helloCmd).toBeDefined();
     expect(helloCmd?.scope).toBe("open");
+    expect(helloCmd?.access).toEqual({ kind: "read", resource: "demo", action: "hello", risk: "low" });
     expect(helloCmd?.args.map((a) => a.name)).toEqual(["name"]);
     expect(helloCmd?.options.map((o) => o.name).sort()).toEqual(["limit", "shout"]);
+  });
+
+  it("captures group aliases", () => {
+    const reg = buildRegistry([AliasedGroupCommands, AliasedGroupExtensionCommands]);
+    expect(reg.groups.find((group) => group.name === "aliased")?.aliases).toEqual(["alias", "legacy"]);
+  });
+
+  it("skips hidden groups", () => {
+    const reg = buildRegistry([HiddenSnapshotCommands]);
+    expect(reg.groups).toEqual([]);
+    expect(reg.commands).toEqual([]);
   });
 
   it("produces inferred Zod schemas for default flag DSL patterns", () => {
@@ -129,6 +169,11 @@ describe("buildRegistry", () => {
     const map = getReturnsMetadata(DemoCommands);
     expect(map.has("hello")).toBe(true);
     expect(map.get("hello")?.safeParse({ ok: true, message: "x" }).success).toBe(true);
+  });
+
+  it("@CommandAccess metadata is recoverable directly via reflection", () => {
+    const map = getCommandAccessMetadata(DemoCommands);
+    expect(map.get("hello")).toEqual({ kind: "read", resource: "demo", action: "hello", risk: "low" });
   });
 
   it("respects explicit schema on @Arg / @Option", () => {

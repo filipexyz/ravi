@@ -153,7 +153,7 @@ function sessionActionsText(sessionName?: string): string {
   const sessionRef = sessionName ?? "<session>";
   return `Use \`ravi sessions actions --json\` para inspecionar as ações disponíveis nesta sessão, as superfícies atuais e os IDs recentes das mensagens que você mesmo enviou.
 
-Essa é a fonte canônica para descobrir operações conversacionais do chat, como apagar ou editar suas próprias mensagens, reagir, responder, enviar stickers e novas capacidades expostas pelo runtime. Não assuma que uma ação existe: consulte esta superfície quando precisar trabalhar sobre uma mensagem ou canal.
+Essa é a fonte canônica para descobrir operações conversacionais do chat, como apagar ou editar suas próprias mensagens, reagir, enviar mídia, enviar stickers e novas capacidades expostas pelo runtime. Não assuma que uma ação existe: consulte esta superfície quando precisar trabalhar sobre uma mensagem ou canal.
 
 Leia os campos \`promptHint\` e \`usage.tools\` retornados por \`actions --json\`; eles explicam quais ferramentas estão disponíveis, de onde tirar o ID da mensagem e quais restrições aplicar antes de apagar ou editar.
 
@@ -169,11 +169,24 @@ Só apague ou edite mensagens próprias quando estiver corrigindo ou removendo u
 /**
  * Build group context section for system prompt
  */
+function isRawChannelIdentifierLabel(value: string): boolean {
+  const cleaned = value
+    .trim()
+    .replace(/^@+/, "")
+    .replace(/\s+\([^)]*\)\s*$/, "");
+  if (!cleaned) return false;
+  if (/^(?:lid|group):\d+$/i.test(cleaned)) return true;
+  if (/^\d+@(?:s\.whatsapp\.net|lid|g\.us)$/i.test(cleaned)) return true;
+  const base = cleaned.includes("@") ? cleaned.slice(0, cleaned.indexOf("@")) : cleaned;
+  return /^\d{10,15}$/.test(base);
+}
+
 export function buildGroupContext(ctx: ChannelContext): string {
   if (!ctx.isGroup) return "";
 
   const groupLabel = ctx.groupName?.trim() || ctx.groupId?.trim() || "current group";
-  const groupMembers = ctx.groupMembers?.filter((member) => member.trim().length > 0) ?? [];
+  const groupMembers =
+    ctx.groupMembers?.filter((member) => member.trim().length > 0 && !isRawChannelIdentifierLabel(member)) ?? [];
   const memberCount = groupMembers.length;
   const isLargeGroup = memberCount >= 3;
 
@@ -253,6 +266,47 @@ function sessionBoundaryText(sessionName?: string): string {
   ].join("\n");
 }
 
+function backgroundFollowupAutomationText(): string {
+  return `When finishing work, silently evaluate whether there is a concrete next step that benefits from scheduled follow-up.
+
+**Decision checklist — create a background cron only when ALL of these are true:**
+
+1. There is a concrete next step (a specific check, reminder, report, or validation — not a vague intention).
+2. The next step is time-based or recurring (has a due time, cadence, or calendar anchor — not inactivity-based).
+3. You can express a concrete schedule (ISO datetime, interval, or cron expression — "soon" or "later" is not a schedule).
+4. You have sufficient permission and context to schedule and act on it safely.
+5. Expected noise is low (the job will not fire repeatedly without producing value).
+6. There is real operational risk if forgotten (missed deadline, user-visible drift, lost follow-through, or data staleness).
+
+If any item is false, do not create the cron. Route to the correct primitive instead (see below).
+
+**Commands:**
+- one-shot: \`ravi cron add "<name>" --at "<ISO time>" --message "<prompt>" --delete-after\`
+- interval: \`ravi cron add "<name>" --every <duration> --message "<prompt>"\`
+- calendar: \`ravi cron add "<name>" --cron "<expr>" --message "<prompt>" --tz "<timezone>"\`
+
+**After creating a cron**, run \`ravi cron show <id>\` and verify agent, account, session/reply-session, schedule, and delete-after before considering it done.
+
+**Routing — use the right primitive:**
+- Fixed wall-clock or calendar schedule → \`ravi cron add\`
+- Inactivity / silence-based follow-up → \`ravi sessions followups\` (not cron)
+- Deterministic shell work, no agent judgment → \`ravi cron add --shell\` with error-only notification
+- Recurring behavior with policy/rules → routine/spec, cron references it
+- Event-driven reaction → \`ravi triggers add\`
+
+**Do NOT create cron when:**
+- The reminder is vague ("check on this later", "follow up sometime").
+- A duplicate cron already covers the same check with an overlapping schedule.
+- The check would fire frequently without clear value (noisy).
+- The follow-up is based on inactivity or silence (use \`ravi sessions followups\`).
+- The behavior is speculative ("might need this later").
+- The recurring behavior has policy that should live in a routine/spec, not a long cron prompt.
+
+Do this in the background without announcing it in your visible response. Do not say that you created, skipped, or plan to create a cron unless the user asks, the action needs a decision, or permission/context is missing.
+
+You MAY ask for confirmation before creating a cron when there is cost, external impact, noisy recurrence, unclear owner, or ambiguous scope.`;
+}
+
 /**
  * Build silent replies section for system prompt
  */
@@ -309,6 +363,31 @@ Regras:
 Tabelas com caracteres | - + funcionam bem no terminal.`;
 }
 
+function whatsappThreadWorkspaceText(): string {
+  return `WhatsApp é a superfície principal para separar trabalho por contexto.
+
+Quando o usuário começar um fio novo que parece durável, recorrente ou grande o bastante para merecer memória própria, sugira proativamente criar um agent e um grupo dedicados.
+
+Sugira isso especialmente quando o assunto tiver:
+- domínio próprio (ex: bugs, usage, insights, calendário, inbox, produto, cliente, projeto);
+- necessidade de acompanhamento recorrente, crons, triggers, specs ou tarefas;
+- risco de poluir o grupo atual com contexto longo;
+- participantes ou permissões diferentes;
+- chance de virar uma rotina operacional.
+
+Formato preferido:
+- "Isso parece um fio próprio. Quer que eu crie um agent/grupo dedicado para <tema>?"
+- Se o usuário confirmar e você tiver permissão, use \`ravi whatsapp group create "<nome>" --agent <agent>\`.
+- Se o agent ainda não existir, use o fluxo transacional em uma chamada: \`ravi whatsapp group create "<nome>" --agent <agent> --create-agent\`.
+- Se o usuário pedir diretamente para criar, aja sem rediscutir.
+
+Interprete pedidos como "cria um grupo", "criei um grupo para isso", "vamos abrir um grupo", "novo agent/grupo" como intenção de criar/rotear um novo workspace, a menos que o usuário traga explicitamente um JID, link de convite ou diga que o grupo já existe.
+
+Não use \`ravi whatsapp group list\` para descobrir grupo recém-criado ou como fallback de criação. \`group list\` é operação de inspeção e não cria nem registra chat/rota/sessão; o caminho correto para novo fio é \`whatsapp group create\`, que cria o grupo pelo Omni e registra chat, rota e sessão localmente.
+
+Não sugira grupo novo para perguntas rápidas, correções pequenas, respostas pontuais, ou quando a sugestão atrapalharia o fluxo atual.`;
+}
+
 /**
  * Build reactions section for system prompt
  */
@@ -354,6 +433,9 @@ export function buildSystemPromptSections(
   // multi-input primitive is discoverable. See sessions/attach spec.
   add("session.attach", "Session Attach", sessionAttachText(), 25);
   add("session.actions", "Session Actions", sessionActionsText(sessionName), 30);
+  if (!isSentinel) {
+    add("automation.background_followups", "Background Followup Automation", backgroundFollowupAutomationText(), 32);
+  }
 
   // Sentinel: add explicit channel messaging instructions
   if (isSentinel) {
@@ -387,6 +469,10 @@ Your text output is NOT sent to the channel. Use these tools to send explicitly.
     if (!isSentinel) {
       // Add output formatting based on channel
       add("channel.output_formatting", "Output Formatting", outputFormattingText(ctx.channelName), 70);
+
+      if (ctx.channelName === "WhatsApp") {
+        add("channel.thread_workspaces", "WhatsApp Thread Workspaces", whatsappThreadWorkspaceText(), 75);
+      }
 
       if (supportsChannelCapability(ctx, "reactions")) {
         add("channel.reactions", "Reactions", reactionsText(), 80);

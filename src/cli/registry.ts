@@ -8,14 +8,16 @@ import { Command as CommanderCommand } from "commander";
 import {
   getGroupMetadata,
   getCommandsMetadata,
+  getCommandAccessMetadata,
   getArgsMetadata,
   getOptionsMetadata,
   getScopeMetadata,
+  type CommandAccessOptions,
   type CommandMetadata,
   type ScopeType,
 } from "./decorators.js";
 import { extractOptionName } from "./utils.js";
-import { enforceScopeCheck } from "../permissions/scope.js";
+import { enforceCliCommandAuthorization } from "./command-access.js";
 import { emitCliAuditEvent } from "./audit.js";
 import {
   dispatchRemote,
@@ -31,7 +33,12 @@ type CommandClass = new () => object;
  * e.g. "whatsapp.group" on program creates program → whatsapp → group
  * Returns the deepest command node.
  */
-function resolveCommandPath(parent: CommanderCommand, segments: string[], description: string): CommanderCommand {
+function resolveCommandPath(
+  parent: CommanderCommand,
+  segments: string[],
+  description: string,
+  aliases?: string[],
+): CommanderCommand {
   let current = parent;
   for (let i = 0; i < segments.length; i++) {
     const name = segments[i];
@@ -44,6 +51,12 @@ function resolveCommandPath(parent: CommanderCommand, segments: string[], descri
     } else if (isLast && description) {
       // Update description if this is the final segment
       existing.description(description);
+    }
+    if (isLast && aliases?.length) {
+      const currentAliases = new Set(existing.aliases());
+      for (const alias of aliases) {
+        if (!currentAliases.has(alias)) existing.alias(alias);
+      }
     }
     current = existing;
   }
@@ -62,6 +75,7 @@ export function registerCommands(program: CommanderCommand, classes: CommandClas
   for (const cls of classes) {
     const groupMeta = getGroupMetadata(cls);
     if (!groupMeta) continue;
+    if (groupMeta.hidden) continue;
     for (const cmd of getCommandsMetadata(cls)) {
       const fullName = `${groupMeta.name}.${cmd.name}`;
       const prev = seen.get(fullName);
@@ -79,13 +93,14 @@ export function registerCommands(program: CommanderCommand, classes: CommandClas
   for (const cls of classes) {
     const groupMeta = getGroupMetadata(cls);
     if (!groupMeta) continue;
+    if (groupMeta.hidden) continue;
 
     const commandsMeta = getCommandsMetadata(cls);
     if (commandsMeta.length === 0) continue;
 
     // Support nested groups via dot notation
     const segments = groupMeta.name.split(".");
-    const group = resolveCommandPath(program, segments, groupMeta.description);
+    const group = resolveCommandPath(program, segments, groupMeta.description, groupMeta.aliases);
 
     const instance = new cls();
 
@@ -94,10 +109,11 @@ export function registerCommands(program: CommanderCommand, classes: CommandClas
 
     // Resolve scope: command-level > group-level > "admin" (fail-secure default)
     const scopeMap = getScopeMetadata(cls);
+    const commandAccessMap = getCommandAccessMetadata(cls);
 
     for (const cmdMeta of commandsMeta) {
       const effectiveScope: ScopeType = scopeMap.get(cmdMeta.method) ?? groupMeta.scope ?? "admin";
-      registerCommand(group, instance, cmdMeta, toolGroupName, effectiveScope);
+      registerCommand(group, instance, cmdMeta, toolGroupName, effectiveScope, commandAccessMap.get(cmdMeta.method));
     }
   }
 }
@@ -108,6 +124,7 @@ function registerCommand(
   cmdMeta: CommandMetadata,
   groupName: string,
   scope: ScopeType,
+  access: CommandAccessOptions | undefined,
 ): void {
   // A command can also be an intermediate group when it has nested subcommands:
   // e.g. `ravi crm account <id>` and `ravi crm account create ...`.
@@ -119,6 +136,11 @@ function registerCommand(
   // Add aliases if specified
   if (cmdMeta.aliases) {
     sub.aliases(cmdMeta.aliases);
+  }
+
+  // Educational extended help (rendered after auto-usage section)
+  if (cmdMeta.helpAfter) {
+    sub.addHelpText("after", cmdMeta.helpAfter);
   }
 
   // Get args and options metadata
@@ -150,9 +172,13 @@ function registerCommand(
   // Set up the action handler
   sub.action(async (...commanderArgs: unknown[]) => {
     // Commander passes: args..., options, command
-    const cmd = commanderArgs.pop(); // Command object (unused)
-    void cmd;
-    const options = commanderArgs.pop() as Record<string, unknown>;
+    const cmd = commanderArgs.pop() as CommanderCommand;
+    // Resolve options via optsWithGlobals so parent-level flags with the same
+    // name (e.g. --json declared on both `crm contact` and `crm contact show`)
+    // surface on nested subcommands. Without this, commander binds the flag
+    // to the ancestor that declared it first and the leaf action sees {}.
+    commanderArgs.pop();
+    const options = cmd.optsWithGlobals() as Record<string, unknown>;
     const positionalArgs = commanderArgs;
 
     // Build input map for the event
@@ -174,11 +200,26 @@ function registerCommand(
       const optAtIndex = optionsMeta.find((o) => o.index === i);
       if (optAtIndex) {
         const optName = extractOptionName(optAtIndex.flags);
-        finalArgs.push(options[optName]);
-        if (options[optName] !== undefined) {
-          input[optName] = options[optName];
+        const optionValue = resolveOptionValue(options, optAtIndex.flags, optionsMeta, cmd);
+        finalArgs.push(optionValue);
+        if (optionValue !== undefined) {
+          input[optName] = optionValue;
         }
       }
+    }
+
+    const accessResult = enforceCliCommandAuthorization({
+      group: groupName,
+      command: cmdMeta.name,
+      access,
+      input,
+      source: "cli",
+      scope,
+    });
+    if (!accessResult.allowed) {
+      console.error(accessResult.errorMessage);
+      const { flushAuditAndExit } = await import("../permissions/scope.js");
+      await flushAuditAndExit(1);
     }
 
     // Remote gateway mode: forward the invocation to the configured gateway
@@ -193,15 +234,6 @@ function registerCommand(
         input,
       });
       return;
-    }
-
-    // Scope enforcement (before method execution)
-    const scopeResult = enforceScopeCheck(scope, groupName, cmdMeta.name);
-    if (!scopeResult.allowed) {
-      console.error(scopeResult.errorMessage);
-      // Drain NATS before exiting so audit events are flushed
-      const { flushAuditAndExit } = await import("../permissions/scope.js");
-      await flushAuditAndExit(1);
     }
 
     // Execute and emit single event with input + output
@@ -230,6 +262,35 @@ function registerCommand(
 
     if (isError) process.exit(1);
   });
+}
+
+function resolveOptionValue(
+  options: Record<string, unknown>,
+  flags: string,
+  commandOptions: Array<{ flags: string }>,
+  command: CommanderCommand,
+): unknown {
+  const optionName = extractOptionName(flags);
+  const longFlag = flags.match(/--([a-zA-Z-]+)/)?.[1];
+  if (!longFlag?.startsWith("no-")) {
+    const value = options[optionName];
+    const hasNegatedPair = commandOptions.some(
+      (option) => option.flags.match(/--([a-zA-Z-]+)/)?.[1] === `no-${longFlag}`,
+    );
+    // Commander stores a paired `--foo`/`--no-foo` under the positive key.
+    // A false value therefore means the positive flag was not present.
+    if (hasNegatedPair && (value === false || command.getOptionValueSource(optionName) !== "cli")) {
+      return undefined;
+    }
+    return value;
+  }
+
+  // Commander exposes `--no-foo` as the positive `foo` option (true when
+  // omitted, false when present). Decorated methods and the generated command
+  // contract expose `noFoo`, so convert Commander's state to flag presence.
+  const positiveName = longFlag.slice(3).replace(/-([a-z])/g, (_, character: string) => character.toUpperCase());
+  const positiveValue = options[positiveName];
+  return typeof positiveValue === "boolean" ? !positiveValue : undefined;
 }
 
 interface DispatchRemoteCommandInput {

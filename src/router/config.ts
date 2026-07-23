@@ -7,7 +7,7 @@
 
 import { homedir } from "node:os";
 import { existsSync, mkdirSync } from "node:fs";
-import type { RouterConfig, AgentConfig } from "./types.js";
+import type { RouterConfig, AgentConfig, AgentUpdateInput } from "./types.js";
 import { logger } from "../utils/logger.js";
 import { ensureAgentInstructionFiles } from "../runtime/agent-instructions.js";
 import { IGNORED_OMNI_INSTANCE_IDS_SETTING, parseIgnoredOmniInstanceIds } from "./omni-ignore.js";
@@ -23,8 +23,10 @@ import {
   getDefaultAgentId,
   getDefaultDmScope,
   getRaviDir,
+  dbListChannels,
   dbListInstances,
   dbGetSetting,
+  type ChannelConfig,
   type InstanceConfig,
 } from "./router-db.js";
 
@@ -55,6 +57,7 @@ export function loadRouterConfig(): RouterConfig {
   const agents = dbListAgents();
   const routes = dbListRoutes();
   const instanceList = dbListInstances();
+  const channelList = dbListChannels();
   const ignoredOmniInstanceIds = parseIgnoredOmniInstanceIds(dbGetSetting(IGNORED_OMNI_INSTANCE_IDS_SETTING));
 
   // Build agents record
@@ -67,6 +70,11 @@ export function loadRouterConfig(): RouterConfig {
   const instancesRecord: Record<string, InstanceConfig> = {};
   for (const inst of instanceList) {
     instancesRecord[inst.name] = inst;
+  }
+
+  const channelsRecord: Record<string, ChannelConfig> = {};
+  for (const channel of channelList) {
+    channelsRecord[channel.name] = channel;
   }
 
   // Build account→agent and instanceId→account from instances table (primary)
@@ -93,6 +101,7 @@ export function loadRouterConfig(): RouterConfig {
     accountAgents,
     instanceToAccount,
     instances: instancesRecord,
+    channels: channelsRecord,
     ignoredOmniInstanceIds,
   };
 
@@ -108,7 +117,7 @@ export function loadRouterConfig(): RouterConfig {
 /**
  * Update an existing agent (strips id from partial to prevent accidental change)
  */
-export function updateAgent(id: string, partial: Partial<AgentConfig>): void {
+export function updateAgent(id: string, partial: AgentUpdateInput): void {
   const { id: _ignoreId, ...updates } = partial;
   dbUpdateAgent(id, updates);
 }

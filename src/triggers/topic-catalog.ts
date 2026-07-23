@@ -134,6 +134,124 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     notes: ["Subscriber support exists in approval flows; publisher availability depends on the channel provider."],
   },
   {
+    id: "inbound.thread.created",
+    category: "inbound",
+    pattern: "ravi.inbound.thread.created",
+    title: "Inbound thread created",
+    description: "A native channel thread was bound to a newly created Ravi session.",
+    payload:
+      "{ provider, eventType, channelId, threadTs, messageTs, userId, sessionKey, sessionName, agentId, canonicalChatId }",
+    schema: {
+      version: 1,
+      fields: [
+        { path: "provider", type: "string", required: true, description: "Channel provider, for example slack." },
+        {
+          path: "eventType",
+          type: "string",
+          required: true,
+          description: "Normalized lifecycle event type. Currently thread.created.",
+        },
+        { path: "accountId", type: "string", description: "Provider account/workspace route identifier." },
+        { path: "instanceId", type: "string", description: "Ravi channel instance identifier." },
+        { path: "channelId", type: "string", required: true, description: "Provider channel/conversation id." },
+        { path: "threadTs", type: "string", required: true, description: "Provider thread identifier." },
+        {
+          path: "messageTs",
+          type: "string",
+          required: true,
+          description: "Provider message id that caused the thread/session creation.",
+        },
+        { path: "userId", type: "string", description: "Provider user id that sent the message." },
+        { path: "canonicalChatId", type: "string", description: "Ravi canonical chat id for the thread." },
+        { path: "sessionKey", type: "string", required: true, description: "Created Ravi session key." },
+        { path: "sessionName", type: "string", required: true, description: "Created Ravi session name." },
+        { path: "agentId", type: "string", required: true, description: "Agent selected by routing." },
+        { path: "routePattern", type: "string", description: "Route pattern that matched the inbound message." },
+        { path: "createdAt", type: "number", description: "Local timestamp when the event was emitted." },
+      ],
+    },
+    examples: [
+      'ravi triggers add "Slack thread bootstrap" --topic "ravi.inbound.thread.created" --filter \'data.provider == "slack"\' --message "..."',
+      'ravi triggers add "Ravi workflow thread" --topic "ravi.inbound.thread.created" --filter \'data.provider == "slack" && data.channelId == "C123"\' --shell "bun scripts/thread-created.ts"',
+    ],
+    filters: [
+      'data.provider == "slack"',
+      'data.provider == "slack" && data.channelId == "C123"',
+      'data.provider == "slack" && data.agentId == "ravi-hil"',
+    ],
+    notes: [
+      "The event is emitted once per newly created session-backed thread, not for every message in the thread.",
+      "Use canonicalChatId/sessionKey/sessionName to recover durable state instead of parsing Slack timestamps.",
+    ],
+  },
+  {
+    id: "inbound.interaction",
+    category: "inbound",
+    pattern: "ravi.inbound.interaction",
+    title: "Inbound interactive component",
+    description: "Interactive component event from a native channel surface such as Slack Block Kit.",
+    payload:
+      "{ provider, interactionType, userId, channelId, messageTs, actionId, blockId, value, selectedOption, responseUrlId }",
+    schema: {
+      version: 1,
+      fields: [
+        { path: "provider", type: "string", required: true, description: "Channel provider, for example slack." },
+        {
+          path: "interactionType",
+          type: "string",
+          required: true,
+          description: "Provider interaction payload type, for example block_actions or view_submission.",
+        },
+        {
+          path: "userId",
+          type: "string",
+          required: true,
+          description: "Platform user identifier that triggered the interaction.",
+        },
+        { path: "channelId", type: "string", description: "Platform channel or conversation identifier." },
+        {
+          path: "messageTs",
+          type: "string",
+          description: "Platform message identifier when the interaction came from a message.",
+        },
+        {
+          path: "triggerId",
+          type: "string",
+          description: "Provider trigger id for short-lived interactive follow-up flows.",
+        },
+        { path: "actionId", type: "string", description: "Block Kit action_id or equivalent provider action id." },
+        { path: "blockId", type: "string", description: "Block Kit block_id or equivalent provider block id." },
+        { path: "value", type: "string", description: "Action value when the provider includes one." },
+        {
+          path: "selectedOption",
+          type: ["string", "array"],
+          description: "Selected option value or values for select-like controls.",
+        },
+        {
+          path: "responseUrlId",
+          type: "string",
+          description:
+            "Opaque handle for responding to the original interaction without exposing the provider response URL.",
+        },
+      ],
+    },
+    examples: [
+      'ravi triggers add "Slack approve button" --topic "ravi.inbound.interaction" --filter \'data.provider == "slack" && data.actionId == "approve"\' --message "..."',
+      'ravi triggers add "Slack ticket flow" --topic "ravi.inbound.interaction" --filter \'data.provider == "slack" && data.blockId startsWith "ravi_ticket_"\' --shell "bun scripts/slack-ticket-flow.ts"',
+    ],
+    filters: [
+      'data.provider == "slack"',
+      'data.interactionType == "block_actions"',
+      'data.actionId == "approve"',
+      'data.provider == "slack" && data.actionId == "approve"',
+    ],
+    notes: [
+      "Response URLs and channel tokens must not be exposed in trigger payloads.",
+      "Use actionId and blockId as stable automation keys; values are user-controlled input.",
+      "Use shell triggers for deterministic Block Kit automations that only need state updates and channel mutations.",
+    ],
+  },
+  {
     id: "cli.session-command",
     category: "cli",
     pattern: "ravi.*.cli.*.*",
@@ -231,15 +349,55 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     pattern: "ravi.audit.denied",
     title: "Permission denied",
     description: "Permission or policy denial event.",
-    payload: "{ type, agentId, denied, reason, detail?, timestamp }",
+    payload:
+      "{ type, agentId, denied, reason, dedupeKey, command?, detail?, blockType?, missingPrincipals?, missingPrincipalDetails?, recommendedGrantSubjects?, denialId?, context?, timestamp }",
     schema: {
       version: 1,
       fields: [
         { path: "type", type: "string", required: true, description: "Audit event type." },
         { path: "agentId", type: "string", required: true, description: "Agent denied by policy." },
-        { path: "denied", type: "object", required: true, description: "Denied capability or resource facts." },
+        { path: "denied", type: "string", required: true, description: "Denied capability or resource facts." },
         { path: "reason", type: "string", required: true, description: "Policy denial reason." },
-        { path: "detail", type: "string", description: "Optional safe details." },
+        {
+          path: "dedupeKey",
+          type: "string",
+          required: true,
+          description: "Stable semantic key for repeated equivalent denials. It must not include denialId.",
+        },
+        { path: "command", type: "string", description: "CLI command or Bash command that triggered the denial." },
+        {
+          path: "detail",
+          type: "string",
+          description:
+            "Optional safe semantic diagnosis. Scope denials describe the missing agent-identity capability when available.",
+        },
+        {
+          path: "blockType",
+          type: "string",
+          description: "Optional normalized denial category, e.g. agent_identity_effective_capabilities_empty.",
+        },
+        {
+          path: "missingPrincipals",
+          type: "array",
+          description: "Optional machine principals that had no effective capabilities for the denied scope.",
+        },
+        {
+          path: "missingPrincipalDetails",
+          type: "array",
+          description: "Optional branch/principal/displayName records for human-readable audit explanations.",
+        },
+        {
+          path: "recommendedGrantSubjects",
+          type: "array",
+          description: "Optional subjects that should receive the denied grant when the denial is approved.",
+        },
+        { path: "denialId", type: "number", description: "Optional permission_denials ledger id." },
+        {
+          path: "context",
+          type: "object",
+          description:
+            "Safe runtime provenance: contextId, kind, session, actorPrincipal, actorDisplayName, surfacePrincipal, surfaceDisplayName and capability counts. Never includes contextKey.",
+        },
         { path: "timestamp", type: "string", description: "Event timestamp." },
       ],
     },
@@ -311,6 +469,71 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
       ],
     },
     examples: ['ravi triggers add "Unknown instance" --topic "ravi.instances.unregistered" --message "..."'],
+  },
+  {
+    id: "tts.request",
+    category: "delivery",
+    pattern: "ravi.tts",
+    title: "Text-to-speech request",
+    description: "ElevenLabs TTS request for extension playback.",
+    payload: "{ id?, text, agentId?, sessionName?, sessionKey?, target?, playback?, voice?, metadata?, createdAt? }",
+    schema: {
+      version: 1,
+      fields: [
+        { path: "id", type: "string", description: "Optional request id; generated when omitted." },
+        { path: "text", type: "string", required: true, description: "Text to synthesize." },
+        { path: "agentId", type: "string", description: "Agent whose voice defaults should be used." },
+        { path: "sessionName", type: "string", description: "Runtime session name associated with the audio." },
+        { path: "sessionKey", type: "string", description: "Runtime session key associated with the audio." },
+        {
+          path: "target",
+          type: "object",
+          description: "Channel target metadata such as channel, accountId and chatId.",
+        },
+        {
+          path: "playback",
+          type: "object",
+          description: "Playback target metadata; extension playback uses { target: 'extension', autoplay: true }.",
+        },
+        {
+          path: "voice",
+          type: "object",
+          description:
+            "ElevenLabs voice config: voiceId, modelId, lang, outputFormat, voiceSettings and full API options.",
+        },
+        { path: "metadata", type: "object", description: "Optional safe request provenance." },
+        { path: "createdAt", type: "number", description: "Unix timestamp in milliseconds." },
+      ],
+    },
+    examples: [
+      'ravi triggers add "TTS requested" --topic "ravi.tts" --filter \'data.agentId == "main"\' --message "..."',
+    ],
+    notes: [
+      "The gateway consumes this topic in a queue group, generates audio through ElevenLabs and emits ravi.tts.started, ravi.tts.ready or ravi.tts.failed.",
+      "The WhatsApp overlay polls generated playback items and plays ravi.tts.ready audio in the browser.",
+    ],
+  },
+  {
+    id: "tts.lifecycle",
+    category: "delivery",
+    pattern: "ravi.tts.*",
+    title: "Text-to-speech lifecycle",
+    description: "TTS generation lifecycle event such as started, ready or failed.",
+    payload: "{ id, status?, filePath?, error?, sessionName?, agentId?, createdAt? }",
+    schema: {
+      version: 1,
+      fields: [
+        { path: "id", type: "string", required: true, description: "TTS request or playback item id." },
+        { path: "status", type: "string", description: "Lifecycle status when present." },
+        { path: "filePath", type: "string", description: "Generated local audio path when ready." },
+        { path: "error", type: "string", description: "Failure reason when generation failed." },
+        { path: "sessionName", type: "string", description: "Runtime session associated with the request." },
+        { path: "agentId", type: "string", description: "Agent associated with the request." },
+        { path: "createdAt", type: "number", description: "Unix timestamp in milliseconds." },
+      ],
+    },
+    examples: ['ravi triggers add "TTS ready" --topic "ravi.tts.ready" --message "..."'],
+    filters: ['data.status == "ready"', 'data.agentId == "main"'],
   },
   {
     id: "inbox.mail.received",
@@ -446,6 +669,57 @@ const TOPICS: readonly TriggerTopicCatalogEntry[] = [
     examples: [
       'ravi triggers add "Task done" --topic "ravi.task.*.event" --filter \'data.event.type == "task.completed"\' --message "..."',
     ],
+  },
+  {
+    id: "artifacts.lifecycle",
+    category: "custom",
+    pattern: "ravi.artifacts.*",
+    title: "Artifact lifecycle",
+    description: "Artifact lifecycle event such as created, running, completed, failed or archived.",
+    payload: "{ version, eventType, lifecycle, artifact, event, occurredAt }",
+    schema: {
+      version: 1,
+      fields: [
+        { path: "version", type: "number", required: true, description: "Payload contract version." },
+        { path: "eventType", type: "string", required: true, description: "Always artifact.lifecycle." },
+        { path: "lifecycle", type: "string", required: true, description: "Lifecycle state from the topic suffix." },
+        { path: "artifact.id", type: "string", required: true, description: "Artifact id." },
+        { path: "artifact.kind", type: "string", required: true, description: "Artifact kind." },
+        { path: "artifact.status", type: "string", required: true, description: "Current artifact status." },
+        { path: "event.id", type: "string", required: true, description: "Artifact event id." },
+        { path: "occurredAt", type: "string", required: true, description: "ISO occurrence timestamp." },
+      ],
+    },
+    examples: [
+      'ravi triggers add "Image completed" --topic "ravi.artifacts.completed" --filter \'data.artifact.kind == "image"\' --message "..."',
+    ],
+    filters: ['data.lifecycle == "completed"', 'data.artifact.kind == "image"'],
+  },
+  {
+    id: "meetings.lifecycle",
+    category: "custom",
+    pattern: "ravi.meetings.*",
+    title: "Meeting lifecycle",
+    description: "Meeting lifecycle event such as ended, transcript_available or artifact_generated.",
+    payload:
+      "{ version, eventType, meetingId, provider, originSessionName?, artifactId?, title?, startedAt?, endedAt?, occurredAt }",
+    schema: {
+      version: 1,
+      fields: [
+        { path: "version", type: "number", required: true, description: "Payload contract version." },
+        { path: "eventType", type: "string", required: true, description: "Always meeting.lifecycle." },
+        { path: "meetingId", type: "string", required: true, description: "Meeting session id." },
+        { path: "provider", type: "string", required: true, description: "Meeting provider." },
+        { path: "originSessionName", type: ["string", "null"], description: "Origin Ravi session name." },
+        { path: "artifactId", type: ["string", "null"], description: "Generated artifact id when available." },
+        { path: "title", type: ["string", "null"], description: "Meeting title." },
+        { path: "startedAt", type: ["number", "null"], description: "Meeting start timestamp in ms." },
+        { path: "endedAt", type: ["number", "null"], description: "Meeting end timestamp in ms." },
+        { path: "occurredAt", type: "string", required: true, description: "ISO occurrence timestamp." },
+      ],
+    },
+    examples: ['ravi triggers add "Meeting transcript" --topic "ravi.meetings.transcript_available" --message "..."'],
+    filters: ['data.artifactId != ""', 'data.originSessionName == "meetings"'],
   },
   {
     id: "tags.rule.applied",

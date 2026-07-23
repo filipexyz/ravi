@@ -1,9 +1,51 @@
+export type RaviAppErrorCode = "already_exists" | "not_found";
+
+export interface RaviAppErrorEvidence {
+  kind: string;
+  detail: string;
+}
+
+export class RaviAppError extends Error {
+  readonly code: RaviAppErrorCode;
+  readonly status: number;
+  readonly evidence: RaviAppErrorEvidence[];
+
+  constructor(code: RaviAppErrorCode, message: string, evidence: RaviAppErrorEvidence[] = []) {
+    super(message);
+    this.name = "RaviAppError";
+    this.code = code;
+    this.status = code === "already_exists" ? 409 : 404;
+    this.evidence = evidence;
+  }
+
+  toJSON(): { code: string; message: string; status: number; evidence: RaviAppErrorEvidence[] } {
+    return { code: this.code, message: this.message, status: this.status, evidence: this.evidence };
+  }
+}
+
 export type RaviAppManifestSource = "repo" | "plugin" | "state";
+
+export type RaviAppPermissionProviderInterface = "builtin" | "cli";
+
+export interface RaviAppPermissionProviderDeclaration {
+  id: string;
+  version: string;
+  interface: RaviAppPermissionProviderInterface;
+  operation: string;
+  decisionSchema: unknown;
+  requestSchema: unknown;
+  timeoutMs?: number;
+  cacheTtlSec?: number;
+  failClosed: true;
+  scope?: string[];
+  [key: string]: unknown;
+}
 
 export interface RaviAppPermissions {
   required: string[];
   optional: string[];
   mutating: string[];
+  provider: RaviAppPermissionProviderDeclaration | null;
 }
 
 export interface RaviAppManifest {
@@ -26,6 +68,22 @@ export interface RaviAppManifest {
 
 export type RaviAppOperationInterface = "builtin" | "cli" | "sdk" | "tool" | "stream";
 
+export type RaviAppOperationAuthorizationOwner = "actor" | "surface" | "executorAgent";
+
+export interface RaviAppOperationAuthorizationDeclaration {
+  resource?: {
+    type?: string;
+    id?: string;
+    idFromArg?: number;
+    idFromOption?: string;
+    ownerFrom?: RaviAppOperationAuthorizationOwner;
+  };
+  input?: {
+    includeArgs?: boolean;
+    includeOptions?: string[];
+  };
+}
+
 export interface RaviAppOperationDeclaration {
   interface: RaviAppOperationInterface;
   handler?: string;
@@ -40,6 +98,7 @@ export interface RaviAppOperationDeclaration {
   permissions?: string[];
   inputSchema?: unknown;
   outputSchema?: unknown;
+  authorization?: RaviAppOperationAuthorizationDeclaration;
   json?: boolean;
   [key: string]: unknown;
 }
@@ -93,6 +152,7 @@ export interface RaviAppScaffoldOptions {
   name?: string;
   description?: string;
   command?: string;
+  manifest?: RaviAppManifest;
   cwd?: string;
   dryRun?: boolean;
   force?: boolean;
@@ -121,6 +181,61 @@ export interface RaviAppScaffoldResult {
   files: RaviAppScaffoldFileResult[];
   manifest: RaviAppManifest;
   nextCommands: string[];
+}
+
+export type RaviAppDeleteFileAction = "planned" | "deleted" | "not_found";
+
+export interface RaviAppDeleteFileResult {
+  kind: RaviAppScaffoldFileKind;
+  path: string;
+  action: RaviAppDeleteFileAction;
+}
+
+export interface RaviAppDeleteOptions {
+  id: string;
+  cwd?: string;
+  dryRun?: boolean;
+}
+
+export interface RaviAppDeleteResult {
+  id: string;
+  dryRun: boolean;
+  files: RaviAppDeleteFileResult[];
+  removedDirs: string[];
+  nextCommands: string[];
+}
+
+export type RaviAppImportCliSource = "auto" | "manifest" | "registry" | "help";
+export type RaviAppImportCliResolvedSource = "manifest" | "registry" | "help";
+export type RaviAppImportCliConfidence = "high" | "medium" | "low";
+
+export interface RaviAppImportCliOptions extends Omit<RaviAppScaffoldOptions, "command" | "manifest"> {
+  command: string;
+  source?: RaviAppImportCliSource;
+}
+
+export interface RaviAppImportCliOperationCandidate {
+  id: string;
+  name: string;
+  command: string;
+  description: string | null;
+  json: boolean;
+  mutating: boolean;
+  destructive: boolean;
+  streaming: boolean;
+  interactive: boolean;
+  confidence: RaviAppImportCliConfidence;
+  reviewRequired: string[];
+}
+
+export interface RaviAppImportCliResult extends RaviAppScaffoldResult {
+  sourceCommand: string;
+  source: RaviAppImportCliResolvedSource;
+  confidence: RaviAppImportCliConfidence;
+  operationCandidates: RaviAppImportCliOperationCandidate[];
+  debugCandidates: RaviAppImportCliOperationCandidate[];
+  warnings: string[];
+  reviewRequired: string[];
 }
 
 export interface RaviAppsGuidePrompt {
@@ -167,6 +282,7 @@ export interface RaviAppRunResult {
   exitCode?: number | null;
   stdout?: string;
   stderr?: string;
+  permissionProvider?: RaviAppPermissionProviderAudit;
 }
 
 export interface RaviAppAliasInvocation {
@@ -174,4 +290,25 @@ export interface RaviAppAliasInvocation {
   operation?: string;
   args: string[];
   json: boolean;
+}
+
+export type RaviAppPermissionDecision = "allow" | "deny" | "needs_grant" | "not_applicable";
+
+export interface RaviAppPermissionProviderAudit {
+  providerId: string;
+  providerVersion: string;
+  providerOperationId: string;
+  interface: RaviAppPermissionProviderInterface;
+  requestId: string;
+  decision: RaviAppPermissionDecision | "error" | "invalid";
+  reasonCode: string | null;
+  reason?: string;
+  durationMs: number;
+  cache: {
+    hit: boolean;
+    ttlSec?: number;
+  };
+  grantSuggestion?: unknown;
+  audit?: unknown;
+  error?: string;
 }

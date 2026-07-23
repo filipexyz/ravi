@@ -29,6 +29,7 @@ import {
   type RuntimeUserMessage,
 } from "./host-session.js";
 import { applyDirectRuntimeModelSwitch, resolveRuntimeModelSwitchStrategy } from "./model-switch.js";
+import { resolveAgentModelSelection } from "./model-preset-resolver.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID } from "./provider-registry.js";
 import type { RuntimeProviderId } from "./types.js";
 import type { RuntimeSafeEmit } from "./host-event-loop.js";
@@ -39,6 +40,8 @@ import {
   type PendingRuntimeSessionStart,
 } from "./session-launcher.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { formatUserFacingTurnFailure } from "./public-failure.js";
+import { resolveSessionOutputTarget } from "./session-output-target.js";
 import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-runtime-context.js";
 import {
   buildRuntimeSessionPoolSnapshot,
@@ -49,6 +52,10 @@ import {
 } from "./session-pool.js";
 
 const log = logger.child("runtime:session-dispatcher");
+const RUNTIME_EVENT_LOOP_CLOSED_REASON = "runtime_event_loop_closed";
+const MAX_RUNTIME_EVENT_LOOP_RESTARTS = 2;
+const RUNTIME_RESTART_EXHAUSTED_ERROR =
+  "Runtime provider stream closed repeatedly. Automatic recovery was stopped; send a new message to retry.";
 const NATIVE_STEER_ACTIVE_TURN_MAX_IDLE_MS = 30_000;
 const IDLE_GAP_RECOVERY_MS = Math.max(1_000, Number(process.env.RAVI_RUNTIME_IDLE_GAP_RECOVERY_MS) || 5_000);
 
@@ -104,6 +111,7 @@ export class RuntimeSessionDispatcher {
   readonly inFlightStartPrompts = new Map<string, RuntimeLaunchPrompt>();
   readonly pendingStartSessions = new Set<string>();
   readonly startingSessions = new Set<string>();
+  private readonly runtimeEventLoopRestartAttempts = new Map<string, number>();
 
   constructor(private readonly options: RuntimeSessionDispatcherOptions) {}
 
@@ -201,6 +209,7 @@ export class RuntimeSessionDispatcher {
           toolRunning: session.toolRunning,
           pendingAbort: session.pendingAbort,
           pendingWake: session.pendingWake,
+          currentSource: session.currentSource ? cloneRuntimeMessageTarget(session.currentSource) : null,
           currentToolName: session.currentToolName ?? null,
           currentTaskBarrierTaskId: session.currentTaskBarrierTaskId ?? null,
           currentTurnPendingIds: session.currentTurnPendingIds ?? [],
@@ -309,6 +318,7 @@ export class RuntimeSessionDispatcher {
       log.info("Clearing session start reservations", { count: this.startReservations.size });
       this.startReservations.clear();
     }
+    this.runtimeEventLoopRestartAttempts.clear();
 
     if (this.streamingSessions.size === 0) {
       return;
@@ -421,7 +431,12 @@ export class RuntimeSessionDispatcher {
   async applySessionModelChange(
     sessionName: string,
     model: string,
-    options: { drainReleasedSlot?: boolean } = {},
+    options: {
+      drainReleasedSlot?: boolean;
+      modelSource?: string | null;
+      modelPresetId?: string | null;
+      modelPresetVersion?: number | null;
+    } = {},
   ): Promise<"missing" | "unchanged" | "applied" | "restart-next-turn"> {
     const streaming = this.streamingSessions.get(sessionName);
     if (!streaming || streaming.done) {
@@ -430,6 +445,14 @@ export class RuntimeSessionDispatcher {
     if (streaming.currentModel === model) {
       return "unchanged";
     }
+
+    const presetTrace = {
+      ...(options.modelSource ? { modelSource: options.modelSource } : {}),
+      ...(options.modelPresetId ? { modelPresetId: options.modelPresetId } : {}),
+      ...(options.modelPresetVersion !== undefined && options.modelPresetVersion !== null
+        ? { modelPresetVersion: options.modelPresetVersion }
+        : {}),
+    };
 
     if (resolveRuntimeModelSwitchStrategy(streaming.queryHandle) === "direct-set") {
       recordRuntimeTraceEvent({
@@ -448,6 +471,7 @@ export class RuntimeSessionDispatcher {
           previousModel: streaming.currentModel,
           nextModel: model,
           strategy: "direct-set",
+          ...presetTrace,
         },
       });
       await applyDirectRuntimeModelSwitch(streaming.queryHandle, model);
@@ -474,6 +498,8 @@ export class RuntimeSessionDispatcher {
       payloadJson: {
         reason: "model_change_restart",
         nextModel: model,
+        strategy: "restart-next-turn",
+        ...presetTrace,
       },
     });
     recordStreamingTurnInterruptedTrace(sessionName, streaming, "model_change_restart", sessionName);
@@ -611,6 +637,9 @@ export class RuntimeSessionDispatcher {
   }
 
   async handlePromptImmediate(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void> {
+    if (!prompt._resumeStashedMessages) {
+      this.runtimeEventLoopRestartAttempts.delete(sessionName);
+    }
     const routerConfig = configStore.getConfig();
     const sessionEntry = getSessionByName(sessionName);
     const existing = this.streamingSessions.get(sessionName);
@@ -623,10 +652,17 @@ export class RuntimeSessionDispatcher {
       log.error("No agent found for prompt", { sessionName, agentId });
       return;
     }
+    const agentSelection = resolveAgentModelSelection(agent);
+    const sessionRuntimeProviderOverride =
+      prompt._observation && prompt._runtimeProviderId ? undefined : sessionEntry?.runtimeProviderOverride;
     const requestedProvider: RuntimeProviderId =
       prompt._observation && prompt._runtimeProviderId
         ? prompt._runtimeProviderId
-        : (agent.provider ?? DEFAULT_RUNTIME_PROVIDER_ID);
+        : sessionRuntimeProviderOverride
+          ? sessionRuntimeProviderOverride
+          : agentSelection.modelSource === "agent_preset"
+            ? agentSelection.effectiveProvider
+            : (agent.provider ?? DEFAULT_RUNTIME_PROVIDER_ID);
     let retainReleasedSlot = false;
 
     if (existing && !existing.done) {
@@ -728,6 +764,9 @@ export class RuntimeSessionDispatcher {
         } else if (existing.currentModel !== requestedModel) {
           const modelStatus = await this.applySessionModelChange(sessionName, requestedModel, {
             drainReleasedSlot: false,
+            modelSource: requestedRuntime.sources.model,
+            modelPresetId: requestedRuntime.modelPresetId ?? null,
+            modelPresetVersion: requestedRuntime.modelPresetVersion ?? null,
           });
           if (modelStatus === "restart-next-turn") {
             await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot: true });
@@ -749,10 +788,6 @@ export class RuntimeSessionDispatcher {
           commands: prompt.commands,
         });
 
-        if (prompt.source) {
-          existing.currentSource = prompt.source;
-        }
-
         const barrier = getRuntimePromptDeliveryBarrier(prompt);
         const nativeSteer = await this.tryNativeRuntimeSteer(
           sessionName,
@@ -762,6 +797,9 @@ export class RuntimeSessionDispatcher {
           sessionEntry?.sessionKey,
         );
         if (nativeSteer === "accepted") {
+          if (prompt.source) {
+            existing.currentSource = prompt.source;
+          }
           updateRuntimeLiveState(sessionName, {
             activity: "thinking",
             summary: "runtime control accepted",
@@ -810,7 +848,11 @@ export class RuntimeSessionDispatcher {
         });
 
         if (existing.pushMessage) {
-          if (hasDeliverableRuntimeMessages(sessionName, existing)) {
+          const deliverableNow = hasDeliverableRuntimeMessages(sessionName, existing);
+          if (deliverableNow) {
+            if (!existing.turnActive && prompt.source) {
+              existing.currentSource = prompt.source;
+            }
             log.info("Streaming: waking generator", {
               sessionName,
               queueSize: existing.pendingMessages.length,
@@ -1383,6 +1425,79 @@ export class RuntimeSessionDispatcher {
     }
 
     const traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
+    const restartAttempt =
+      reason === RUNTIME_EVENT_LOOP_CLOSED_REASON
+        ? (this.runtimeEventLoopRestartAttempts.get(sessionName) ?? 0) + 1
+        : undefined;
+    if (restartAttempt !== undefined && restartAttempt > MAX_RUNTIME_EVENT_LOOP_RESTARTS) {
+      recordRuntimeTraceEvent({
+        sessionKey: traceIdentity.sessionKey,
+        sessionName,
+        agentId: traceIdentity.agentId ?? prompt._agentId,
+        provider: prompt._runtimeProviderId,
+        eventType: "dispatch.restart_suppressed",
+        eventGroup: "dispatch",
+        status: "blocked",
+        source: prompt.source,
+        messageId: prompt.context?.messageId,
+        error: RUNTIME_RESTART_EXHAUSTED_ERROR,
+        payloadJson: {
+          reason,
+          restartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+          stashedQueueSize: stashed.length,
+          resumeStashedMessages: true,
+        },
+      });
+      updateRuntimeLiveState(sessionName, {
+        activity: "blocked",
+        summary: RUNTIME_RESTART_EXHAUSTED_ERROR,
+        agentId: traceIdentity.agentId ?? prompt._agentId,
+        provider: prompt._runtimeProviderId,
+        source: prompt.source,
+      });
+      await this.options
+        .safeEmit(`ravi.session.${sessionName}.runtime`, {
+          type: "dispatch.restart_suppressed",
+          reason,
+          restartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+          stashedQueueSize: stashed.length,
+          error: RUNTIME_RESTART_EXHAUSTED_ERROR,
+          ...(prompt.source ? { _source: prompt.source } : {}),
+          timestamp: new Date().toISOString(),
+        })
+        .catch((error) => {
+          log.warn("Failed to emit suppressed runtime restart event", { sessionName, reason, error });
+        });
+
+      const outputTarget = resolveSessionOutputTarget({
+        sessionKey: traceIdentity.sessionKey,
+        fallback: prompt.source,
+      }).target;
+      if (outputTarget) {
+        const routerConfig = configStore.getConfig();
+        const agentId = traceIdentity.agentId ?? prompt._agentId;
+        const agent = agentId ? routerConfig.agents[agentId] : undefined;
+        if (agent?.mode !== "sentinel") {
+          await nats
+            .emit(`ravi.session.${sessionName}.response`, {
+              response: formatUserFacingTurnFailure(RUNTIME_RESTART_EXHAUSTED_ERROR),
+              target: outputTarget,
+              _emitId: Math.random().toString(36).slice(2, 8),
+              _instanceId: this.options.instanceId,
+              _pid: process.pid,
+              _v: 2,
+            })
+            .catch((error) => {
+              log.warn("Failed to emit exhausted runtime recovery response", { sessionName, reason, error });
+            });
+        }
+      }
+      return;
+    }
+    if (restartAttempt !== undefined) {
+      this.runtimeEventLoopRestartAttempts.set(sessionName, restartAttempt);
+    }
+
     recordRuntimeTraceEvent({
       sessionKey: traceIdentity.sessionKey,
       sessionName,
@@ -1395,6 +1510,12 @@ export class RuntimeSessionDispatcher {
       messageId: prompt.context?.messageId,
       payloadJson: {
         reason,
+        ...(restartAttempt !== undefined
+          ? {
+              restartAttempt,
+              maxRestartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+            }
+          : {}),
         stashedQueueSize: stashed.length,
         resumeStashedMessages: true,
       },
@@ -1692,7 +1813,7 @@ export function stashPromptForStartingSession(
   return queued;
 }
 
-function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): RuntimeLaunchPrompt | null {
+export function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): RuntimeLaunchPrompt | null {
   if (messages.length === 0) {
     return null;
   }
@@ -1700,7 +1821,7 @@ function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): RuntimeLaunc
   const launchPrompts = messages
     .map((message) => message.launchPrompt)
     .filter((prompt): prompt is RuntimeLaunchPrompt => Boolean(prompt));
-  const newestLaunchPrompt = launchPrompts[launchPrompts.length - 1];
+  const newestLaunchPrompt = selectStashedRestartPromptEnvelope(launchPrompts);
   const first = messages[0];
   if (!first) {
     return null;
@@ -1734,6 +1855,35 @@ function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): RuntimeLaunc
         : messages.flatMap((message) => message.commands ?? []),
     _resumeStashedMessages: true,
   };
+}
+
+function selectStashedRestartPromptEnvelope(launchPrompts: RuntimeLaunchPrompt[]): RuntimeLaunchPrompt | undefined {
+  const newest = launchPrompts[launchPrompts.length - 1];
+  if (!newest?._daemonRestartResume || hasResolvedActorPromptMetadata(newest)) {
+    return newest;
+  }
+  return [...launchPrompts].reverse().find(hasResolvedActorPromptMetadata) ?? newest;
+}
+
+function hasResolvedActorPromptMetadata(prompt: RuntimeLaunchPrompt): boolean {
+  return hasResolvedActorMetadata(prompt.source) || hasResolvedActorMetadata(prompt.context);
+}
+
+function hasResolvedActorMetadata(
+  metadata:
+    | {
+        actorType?: string;
+        contactId?: string;
+        actorAgentId?: string;
+        automationId?: string;
+      }
+    | undefined,
+): boolean {
+  return Boolean(
+    (metadata?.actorType === "contact" && metadata.contactId) ||
+      (metadata?.actorType === "agent" && metadata.actorAgentId) ||
+      (metadata?.actorType === "automation" && metadata.automationId),
+  );
 }
 
 function combineDeliveryBarrierMetadata(entries: Array<{ barrier: DeliveryBarrier; source?: DeliveryBarrierSource }>): {
@@ -1824,6 +1974,10 @@ function inferTaskIdFromDedicatedTaskSessionName(sessionName: string): string | 
 
 function cloneRuntimeUserMessage(message: RuntimeUserMessage): RuntimeUserMessage {
   return JSON.parse(JSON.stringify(message)) as RuntimeUserMessage;
+}
+
+function cloneRuntimeMessageTarget(target: RuntimeMessageTarget): RuntimeMessageTarget {
+  return JSON.parse(JSON.stringify(target)) as RuntimeMessageTarget;
 }
 
 function appendRestartPendingMessages(snapshot: RestartSnapshotAccumulator, messages: RuntimeUserMessage[]): void {

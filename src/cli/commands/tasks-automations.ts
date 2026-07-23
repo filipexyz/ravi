@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option, Returns } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { formatDurationMs, parseDurationMs } from "../../cron/schedule.js";
@@ -133,6 +133,7 @@ function printJson(payload: unknown): void {
 })
 export class TaskAutomationCommands {
   @Command({ name: "list", description: "List configured task automations" })
+  @CommandAccess({ kind: "read", resource: "tasks.automations", action: "list", risk: "low" })
   @Returns(taskAutomationsListReturnSchema)
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -196,6 +197,7 @@ export class TaskAutomationCommands {
   }
 
   @Command({ name: "show", description: "Show one task automation and its recent runs" })
+  @CommandAccess({ kind: "read", resource: "tasks.automations", action: "show", risk: "low" })
   @Returns(taskAutomationShowReturnSchema)
   show(
     @Arg("id", { description: "Task automation ID" }) id: string,
@@ -272,6 +274,7 @@ export class TaskAutomationCommands {
   }
 
   @Command({ name: "add", description: "Create a new task automation" })
+  @CommandAccess({ kind: "mutate", resource: "tasks.automations", action: "add", risk: "medium" })
   @Returns(taskAutomationMutationReturnSchema)
   add(
     @Arg("name", { description: "Task automation name" }) name: string,
@@ -365,6 +368,7 @@ export class TaskAutomationCommands {
   }
 
   @Command({ name: "enable", description: "Enable a task automation" })
+  @CommandAccess({ kind: "mutate", resource: "tasks.automations", action: "enable", risk: "medium" })
   @Returns(taskAutomationMutationReturnSchema)
   enable(
     @Arg("id", { description: "Task automation ID" }) id: string,
@@ -387,6 +391,7 @@ export class TaskAutomationCommands {
   }
 
   @Command({ name: "disable", description: "Disable a task automation" })
+  @CommandAccess({ kind: "mutate", resource: "tasks.automations", action: "disable", risk: "medium" })
   @Returns(taskAutomationMutationReturnSchema)
   disable(
     @Arg("id", { description: "Task automation ID" }) id: string,
@@ -409,6 +414,7 @@ export class TaskAutomationCommands {
   }
 
   @Command({ name: "rm", description: "Delete a task automation", aliases: ["delete", "remove"] })
+  @CommandAccess({ kind: "mutate", resource: "tasks.automations", action: "rm", risk: "destructive" })
   @Returns(taskAutomationMutationReturnSchema)
   remove(
     @Arg("id", { description: "Task automation ID" }) id: string,

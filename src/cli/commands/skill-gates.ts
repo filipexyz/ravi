@@ -4,7 +4,7 @@
 
 import "reflect-metadata";
 import { z } from "zod";
-import { Arg, Command, Group, Option, Returns } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { cliOffsetPaginationSchema, looseObjectSchema } from "../return-schemas.js";
@@ -217,6 +217,7 @@ function printRule(rule: EffectiveSkillGateRule): void {
 })
 export class SkillGatesCommands {
   @Command({ name: "list", description: "List skill gate rules" })
+  @CommandAccess({ kind: "read", resource: "skill-gates", action: "list", risk: "low" })
   @Returns(skillGatesListReturnSchema)
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -269,6 +270,7 @@ export class SkillGatesCommands {
   }
 
   @Command({ name: "show", description: "Show one skill gate rule" })
+  @CommandAccess({ kind: "read", resource: "skill-gates", action: "show", risk: "low" })
   @Returns(skillGateShowReturnSchema)
   show(
     @Arg("id", { description: "Rule id" }) id: string,
@@ -289,6 +291,7 @@ export class SkillGatesCommands {
   }
 
   @Command({ name: "set", description: "Create or overwrite a skill gate rule" })
+  @CommandAccess({ kind: "mutate", resource: "skill-gates", action: "set", risk: "medium" })
   @Returns(skillGateRuleMutationReturnSchema)
   set(
     @Arg("id", { description: "Rule id. Use a default id to override it, or a new id for a custom rule." }) id: string,
@@ -336,6 +339,7 @@ export class SkillGatesCommands {
   }
 
   @Command({ name: "disable", description: "Disable a skill gate rule" })
+  @CommandAccess({ kind: "mutate", resource: "skill-gates", action: "disable", risk: "medium" })
   @Returns(skillGateRuleMutationReturnSchema)
   disable(
     @Arg("id", { description: "Rule id" }) id: string,
@@ -360,6 +364,7 @@ export class SkillGatesCommands {
   }
 
   @Command({ name: "enable", description: "Enable a configured skill gate rule" })
+  @CommandAccess({ kind: "mutate", resource: "skill-gates", action: "enable", risk: "medium" })
   @Returns(skillGateRuleMutationReturnSchema)
   enable(
     @Arg("id", { description: "Rule id" }) id: string,
@@ -381,6 +386,7 @@ export class SkillGatesCommands {
   }
 
   @Command({ name: "rm", description: "Remove a custom gate or disable a default gate" })
+  @CommandAccess({ kind: "mutate", resource: "skill-gates", action: "rm", risk: "destructive" })
   @Returns(skillGateRemoveReturnSchema)
   rm(
     @Arg("id", { description: "Rule id" }) id: string,
@@ -409,6 +415,7 @@ export class SkillGatesCommands {
   }
 
   @Command({ name: "reset", description: "Delete a configured override and restore the default behavior" })
+  @CommandAccess({ kind: "mutate", resource: "skill-gates", action: "reset", risk: "medium" })
   @Returns(skillGateResetReturnSchema)
   reset(
     @Arg("id", { description: "Rule id" }) id: string,

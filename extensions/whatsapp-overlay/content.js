@@ -1,9 +1,14 @@
 const SNAPSHOT_POLL_INTERVAL_MS = 2500;
 const SESSION_WORKSPACE_POLL_INTERVAL_MS = 2500;
+const SESSION_FOCUS_TRACE_POLL_INTERVAL_MS = 5000;
+const TTS_PLAYBACK_POLL_INTERVAL_MS = 1800;
+const TTS_PREVIEW_PRIME_SRC =
+  "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQQAAAAAAA==";
 const VIEW_STATE_POLL_INTERVAL_MS = 1000;
 const CHAT_LIST_RESOLVE_INTERVAL_MS = 2500;
 const MESSAGE_CHIP_REFRESH_INTERVAL_MS = 2500;
 const DOM_COMMAND_POLL_INTERVAL_MS = 1500;
+const LAYOUT_SYNC_INTERVAL_MS = 500;
 const VIEW_STATE_REPUBLISH_MS = 2500;
 const HUMAN_CHAT_NAV_INTENT_TTL_MS = 4000;
 const ROOT_ID = "ravi-wa-overlay-root";
@@ -12,9 +17,13 @@ const PROFILE_BUTTON_ID = "ravi-wa-profile-toggle";
 const PROFILE_MENU_ID = "ravi-wa-profile-menu";
 const VIBES_BUTTON_ID = "ravi-wa-vibes-toggle";
 const VIBES_MENU_ID = "ravi-wa-vibes-menu";
+const SESSION_SEARCH_BUTTON_ID = "ravi-wa-session-search-toggle";
+const SESSION_SEARCH_FORM_ID = "ravi-wa-session-search";
+const SESSION_SEARCH_INPUT_ID = "ravi-wa-session-search-input";
 const VIBES_COMPOSER_DRAFT_MIN_INTERVAL_MS = 120;
 const PANEL_TOGGLE_ID = "ravi-wa-panel-toggle";
 const PANEL_RAIL_TOGGLE_ID = "ravi-wa-panel-rail-toggle";
+const NATIVE_SIDEBAR_RESIZE_HANDLE_ID = "ravi-wa-native-sidebar-resize-handle";
 const SESSION_MAIN_HOST_ID = "ravi-wa-session-main-host";
 const LAYOUT_CLASS = "ravi-wa-layout-active";
 const LAYOUT_HOST_CLASS = "ravi-wa-layout-host";
@@ -34,6 +43,7 @@ const expandedConversationToolGroups = new Set();
 const expandedSessionWorkspaceTools = new Set();
 const MESSAGE_POPOVER_ID = "ravi-wa-message-popover";
 const ARTIFACT_MODAL_ID = "ravi-wa-artifact-modal";
+const ARTIFACT_NOTIFICATION_STACK_ID = "ravi-wa-artifact-notification-stack";
 const RECENT_STACK_ID = "ravi-wa-overlay-recent";
 const PAGE_BRIDGE_SCRIPT_ID = "ravi-wa-page-bridge";
 const PAGE_CHAT_REQUEST_EVENT = "ravi-wa-request-active-chat";
@@ -44,14 +54,23 @@ const ACTIVE_WORKSPACE_KEY_STORAGE = "ravi-wa-overlay-workspace";
 const WORKSPACE_SESSION_KEY_STORAGE = "ravi-wa-overlay-workspace-session";
 const OMNI_INSTANCE_KEY_STORAGE = "ravi-wa-overlay-instance";
 const OVERLAY_PANEL_VISIBLE_KEY_STORAGE = "ravi-wa-overlay-panel-visible";
+const NATIVE_SIDEBAR_WIDTH_KEY_STORAGE = "ravi-wa-native-sidebar-width";
+const NATIVE_SIDEBAR_COLLAPSED_KEY_STORAGE = "ravi-wa-native-sidebar-collapsed";
+const NATIVE_SIDEBAR_COLLAPSE_TOGGLE_ID = "ravi-wa-native-sidebar-collapse-toggle";
 const V3_PLACEHOLDERS_KEY_STORAGE = "ravi-wa-overlay-v3-placeholders";
 const OMNI_POLL_INTERVAL_MS = 6000;
 const V3_PLACEHOLDER_POLL_INTERVAL_MS = 5000;
 const TASKS_POLL_INTERVAL_MS = 5000;
 const INSIGHTS_POLL_INTERVAL_MS = 10000;
 const ARTIFACTS_POLL_INTERVAL_MS = 10000;
+const ARTIFACT_NOTIFICATIONS_POLL_INTERVAL_MS = 4500;
 const CRM_POLL_INTERVAL_MS = 10000;
 const TASKS_EVENTS_LIMIT = 20;
+const SESSION_FOCUS_TRACE_EVENT_LIMIT = 16;
+const SESSION_FOCUS_TRACE_SINCE = "30m";
+const SESSION_FOCUS_EVENT_STAGGER_MS = 85;
+const TTS_VOICE_LIST_TTL_MS = 10 * 60 * 1000;
+const TTS_PREVIEW_POLL_DELAYS_MS = [450, 900, 1400, 2200, 3400, 5200, 7600];
 const TASK_SESSION_CREATION_WINDOW_MS = 30 * 60 * 1000;
 const WORKSPACE_NAV_ID = "ravi-wa-workspace-launcher";
 const V3_PLACEHOLDER_LAYER_ID = "ravi-wa-v3-placeholder-layer";
@@ -82,6 +101,15 @@ const TASK_KANBAN_COLUMNS = [
 const RUNTIME_CLAUDE_ALIAS_MODELS = new Set(["sonnet", "haiku", "opus"]);
 const NATIVE_SIDEBAR_SEARCH_SELECTOR =
   "input[role='textbox'][aria-label*='Pesquisar ou começar'], input[placeholder*='Pesquisar ou começar'], input[role='textbox'][aria-label*='Search'], input[placeholder*='Search']";
+const NATIVE_SIDEBAR_MIN_WIDTH = 260;
+const NATIVE_SIDEBAR_MAX_WIDTH = 640;
+const NATIVE_SIDEBAR_MIN_MAIN_WIDTH = 420;
+const NATIVE_SIDEBAR_COLLAPSED_WIDTH = 150;
+const NATIVE_SIDEBAR_WIDTH_TRANSITION =
+  "flex-basis 260ms cubic-bezier(0.22, 1, 0.36, 1)," +
+  " width 260ms cubic-bezier(0.22, 1, 0.36, 1)," +
+  " min-width 260ms cubic-bezier(0.22, 1, 0.36, 1)," +
+  " max-width 260ms cubic-bezier(0.22, 1, 0.36, 1)";
 const taskDrawerStateApi = globalThis.__RAVI_WA_TASK_DRAWER_STATE__ || null;
 if (!taskDrawerStateApi) {
   throw new Error("[ravi-wa-overlay] task drawer state helpers unavailable");
@@ -108,6 +136,7 @@ const SELECTOR_PROBE_DEFS = [
 
 let latestSnapshot = null;
 let latestSessionWorkspace = null;
+const sessionFocusTraceCache = new Map();
 let latestTasksSnapshot = null;
 let latestViewState = null;
 let latestTimelineDebug = null;
@@ -126,17 +155,31 @@ const taskSelectionCache = new Map();
 const taskSelectionInFlight = new Set();
 const taskDispatchDraftByTaskId = new Map();
 const PINNED_SESSION_KEY_STORAGE = "ravi-wa-overlay-pinned-session";
+const SESSION_FOCUS_DEBUG_OPEN_STORAGE =
+  "ravi-wa-overlay-session-focus-debug-open";
+const TTS_LAST_SEEN_STORAGE = "ravi-wa-overlay-tts-last-seen-at";
+const TTS_SEEN_IDS_STORAGE = "ravi-wa-overlay-tts-seen-ids";
+const ARTIFACT_NOTIFICATION_SEEN_STORAGE =
+  "ravi-wa-overlay-artifact-notification-seen";
+const ARTIFACT_NOTIFICATION_LAST_SEEN_STORAGE =
+  "ravi-wa-overlay-artifact-notification-last-seen";
 let lastPublishedAt = 0;
 const detectionLogs = [];
 let bridgeError = null;
 let pollingStopped = false;
 let domCommandInFlight = false;
+let snapshotRefreshInFlight = false;
+let sessionWorkspaceRefreshInFlight = false;
+let sessionFocusTraceRefreshInFlight = false;
 let chatListRefreshInFlight = false;
 let openMessageChip = null;
 let openMessageId = null;
 let openMessageData = null;
 let openArtifactModalData = null;
+const artifactComponentPreviewStateByArtifactId = new Map();
 let sidebarFilter = "";
+let sidebarSearchOpen = false;
+let sessionFocusDebugOpen = loadSessionFocusDebugOpen();
 let insightsFilter = "";
 let artifactsFilter = "";
 let artifactsLifecycleFilter = "all";
@@ -155,6 +198,8 @@ let sidebarNoticeTimer = null;
 let pinnedSessionKey = loadPinnedSessionKey();
 let activeWorkspace = loadActiveWorkspace();
 let selectedWorkspaceSessionKey = loadWorkspaceSessionKey();
+let sessionWorkspaceMainVisible = Boolean(selectedWorkspaceSessionKey);
+let selectedWorkspaceChatFocusKey = null;
 let selectedTaskId = loadSelectedTaskId();
 let taskDetailDrawerOpen = false;
 let taskDetailDrawerShouldAnimate = false;
@@ -168,6 +213,8 @@ let preferredOmniInstance = loadPreferredOmniInstance();
 let profileMenuOpen = false;
 let vibesMenuOpen = false;
 let overlayPanelVisible = loadOverlayPanelVisible();
+let nativeSidebarWidth = loadNativeSidebarWidth();
+let nativeSidebarCollapsed = loadNativeSidebarCollapsed();
 let v3PlaceholdersEnabled = false;
 let selectedOmniChatId = null;
 let selectedOmniSessionKey = null;
@@ -182,25 +229,57 @@ let currentLayoutHost = null;
 let currentLayoutMain = null;
 let currentLayoutSideBranch = null;
 let currentLayoutMainBranch = null;
+let currentNativeSidebarBranch = null;
 let currentSessionMainHost = null;
+let nativeSidebarResizeState = null;
 let sessionWorkspaceDraft = "";
 let sessionWorkspaceSubmitting = false;
 let sessionWorkspaceShouldScrollToEnd = false;
 let lastSessionWorkspaceRenderSessionKey = null;
 let pendingHumanChatListIntent = null;
+let pendingDetectedChatFocus = null;
+let lastSnapshotChatFocusKey = null;
 const intervalIds = [];
 const clientId = getOrCreateClientId();
+let ttsLastSeenAt = loadTtsLastSeenAt();
+let ttsPollInFlight = false;
+let ttsSettingsSaving = false;
+let ttsPreviewInFlight = false;
+let ttsPreviewAudio = null;
+let ttsPreviewAudioContext = null;
+let ttsPreviewAudioSource = null;
+const ttsSeenIds = loadTtsSeenIds();
+const ttsQueuedIds = new Set();
+const ttsBlockedItems = new Map();
+let ttsPlaybackChain = Promise.resolve();
+let ttsVoiceList = [];
+let ttsVoiceListLoadedAt = 0;
+let ttsVoiceListLoading = false;
+let ttsVoiceListError = null;
+let ttsVoiceQuery = "";
+let ttsConfigOpen = false;
+let ttsVoiceListScrollTop = 0;
+const ttsDraftsByAgentId = new Map();
 let omniPanelInFlight = false;
 let omniRouteActionInFlight = false;
 let v3PlaceholderInFlight = false;
 let tasksInFlight = false;
 let insightsInFlight = false;
 let artifactsInFlight = false;
+let artifactNotificationsInFlight = false;
+let artifactNotificationError = null;
 let crmInFlight = false;
 let taskDispatchInFlightTaskId = null;
 let v3PlaceholderRenderScheduled = false;
 let v3CommandNoticeTimer = null;
 const renderSignatures = new Map();
+const sessionFocusAnimatedEventSignatures = new Map();
+const artifactNotificationSeenSignatures = loadArtifactNotificationSeenSignatures();
+const artifactNotificationBootEpochMs = Date.now();
+let artifactNotificationsBootstrapped = artifactNotificationSeenSignatures.size > 0;
+let artifactNotificationLastSeenAt = loadArtifactNotificationLastSeenAt();
+let artifactNotificationCards = [];
+let artifactNotificationSeq = 0;
 const taskDetailPaneScrollTopByTaskId = new Map();
 const TASK_WORKSPACE_DEFAULT_SECTION_STATE = Object.freeze({
   instructions: true,
@@ -217,6 +296,8 @@ let lastTaskHierarchyState = {
   parentByTaskId: new Map(),
 };
 let shellKeydownListenerAttached = false;
+let focusedSessionTraceKey = null;
+let lastSessionFocusTraceRequestAt = 0;
 
 const ARTIFACT_LIFECYCLE_OPTIONS = [
   { id: "all", label: "all" },
@@ -259,17 +340,23 @@ function boot() {
   document.addEventListener("keydown", handleVibesMenuKeydown, true);
   document.addEventListener("pointerdown", handleProfileMenuOutsidePointerDown, true);
   document.addEventListener("keydown", handleProfileMenuKeydown, true);
+  document.addEventListener("pointerdown", retryBlockedTtsPlayback, true);
   ensureShell();
   initVibesControls();
   initVibesComposerBridge();
   syncLayoutChrome();
   syncWorkspaceLauncher();
   ensureMessagePopover();
+  ensureArtifactNotificationStack();
   refreshAll();
   intervalIds.push(setInterval(refreshSnapshot, SNAPSHOT_POLL_INTERVAL_MS));
   intervalIds.push(
     setInterval(refreshSessionWorkspace, SESSION_WORKSPACE_POLL_INTERVAL_MS),
   );
+  intervalIds.push(
+    setInterval(refreshCurrentSessionFocusTrace, SESSION_FOCUS_TRACE_POLL_INTERVAL_MS),
+  );
+  intervalIds.push(setInterval(pollTtsPlayback, TTS_PLAYBACK_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(refreshViewState, VIEW_STATE_POLL_INTERVAL_MS));
   intervalIds.push(
     setInterval(refreshChatListOverlay, CHAT_LIST_RESOLVE_INTERVAL_MS),
@@ -284,8 +371,13 @@ function boot() {
   intervalIds.push(setInterval(refreshTasks, TASKS_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(refreshInsights, INSIGHTS_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(refreshArtifacts, ARTIFACTS_POLL_INTERVAL_MS));
+  intervalIds.push(
+    setInterval(refreshArtifactNotifications, ARTIFACT_NOTIFICATIONS_POLL_INTERVAL_MS),
+  );
   intervalIds.push(setInterval(refreshCrm, CRM_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(pollDomCommands, DOM_COMMAND_POLL_INTERVAL_MS));
+  intervalIds.push(setInterval(syncLayoutChrome, LAYOUT_SYNC_INTERVAL_MS));
+  window.addEventListener("resize", syncLayoutChrome);
   window.addEventListener("resize", syncMessagePopoverPosition);
   window.addEventListener("resize", scheduleV3PlaceholderRender);
   window.addEventListener("resize", renderChatSessionEditor);
@@ -396,7 +488,9 @@ function restoreWorkspaceScrollState(captures) {
 
 async function refreshSnapshot() {
   if (pollingStopped) return;
+  if (snapshotRefreshInFlight) return;
   const context = detectChatContext();
+  snapshotRefreshInFlight = true;
   try {
     const snapshot = await chrome.runtime.sendMessage({
       type: "ravi:get-snapshot",
@@ -409,25 +503,30 @@ async function refreshSnapshot() {
     }
     bridgeError = null;
     latestSnapshot = snapshot;
+    const didApplyDetectedChatFocus = applyDetectedChatFocus(snapshot);
     syncVibesFromSnapshot(snapshot, context);
     if (
       activeWorkspace === "ravi" &&
-      shouldRenderSnapshot("snapshot:ravi", snapshot)
+      shouldRenderSnapshot("snapshot:ravi", snapshot, didApplyDetectedChatFocus)
     ) {
       requestRender(snapshot, context);
     }
   } catch (error) {
     silenceVibes("snapshot-runtime-error");
     handleRuntimeError(error);
+  } finally {
+    snapshotRefreshInFlight = false;
   }
 }
 
 async function refreshSessionWorkspace(force = false) {
   if (pollingStopped) return;
+  if (sessionWorkspaceRefreshInFlight) return;
   if (!selectedWorkspaceSessionKey) return;
   if (!force && activeWorkspace !== "ravi") return;
   const requestedSessionKey = selectedWorkspaceSessionKey;
 
+  sessionWorkspaceRefreshInFlight = true;
   try {
     const workspace = await chrome.runtime.sendMessage({
       type: "ravi:get-session-workspace",
@@ -453,6 +552,440 @@ async function refreshSessionWorkspace(force = false) {
     }
   } catch (error) {
     handleRuntimeError(error);
+  } finally {
+    sessionWorkspaceRefreshInFlight = false;
+  }
+}
+
+function refreshCurrentSessionFocusTrace(force = false) {
+  if (!focusedSessionTraceKey) return;
+  void refreshSessionFocusTrace(focusedSessionTraceKey, force);
+}
+
+async function pollTtsPlayback() {
+  if (pollingStopped || ttsPollInFlight) return;
+  const session = latestSnapshot?.session || null;
+  const chatContext = detectChatContext();
+  const chatId = chatContext?.chatId || session?.chatId || session?.lastTo || null;
+  if (!session?.sessionKey && !chatId) return;
+
+  ttsPollInFlight = true;
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "ravi:tts-poll",
+      payload: {
+        since: ttsLastSeenAt,
+        sessionKey: session?.sessionKey || undefined,
+        sessionName: session?.sessionName || session?.name || undefined,
+        chatId: chatId || undefined,
+        agentId: session?.agentId || undefined,
+        limit: 6,
+      },
+    });
+    if (!response?.ok || !Array.isArray(response.items)) return;
+    for (const item of response.items) {
+      const eventTime = Number(item?.readyAt || item?.failedAt || item?.createdAt || 0);
+      if (Number.isFinite(eventTime) && eventTime > ttsLastSeenAt) {
+        ttsLastSeenAt = eventTime;
+      }
+      if (!item?.id || item.status !== "ready" || !item.dataUri) continue;
+      if (item.playback?.autoplay === false) {
+        markTtsSeen(item.id);
+        continue;
+      }
+      if (ttsSeenIds.has(item.id)) continue;
+      queueTtsPlayback(item);
+    }
+    persistTtsLastSeenAt(ttsLastSeenAt);
+  } catch (error) {
+    // TTS playback should never destabilize the overlay polling loop.
+    console.debug("[ravi-wa-overlay] tts poll failed", error);
+  } finally {
+    ttsPollInFlight = false;
+  }
+}
+
+async function refreshTtsVoices(force = false) {
+  if (ttsVoiceListLoading) return;
+  if (!force && ttsVoiceList.length && Date.now() - ttsVoiceListLoadedAt < TTS_VOICE_LIST_TTL_MS) return;
+  ttsVoiceListLoading = true;
+  ttsVoiceListError = null;
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "ravi:tts-voices",
+      payload: { limit: 60 },
+    });
+    if (!response?.ok || !Array.isArray(response.voices)) {
+      ttsVoiceListError = response?.error || "não consegui listar vozes";
+      return;
+    }
+    ttsVoiceList = response.voices
+      .filter((voice) => voice?.voiceId)
+      .sort((left, right) => String(left.name || left.voiceId).localeCompare(String(right.name || right.voiceId)));
+    ttsVoiceListLoadedAt = Date.now();
+  } catch (error) {
+    ttsVoiceListError = error?.message || String(error);
+  } finally {
+    ttsVoiceListLoading = false;
+    requestRender();
+  }
+}
+
+function queueTtsPlayback(item, options = {}) {
+  if (!item?.id) return;
+  if (!options.force) {
+    if (ttsSeenIds.has(item.id) || ttsQueuedIds.has(item.id) || ttsBlockedItems.has(item.id)) return;
+  }
+  ttsQueuedIds.add(item.id);
+  ttsPlaybackChain = ttsPlaybackChain
+    .catch(() => {})
+    .then(async () => {
+      try {
+        const status = await playTtsItem(item);
+        if (status === "blocked") {
+          ttsBlockedItems.set(item.id, item);
+          setSidebarNotice("warning", "o navegador bloqueou a voz; clica no WhatsApp para tocar.", 4200);
+          return;
+        }
+        ttsBlockedItems.delete(item.id);
+        markTtsSeen(item.id);
+      } catch (error) {
+        markTtsSeen(item.id);
+        console.debug("[ravi-wa-overlay] tts playback failed", error);
+      } finally {
+        ttsQueuedIds.delete(item.id);
+      }
+    });
+}
+
+function scheduleTtsPlaybackPollBurst() {
+  [450, 1200, 2400, 4200, 7000].forEach((delay) => {
+    window.setTimeout(() => {
+      void pollTtsPlayback();
+    }, delay);
+  });
+}
+
+async function waitForGeneratedTtsPreviewItem(input) {
+  for (const delay of TTS_PREVIEW_POLL_DELAYS_MS) {
+    await sleep(delay);
+    const response = await chrome.runtime.sendMessage({
+      type: "ravi:tts-poll",
+      payload: {
+        id: input.id,
+        clientId,
+        since: input.since,
+        agentId: input.agentId || undefined,
+        sessionKey: input.sessionKey || undefined,
+        sessionName: input.sessionName || undefined,
+        chatId: input.chatId || undefined,
+        includeFailed: true,
+        limit: 4,
+      },
+    });
+    if (!response?.ok) {
+      setBridgeErrorFromResponse(response, "não consegui buscar o preview gerado");
+      return { status: "failed", response };
+    }
+    const items = Array.isArray(response.items) ? response.items : [];
+    const item = items.find((candidate) => candidate?.id === input.id) || items[0] || null;
+    if (!item) continue;
+    if (item.status === "failed") {
+      return { status: "failed", item };
+    }
+    if (item.status === "ready" && item.dataUri) {
+      const status = await playTtsPreviewItem(item);
+      return { status, item };
+    }
+  }
+  return { status: "timeout" };
+}
+
+async function playTtsPreviewItem(item) {
+  if (!item?.id || !item.dataUri) return "missing";
+  if (ttsPreviewAudioContext && ttsPreviewAudioContext.state !== "closed") {
+    const status = await playTtsAudioContextSource(item.dataUri, ttsPreviewAudioContext);
+    if (status === "playing") {
+      markTtsSeen(item.id);
+      return "playing";
+    }
+    if (status === "blocked") return "blocked";
+  }
+  const status = await playTtsAudioSource(item.dataUri);
+  if (status === "playing") {
+    markTtsSeen(item.id);
+  }
+  return status;
+}
+
+function createTtsPreviewRequestId() {
+  const random =
+    typeof globalThis.crypto?.randomUUID === "function"
+      ? globalThis.crypto.randomUUID().replace(/-/g, "").slice(0, 12)
+      : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  return `tts_preview_${random}`;
+}
+
+async function playTtsPreviewUrl(url) {
+  const primedContext = primeTtsPreviewAudioContext();
+  const primedAudio = primeTtsPreviewAudioElement();
+  let source = url;
+  if (/^https:\/\//i.test(url || "")) {
+    const response = await chrome.runtime.sendMessage({
+      type: "ravi:tts-preview-url",
+      payload: { url },
+    });
+    if (!response?.ok || !response.dataUri) {
+      console.debug("[ravi-wa-overlay] preview proxy failed", response);
+      return "failed";
+    }
+    source = response.dataUri;
+  }
+  if (/^data:audio\//i.test(source || "") && primedContext) {
+    const status = await playTtsAudioContextSource(source, primedContext);
+    if (status === "playing") return status;
+  }
+  return await playTtsAudioSource(source, primedAudio);
+}
+
+function primeTtsPreviewAudioContext() {
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextCtor) return null;
+  try {
+    if (!ttsPreviewAudioContext || ttsPreviewAudioContext.state === "closed") {
+      ttsPreviewAudioContext = new AudioContextCtor();
+    }
+    ttsPreviewAudioContext.resume().catch(() => {});
+    return ttsPreviewAudioContext;
+  } catch (error) {
+    console.debug("[ravi-wa-overlay] tts preview AudioContext unavailable", error);
+    return null;
+  }
+}
+
+function primeTtsPreviewAudioElement() {
+  try {
+    if (ttsPreviewAudio) {
+      ttsPreviewAudio.pause();
+      ttsPreviewAudio.removeAttribute("src");
+      ttsPreviewAudio.load();
+    }
+  } catch {}
+  const audio = new Audio(TTS_PREVIEW_PRIME_SRC);
+  audio.preload = "auto";
+  audio.volume = 0;
+  ttsPreviewAudio = audio;
+  audio.play().catch(() => {});
+  return audio;
+}
+
+async function playTtsAudioContextSource(source, audioContext) {
+  if (!audioContext) return "failed";
+  let buffer;
+  try {
+    buffer = decodeAudioDataUri(source);
+  } catch (error) {
+    console.debug("[ravi-wa-overlay] tts preview data URI decode failed", error);
+    return "failed";
+  }
+  try {
+    stopTtsPreviewAudioSource();
+    if (audioContext.state === "suspended") {
+      await audioContext.resume();
+    }
+    if (audioContext.state !== "running") {
+      return "blocked";
+    }
+    const audioBuffer = await audioContext.decodeAudioData(buffer);
+    const sourceNode = audioContext.createBufferSource();
+    sourceNode.buffer = audioBuffer;
+    sourceNode.connect(audioContext.destination);
+    ttsPreviewAudioSource = sourceNode;
+    sourceNode.onended = () => {
+      if (ttsPreviewAudioSource === sourceNode) ttsPreviewAudioSource = null;
+    };
+    sourceNode.start(0);
+    if (ttsPreviewAudio) {
+      ttsPreviewAudio.pause();
+      ttsPreviewAudio.removeAttribute("src");
+      ttsPreviewAudio.load();
+      ttsPreviewAudio = null;
+    }
+    return "playing";
+  } catch (error) {
+    console.debug("[ravi-wa-overlay] tts preview AudioContext playback failed", error);
+    return error?.name === "NotAllowedError" ? "blocked" : "failed";
+  }
+}
+
+function stopTtsPreviewAudioSource() {
+  if (!ttsPreviewAudioSource) return;
+  try {
+    ttsPreviewAudioSource.stop(0);
+  } catch {}
+  try {
+    ttsPreviewAudioSource.disconnect();
+  } catch {}
+  ttsPreviewAudioSource = null;
+}
+
+function decodeAudioDataUri(source) {
+  const match = /^data:audio\/[^;,]+(?:;[^,]*)?;base64,(.+)$/i.exec(source || "");
+  if (!match) throw new Error("invalid audio data URI");
+  const binary = atob(match[1]);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes.buffer;
+}
+
+function playTtsAudioSource(source, audioElement = null) {
+  return new Promise((resolve) => {
+    if (!source) {
+      resolve("missing");
+      return;
+    }
+    const audio = audioElement || new Audio();
+    if (ttsPreviewAudio !== audio) {
+      try {
+        if (ttsPreviewAudio) {
+          ttsPreviewAudio.pause();
+          ttsPreviewAudio.removeAttribute("src");
+          ttsPreviewAudio.load();
+        }
+      } catch {}
+      ttsPreviewAudio = audio;
+    }
+    audio.pause();
+    audio.src = source;
+    audio.volume = 1;
+    audio.preload = "auto";
+    let settled = false;
+    const finish = (status) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      audio.removeEventListener("playing", onPlaying);
+      audio.removeEventListener("error", onError);
+      resolve(status);
+    };
+    const onPlaying = () => finish("playing");
+    const onError = () => {
+      if (ttsPreviewAudio === audio) ttsPreviewAudio = null;
+      finish("failed");
+    };
+    const timeout = window.setTimeout(() => {
+      if (ttsPreviewAudio === audio) ttsPreviewAudio = null;
+      finish("timeout");
+    }, 9000);
+    audio.addEventListener("playing", onPlaying, { once: true });
+    audio.addEventListener("error", onError, { once: true });
+    audio.addEventListener(
+      "ended",
+      () => {
+        if (ttsPreviewAudio === audio) ttsPreviewAudio = null;
+      },
+      { once: true },
+    );
+    audio.load();
+    audio.play().catch((error) => {
+      if (ttsPreviewAudio === audio) ttsPreviewAudio = null;
+      finish(error?.name === "NotAllowedError" ? "blocked" : "failed");
+    });
+  });
+}
+
+function playTtsItem(item) {
+  return new Promise((resolve) => {
+    const audio = new Audio(item.dataUri);
+    audio.preload = "auto";
+    let started = false;
+    let settled = false;
+    const finish = (status) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(status);
+    };
+    const timeout = setTimeout(() => finish(started ? "played" : "failed"), 60_000);
+    const cleanup = () => clearTimeout(timeout);
+    audio.onended = () => {
+      finish(started ? "played" : "failed");
+    };
+    audio.onerror = () => {
+      finish(started ? "played" : "failed");
+    };
+    audio
+      .play()
+      .then(() => {
+        started = true;
+        markTtsSeen(item.id);
+        ttsBlockedItems.delete(item.id);
+      })
+      .catch((error) => {
+        finish(error?.name === "NotAllowedError" ? "blocked" : "failed");
+      });
+  });
+}
+
+function retryBlockedTtsPlayback() {
+  if (!ttsBlockedItems.size) return;
+  const [item] = ttsBlockedItems.values();
+  if (!item?.id) return;
+  ttsBlockedItems.delete(item.id);
+  queueTtsPlayback(item, { force: true });
+}
+
+async function refreshSessionFocusTrace(sessionKey, force = false) {
+  if (pollingStopped) return;
+  if (!sessionKey) return;
+  if (sessionFocusTraceRefreshInFlight) return;
+  if (!force && activeWorkspace !== "ravi") return;
+
+  const now = Date.now();
+  if (
+    !force &&
+    sessionKey === focusedSessionTraceKey &&
+    now - lastSessionFocusTraceRequestAt < SESSION_FOCUS_TRACE_POLL_INTERVAL_MS
+  ) {
+    return;
+  }
+
+  const requestedSessionKey = sessionKey;
+  focusedSessionTraceKey = requestedSessionKey;
+  lastSessionFocusTraceRequestAt = now;
+  sessionFocusTraceRefreshInFlight = true;
+
+  try {
+    const trace = await chrome.runtime.sendMessage({
+      type: "ravi:get-session-trace-summary",
+      payload: {
+        session: requestedSessionKey,
+        since: SESSION_FOCUS_TRACE_SINCE,
+        limit: SESSION_FOCUS_TRACE_EVENT_LIMIT,
+      },
+    });
+    if (focusedSessionTraceKey !== requestedSessionKey) return;
+    if (!trace?.ok) return;
+
+    sessionFocusTraceCache.set(requestedSessionKey, trace);
+    if (
+      shouldRenderSnapshot(
+        `session-focus-trace:${requestedSessionKey}`,
+        {
+          sessionKey: trace.sessionKey || requestedSessionKey,
+          events: trace.events || [],
+        },
+        force,
+      )
+    ) {
+      requestRender();
+    }
+  } catch (error) {
+    console.warn("[RaviOverlay] session focus trace unavailable", error);
+  } finally {
+    sessionFocusTraceRefreshInFlight = false;
   }
 }
 
@@ -549,7 +1082,8 @@ function buildTasksRequestPayload(taskId = selectedTaskId) {
 
 async function refreshTasks(force = false) {
   if (pollingStopped || tasksInFlight) return;
-  if (!force && activeWorkspace !== "tasks" && activeWorkspace !== "ravi") return;
+  if (!force && activeWorkspace !== "tasks") return;
+  if (force && activeWorkspace !== "tasks" && !selectedTaskId) return;
 
   tasksInFlight = true;
   try {
@@ -645,6 +1179,179 @@ async function refreshArtifacts(force = false) {
   }
 }
 
+async function refreshArtifactNotifications(force = false) {
+  if (pollingStopped || artifactNotificationsInFlight) return;
+
+  artifactNotificationsInFlight = true;
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "ravi:get-artifact-notifications",
+      payload: {
+        limit: 30,
+        since: artifactNotificationLastSeenAt || undefined,
+      },
+    });
+    if (!response?.ok || !Array.isArray(response.items)) {
+      artifactNotificationError = buildArtifactNotificationErrorMessage(
+        response,
+        "não consegui carregar notificações de artifacts",
+      );
+      renderArtifactNotificationStack();
+      return;
+    }
+    const hadError = Boolean(artifactNotificationError);
+    artifactNotificationError = null;
+    consumeArtifactNotificationItems(response.items, force || hadError);
+  } catch (error) {
+    console.debug("[ravi-wa-overlay] artifact notifications poll failed", error);
+    artifactNotificationError = buildArtifactNotificationErrorMessage(
+      error,
+      "não consegui carregar notificações de artifacts",
+    );
+    renderArtifactNotificationStack();
+  } finally {
+    artifactNotificationsInFlight = false;
+  }
+}
+
+function buildArtifactNotificationErrorMessage(value, fallbackMessage) {
+  const status = typeof value?.status === "number" && value.status > 0 ? value.status : null;
+  const code = typeof value?.code === "string" && value.code.trim() ? value.code.trim() : null;
+  let message =
+    typeof value?.error === "string" && value.error.trim()
+      ? value.error.trim()
+      : value instanceof Error
+        ? value.message
+        : typeof value?.message === "string" && value.message.trim()
+          ? value.message.trim()
+          : fallbackMessage;
+  if (status || code) {
+    message = `${message}${status ? ` (${status}` : " ("}${status && code ? `/${code}` : code || ""})`;
+  }
+  return message;
+}
+
+function consumeArtifactNotificationItems(items, force = false) {
+  const normalized = items
+    .map(normalizeArtifactNotificationItem)
+    .filter(Boolean)
+    .sort((left, right) => {
+      const leftTime = Number(left.updatedAt || left.createdAt) || 0;
+      const rightTime = Number(right.updatedAt || right.createdAt) || 0;
+      return leftTime - rightTime || String(left.id).localeCompare(String(right.id));
+  });
+  if (!normalized.length) {
+    artifactNotificationsBootstrapped = true;
+    if (force) renderArtifactNotificationStack();
+    return;
+  }
+
+  if (!artifactNotificationsBootstrapped && !artifactNotificationSeenSignatures.size) {
+    const freshCards = [];
+    for (const item of normalized) {
+      const signature = buildArtifactNotificationSignature(item);
+      const time = Number(item.updatedAt || item.createdAt) || 0;
+      artifactNotificationSeenSignatures.add(signature);
+      artifactNotificationLastSeenAt = Math.max(artifactNotificationLastSeenAt, time);
+      if (time > artifactNotificationBootEpochMs) {
+        freshCards.push(buildArtifactNotificationCardState(item, signature));
+      }
+    }
+    artifactNotificationsBootstrapped = true;
+    persistArtifactNotificationState();
+    if (freshCards.length) {
+      artifactNotificationCards = mergeArtifactNotificationCards(freshCards.reverse());
+      renderArtifactNotificationStack();
+      return;
+    }
+    if (force) renderArtifactNotificationStack();
+    return;
+  }
+
+  const nextCards = [];
+  for (const item of normalized) {
+    const signature = buildArtifactNotificationSignature(item);
+    const time = Number(item.updatedAt || item.createdAt) || 0;
+    artifactNotificationLastSeenAt = Math.max(artifactNotificationLastSeenAt, time);
+    if (artifactNotificationSeenSignatures.has(signature)) continue;
+    artifactNotificationSeenSignatures.add(signature);
+    nextCards.push(buildArtifactNotificationCardState(item, signature));
+  }
+
+  persistArtifactNotificationState();
+  if (!nextCards.length && !force) return;
+
+  if (nextCards.length) {
+    artifactNotificationCards = mergeArtifactNotificationCards(nextCards.reverse());
+  }
+  renderArtifactNotificationStack();
+}
+
+function mergeArtifactNotificationCards(incomingCards) {
+  const byArtifactId = new Map();
+  for (const card of artifactNotificationCards) {
+    const artifactId = getArtifactNotificationCardArtifactId(card);
+    if (artifactId && !byArtifactId.has(artifactId)) byArtifactId.set(artifactId, card);
+  }
+
+  const nextCards = [...artifactNotificationCards];
+  for (const incoming of incomingCards) {
+    const artifactId = getArtifactNotificationCardArtifactId(incoming);
+    const previous = artifactId ? byArtifactId.get(artifactId) : null;
+    if (!previous) {
+      nextCards.unshift(incoming);
+      if (artifactId) byArtifactId.set(artifactId, incoming);
+      continue;
+    }
+
+    const merged = buildArtifactNotificationCardState(
+      incoming.item,
+      incoming.signature,
+      previous,
+    );
+    const index = nextCards.findIndex((card) => card.id === previous.id);
+    if (index >= 0) nextCards[index] = merged;
+    if (artifactId) byArtifactId.set(artifactId, merged);
+  }
+
+  return dedupeArtifactNotificationCards(nextCards).slice(0, 5);
+}
+
+function getArtifactNotificationCardArtifactId(card) {
+  const artifactId = card?.item?.id;
+  return typeof artifactId === "string" && artifactId.trim() ? artifactId.trim() : null;
+}
+
+function dedupeArtifactNotificationCards(cards) {
+  const seenArtifactIds = new Set();
+  const deduped = [];
+  for (const card of cards) {
+    const artifactId = getArtifactNotificationCardArtifactId(card);
+    if (artifactId) {
+      if (seenArtifactIds.has(artifactId)) continue;
+      seenArtifactIds.add(artifactId);
+    }
+    deduped.push(card);
+  }
+  return deduped;
+}
+
+function buildArtifactNotificationCardState(item, signature, previous = null) {
+  const previousLifecycle = previous?.item?.lifecycle || previous?.item?.status || null;
+  const nextLifecycle = item?.lifecycle || item?.status || null;
+  return {
+    id: previous?.id || `artifact-notification-${++artifactNotificationSeq}`,
+    signature,
+    item,
+    receivedAt: previous?.receivedAt || Date.now(),
+    updatedAt: Date.now(),
+    phaseChangedAt:
+      previous && previousLifecycle !== nextLifecycle
+        ? Date.now()
+        : previous?.phaseChangedAt || Date.now(),
+  };
+}
+
 async function refreshCrm(force = false) {
   if (pollingStopped || crmInFlight) return;
   if (!force && activeWorkspace !== "crm") return;
@@ -712,10 +1419,11 @@ function refreshAll() {
   refreshViewState();
   refreshSnapshot();
   refreshSessionWorkspace(true);
-  refreshTasks(true);
-  refreshArtifacts(true);
-  refreshCrm(true);
-  refreshOmniPanel(true);
+  if (activeWorkspace === "tasks") refreshTasks(true);
+  if (activeWorkspace === "artifacts") refreshArtifacts(true);
+  if (activeWorkspace === "crm") refreshCrm(true);
+  if (activeWorkspace === "omni") refreshOmniPanel(true);
+  refreshArtifactNotifications(true);
   refreshChatListOverlay();
   refreshMessageChips();
   refreshV3Placeholders();
@@ -724,8 +1432,10 @@ function refreshAll() {
 function refreshViewState() {
   if (pollingStopped) return;
   requestPageChatInfo();
+  const previousNavigationKey = readViewNavigationKey(latestViewState);
   const next = detectViewState();
   reconcileHumanChatListIntent(next);
+  const nextNavigationKey = readViewNavigationKey(next);
   if (!hasViewChanged(latestViewState, next)) {
     if (Date.now() - lastPublishedAt >= VIEW_STATE_REPUBLISH_MS) {
       publishViewState(next).catch(handleRuntimeError);
@@ -744,6 +1454,9 @@ function refreshViewState() {
   console.log("[RaviOverlay] view-state", next);
   publishViewState(next).catch(handleRuntimeError);
   renderTimelineProbe();
+  if (previousNavigationKey !== nextNavigationKey) {
+    void refreshSnapshot();
+  }
   requestRender();
 }
 
@@ -1254,7 +1967,7 @@ function handleHumanChatListKeydown(event) {
 }
 
 function rememberHumanChatListIntent(target) {
-  if (!selectedWorkspaceSessionKey) return;
+  if (!selectedWorkspaceSessionKey && !pinnedSessionKey) return;
   const element = resolveEventElement(target);
   if (!(element instanceof Element)) return;
   if (element.closest(`[${CHAT_ROW_BADGE_ATTR}], #${CHAT_SESSION_EDITOR_ID}`)) return;
@@ -1310,10 +2023,29 @@ function readActiveChatNavigationState(view = latestViewState) {
   };
 }
 
+function readViewNavigationKey(view) {
+  if (!view) return null;
+  const selectedRow = Array.isArray(view.chatRows)
+    ? view.chatRows.find((row) => row?.selected) || null
+    : null;
+  const chatId = normalizeLookupToken(view.chatIdCandidate);
+  const selectedRowKey = normalizeLookupToken(
+    selectedRow?.chatIdCandidate || selectedRow?.title,
+  );
+  const title = normalizeLookupToken(view.selectedChat || view.title);
+  return chatId
+    ? `chat:${chatId}`
+    : selectedRowKey
+      ? `selected:${selectedRowKey}`
+      : title
+        ? `title:${title}`
+        : null;
+}
+
 function reconcileHumanChatListIntent(view = latestViewState) {
   const pending = pendingHumanChatListIntent;
   if (!pending) return;
-  if (!selectedWorkspaceSessionKey) {
+  if (!selectedWorkspaceSessionKey && !pinnedSessionKey) {
     pendingHumanChatListIntent = null;
     return;
   }
@@ -1330,7 +2062,128 @@ function reconcileHumanChatListIntent(view = latestViewState) {
   if (!previousKey && !current.key) return;
 
   pendingHumanChatListIntent = null;
-  clearSessionWorkspace();
+  queueDetectedChatFocus(current);
+}
+
+function queueDetectedChatFocus(current) {
+  pendingDetectedChatFocus = {
+    key: current.key || null,
+    chatId: current.chatId || null,
+    selectedRowKey: current.selectedRowKey || null,
+    title: current.title || null,
+    startedAt: Date.now(),
+  };
+  sessionWorkspaceMainVisible = false;
+  sessionWorkspaceShouldScrollToEnd = false;
+  hideSessionWorkspaceMain();
+  setTimeout(() => {
+    void refreshSnapshot();
+  }, 0);
+}
+
+function applyDetectedChatFocus(snapshot) {
+  const snapshotFocusKey = buildSnapshotChatFocusKey(snapshot);
+  const previousSnapshotFocusKey = lastSnapshotChatFocusKey;
+  if (snapshotFocusKey) {
+    lastSnapshotChatFocusKey = snapshotFocusKey;
+  }
+
+  const pending = pendingDetectedChatFocus;
+  const pendingExpired =
+    pending && Date.now() - pending.startedAt > HUMAN_CHAT_NAV_INTENT_TTL_MS;
+  if (pendingExpired) {
+    pendingDetectedChatFocus = null;
+  }
+
+  const detectedSession = snapshot?.session || null;
+  if (!detectedSession?.sessionKey) return false;
+  const pendingMatches =
+    pending &&
+    !pendingExpired &&
+    snapshotMatchesPendingDetectedChatFocus(snapshot, pending);
+  const chatChanged =
+    Boolean(
+      snapshotFocusKey &&
+        previousSnapshotFocusKey &&
+        previousSnapshotFocusKey !== snapshotFocusKey,
+    ) ||
+    Boolean(
+      snapshotFocusKey &&
+        !previousSnapshotFocusKey &&
+        (selectedWorkspaceSessionKey || pinnedSessionKey),
+    );
+
+  if (!pendingMatches && !chatChanged) return false;
+
+  pendingDetectedChatFocus = null;
+  selectedWorkspaceSessionKey = null;
+  persistWorkspaceSessionKey(null);
+  pinnedSessionKey = null;
+  persistPinnedSessionKey(null);
+  sessionWorkspaceMainVisible = false;
+  selectedWorkspaceChatFocusKey = null;
+  latestSessionWorkspace = null;
+  pendingHumanChatListIntent = null;
+  expandedSessionWorkspaceTools.clear();
+  swNodeMap.clear();
+  sessionWorkspaceDraft = "";
+  sessionWorkspaceSubmitting = false;
+  sessionWorkspaceShouldScrollToEnd = false;
+  hideSessionWorkspaceMain();
+  return true;
+}
+
+function buildSnapshotChatFocusKey(snapshot) {
+  const chatId = normalizeLookupToken(snapshot?.query?.chatId);
+  if (chatId) return `chat:${canonicalChatNavigationToken(chatId)}`;
+
+  const title = normalizeLookupToken(snapshot?.query?.title);
+  return title ? `title:${title}` : null;
+}
+
+function canonicalChatNavigationToken(value) {
+  const variants = buildChatIdVariants(value);
+  if (!variants.length) return normalizeLookupToken(value);
+  return (
+    variants.find((variant) => variant.endsWith("@g.us")) ||
+    variants.find((variant) => variant.endsWith("@s.whatsapp.net")) ||
+    variants[0]
+  );
+}
+
+function snapshotMatchesPendingDetectedChatFocus(snapshot, pending) {
+  const queryChatId = normalizeLookupToken(snapshot?.query?.chatId);
+  const queryTitle = normalizeLookupToken(snapshot?.query?.title);
+  const pendingChatId = normalizeLookupToken(pending?.chatId);
+  const pendingSelectedRowKey = normalizeLookupToken(pending?.selectedRowKey);
+  const pendingTitle = normalizeLookupToken(pending?.title);
+
+  if (pendingChatId) {
+    return (
+      chatNavigationTokenMatches(queryChatId, pendingChatId) ||
+      Boolean(!queryChatId && queryTitle && queryTitle === pendingTitle)
+    );
+  }
+
+  if (pendingSelectedRowKey) {
+    return (
+      chatNavigationTokenMatches(queryChatId, pendingSelectedRowKey) ||
+      queryTitle === pendingSelectedRowKey ||
+      Boolean(pendingTitle && queryTitle === pendingTitle)
+    );
+  }
+
+  return Boolean(!pendingTitle || queryTitle === pendingTitle);
+}
+
+function chatNavigationTokenMatches(left, right) {
+  const leftToken = normalizeLookupToken(left);
+  const rightToken = normalizeLookupToken(right);
+  if (!leftToken || !rightToken) return false;
+  if (leftToken === rightToken) return true;
+
+  const leftVariants = new Set(buildChatIdVariants(leftToken));
+  return buildChatIdVariants(rightToken).some((variant) => leftVariants.has(variant));
 }
 
 function resolveChatRowChatIdCandidate(row, { selected }) {
@@ -3780,8 +4633,48 @@ function ensureArtifactModal() {
       void focusArtifactSessionByKey(sessionKey);
     }
   });
+  modal.addEventListener("input", handleArtifactModalComponentInput);
+  modal.addEventListener("change", handleArtifactModalComponentInput);
   document.body.appendChild(modal);
   return modal;
+}
+
+function handleArtifactModalComponentInput(event) {
+  const target = resolveEventElement(event.target);
+  if (!target || !openArtifactModalData?.componentPreview) return;
+
+  const fixtureSelect = target.closest("[data-ravi-component-fixture]");
+  if (fixtureSelect && event.type === "change") {
+    const fixtureIndex = Number(fixtureSelect.getAttribute("data-ravi-component-fixture"));
+    const selectedIndex = Number(fixtureSelect.value);
+    const state = getArtifactComponentPreviewState(openArtifactModalData);
+    const fixtures = getArtifactComponentFixtures(openArtifactModalData.componentPreview);
+    const nextIndex = Number.isFinite(selectedIndex) ? selectedIndex : fixtureIndex;
+    const nextFixture = fixtures[nextIndex] || fixtures[0] || null;
+    state.fixtureIndex = Math.max(0, nextIndex);
+    state.props = cloneComponentProps(nextFixture?.props);
+    renderArtifactModal();
+    return;
+  }
+
+  const control = target.closest("[data-ravi-component-control]");
+  if (!control) return;
+  const propName = control.getAttribute("data-ravi-component-control");
+  if (!propName) return;
+  const state = getArtifactComponentPreviewState(openArtifactModalData);
+  const propSchema = getArtifactComponentPropSchema(openArtifactModalData.componentPreview, propName);
+  state.props[propName] = readArtifactComponentControlValue(control, propSchema);
+  updateArtifactComponentVisualOnly();
+}
+
+function updateArtifactComponentVisualOnly() {
+  const modal = document.getElementById(ARTIFACT_MODAL_ID);
+  if (!(modal instanceof HTMLElement) || !openArtifactModalData?.componentPreview) return;
+  const visual = modal.querySelector(".ravi-wa-artifact-modal__visual--component");
+  if (!(visual instanceof HTMLElement)) return;
+  const state = getArtifactComponentPreviewState(openArtifactModalData);
+  visual.innerHTML = renderArtifactComponentVisual(openArtifactModalData.componentPreview, state);
+  hydrateArtifactComponentSandbox(visual, openArtifactModalData.componentPreview, state);
 }
 
 function closeArtifactModal() {
@@ -3812,10 +4705,16 @@ function renderArtifactModal() {
     .filter(Boolean)
     .join(" · ");
   const hasImage = Boolean(data.imageSrc);
+  const componentState = getArtifactComponentPreviewState(data);
+  const componentVisual = renderArtifactComponentVisual(data.componentPreview, componentState);
   const image = data.imageSrc
     ? `<div class="ravi-wa-artifact-modal__visual">
         <img src="${escapeAttribute(data.imageSrc)}" alt="${escapeAttribute(title)}" />
       </div>`
+    : componentVisual
+      ? `<div class="ravi-wa-artifact-modal__visual ravi-wa-artifact-modal__visual--component">
+          ${componentVisual}
+        </div>`
     : data.glyph
       ? `<div class="ravi-wa-artifact-modal__visual ravi-wa-artifact-modal__visual--glyph">
           <span>${escapeHtml(data.glyph)}</span>
@@ -3831,6 +4730,7 @@ function renderArtifactModal() {
     detailText && detailText !== primaryText ? detailText : null;
   const metaRows = buildArtifactModalMetaRows(data);
   const actions = buildArtifactModalActions(data);
+  const componentPreview = renderArtifactModalComponentPreview(data.componentPreview, componentState);
   const panelClass = `ravi-wa-artifact-modal__panel${hasImage ? " ravi-wa-artifact-modal__panel--image" : ""}`;
   const contentClass = [
     "ravi-wa-artifact-modal__content",
@@ -3861,6 +4761,7 @@ function renderArtifactModal() {
               ? `<p class="ravi-wa-artifact-modal__summary">${escapeHtml(primaryText)}</p>`
               : ""
           }
+          ${componentPreview}
           ${
             fullDetail
               ? `<pre class="ravi-wa-artifact-modal__detail">${escapeHtml(fullDetail)}</pre>`
@@ -3874,6 +4775,458 @@ function renderArtifactModal() {
           ${actions ? `<div class="ravi-wa-artifact-modal__actions">${actions}</div>` : ""}
         </section>
       </div>
+    </div>
+  `;
+  const componentContainer = modal.querySelector(".ravi-wa-artifact-modal__visual--component");
+  if (componentContainer instanceof HTMLElement) {
+    hydrateArtifactComponentSandbox(componentContainer, data.componentPreview, componentState);
+  }
+}
+
+function renderArtifactModalComponentPreview(component, state) {
+  if (!component || typeof component !== "object") return "";
+  const title = component.id || "ui.component";
+  const version = component.version ? `v${component.version}` : "draft";
+  const description = component.description || null;
+  const propsSchema = component.propsSchema ? formatArtifactModalJson(component.propsSchema) : null;
+  const fixtures = Array.isArray(component.fixtures) ? component.fixtures : [];
+  const renderers = Array.isArray(component.renderers) ? component.renderers : [];
+
+  return `
+    <section class="ravi-wa-artifact-modal__component-preview" aria-label="Preview do componente">
+      <div class="ravi-wa-artifact-modal__component-head">
+        <div>
+          <span>component artifact</span>
+          <strong>${escapeHtml(title)}</strong>
+        </div>
+        <em>${escapeHtml(version)}</em>
+      </div>
+      ${description ? `<p>${escapeHtml(description)}</p>` : ""}
+      ${renderArtifactComponentControls(component, state)}
+      ${renderArtifactComponentChips("surfaces", component.surfaces)}
+      ${renderArtifactComponentChips("slots", component.slots)}
+      ${renderArtifactComponentChips("actions", component.actions)}
+      ${renderArtifactComponentChips("events", component.events)}
+      ${
+        renderers.length
+          ? `<div class="ravi-wa-artifact-modal__component-block">
+              <span>renderers</span>
+              ${renderers
+                .map((renderer) =>
+                  `<code>${escapeHtml(
+                    [
+                      renderer?.surface,
+                      renderer?.renderer,
+                      renderer?.package,
+                      renderer?.artifactId,
+                    ]
+                      .filter(Boolean)
+                      .join(" · "),
+                  )}</code>`,
+                )
+                .join("")}
+            </div>`
+          : ""
+      }
+      ${
+        fixtures.length
+          ? `<div class="ravi-wa-artifact-modal__component-block">
+              <span>fixtures</span>
+              ${fixtures
+                .map((fixture) => {
+                  const props = fixture?.props ? ` ${formatArtifactModalJson(fixture.props)}` : "";
+                  return `<code>${escapeHtml(`${fixture?.label || fixture?.id || "fixture"}${props}`)}</code>`;
+                })
+                .join("")}
+            </div>`
+          : ""
+      }
+      ${
+        propsSchema
+          ? `<details class="ravi-wa-artifact-modal__component-schema">
+              <summary>props schema</summary>
+              <pre>${escapeHtml(propsSchema)}</pre>
+            </details>`
+          : ""
+      }
+    </section>
+  `;
+}
+
+function renderArtifactComponentControls(component, state) {
+  if (!component || typeof component !== "object" || !state) return "";
+  const fixtures = getArtifactComponentFixtures(component);
+  const properties = getArtifactComponentPropSchemas(component);
+  const controls = Object.entries(properties).slice(0, 14);
+  if (!fixtures.length && !controls.length) return "";
+
+  return `
+    <div class="ravi-wa-artifact-modal__component-controls">
+      ${
+        fixtures.length > 1
+          ? `<label class="ravi-wa-artifact-modal__component-control">
+              <span>story</span>
+              <select data-ravi-component-fixture="${escapeAttribute(String(state.fixtureIndex || 0))}">
+                ${fixtures
+                  .map((fixture, index) => {
+                    const selected = index === state.fixtureIndex ? " selected" : "";
+                    return `<option value="${escapeAttribute(String(index))}"${selected}>${escapeHtml(
+                      fixture.label || fixture.id || `story ${index + 1}`,
+                    )}</option>`;
+                  })
+                  .join("")}
+              </select>
+            </label>`
+          : ""
+      }
+      ${controls.map(([propName, propSchema]) => renderArtifactComponentControl(propName, propSchema, state.props?.[propName])).join("")}
+    </div>
+  `;
+}
+
+function renderArtifactComponentControl(propName, propSchema, value) {
+  const schema = propSchema && typeof propSchema === "object" ? propSchema : {};
+  const label = schema.title || propName;
+  const enumValues = Array.isArray(schema.enum) ? schema.enum : null;
+  const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
+  const currentValue = value === undefined || value === null ? schema.default ?? "" : value;
+  const dataAttr = `data-ravi-component-control="${escapeAttribute(propName)}"`;
+
+  if (enumValues?.length) {
+    return `
+      <label class="ravi-wa-artifact-modal__component-control">
+        <span>${escapeHtml(label)}</span>
+        <select ${dataAttr}>
+          ${enumValues
+            .map((option) => {
+              const optionValue = String(option);
+              const selected = String(currentValue) === optionValue ? " selected" : "";
+              return `<option value="${escapeAttribute(optionValue)}"${selected}>${escapeHtml(optionValue)}</option>`;
+            })
+            .join("")}
+        </select>
+      </label>
+    `;
+  }
+
+  if (type === "boolean") {
+    return `
+      <label class="ravi-wa-artifact-modal__component-control ravi-wa-artifact-modal__component-control--check">
+        <span>${escapeHtml(label)}</span>
+        <input type="checkbox" ${dataAttr}${currentValue === true ? " checked" : ""} />
+      </label>
+    `;
+  }
+
+  if (type === "number" || type === "integer") {
+    return `
+      <label class="ravi-wa-artifact-modal__component-control">
+        <span>${escapeHtml(label)}</span>
+        <input type="number" ${dataAttr} value="${escapeAttribute(String(currentValue))}" />
+      </label>
+    `;
+  }
+
+  return `
+    <label class="ravi-wa-artifact-modal__component-control">
+      <span>${escapeHtml(label)}</span>
+      <input type="text" ${dataAttr} value="${escapeAttribute(String(currentValue))}" />
+    </label>
+  `;
+}
+
+function renderArtifactComponentVisual(component, state) {
+  const componentId = typeof component?.id === "string" ? component.id.trim() : "";
+  const props = sanitizeArtifactComponentSandboxProps(state?.props || {});
+  if (getArtifactComponentRendererSource(component)) {
+    return renderArtifactComponentSandboxFrame(component);
+  }
+  return renderKnownUiComponentFixture(componentId, props);
+}
+
+function renderArtifactComponentSandboxFrame(component) {
+  const title = readUiComponentString(component?.id) || "ui.component";
+  return `
+    <iframe
+      class="ravi-wa-ui-component-sandbox"
+      data-ravi-component-sandbox="true"
+      sandbox="allow-scripts"
+      title="${escapeAttribute(`Preview ${title}`)}"
+    ></iframe>
+  `;
+}
+
+function hydrateArtifactComponentSandbox(container, component, state) {
+  const iframe = container?.querySelector?.("[data-ravi-component-sandbox]");
+  if (!(iframe instanceof HTMLIFrameElement)) return;
+  const source = getArtifactComponentRendererSource(component);
+  if (!source?.js) return;
+  iframe.srcdoc = buildArtifactComponentSandboxSrcdoc({
+    component,
+    props: sanitizeArtifactComponentSandboxProps(state?.props || {}),
+    source,
+  });
+}
+
+function sanitizeArtifactComponentSandboxProps(props) {
+  const normalized = cloneComponentProps(props);
+  normalizeArtifactComponentSandboxImageSrc(normalized, "previewSrc");
+  if (
+    normalized.mediaPreview &&
+    typeof normalized.mediaPreview === "object" &&
+    !Array.isArray(normalized.mediaPreview)
+  ) {
+    normalized.mediaPreview = { ...normalized.mediaPreview };
+    normalizeArtifactComponentSandboxImageSrc(normalized.mediaPreview, "src");
+  }
+  return normalized;
+}
+
+function normalizeArtifactComponentSandboxImageSrc(target, key) {
+  const src = readUiComponentString(target?.[key]);
+  if (!src || isSafeUiComponentImagePreviewSrc(src)) return;
+  target[key] = "";
+}
+
+function getArtifactComponentRendererSource(component) {
+  const renderers = Array.isArray(component?.renderers) ? component.renderers : [];
+  const renderer =
+    renderers.find((item) => item?.surface === "wa-overlay" && item?.source?.js) ||
+    renderers.find((item) => item?.source?.js) ||
+    null;
+  if (!renderer?.source || typeof renderer.source !== "object") return null;
+  const js = readUiComponentString(renderer.source.js);
+  const css = readUiComponentString(renderer.source.css) || "";
+  if (!js) return null;
+  return { js, css };
+}
+
+function buildArtifactComponentSandboxSrcdoc({ component, props, source }) {
+  const propsJson = JSON.stringify(props || {}).replace(/</g, "\\u003c");
+  const componentId = readUiComponentString(component?.id) || "ui.component";
+  const css = String(source.css || "").replace(/<\/style/gi, "<\\/style");
+  const js = String(source.js || "").replace(/<\/script/gi, "<\\/script");
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'" />
+    <style>
+      :root { color-scheme: dark; }
+      html, body { width: 100%; min-height: 100%; margin: 0; background: transparent; color: #e9edef; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      * { box-sizing: border-box; }
+      #root { width: 100%; min-height: 100%; display: grid; place-items: center; }
+      ${css}
+    </style>
+  </head>
+  <body>
+    <main id="root" data-component="${escapeAttribute(componentId)}"></main>
+    <script type="application/json" id="ravi-props">${propsJson}</script>
+    <script>
+      (() => {
+        const root = document.getElementById("root");
+        const props = JSON.parse(document.getElementById("ravi-props")?.textContent || "{}");
+        const api = {
+          emit(type, payload) {
+            parent.postMessage({ source: "ravi-ui-component", component: ${JSON.stringify(componentId)}, type, payload: payload ?? null }, "*");
+          }
+        };
+        try {
+          ${js}
+          const renderer = typeof render === "function" ? render : window.render;
+          if (typeof renderer === "function") {
+            renderer(root, props, api);
+          }
+        } catch (error) {
+          root.innerHTML = '<pre style="white-space:pre-wrap;margin:0;padding:12px;color:#ffb4ab;font:12px ui-monospace,monospace;"></pre>';
+          root.firstElementChild.textContent = error && error.stack ? error.stack : String(error);
+        }
+      })();
+    </script>
+  </body>
+</html>`;
+}
+
+function renderKnownUiComponentFixture(componentId, props) {
+  if (componentId === "artifact.card") return renderUiComponentArtifactCard(props);
+  if (componentId === "artifact.notification") return renderUiComponentArtifactNotification(props);
+  return "";
+}
+
+function renderUiComponentArtifactCard(props) {
+  const tone = normalizeUiComponentTone(props?.tone || props?.status || "completed");
+  const title = typeof props?.title === "string" && props.title.trim() ? props.title.trim() : "Artifact";
+  const summary = typeof props?.summary === "string" && props.summary.trim() ? props.summary.trim() : "";
+  const artifactId =
+    typeof props?.artifactId === "string" && props.artifactId.trim()
+      ? props.artifactId.trim()
+      : "art_demo";
+  const kind = typeof props?.kind === "string" && props.kind.trim() ? props.kind.trim() : "artifact";
+  const glyph = getArtifactGlyph(kind, props?.mimeType);
+
+  return `
+    <article class="ravi-wa-ui-component-artifact-card ravi-wa-ui-component-artifact-card--${escapeAttribute(tone)}">
+      <div class="ravi-wa-ui-component-artifact-card__glyph" aria-hidden="true">${escapeHtml(glyph)}</div>
+      <div class="ravi-wa-ui-component-artifact-card__body">
+        <div class="ravi-wa-ui-component-artifact-card__meta">
+          <span>${escapeHtml(kind)}</span>
+          <span>${escapeHtml(tone)}</span>
+        </div>
+        <strong>${escapeHtml(shorten(title, 72))}</strong>
+        ${summary ? `<p>${escapeHtml(shorten(summary, 116))}</p>` : ""}
+        <code>${escapeHtml(artifactId)}</code>
+      </div>
+    </article>
+  `;
+}
+
+function renderUiComponentArtifactNotification(props) {
+  const tone = normalizeUiComponentTone(props?.tone || props?.status || "completed");
+  const variant = readUiComponentString(props?.variant) || "artifact";
+  const title = readUiComponentString(props?.title) || "Artifact notification";
+  const summary = readUiComponentString(props?.summary) || "";
+  const artifactId = readUiComponentString(props?.artifactId) || "art_demo";
+  const kind = readUiComponentString(props?.kind) || "artifact";
+  const provider = readUiComponentString(props?.provider);
+  const model = readUiComponentString(props?.model);
+  const updatedLabel = readUiComponentString(props?.updatedLabel) || "agora";
+  const previewSrc = getUiComponentNotificationPreviewSrc(props);
+  const previewAlt = readUiComponentString(props?.previewAlt) || title;
+  const meta = [kind, provider, model].filter(Boolean).join(" · ");
+  const progress =
+    tone === "running" || tone === "pending"
+      ? `<div class="ravi-wa-ui-component-artifact-notification__progress" aria-hidden="true"></div>`
+      : "";
+  let preview = "";
+  if (previewSrc) {
+    preview = `
+      <div class="ravi-wa-ui-component-artifact-notification__preview ravi-wa-ui-component-artifact-notification__preview--image">
+        <img src="${escapeAttribute(previewSrc)}" alt="${escapeAttribute(previewAlt)}" loading="lazy" decoding="async" />
+      </div>
+    `;
+  } else if (variant !== "image") {
+    preview = `
+      <div class="ravi-wa-ui-component-artifact-notification__preview ravi-wa-ui-component-artifact-notification__preview--empty">
+        <span>${escapeHtml(variant)}</span>
+        <strong>${escapeHtml(kind)}</strong>
+      </div>
+    `;
+  }
+
+  return `
+    <article class="ravi-wa-ui-component-artifact-notification ravi-wa-ui-component-artifact-notification--${escapeAttribute(tone)} ravi-wa-ui-component-artifact-notification--variant-${escapeAttribute(variant.replace(/[^a-z0-9_-]+/gi, "-").toLowerCase())}">
+      ${progress}
+      ${preview}
+      <div class="ravi-wa-ui-component-artifact-notification__body">
+        <div class="ravi-wa-ui-component-artifact-notification__meta">
+          <span>${escapeHtml(meta || variant)}</span>
+          <span>${escapeHtml(updatedLabel)}</span>
+        </div>
+        <strong>${escapeHtml(shorten(title, 72))}</strong>
+        ${summary ? `<p>${escapeHtml(shorten(summary, 132))}</p>` : ""}
+        <div class="ravi-wa-ui-component-artifact-notification__footer">
+          <code>${escapeHtml(artifactId)}</code>
+          <span>${escapeHtml(tone)}</span>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function getUiComponentNotificationPreviewSrc(props) {
+  const mediaPreview = props?.mediaPreview && typeof props.mediaPreview === "object" ? props.mediaPreview : null;
+  const direct = readUiComponentString(props?.previewSrc);
+  const nested = readUiComponentString(mediaPreview?.src);
+  const src = direct || nested;
+  if (!isSafeUiComponentImagePreviewSrc(src)) return null;
+  const variant = readUiComponentString(props?.variant);
+  const mimeType = readUiComponentString(props?.mimeType);
+  const mediaType = readUiComponentString(mediaPreview?.type);
+  if (variant === "image" || mediaType === "image" || mimeType?.startsWith("image/")) return src;
+  return null;
+}
+
+function isSafeUiComponentImagePreviewSrc(value) {
+  if (!value) return false;
+  if (value === "blob:runtime-placeholder") return false;
+  if (/^data:image\/(?:png|jpeg|jpg|webp|gif|svg\+xml);/i.test(value)) return true;
+  if (/^blob:/i.test(value)) return true;
+  return false;
+}
+
+function readUiComponentString(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function normalizeUiComponentTone(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return ["pending", "running", "completed", "failed", "archived"].includes(normalized)
+    ? normalized
+    : "completed";
+}
+
+function getArtifactComponentPreviewState(data) {
+  if (!data?.componentPreview) return null;
+  const key = data.artifactId || data.id || data.componentPreview.id || "component";
+  const existing = artifactComponentPreviewStateByArtifactId.get(key);
+  if (existing) return existing;
+  const fixtures = getArtifactComponentFixtures(data.componentPreview);
+  const fixture = fixtures[0] || null;
+  const state = {
+    fixtureIndex: 0,
+    props: cloneComponentProps(fixture?.props),
+  };
+  artifactComponentPreviewStateByArtifactId.set(key, state);
+  return state;
+}
+
+function getArtifactComponentFixtures(component) {
+  return Array.isArray(component?.fixtures) ? component.fixtures.filter(Boolean).slice(0, 12) : [];
+}
+
+function cloneComponentProps(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return { ...value };
+  }
+}
+
+function getArtifactComponentPropSchemas(component) {
+  const propsSchema = component?.propsSchema;
+  if (!propsSchema || typeof propsSchema !== "object") return {};
+  const properties = propsSchema.properties;
+  return properties && typeof properties === "object" && !Array.isArray(properties)
+    ? properties
+    : {};
+}
+
+function getArtifactComponentPropSchema(component, propName) {
+  return getArtifactComponentPropSchemas(component)[propName] || null;
+}
+
+function readArtifactComponentControlValue(control, propSchema) {
+  const schema = propSchema && typeof propSchema === "object" ? propSchema : {};
+  const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
+  if (control instanceof HTMLInputElement && control.type === "checkbox") {
+    return control.checked;
+  }
+  if (type === "number" || type === "integer") {
+    const parsed = Number(control.value);
+    if (!Number.isFinite(parsed)) return 0;
+    return type === "integer" ? Math.trunc(parsed) : parsed;
+  }
+  return control.value;
+}
+
+function renderArtifactComponentChips(label, values) {
+  const list = Array.isArray(values) ? values.filter(Boolean).slice(0, 12) : [];
+  if (!list.length) return "";
+  return `
+    <div class="ravi-wa-artifact-modal__component-chips">
+      <span>${escapeHtml(label)}</span>
+      ${list.map((value) => `<code>${escapeHtml(String(value))}</code>`).join("")}
     </div>
   `;
 }
@@ -4035,7 +5388,9 @@ function ensureShell() {
     existingRoot?.querySelector?.(`#${PANEL_RAIL_TOGGLE_ID}`) &&
     existingRoot?.querySelector?.(`#${PROFILE_BUTTON_ID}`) &&
     existingRoot?.querySelector?.(`#${VIBES_BUTTON_ID}`) &&
-    existingRoot?.querySelector?.(`#${VIBES_MENU_ID}`);
+    existingRoot?.querySelector?.(`#${VIBES_MENU_ID}`) &&
+    existingRoot?.querySelector?.(`#${SESSION_SEARCH_BUTTON_ID}`) &&
+    existingRoot?.querySelector?.(`#${SESSION_SEARCH_INPUT_ID}`);
   if (shellReady) return;
   existingRoot?.remove();
 
@@ -4057,8 +5412,30 @@ function ensureShell() {
         <div class="ravi-wa-drawer-heading">
           <strong id="ravi-wa-overlay-panel-title">Sessões</strong>
           <span id="ravi-wa-overlay-panel-subtitle">cockpit</span>
+          <label id="${SESSION_SEARCH_FORM_ID}" class="ravi-wa-header-search ravi-hidden">
+            <span class="ravi-wa-visually-hidden">Buscar sessões</span>
+            <input
+              id="${SESSION_SEARCH_INPUT_ID}"
+              type="text"
+              placeholder="buscar sessões, agents ou chats"
+              autocomplete="off"
+            />
+          </label>
         </div>
         <div class="ravi-wa-drawer-actions">
+          <button
+            id="${SESSION_SEARCH_BUTTON_ID}"
+            class="ravi-wa-header-search-toggle ravi-hidden"
+            type="button"
+            aria-expanded="false"
+            aria-label="Buscar sessões"
+            title="Buscar sessões"
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+              <circle cx="8.5" cy="8.5" r="5.25"></circle>
+              <path d="M12.5 12.5 L16 16"></path>
+            </svg>
+          </button>
           <button
             id="${VIBES_BUTTON_ID}"
             class="ravi-wa-vibes-toggle"
@@ -4127,6 +5504,44 @@ function ensureShell() {
   document.getElementById(PANEL_RAIL_TOGGLE_ID)?.addEventListener("click", () => {
     setOverlayPanelVisible(true);
   });
+  document.getElementById(SESSION_SEARCH_BUTTON_ID)?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (sidebarSearchOpen || sidebarFilter) {
+      sidebarFilter = "";
+      sidebarSearchOpen = false;
+      render(latestSnapshot, detectChatContext());
+      return;
+    }
+    sidebarSearchOpen = true;
+    syncSessionSearchControls();
+    requestAnimationFrame(() => {
+      const input = document.getElementById(SESSION_SEARCH_INPUT_ID);
+      if (input instanceof HTMLInputElement) {
+        input.focus();
+        input.select();
+      }
+    });
+  });
+  document.getElementById(SESSION_SEARCH_INPUT_ID)?.addEventListener("input", (event) => {
+    sidebarFilter = event.target?.value || "";
+    sidebarSearchOpen = true;
+    render(latestSnapshot, detectChatContext());
+    requestAnimationFrame(() => {
+      const input = document.getElementById(SESSION_SEARCH_INPUT_ID);
+      if (!(input instanceof HTMLInputElement)) return;
+      input.focus();
+      input.setSelectionRange(sidebarFilter.length, sidebarFilter.length);
+    });
+  });
+  document.getElementById(SESSION_SEARCH_INPUT_ID)?.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    sidebarFilter = "";
+    sidebarSearchOpen = false;
+    render(latestSnapshot, detectChatContext());
+    document.getElementById(SESSION_SEARCH_BUTTON_ID)?.focus();
+  });
   document.getElementById(VIBES_BUTTON_ID)?.addEventListener("click", async (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -4185,10 +5600,36 @@ function closeVibesMenu() {
 
 function syncHeaderConfigControls() {
   syncOverlayPanelChrome();
+  syncSessionSearchControls();
   syncHeaderVibesButton();
   syncHeaderProfileButton();
   renderVibesMenu();
   renderProfileMenu();
+}
+
+function syncSessionSearchControls() {
+  const button = document.getElementById(SESSION_SEARCH_BUTTON_ID);
+  const form = document.getElementById(SESSION_SEARCH_FORM_ID);
+  const input = document.getElementById(SESSION_SEARCH_INPUT_ID);
+  const enabled = activeWorkspace === "ravi";
+  const open = enabled && (sidebarSearchOpen || Boolean(sidebarFilter));
+
+  button?.classList.toggle("ravi-hidden", !enabled);
+  button?.classList.toggle("ravi-wa-header-search-toggle--active", open);
+  button?.setAttribute("aria-expanded", open ? "true" : "false");
+  button?.setAttribute(
+    "title",
+    open ? "Limpar busca de sessões" : "Buscar sessões",
+  );
+  button?.setAttribute(
+    "aria-label",
+    open ? "Limpar busca de sessões" : "Buscar sessões",
+  );
+
+  form?.classList.toggle("ravi-hidden", !open);
+  if (input instanceof HTMLInputElement && input.value !== sidebarFilter) {
+    input.value = sidebarFilter;
+  }
 }
 
 function getVibesApi() {
@@ -4728,7 +6169,11 @@ function syncLayoutChrome() {
   const sidePane = getWhatsAppPane("side");
   const mainPane = getWhatsAppPane("main");
   const host = sidePane && mainPane ? findLayoutHost(sidePane, mainPane) : null;
-  if (!root || !drawer || !sidePane || !mainPane || !host) return;
+  if (!root || !drawer || !sidePane || !mainPane || !host) {
+    syncNativeSidebarResizeControl(null, null, { hidden: true });
+    syncNativeSidebarCollapseToggle(null, null, { hidden: true });
+    return;
+  }
   const sideBranch = findDirectChildBranch(host, sidePane);
   const mainBranch = findDirectChildBranch(host, mainPane);
 
@@ -4770,12 +6215,343 @@ function syncLayoutChrome() {
   mainBranch?.classList.toggle(LAYOUT_BRANCH_HIDDEN_CLASS, fullWorkspace);
   drawer.classList.toggle("ravi-hidden", !overlayPanelVisible);
   document.getElementById(PANEL_RAIL_TOGGLE_ID)?.classList.toggle("ravi-hidden", overlayPanelVisible);
+  syncNativeSidebarResizeControl(host, sideBranch, { hidden: fullWorkspace });
+  syncNativeSidebarCollapseToggle(host, sideBranch, { hidden: fullWorkspace });
 
   currentLayoutHost = host;
   currentLayoutMain = mainPane;
   currentLayoutSideBranch = sideBranch;
   currentLayoutMainBranch = mainBranch;
   syncWorkspaceLauncher();
+}
+
+function syncNativeSidebarResizeControl(host, sideBranch, options = {}) {
+  const handle = ensureNativeSidebarResizeHandle();
+  const invalidTarget =
+    !(host instanceof HTMLElement) ||
+    !(sideBranch instanceof HTMLElement);
+  const resized =
+    nativeSidebarWidth !== null &&
+    nativeSidebarWidth !== undefined;
+
+  if (currentNativeSidebarBranch && currentNativeSidebarBranch !== sideBranch) {
+    clearNativeSidebarWidthStyles(currentNativeSidebarBranch);
+  }
+
+  if (host instanceof HTMLElement) {
+    host.setAttribute(
+      "data-ravi-native-sidebar-resized",
+      resized ? "true" : "false",
+    );
+    host.setAttribute(
+      "data-ravi-native-sidebar-collapsed",
+      nativeSidebarCollapsed ? "true" : "false",
+    );
+  }
+
+  // Apply width/collapse styling whenever we have a valid target, even if the
+  // drag handle itself is hidden (e.g. while collapsed) so the 0-width state
+  // still materializes on the pane.
+  if (!invalidTarget) {
+    currentNativeSidebarBranch = sideBranch;
+    applyNativeSidebarWidth(sideBranch, host);
+  }
+
+  const hidden =
+    Boolean(options.hidden) ||
+    invalidTarget ||
+    nativeSidebarCollapsed ||
+    window.innerWidth < 760;
+
+  if (hidden) {
+    handle.classList.add("ravi-hidden");
+    handle.classList.remove("ravi-wa-native-sidebar-resize-handle--resized");
+    handle.removeAttribute("aria-valuenow");
+    return;
+  }
+
+  const sideRect = sideBranch.getBoundingClientRect();
+  const bounds = resolveNativeSidebarWidthBounds(host);
+  handle.classList.remove("ravi-hidden");
+  handle.classList.toggle(
+    "ravi-wa-native-sidebar-resize-handle--resized",
+    resized,
+  );
+  handle.style.left = `${Math.round(sideRect.right)}px`;
+  handle.style.top = `${Math.round(sideRect.top)}px`;
+  handle.style.height = `${Math.max(0, Math.round(sideRect.height))}px`;
+  handle.setAttribute("aria-valuemin", String(bounds.min));
+  handle.setAttribute("aria-valuemax", String(bounds.max));
+  handle.setAttribute("aria-valuenow", String(Math.round(sideRect.width)));
+}
+
+function ensureNativeSidebarResizeHandle() {
+  let handle = document.getElementById(NATIVE_SIDEBAR_RESIZE_HANDLE_ID);
+  if (handle instanceof HTMLElement) return handle;
+
+  handle = document.createElement("div");
+  handle.id = NATIVE_SIDEBAR_RESIZE_HANDLE_ID;
+  handle.className = "ravi-wa-native-sidebar-resize-handle ravi-hidden";
+  handle.setAttribute("role", "separator");
+  handle.setAttribute("aria-orientation", "vertical");
+  handle.setAttribute("aria-label", "Redimensionar lista de chats");
+  handle.setAttribute("tabindex", "0");
+  handle.setAttribute("title", "Arraste para redimensionar a lista de chats. Duplo clique para resetar.");
+  handle.innerHTML = `<span aria-hidden="true"></span>`;
+  handle.addEventListener("pointerdown", handleNativeSidebarResizePointerDown);
+  handle.addEventListener("dblclick", handleNativeSidebarResizeDoubleClick);
+  handle.addEventListener("keydown", handleNativeSidebarResizeKeydown);
+  document.body.appendChild(handle);
+  return handle;
+}
+
+function handleNativeSidebarResizePointerDown(event) {
+  const handle = document.getElementById(NATIVE_SIDEBAR_RESIZE_HANDLE_ID);
+  if (!(handle instanceof HTMLElement)) return;
+  if (!(currentLayoutHost instanceof HTMLElement)) return;
+  if (!(currentNativeSidebarBranch instanceof HTMLElement)) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  const sideRect = currentNativeSidebarBranch.getBoundingClientRect();
+  const direction = resolveNativeSidebarResizeDirection(currentNativeSidebarBranch);
+  nativeSidebarResizeState = {
+    startX: event.clientX,
+    startWidth: sideRect.width,
+    direction,
+    host: currentLayoutHost,
+    branch: currentNativeSidebarBranch,
+  };
+  handle.classList.add("ravi-wa-native-sidebar-resize-handle--active");
+  document.body.classList.add("ravi-wa-native-sidebar-resizing");
+  window.addEventListener("pointermove", handleNativeSidebarResizePointerMove, true);
+  window.addEventListener("pointerup", finishNativeSidebarResize, true);
+  window.addEventListener("pointercancel", finishNativeSidebarResize, true);
+}
+
+function handleNativeSidebarResizePointerMove(event) {
+  if (!nativeSidebarResizeState) return;
+  event.preventDefault();
+  const nextWidth =
+    nativeSidebarResizeState.startWidth +
+    (event.clientX - nativeSidebarResizeState.startX) *
+      nativeSidebarResizeState.direction;
+  setNativeSidebarWidth(nextWidth, nativeSidebarResizeState.host, nativeSidebarResizeState.branch, {
+    persist: false,
+  });
+}
+
+function finishNativeSidebarResize() {
+  if (!nativeSidebarResizeState) return;
+  persistNativeSidebarWidth(nativeSidebarWidth);
+  nativeSidebarResizeState = null;
+  document.body.classList.remove("ravi-wa-native-sidebar-resizing");
+  document
+    .getElementById(NATIVE_SIDEBAR_RESIZE_HANDLE_ID)
+    ?.classList.remove("ravi-wa-native-sidebar-resize-handle--active");
+  window.removeEventListener("pointermove", handleNativeSidebarResizePointerMove, true);
+  window.removeEventListener("pointerup", finishNativeSidebarResize, true);
+  window.removeEventListener("pointercancel", finishNativeSidebarResize, true);
+}
+
+function handleNativeSidebarResizeDoubleClick(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  resetNativeSidebarWidth();
+}
+
+function handleNativeSidebarResizeKeydown(event) {
+  if (!(currentLayoutHost instanceof HTMLElement)) return;
+  if (!(currentNativeSidebarBranch instanceof HTMLElement)) return;
+
+  const direction = resolveNativeSidebarResizeDirection(currentNativeSidebarBranch);
+  const currentWidth = currentNativeSidebarBranch.getBoundingClientRect().width;
+  if (event.key === "Home" || event.key === "Escape") {
+    event.preventDefault();
+    resetNativeSidebarWidth();
+    return;
+  }
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+
+  event.preventDefault();
+  const step = event.shiftKey ? 32 : 16;
+  const delta = event.key === "ArrowRight" ? step : -step;
+  setNativeSidebarWidth(
+    currentWidth + delta * direction,
+    currentLayoutHost,
+    currentNativeSidebarBranch,
+  );
+}
+
+function setNativeSidebarWidth(width, host, sideBranch, options = {}) {
+  if (!(host instanceof HTMLElement) || !(sideBranch instanceof HTMLElement)) return;
+  nativeSidebarWidth = clampNativeSidebarWidth(width, host);
+  applyNativeSidebarWidth(sideBranch, host);
+  syncNativeSidebarResizeControl(host, sideBranch);
+  if (options.persist !== false) {
+    persistNativeSidebarWidth(nativeSidebarWidth);
+  }
+}
+
+function resetNativeSidebarWidth() {
+  nativeSidebarWidth = null;
+  persistNativeSidebarWidth(null);
+  clearNativeSidebarWidthStyles(currentNativeSidebarBranch);
+  syncNativeSidebarResizeControl(currentLayoutHost, currentLayoutSideBranch);
+}
+
+function applyNativeSidebarWidth(sideBranch, host) {
+  if (!(sideBranch instanceof HTMLElement)) return;
+
+  // Glide on toggle/reset, but never during an active drag (must track cursor 1:1).
+  sideBranch.style.transition = nativeSidebarResizeState
+    ? "none"
+    : NATIVE_SIDEBAR_WIDTH_TRANSITION;
+
+  if (nativeSidebarCollapsed) {
+    const width = `${NATIVE_SIDEBAR_COLLAPSED_WIDTH}px`;
+    sideBranch.setAttribute("data-ravi-native-sidebar-collapsed", "true");
+    sideBranch.removeAttribute("data-ravi-native-sidebar-width");
+    sideBranch.style.flex = `0 0 ${width}`;
+    sideBranch.style.width = width;
+    sideBranch.style.minWidth = width;
+    sideBranch.style.maxWidth = width;
+    sideBranch.style.overflow = "hidden";
+    return;
+  }
+
+  sideBranch.removeAttribute("data-ravi-native-sidebar-collapsed");
+  sideBranch.style.removeProperty("overflow");
+
+  if (nativeSidebarWidth === null || nativeSidebarWidth === undefined) {
+    // Reset to natural width but keep the transition so the glide still plays.
+    sideBranch.removeAttribute("data-ravi-native-sidebar-width");
+    sideBranch.style.removeProperty("flex");
+    sideBranch.style.removeProperty("width");
+    sideBranch.style.removeProperty("min-width");
+    sideBranch.style.removeProperty("max-width");
+    return;
+  }
+
+  const boundedWidth = clampNativeSidebarWidth(nativeSidebarWidth, host);
+  const width = `${boundedWidth}px`;
+  sideBranch.setAttribute("data-ravi-native-sidebar-width", String(boundedWidth));
+  sideBranch.style.flex = `0 0 ${width}`;
+  sideBranch.style.width = width;
+  sideBranch.style.minWidth = width;
+  sideBranch.style.maxWidth = width;
+}
+
+function clearNativeSidebarWidthStyles(sideBranch) {
+  if (!(sideBranch instanceof HTMLElement)) return;
+  sideBranch.removeAttribute("data-ravi-native-sidebar-width");
+  sideBranch.removeAttribute("data-ravi-native-sidebar-collapsed");
+  sideBranch.style.removeProperty("flex");
+  sideBranch.style.removeProperty("width");
+  sideBranch.style.removeProperty("min-width");
+  sideBranch.style.removeProperty("max-width");
+  sideBranch.style.removeProperty("overflow");
+  sideBranch.style.removeProperty("transition");
+}
+
+function syncNativeSidebarCollapseToggle(host, sideBranch, options = {}) {
+  const toggle = ensureNativeSidebarCollapseToggle();
+  const invalidTarget =
+    !(host instanceof HTMLElement) ||
+    !(sideBranch instanceof HTMLElement);
+  const hidden =
+    Boolean(options.hidden) ||
+    invalidTarget ||
+    window.innerWidth < 760;
+
+  if (hidden) {
+    toggle.classList.add("ravi-hidden");
+    return;
+  }
+
+  toggle.classList.remove("ravi-hidden");
+  toggle.classList.toggle(
+    "ravi-wa-native-sidebar-collapse-toggle--collapsed",
+    nativeSidebarCollapsed,
+  );
+  toggle.setAttribute("aria-expanded", nativeSidebarCollapsed ? "false" : "true");
+  const label = nativeSidebarCollapsed
+    ? "Expandir lista de chats"
+    : "Estreitar lista de chats";
+  toggle.setAttribute("aria-label", label);
+  toggle.setAttribute("title", label);
+  const glyph = toggle.firstElementChild;
+  if (glyph) glyph.textContent = nativeSidebarCollapsed ? "»" : "«";
+
+  const sideRect = sideBranch.getBoundingClientRect();
+  const centerY = Math.round(sideRect.top + sideRect.height / 2);
+  toggle.style.top = `${centerY}px`;
+  toggle.style.left = `${Math.round(sideRect.right)}px`;
+}
+
+function ensureNativeSidebarCollapseToggle() {
+  let toggle = document.getElementById(NATIVE_SIDEBAR_COLLAPSE_TOGGLE_ID);
+  if (toggle instanceof HTMLElement) return toggle;
+
+  toggle = document.createElement("button");
+  toggle.id = NATIVE_SIDEBAR_COLLAPSE_TOGGLE_ID;
+  toggle.type = "button";
+  toggle.className = "ravi-wa-native-sidebar-collapse-toggle ravi-hidden";
+  toggle.setAttribute("aria-label", "Recolher lista de chats");
+  toggle.setAttribute("title", "Recolher lista de chats");
+  toggle.innerHTML = `<span aria-hidden="true">«</span>`;
+  toggle.addEventListener("click", handleNativeSidebarCollapseToggleClick);
+  document.body.appendChild(toggle);
+  return toggle;
+}
+
+function handleNativeSidebarCollapseToggleClick(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  toggleNativeSidebarCollapsed();
+}
+
+function toggleNativeSidebarCollapsed(force) {
+  const next = typeof force === "boolean" ? force : !nativeSidebarCollapsed;
+  if (next === nativeSidebarCollapsed) return;
+  nativeSidebarCollapsed = next;
+  persistNativeSidebarCollapsed(next);
+  syncLayoutChrome();
+}
+
+function resolveNativeSidebarResizeDirection(sideBranch) {
+  const sideRect = sideBranch?.getBoundingClientRect?.();
+  const mainRect = currentLayoutMainBranch?.getBoundingClientRect?.();
+  if (!sideRect || !mainRect) return 1;
+  return sideRect.left <= mainRect.left ? 1 : -1;
+}
+
+function clampNativeSidebarWidth(width, host) {
+  const numeric = Number(width);
+  const bounds = resolveNativeSidebarWidthBounds(host);
+  if (!Number.isFinite(numeric)) return bounds.min;
+  return Math.max(bounds.min, Math.min(bounds.max, Math.round(numeric)));
+}
+
+function resolveNativeSidebarWidthBounds(host) {
+  const hostWidth =
+    host instanceof HTMLElement
+      ? host.getBoundingClientRect().width
+      : window.innerWidth;
+  const overlayRoot = document.getElementById(ROOT_ID);
+  const overlayWidth =
+    overlayPanelVisible && overlayRoot instanceof HTMLElement
+      ? overlayRoot.getBoundingClientRect().width
+      : 0;
+  const maxByMain = Math.floor(hostWidth - overlayWidth - NATIVE_SIDEBAR_MIN_MAIN_WIDTH);
+  const maxByRatio = Math.floor(hostWidth * 0.55);
+  const max = Math.max(
+    220,
+    Math.min(NATIVE_SIDEBAR_MAX_WIDTH, maxByRatio, maxByMain),
+  );
+  const min = Math.min(NATIVE_SIDEBAR_MIN_WIDTH, max);
+  return { min, max };
 }
 
 function getWhatsAppPane(id) {
@@ -4910,6 +6686,320 @@ function ensureMessagePopover() {
   return popover;
 }
 
+function ensureArtifactNotificationStack() {
+  let stack = document.getElementById(ARTIFACT_NOTIFICATION_STACK_ID);
+  if (stack instanceof HTMLElement) return stack;
+
+  stack = document.createElement("div");
+  stack.id = ARTIFACT_NOTIFICATION_STACK_ID;
+  stack.className = "ravi-wa-artifact-notification-stack ravi-hidden";
+  stack.addEventListener("click", (event) => {
+    const target = resolveEventElement(event.target);
+    if (!target) return;
+
+    const closeButton = target.closest("[data-ravi-artifact-notification-dismiss]");
+    if (closeButton) {
+      const cardId = closeButton.getAttribute("data-ravi-artifact-notification-dismiss");
+      dismissArtifactNotification(cardId);
+      return;
+    }
+
+    const card = target.closest("[data-ravi-artifact-notification]");
+    if (!card) return;
+    const cardId = card.getAttribute("data-ravi-artifact-notification");
+    openArtifactNotification(cardId);
+  });
+  stack.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const target = resolveEventElement(event.target);
+    if (target?.closest("[data-ravi-artifact-notification-dismiss]")) return;
+    const card = target?.closest("[data-ravi-artifact-notification]");
+    if (!card) return;
+    event.preventDefault();
+    openArtifactNotification(card.getAttribute("data-ravi-artifact-notification"));
+  });
+  document.body.appendChild(stack);
+  return stack;
+}
+
+function renderArtifactNotificationStack() {
+  const stack = ensureArtifactNotificationStack();
+  artifactNotificationCards = dedupeArtifactNotificationCards(artifactNotificationCards).slice(0, 5);
+  const cards = artifactNotificationCards.slice(0, 5);
+  if (!cards.length && !artifactNotificationError) {
+    stack.className = "ravi-wa-artifact-notification-stack ravi-hidden";
+    stack.innerHTML = "";
+    return;
+  }
+
+  stack.className = "ravi-wa-artifact-notification-stack";
+  stack.innerHTML = [
+    artifactNotificationError ? renderArtifactNotificationError(artifactNotificationError) : "",
+    ...cards.map((card, index) => renderArtifactNotificationCard(card, index)),
+  ]
+    .filter(Boolean)
+    .join("");
+}
+
+function renderArtifactNotificationError(message) {
+  return `
+    <article
+      class="ravi-wa-artifact-notification ravi-wa-artifact-notification--failed ravi-wa-artifact-notification--error"
+      role="status"
+      aria-live="polite"
+    >
+      <div class="ravi-wa-artifact-notification__glyph" aria-hidden="true">!</div>
+      <div class="ravi-wa-artifact-notification__body">
+        <div class="ravi-wa-artifact-notification__meta">
+          <span>artifact notifications</span>
+          <span>erro</span>
+        </div>
+        <strong>Falha ao carregar notificações</strong>
+        <p>${escapeHtml(shorten(String(message), 132))}</p>
+      </div>
+      <button
+        type="button"
+        class="ravi-wa-artifact-notification__close"
+        data-ravi-artifact-notification-dismiss="__artifact_notification_error__"
+        aria-label="Dispensar erro"
+      >×</button>
+    </article>
+  `;
+}
+
+function renderArtifactNotificationCard(card, index) {
+  const item = card?.item || {};
+  const lifecycle = item.lifecycle || item.status || "running";
+  const title = item.label || item.id || "artifact";
+  const elapsed = formatElapsedCompact(item.updatedAt || item.createdAt) || "agora";
+  const delayMs = Math.min(index * 90, 360);
+  const props = buildArtifactNotificationComponentProps(item, elapsed);
+  const isEntering = Date.now() - (Number(card?.receivedAt) || 0) < 900;
+
+  return `
+    <article
+      class="ravi-wa-artifact-notification ravi-wa-artifact-notification--component ravi-wa-artifact-notification--${escapeAttribute(lifecycle)}${isEntering ? " ravi-wa-artifact-notification--entering" : ""}"
+      data-ravi-artifact-notification="${escapeAttribute(card.id)}"
+      style="--ravi-artifact-notification-delay: ${delayMs}ms"
+      role="button"
+      tabindex="0"
+      title="${escapeAttribute(title)}"
+    >
+      <div class="ravi-wa-artifact-notification__component">
+        ${renderUiComponentArtifactNotification(props)}
+      </div>
+      <button
+        type="button"
+        class="ravi-wa-artifact-notification__close"
+        data-ravi-artifact-notification-dismiss="${escapeAttribute(card.id)}"
+        aria-label="Dispensar artifact"
+      >×</button>
+    </article>
+  `;
+}
+
+function buildArtifactNotificationComponentProps(item, elapsedLabel) {
+  const uiProps =
+    item?.ui?.component === "artifact.notification" && item.ui.props && typeof item.ui.props === "object"
+      ? item.ui.props
+      : {};
+  const variant = getArtifactNotificationVariant(item);
+  const previewSrc = getArtifactNotificationPreviewSrc(item, variant);
+  const title = readUiComponentString(uiProps.title) || item?.label || item?.id || "artifact";
+  const summary =
+    readUiComponentString(uiProps.summary) ||
+    readUiComponentString(item?.summary) ||
+    readUiComponentString(item?.path) ||
+    readUiComponentString(item?.uri) ||
+    readUiComponentString(item?.blobPath) ||
+    "";
+  const props = {
+    ...uiProps,
+    artifactId: item?.id || uiProps.artifactId || "artifact",
+    title,
+    summary,
+    tone: normalizeUiComponentTone(item?.lifecycle || item?.status || uiProps.tone || "running"),
+    kind: item?.kind || uiProps.kind || "artifact",
+    status: item?.status || item?.lifecycle || uiProps.status || "running",
+    provider: item?.provider || uiProps.provider || "",
+    model: item?.model || uiProps.model || "",
+    updatedLabel: elapsedLabel || "agora",
+    variant,
+    mimeType: item?.mimeType || uiProps.mimeType || "",
+    previewAlt: title,
+  };
+  if (previewSrc) {
+    props.previewSrc = previewSrc;
+    props.mediaPreview = {
+      ...(uiProps.mediaPreview && typeof uiProps.mediaPreview === "object" ? uiProps.mediaPreview : {}),
+      type: "image",
+      src: previewSrc,
+      alt: title,
+    };
+  }
+  return props;
+}
+
+function getArtifactNotificationVariant(item) {
+  const kind = String(item?.kind || "").toLowerCase();
+  const mimeType = String(item?.mimeType || "").toLowerCase();
+  if (mimeType.startsWith("image/") || kind.includes("image")) return "image";
+  if (item?.componentPreview || kind === "ui.component" || kind.includes("component")) return "ui-component";
+  if (mimeType.startsWith("audio/") || kind.includes("audio")) return "audio";
+  if (mimeType.startsWith("video/") || kind.includes("video")) return "video";
+  if (mimeType.includes("json") || kind.includes("json")) return "json";
+  if (mimeType.startsWith("text/") || kind.includes("doc") || kind.includes("markdown")) return "text";
+  if (kind.includes("trace") || kind.includes("log")) return "trace";
+  return "artifact";
+}
+
+function getArtifactNotificationPreviewSrc(item, variant) {
+  if (variant !== "image") return null;
+  const direct = getArtifactImageSrc(item);
+  if (direct && isSafeUiComponentImagePreviewSrc(direct)) return direct;
+  const blobArtifactId = getLocalArtifactImageBlobId(item);
+  if (!blobArtifactId) return null;
+  const cachedBlob = ARTIFACT_BLOB_CACHE.get(blobArtifactId);
+  if (cachedBlob?.ok && isSafeUiComponentImagePreviewSrc(cachedBlob.dataUri)) {
+    return cachedBlob.dataUri;
+  }
+  requestArtifactBlobLoad(blobArtifactId);
+  return null;
+}
+
+function buildArtifactNotificationSubtitle(item) {
+  return [
+    item?.kind || "artifact",
+    item?.lifecycle || item?.status || "running",
+    item?.provider,
+    item?.model,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function renderArtifactNotificationLineage(item) {
+  const parts = [
+    item?.agentId ? `agent ${item.agentId}` : null,
+    item?.sessionName ? `session ${shorten(item.sessionName, 20)}` : null,
+    item?.taskId ? `task ${shorten(item.taskId, 18)}` : null,
+  ].filter(Boolean);
+  if (!parts.length) return "";
+  return `<div class="ravi-wa-artifact-notification__lineage">${parts
+    .slice(0, 3)
+    .map((part) => `<span>${escapeHtml(part)}</span>`)
+    .join("")}</div>`;
+}
+
+function openArtifactNotification(cardId) {
+  const card = artifactNotificationCards.find((item) => item.id === cardId);
+  if (!card?.item) return;
+  openArtifactModal(buildArtifactsWorkspaceModalData(card.item));
+  artifactNotificationCards = artifactNotificationCards.filter((item) => item.id !== cardId);
+  renderArtifactNotificationStack();
+}
+
+function dismissArtifactNotification(cardId) {
+  if (cardId === "__artifact_notification_error__") {
+    artifactNotificationError = null;
+    renderArtifactNotificationStack();
+    return;
+  }
+  artifactNotificationCards = artifactNotificationCards.filter((item) => item.id !== cardId);
+  renderArtifactNotificationStack();
+}
+
+function normalizeArtifactNotificationItem(item) {
+  if (!item || typeof item !== "object") return null;
+  const id = typeof item.id === "string" && item.id.trim() ? item.id.trim() : null;
+  if (!id) return null;
+  const createdAt = normalizeArtifactNotificationTimestamp(item.createdAt);
+  const updatedAt =
+    normalizeArtifactNotificationTimestamp(item.updatedAt) || createdAt || Date.now();
+  return {
+    ...item,
+    id,
+    kind: typeof item.kind === "string" && item.kind.trim() ? item.kind.trim() : "artifact",
+    label:
+      typeof item.label === "string" && item.label.trim()
+        ? item.label.trim()
+        : id,
+    lifecycle:
+      typeof item.lifecycle === "string" && item.lifecycle.trim()
+        ? item.lifecycle.trim()
+        : "running",
+    status:
+      typeof item.status === "string" && item.status.trim()
+        ? item.status.trim()
+        : null,
+    createdAt: createdAt || updatedAt,
+    updatedAt,
+  };
+}
+
+function normalizeArtifactNotificationTimestamp(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function buildArtifactNotificationSignature(item) {
+  return [
+    item?.id || "artifact",
+    item?.lifecycle || item?.status || "running",
+    item?.updatedAt || item?.createdAt || 0,
+  ].join(":");
+}
+
+function loadArtifactNotificationSeenSignatures() {
+  try {
+    const raw = window.localStorage.getItem(ARTIFACT_NOTIFICATION_SEEN_STORAGE);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(
+      parsed
+        .filter((value) => typeof value === "string" && value.trim())
+        .slice(-160),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function loadArtifactNotificationLastSeenAt() {
+  try {
+    const value = Number(window.localStorage.getItem(ARTIFACT_NOTIFICATION_LAST_SEEN_STORAGE));
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function persistArtifactNotificationState() {
+  try {
+    const values = Array.from(artifactNotificationSeenSignatures).slice(-160);
+    artifactNotificationSeenSignatures.clear();
+    values.forEach((value) => artifactNotificationSeenSignatures.add(value));
+    window.localStorage.setItem(
+      ARTIFACT_NOTIFICATION_SEEN_STORAGE,
+      JSON.stringify(values),
+    );
+    if (artifactNotificationLastSeenAt > 0) {
+      window.localStorage.setItem(
+        ARTIFACT_NOTIFICATION_LAST_SEEN_STORAGE,
+        String(Math.floor(artifactNotificationLastSeenAt)),
+      );
+    }
+  } catch {
+    // ignore localStorage failures inside WhatsApp Web
+  }
+}
+
 function render(snapshot = latestSnapshot, context = detectChatContext()) {
   ensureShell();
   syncLayoutChrome();
@@ -4983,16 +7073,28 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
   panelTitle.textContent = "Sessões";
   panelSubtitle.textContent = title;
 
-  const recentSessions = filterCockpitSessions(
-    snapshot?.recentSessions || snapshot?.recentChats || [],
-  );
-  const activeSessions = filterCockpitSessions(
-    snapshot?.activeSessions || snapshot?.hotSessions || [],
-  );
+  const rawRecentSessions = snapshot?.recentSessions || snapshot?.recentChats || [];
+  const rawActiveSessions = snapshot?.activeSessions || snapshot?.hotSessions || [];
+  const filteredRecentSessions = filterCockpitSessions(rawRecentSessions);
+  const filteredActiveSessions = filterCockpitSessions(rawActiveSessions);
+  const selectedWorkspaceSession =
+    getSelectedWorkspaceSession(snapshot) ||
+    (selectedWorkspaceSessionKey
+      ? {
+          sessionKey: selectedWorkspaceSessionKey,
+          sessionName: selectedWorkspaceSessionKey,
+        }
+      : null);
   const navTargets = dedupeSessionsByKey(
-    [session, ...activeSessions, ...recentSessions].filter(Boolean),
+    [
+      session,
+      selectedWorkspaceSession,
+      ...rawActiveSessions,
+      ...rawRecentSessions,
+    ].filter(Boolean),
   );
   const followedSession = session || null;
+  const snapshotChatFocusKey = buildSnapshotChatFocusKey(snapshot);
   const pinnedSession = pinnedSessionKey
     ? navTargets.find((item) => item.sessionKey === pinnedSessionKey) || null
     : null;
@@ -5000,8 +7102,33 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
     pinnedSessionKey = null;
     persistPinnedSessionKey(null);
   }
+  const manualFocusMatchesChat =
+    !followedSession ||
+    !snapshotChatFocusKey ||
+    Boolean(
+      selectedWorkspaceChatFocusKey &&
+        selectedWorkspaceChatFocusKey === snapshotChatFocusKey,
+    );
+  const manualPinnedSession = manualFocusMatchesChat ? pinnedSession : null;
+  const manualSelectedSession = manualFocusMatchesChat
+    ? selectedWorkspaceSession
+    : null;
   const focusedSession =
-    pinnedSession || followedSession || navTargets[0] || null;
+    manualPinnedSession ||
+    manualSelectedSession ||
+    followedSession ||
+    pinnedSession ||
+    selectedWorkspaceSession ||
+    navTargets[0] ||
+    null;
+  const nextFocusedSessionTraceKey = focusedSession?.sessionKey || null;
+  if (focusedSessionTraceKey !== nextFocusedSessionTraceKey) {
+    focusedSessionTraceKey = nextFocusedSessionTraceKey;
+    lastSessionFocusTraceRequestAt = 0;
+  }
+  if (nextFocusedSessionTraceKey) {
+    void refreshSessionFocusTrace(nextFocusedSessionTraceKey);
+  }
   const focusedTaskMatch = focusedSession
     ? resolveTaskSessionMatch(focusedSession)
     : null;
@@ -5009,18 +7136,22 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
     primeTaskSessionDetails([focusedTaskMatch]);
   }
   const focusedTask = focusedTaskMatch?.task || null;
-  const isPinned = Boolean(
-    pinnedSession && focusedSession?.sessionKey === pinnedSession.sessionKey,
-  );
   const focusedLive = focusedSession?.live;
+  const focusedTraceEvents = getSessionFocusTraceEvents(focusedSession);
+  const focusedTraceSummary = formatSessionFocusEventSummary(focusedTraceEvents[0]);
   const focusedActivity = focusedLive?.activity || "idle";
   const focusedActivityLabel = chipActivityLabel(focusedActivity);
   const focusedActivityClass = chipActivityClass(focusedActivity);
-  const listedRecentSessions = focusedSession
-    ? recentSessions.filter(
-        (item) => item.sessionKey !== focusedSession.sessionKey,
-      )
-    : recentSessions;
+  const focusedInActiveList = hasSessionWithKey(rawActiveSessions, focusedSession);
+  const focusedInRecentList = hasSessionWithKey(rawRecentSessions, focusedSession);
+  const activeSessions =
+    focusedSession && (focusedInActiveList || !focusedInRecentList)
+      ? ensureSessionInList(filteredActiveSessions, focusedSession)
+      : filteredActiveSessions;
+  const listedRecentSessions =
+    focusedSession && focusedInRecentList
+      ? ensureSessionInList(filteredRecentSessions, focusedSession)
+      : filteredRecentSessions;
 
   const debugCard = `
     <details class="ravi-wa-disclosure">
@@ -5073,13 +7204,12 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
     : "";
 
   const heroSummary = focusedTaskMatch
-    ? escapeHtml(shorten(focusedTaskMatch.note.text, 160))
+    ? shorten(focusedTaskMatch.note.text, 160)
     : focusedSession
-      ? escapeHtml(focusedLive?.summary || "sem evento vivo")
-      : escapeHtml(
-          (
-            snapshot?.warnings || ["Nenhuma sessão do Ravi em foco agora."]
-          ).join(" "),
+      ? focusedLive?.summary || focusedTraceSummary || "sem evento vivo"
+      : formatWarningsText(
+          snapshot?.warnings,
+          "Nenhuma sessão do Ravi em foco agora.",
         );
   const heroStateClass = focusedTask
     ? taskStatusClass(focusedTask.status)
@@ -5091,10 +7221,11 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
     : focusedSession
       ? focusedActivityLabel
       : "unbound";
+  const focusedSessionTitle = getSessionDisplayName(focusedSession);
   const heroTitle = focusedTask
-    ? focusedTask.title || focusedSession?.sessionName || "task"
+    ? focusedTask.title || focusedSessionTitle || "task"
     : focusedSession
-      ? focusedSession.sessionName
+      ? focusedSessionTitle
       : "nenhuma sessão";
   const heroLinkedChat = focusedSession
     ? getLinkedChatLabel(focusedSession)
@@ -5105,67 +7236,94 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
       ? formatSessionElapsedCompact(focusedSession) || "agora"
       : "-";
   const heroElapsedLabel = focusedTask ? "duration" : "updated";
-  const heroModeLabel = isPinned
-    ? "pinada"
-    : followedSession
-      ? "seguindo chat"
-      : "sem vínculo";
-  const canFollowCurrent = Boolean(isPinned && followedSession);
-  const canPinFocused = Boolean(focusedSession && !isPinned);
-  const liveEventsCard = focusedSession
-    ? renderLiveEventsCard(focusedSession)
+  const focusedRuntimeLabel = focusedSession
+    ? formatSessionRuntimeLabel(resolveSessionProviderProfile(focusedSession)) ||
+      "runtime default"
     : "";
+  const focusActivityText = focusedSession
+    ? focusedLive?.summary || focusedTraceSummary || focusedActivityLabel
+    : heroSummary;
+  const focusActivityMeta = focusedSession
+    ? `${heroElapsedLabel} ${heroElapsed}`
+    : "sem vínculo";
+  const focusMappingLabel = focusedSession
+    ? [focusedSession.agentId, focusedRuntimeLabel].filter(Boolean).join(" · ")
+    : "sem sessão";
+  const debugMeta = focusedSession
+    ? [
+        focusedSession.chatId || heroLinkedChat ? "route ok" : "sem route",
+        heroLinkedChat ? `chat ${shorten(heroLinkedChat, 28)}` : null,
+        focusedSession.accountId ? `instance ${shorten(focusedSession.accountId, 18)}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : formatWarningsText(snapshot?.warnings, "Nenhuma sessão do Ravi em foco agora.", " · ");
   body.innerHTML = `
     ${errorCard}
-    <section class="ravi-wa-card ravi-wa-hero-card">
-      <div class="ravi-wa-hero-top">
+    <section class="session-card ravi-wa-session-focus-card${sessionFocusDebugOpen ? " is-debug-open" : ""}" data-ravi-session-focus-card>
+      <div class="card-top">
         <div>
-          <h3>${escapeHtml(heroTitle)}</h3>
-          <p>${heroSummary}</p>
+          ${
+            focusedSession
+              ? `<button
+                  type="button"
+                  class="title-button"
+                  data-ravi-focus-session="${escapeAttribute(focusedSession.sessionKey)}"
+                  ${focusedTask ? `data-ravi-focus-task="${escapeAttribute(focusedTask.id)}"` : ""}
+                >${escapeHtml(heroTitle)}</button>`
+              : `<h3 class="title-button">${escapeHtml(heroTitle)}</h3>`
+          }
+          <div class="activity-line">
+            <strong class="live-event">${escapeHtml(focusActivityText)}</strong>
+            <span>${escapeHtml(focusActivityMeta)}</span>
+          </div>
         </div>
-        <span class="ravi-wa-state-pill ravi-wa-state-pill--${heroStateClass}">${escapeHtml(heroStateLabel)}</span>
+        <span class="state-pill">${escapeHtml(heroStateLabel)}</span>
       </div>
-      <div class="ravi-wa-chip-row">
-        <span class="ravi-wa-meta-chip">modo ${escapeHtml(heroModeLabel)}</span>
+      <div class="chip-row">
         ${
           focusedSession
-            ? `<span class="ravi-wa-meta-chip">agent ${escapeHtml(focusedSession.agentId)}</span>
-               <span class="ravi-wa-meta-chip">${escapeHtml(heroElapsedLabel)} ${escapeHtml(heroElapsed)}</span>
-               ${
-                 focusedTask
-                   ? `<span class="ravi-wa-meta-chip">task ${escapeHtml(formatTaskShortId(focusedTask.id))}</span>
-                      <span class="ravi-wa-meta-chip">progress ${escapeHtml(String(getTaskDisplayProgress(focusedTask, resolveTaskHierarchyNode(focusedTask.id))))}%</span>
-                      <span class="ravi-wa-meta-chip">session ${escapeHtml(focusedSession.sessionName)}</span>`
-                   : ""
-               }
-               ${heroLinkedChat ? `<span class="ravi-wa-meta-chip">chat ${escapeHtml(shorten(heroLinkedChat, 22))}</span>` : ""}
-               ${focusedSession.channel ? `<span class="ravi-wa-meta-chip">channel ${escapeHtml(focusedSession.channel)}</span>` : ""}
-               ${focusedSession.accountId ? `<span class="ravi-wa-meta-chip">instance ${escapeHtml(shorten(focusedSession.accountId, 18))}</span>` : ""}`
-            : ""
+	            ? `<button
+	                 type="button"
+	                 class="chip-button primary"
+	                 data-ravi-focus-session="${escapeAttribute(focusedSession.sessionKey)}"
+	                 ${focusedTask ? `data-ravi-focus-task="${escapeAttribute(focusedTask.id)}"` : ""}
+	               >${escapeHtml(focusMappingLabel)}</button>
+	               ${
+	                 focusedTask
+	                   ? `<span class="chip">task ${escapeHtml(formatTaskShortId(focusedTask.id))}</span>
+	                      <span class="chip">progress ${escapeHtml(String(getTaskDisplayProgress(focusedTask, resolveTaskHierarchyNode(focusedTask.id))))}%</span>`
+	                   : ""
+               }`
+            : `<span class="chip">sem vínculo</span>`
         }
+        <button
+          type="button"
+          class="chip-button${sessionFocusDebugOpen ? " is-active" : ""}"
+          data-ravi-session-focus-debug="true"
+          aria-pressed="${sessionFocusDebugOpen ? "true" : "false"}"
+        >detalhes</button>
       </div>
+      <div class="debug-panel">
+        ${renderSessionFocusLifeEvents(focusedSession, focusedTraceEvents)}
+        <div class="debug-meta">${escapeHtml(debugMeta)}</div>
+      </div>
+      ${renderSessionFocusTtsPanel(focusedSession)}
     </section>
-    <section class="ravi-wa-card">
-      <label class="ravi-wa-sidebar-search">
-        <span>buscar sessões, agents ou chats vinculados</span>
-        <input id="ravi-wa-sidebar-search" type="text" placeholder="dev, main, 5511..." value="${escapeAttribute(sidebarFilter)}" />
-      </label>
-    </section>
-    <section class="ravi-wa-card">
+    <section class="ravi-wa-card ravi-wa-session-list-card">
       <div class="ravi-wa-section-head">
         <h3>sessões ativas</h3>
         <span>${activeSessions.length}</span>
       </div>
       ${renderCockpitRows(activeSessions, focusedSession, "Nenhuma sessão ativa agora.")}
     </section>
-    <section class="ravi-wa-card">
+    <section class="ravi-wa-card ravi-wa-session-list-card">
       <div class="ravi-wa-section-head">
         <h3>sessões recentes</h3>
         <span>${listedRecentSessions.length}</span>
       </div>
       ${renderCockpitRows(listedRecentSessions, focusedSession, "Nenhuma sessão recente do Ravi.")}
     </section>
-    ${liveEventsCard}
     ${
       sidebarNotice
         ? `
@@ -5175,51 +7333,66 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
     `
         : ""
     }
-    ${
-      focusedSession
-        ? `
-      <section class="ravi-wa-card">
-        <dl class="ravi-wa-grid">
-            <div><dt>Sessão</dt><dd>${escapeHtml(focusedSession.sessionName)}</dd></div>
-            <div><dt>Agent</dt><dd>${escapeHtml(focusedSession.agentId)}</dd></div>
-            <div><dt>Live</dt><dd>${escapeHtml(focusedActivityLabel)}</dd></div>
-            <div><dt>Atualizado</dt><dd>${escapeHtml(formatTimestamp(focusedLive?.updatedAt))}</dd></div>
-            <div><dt>Thinking</dt><dd>${escapeHtml(focusedSession.thinkingLevel || "-")}</dd></div>
-            <div><dt>Modelo</dt><dd>${escapeHtml(formatSessionRuntimeLabel(resolveSessionProviderProfile(focusedSession)) || "-")}</dd></div>
-            <div><dt>Queue</dt><dd>${escapeHtml(focusedSession.queueMode || "-")}</dd></div>
-          <div><dt>Heartbeat</dt><dd>${escapeHtml(focusedSession.lastHeartbeatText || "-")}</dd></div>
-          <div><dt>Canal</dt><dd>${escapeHtml(focusedSession.channel || "-")}</dd></div>
-          <div><dt>Instância</dt><dd>${escapeHtml(focusedSession.accountId || "-")}</dd></div>
-        </dl>
-      </section>
-      <section class="ravi-wa-card">
-        <div class="ravi-wa-actions">
-          ${focusedSession.chatId ? `<button data-ravi-open-chat="${escapeAttribute(focusedSession.sessionKey)}">Abrir chat</button>` : ""}
-          ${canFollowCurrent ? `<button data-ravi-follow-current="true">Seguir chat</button>` : ""}
-          ${canPinFocused ? `<button data-ravi-pin-session="${escapeAttribute(focusedSession.sessionKey)}">Pinar sessão</button>` : ""}
-          <button data-action="abort">Abortar</button>
-          <button data-action="reset">Resetar</button>
-          <button data-action="set-thinking" data-value="normal">Thinking normal</button>
-          <button data-action="set-thinking" data-value="verbose">Thinking verbose</button>
-        </div>
-      </section>
-    `
-        : ""
-    }
     ${debugCard}
     ${logsCard}
   `;
 
-  const searchInput = body.querySelector("#ravi-wa-sidebar-search");
-  searchInput?.addEventListener("input", (event) => {
-    const nextValue = event.target.value || "";
-    sidebarFilter = nextValue;
-    render(snapshot, context);
-    requestAnimationFrame(() => {
-      const nextInput = document.getElementById("ravi-wa-sidebar-search");
-      if (!(nextInput instanceof HTMLInputElement)) return;
-      nextInput.focus();
-      nextInput.setSelectionRange(nextValue.length, nextValue.length);
+		  body
+		    .querySelector("[data-ravi-session-focus-debug]")
+		    ?.addEventListener("click", () => {
+		      sessionFocusDebugOpen = !sessionFocusDebugOpen;
+		      persistSessionFocusDebugOpen(sessionFocusDebugOpen);
+		      render(snapshot, context);
+		    });
+
+  body.querySelector("[data-ravi-tts-form]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void saveFocusedAgentTtsSettings(event.currentTarget);
+  });
+  body.querySelector("[data-ravi-tts-voice-refresh]")?.addEventListener("click", (event) => {
+    event.preventDefault();
+    void refreshTtsVoices(true);
+  });
+  body.querySelector("[data-ravi-tts-voice-search]")?.addEventListener("input", (event) => {
+    filterTtsVoiceCards(event.currentTarget.value || "");
+  });
+  body.querySelector("[data-ravi-tts-config]")?.addEventListener("toggle", (event) => {
+    ttsConfigOpen = Boolean(event.currentTarget.open);
+    if (ttsConfigOpen) void refreshTtsVoices(false);
+  });
+  const ttsVoiceListElement = body.querySelector("[data-ravi-tts-voice-list]");
+  if (ttsVoiceListElement) {
+    ttsVoiceListElement.scrollTop = ttsVoiceListScrollTop;
+    ttsVoiceListElement.addEventListener("scroll", () => {
+      ttsVoiceListScrollTop = ttsVoiceListElement.scrollTop;
+    });
+  }
+  body.querySelectorAll("[data-ravi-tts-voice-play-id]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const form = event.currentTarget.closest("[data-ravi-tts-form]");
+      const voiceId = event.currentTarget.getAttribute("data-ravi-tts-voice-play-id");
+      const voice = findTtsVoice(voiceId);
+      if (!form || !voice?.voiceId) return;
+      void testFocusedAgentTts(form, buildTtsVoicePatch(voice));
+    });
+  });
+  body.querySelectorAll("[data-ravi-tts-voice-id]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget.closest("[data-ravi-tts-form]");
+      const agentId = form?.dataset?.raviTtsAgentId;
+      const voiceId = event.currentTarget.getAttribute("data-ravi-tts-voice-id");
+      selectTtsVoice(agentId, voiceId, event.currentTarget);
+    });
+    button.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      const form = event.currentTarget.closest("[data-ravi-tts-form]");
+      const agentId = form?.dataset?.raviTtsAgentId;
+      const voiceId = event.currentTarget.getAttribute("data-ravi-tts-voice-id");
+      selectTtsVoice(agentId, voiceId, event.currentTarget);
     });
   });
 
@@ -5442,7 +7615,7 @@ function renderOmniWorkspace(body, context) {
             panel?.warnings?.length
               ? `
             <section class="ravi-wa-card ravi-wa-notice ravi-wa-notice--info">
-              <p>${escapeHtml(panel.warnings.join(" · "))}</p>
+              <p>${escapeHtml(formatWarningsText(panel.warnings, "", " · "))}</p>
             </section>
           `
               : ""
@@ -6356,6 +8529,851 @@ function renderLiveEventsCard(session) {
   `;
 }
 
+const SESSION_TRACE_EVENT_PRESENTERS = {
+  "channel.message.received": {
+    kind: "message.in",
+    category: "msg",
+    activity: "thinking",
+    label: "mensagem recebida",
+    detail: (event) => tracePreview(event, "entrada do chat"),
+  },
+  "route.resolved": {
+    kind: "route.resolved",
+    category: "route",
+    activity: "thinking",
+    label: "rota resolvida",
+    detail: (event) => traceStatusDetail(event, "sessão escolhida"),
+  },
+  "route.rejected": {
+    kind: "route.rejected",
+    category: "route",
+    activity: "blocked",
+    label: "rota rejeitada",
+    detail: (event) => tracePreview(event, "sem rota válida"),
+  },
+  "prompt.published": {
+    kind: "prompt.published",
+    category: "tool",
+    activity: "thinking",
+    label: "prompt publicado",
+    detail: (event) => tracePreview(event, "turno enviado ao runtime"),
+  },
+  "dispatch.push_existing": {
+    kind: "dispatch.push",
+    category: "tool",
+    activity: "thinking",
+    label: "runtime acordado",
+    detail: (event) => traceStatusDetail(event, "sessão viva recebeu o turno"),
+  },
+  "dispatch.queued": {
+    kind: "dispatch.queued",
+    category: "tool",
+    activity: "thinking",
+    label: "turno enfileirado",
+    detail: (event) => traceStatusDetail(event, "aguardando runtime"),
+  },
+  "dispatch.interrupt_requested": {
+    kind: "dispatch.interrupt",
+    category: "tool",
+    activity: "blocked",
+    label: "interrupção solicitada",
+    detail: (event) => tracePreview(event, "turno interrompido"),
+  },
+  "runtime.status": {
+    kind: "runtime.status",
+    category: "runtime",
+    activity: "thinking",
+    label: "runtime atualizado",
+    detail: (event) => traceStatusDetail(event, "estado do runtime"),
+  },
+  "runtime.start": {
+    kind: "runtime.start",
+    category: "runtime",
+    activity: "thinking",
+    label: "runtime iniciou",
+    detail: (event) => traceStatusDetail(event, "preparando provider"),
+  },
+  "adapter.request": {
+    kind: "adapter.request",
+    category: "tool",
+    activity: "thinking",
+    label: "request ao provider",
+    detail: (event) => traceProviderDetail(event, "handoff para o modelo"),
+  },
+  "tool.start": {
+    kind: "tool.start",
+    category: "tool",
+    activity: "thinking",
+    label: "tool iniciou",
+    detail: (event) => tracePreview(event, "execução de ferramenta"),
+  },
+  "tool.end": {
+    kind: "tool.end",
+    category: "tool",
+    activity: "streaming",
+    label: "tool concluiu",
+    detail: (event) => traceDurationDetail(event, "ferramenta finalizada"),
+  },
+  "assistant.message": {
+    kind: "assistant.message",
+    category: "out",
+    activity: "streaming",
+    label: "assistant gerou texto",
+    detail: (event) => tracePreview(event, "resposta em construção"),
+  },
+  "response.emitted": {
+    kind: "response.emitted",
+    category: "out",
+    activity: "streaming",
+    label: "resposta emitida",
+    detail: (event) => tracePreview(event, "saída enviada ao gateway"),
+  },
+  "delivery.delivered": {
+    kind: "delivery.delivered",
+    category: "delivery",
+    activity: "streaming",
+    label: "entrega confirmada",
+    detail: (event) => traceStatusDetail(event, "mensagem entregue"),
+  },
+  "delivery.failed": {
+    kind: "delivery.failed",
+    category: "delivery",
+    activity: "blocked",
+    label: "entrega falhou",
+    detail: (event) => tracePreview(event, "falha no envio"),
+  },
+  "delivery.dropped": {
+    kind: "delivery.dropped",
+    category: "delivery",
+    activity: "blocked",
+    label: "entrega descartada",
+    detail: (event) => tracePreview(event, "gateway descartou a saída"),
+  },
+  "turn.complete": {
+    kind: "turn.complete",
+    category: "runtime",
+    activity: "streaming",
+    label: "turno concluído",
+    detail: (event) => traceDurationDetail(event, "runtime finalizou"),
+  },
+  "turn.failed": {
+    kind: "turn.failed",
+    category: "runtime",
+    activity: "blocked",
+    label: "turno falhou",
+    detail: (event) => tracePreview(event, "runtime falhou"),
+  },
+  "turn.interrupted": {
+    kind: "turn.interrupted",
+    category: "runtime",
+    activity: "blocked",
+    label: "turno interrompido",
+    detail: (event) => tracePreview(event, "runtime interrompido"),
+  },
+};
+
+const SESSION_TRACE_GROUP_PRESENTERS = {
+  channel: { category: "msg", activity: "thinking", label: "evento do chat" },
+  routing: { category: "route", activity: "thinking", label: "evento de rota" },
+  prompt: { category: "tool", activity: "thinking", label: "evento de prompt" },
+  dispatch: { category: "tool", activity: "thinking", label: "evento de dispatch" },
+  runtime: { category: "runtime", activity: "thinking", label: "evento de runtime" },
+  adapter: { category: "tool", activity: "thinking", label: "evento do provider" },
+  tool: { category: "tool", activity: "thinking", label: "evento de tool" },
+  response: { category: "out", activity: "streaming", label: "evento de resposta" },
+  delivery: { category: "delivery", activity: "streaming", label: "evento de entrega" },
+};
+
+const SESSION_TRACE_IGNORED_EVENT_TYPES = new Set(["presence.typing"]);
+const SESSION_TRACE_IGNORED_GROUPS = new Set(["presence"]);
+
+function renderSessionFocusLifeEvents(session, traceEvents = []) {
+  const events = getSessionFocusLifeEvents(session, traceEvents).slice(0, 5);
+  if (!events.length) {
+    return `
+      <div class="life-events">
+        <div class="life-event is-primary" data-category="runtime">
+          <span class="life-node"></span>
+          <span class="life-copy">
+            <span class="life-code">runtime.idle</span>
+            <span class="life-label">sem eventos vivos dessa sessão ainda</span>
+          </span>
+          <span class="life-meta">agora</span>
+        </div>
+      </div>
+    `;
+  }
+
+  const animationDelays = buildSessionFocusEventAnimationDelays(
+    session?.sessionKey,
+    events,
+  );
+  return `
+    <div class="life-events">
+      ${events
+        .map((event, index) => {
+          const kind = chipActivityClass(event.activity || eventKindToActivity(event.kind));
+          const category = resolveSessionFocusEventCategory(event);
+          const signature = buildSessionFocusEventSignature(event);
+          const animationDelay = animationDelays.get(signature);
+          const isNew = Number.isFinite(animationDelay);
+          const stateClass =
+            index === 0
+              ? ` is-primary${isNew ? " is-new" : ""}`
+              : isNew
+                ? " is-new"
+                : "";
+          const styleAttribute = isNew
+            ? ` style="--event-delay: ${Math.max(0, Math.round(animationDelay))}ms"`
+            : "";
+          return `
+            <div class="life-event life-event--${kind}${stateClass}" data-category="${escapeAttribute(category)}"${styleAttribute}>
+              <span class="life-node"></span>
+              <span class="life-copy">
+                <span class="life-code">${escapeHtml(event.kind || event.label || "event")}</span>
+                <span class="life-label">${escapeHtml(event.detail || event.label || event.kind)}</span>
+              </span>
+              <span class="life-meta">${escapeHtml(formatElapsedCompact(event.timestamp) || "agora")}</span>
+            </div>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function renderSessionFocusTtsPanel(session) {
+  if (!session?.agentId) return "";
+  if (ttsConfigOpen) void refreshTtsVoices(false);
+  const agent = findSnapshotAgent(session.agentId);
+  const defaults = agent?.defaults && typeof agent.defaults === "object" ? agent.defaults : {};
+  const voiceSettings = readTtsObject(defaults.tts_voice_settings || defaults.ttsVoiceSettings);
+  const elevenlabs = readTtsObject(defaults.tts_elevenlabs || defaults.ttsElevenLabs || defaults.tts_full_api);
+  const draft = ttsDraftsByAgentId.get(session.agentId) || {};
+  const enabled = isTtsDefaultEnabled(defaults);
+  const voiceId = draft.voiceId ?? defaults.tts_voice ?? defaults.tts_voice_id ?? "";
+  const selectedVoice = findTtsVoice(voiceId);
+  const voiceName = draft.voiceName || defaults.tts_voice_name || selectedVoice?.name || (voiceId ? "voz selecionada" : "escolher voz");
+  const voiceDescription =
+    draft.voiceDescription || defaults.tts_voice_description || selectedVoice?.description || "";
+  const voiceCategory = draft.voiceCategory || defaults.tts_voice_category || selectedVoice?.category || "";
+  const voicePreviewUrl = draft.voicePreviewUrl || defaults.tts_voice_preview_url || selectedVoice?.previewUrl || "";
+  const modelId = draft.modelId ?? defaults.tts_model ?? defaults.tts_model_id ?? "eleven_multilingual_v2";
+  const lang = draft.lang ?? defaults.tts_lang ?? "pt-br";
+  const outputFormat = draft.outputFormat ?? defaults.tts_format ?? defaults.tts_output_format ?? "mp3_44100_128";
+  const speed = draft.speed ?? defaults.tts_speed ?? voiceSettings?.speed ?? 1;
+  const voices = getTtsVoiceOptions(voiceId);
+  const visibleVoiceCount = voices.filter((voice) => isTtsVoiceVisibleForQuery(voice, ttsVoiceQuery)).length;
+  const statusText = ttsVoiceListLoading
+    ? "carregando vozes"
+    : ttsVoiceListError
+      ? "falha ao listar vozes"
+      : `${ttsVoiceList.length} vozes`;
+  return `
+    <details class="ravi-wa-tts-shell" data-ravi-tts-config${ttsConfigOpen ? " open" : ""}>
+      <summary class="ravi-wa-tts-summary">
+        <span>voz do agent</span>
+        <strong>${escapeHtml(voiceName)}</strong>
+        <em>${enabled ? "auto" : "manual"}</em>
+      </summary>
+    <form class="ravi-wa-tts-panel" data-ravi-tts-form data-ravi-tts-agent-id="${escapeAttribute(session.agentId)}" data-ravi-tts-session-key="${escapeAttribute(session.sessionKey || "")}" data-ravi-tts-session-name="${escapeAttribute(session.sessionName || session.name || "")}" data-ravi-tts-chat-id="${escapeAttribute(session.chatId || session.lastTo || "")}">
+      <input type="hidden" name="voiceId" value="${escapeAttribute(voiceId)}">
+      <input type="hidden" name="voiceName" value="${escapeAttribute(voiceName)}">
+      <input type="hidden" name="voiceDescription" value="${escapeAttribute(voiceDescription)}">
+      <input type="hidden" name="voiceCategory" value="${escapeAttribute(voiceCategory)}">
+      <input type="hidden" name="voicePreviewUrl" value="${escapeAttribute(voicePreviewUrl)}">
+      <div class="ravi-wa-tts-panel__head">
+        <span>voz</span>
+        <label class="ravi-wa-tts-toggle">
+          <input type="checkbox" name="enabled"${enabled ? " checked" : ""}>
+          <span>auto</span>
+        </label>
+      </div>
+
+      <div class="ravi-wa-tts-current">
+        <div class="ravi-wa-tts-current__mark" aria-hidden="true">${renderTtsWaveGlyph()}</div>
+        <div class="ravi-wa-tts-current__copy">
+          <strong>${escapeHtml(voiceName)}</strong>
+          <span>${escapeHtml(formatTtsVoiceDetail({ description: voiceDescription, category: voiceCategory }))}</span>
+        </div>
+      </div>
+
+      <div class="ravi-wa-tts-voice-tools">
+        <input data-ravi-tts-voice-search value="${escapeAttribute(ttsVoiceQuery)}" placeholder="buscar voz">
+        <button type="button" class="chip-button" data-ravi-tts-voice-refresh="true">${ttsVoiceListLoading ? "..." : "atualizar"}</button>
+      </div>
+
+      <div class="ravi-wa-tts-voice-list" data-ravi-tts-voice-list>
+        ${voices.length
+          ? `${voices.map((voice) => renderTtsVoiceCard(voice, voiceId, ttsVoiceQuery)).join("")}<div class="ravi-wa-tts-empty" data-ravi-tts-filter-empty${visibleVoiceCount ? " hidden" : ""}>nenhuma voz encontrada</div>`
+          : `<div class="ravi-wa-tts-empty">${escapeHtml(ttsVoiceListError || "nenhuma voz encontrada")}</div>`}
+      </div>
+      <div class="ravi-wa-tts-status">${escapeHtml(statusText)}</div>
+
+      <label class="ravi-wa-tts-range">
+        <span>ritmo <b>${escapeHtml(formatTtsSpeed(speed))}</b></span>
+        <input type="range" name="speed" min="0.75" max="1.25" step="0.05" value="${escapeAttribute(speed)}">
+      </label>
+
+      <details class="ravi-wa-tts-advanced">
+        <summary>avançado</summary>
+        <div class="ravi-wa-tts-grid">
+          <label>
+            <span>model</span>
+            <input name="modelId" value="${escapeAttribute(modelId)}" placeholder="eleven_multilingual_v2">
+          </label>
+          <label>
+            <span>lang</span>
+            <input name="lang" value="${escapeAttribute(lang)}" placeholder="pt-br">
+          </label>
+        </div>
+        <label class="ravi-wa-tts-output">
+          <span>format</span>
+          <input name="outputFormat" value="${escapeAttribute(outputFormat)}" placeholder="mp3_44100_128">
+        </label>
+        <label>
+          <span>voiceSettings</span>
+          <textarea name="voiceSettings" spellcheck="false">${escapeHtml(formatTtsJson(voiceSettings))}</textarea>
+        </label>
+        <label>
+          <span>elevenlabs request</span>
+          <textarea name="elevenlabs" spellcheck="false">${escapeHtml(formatTtsJson(elevenlabs))}</textarea>
+        </label>
+      </details>
+      <div class="ravi-wa-tts-actions">
+        <button type="submit" class="chip-button primary"${ttsSettingsSaving ? " disabled" : ""}>salvar voz</button>
+      </div>
+    </form>
+    </details>
+  `;
+}
+
+function renderTtsWaveGlyph() {
+  return `<span></span><span></span><span></span><span></span>`;
+}
+
+function renderTtsVoiceCard(voice, selectedVoiceId, query = "") {
+  const labels = voice.labels && typeof voice.labels === "object" ? voice.labels : {};
+  const labelText = [labels.accent, labels.gender, labels.age].filter(Boolean).slice(0, 2).join(" · ");
+  const detail = formatTtsVoiceDetail({
+    description: labelText || voice.description,
+    category: voice.category,
+  });
+  const selected = voice.voiceId === selectedVoiceId;
+  const hidden = isTtsVoiceVisibleForQuery(voice, query) ? "" : " hidden";
+  return `
+    <div
+      role="button"
+      tabindex="0"
+      class="ravi-wa-tts-voice${selected ? " is-selected" : ""}"
+      data-ravi-tts-voice-id="${escapeAttribute(voice.voiceId)}"
+      data-ravi-tts-voice-name="${escapeAttribute(voice.name || "")}"
+      data-ravi-tts-voice-search="${escapeAttribute(buildTtsVoiceSearchText(voice))}"
+      aria-pressed="${selected ? "true" : "false"}"
+      ${hidden}
+    >
+      <span class="ravi-wa-tts-voice__copy">
+        <span class="ravi-wa-tts-voice__name">${escapeHtml(voice.name || "voz")}</span>
+        <span class="ravi-wa-tts-voice__meta">${escapeHtml(detail)}</span>
+      </span>
+      <button
+        type="button"
+        class="ravi-wa-tts-voice__play"
+        data-ravi-tts-voice-play-id="${escapeAttribute(voice.voiceId)}"
+        aria-label="ouvir ${escapeAttribute(voice.name || "voz")}"
+        ${ttsPreviewInFlight ? " disabled" : ""}
+      ><span aria-hidden="true"></span></button>
+    </div>
+  `;
+}
+
+function getTtsVoiceOptions(selectedVoiceId) {
+  const selected = selectedVoiceId ? findTtsVoice(selectedVoiceId) : null;
+  const voices = ttsVoiceList;
+  const withSelected = selected && !voices.some((voice) => voice.voiceId === selected.voiceId) ? [selected, ...voices] : voices;
+  return withSelected.slice(0, 60);
+}
+
+function isTtsVoiceVisibleForQuery(voice, query) {
+  const normalized = normalizeLookupToken(query);
+  return !normalized || buildTtsVoiceSearchText(voice).includes(normalized);
+}
+
+function filterTtsVoiceCards(query) {
+  ttsVoiceQuery = query;
+  const normalized = normalizeLookupToken(query);
+  const list = document.querySelector("[data-ravi-tts-voice-list]");
+  if (!list) return;
+  let visibleCount = 0;
+  list.querySelectorAll("[data-ravi-tts-voice-id]").forEach((button) => {
+    const haystack = button.getAttribute("data-ravi-tts-voice-search") || "";
+    const visible = !normalized || haystack.includes(normalized);
+    button.hidden = !visible;
+    if (visible) visibleCount += 1;
+  });
+  const empty = list.querySelector("[data-ravi-tts-filter-empty]");
+  if (empty) empty.hidden = visibleCount > 0;
+}
+
+function findTtsVoice(voiceId) {
+  if (!voiceId) return null;
+  return ttsVoiceList.find((voice) => voice.voiceId === voiceId) || null;
+}
+
+function updateTtsDraft(agentId, patch) {
+  const current = ttsDraftsByAgentId.get(agentId) || {};
+  ttsDraftsByAgentId.set(agentId, { ...current, ...patch });
+}
+
+function selectTtsVoice(agentId, voiceId, sourceElement = null) {
+  if (!agentId || !voiceId) return;
+  const list = sourceElement?.closest?.("[data-ravi-tts-voice-list]");
+  if (list) ttsVoiceListScrollTop = list.scrollTop;
+  const voice = findTtsVoice(voiceId);
+  updateTtsDraft(agentId, buildTtsVoicePatch(voice) || {
+    voiceId,
+    voiceName: sourceElement?.getAttribute?.("data-ravi-tts-voice-name") || "",
+    voiceDescription: "",
+    voiceCategory: "",
+    voicePreviewUrl: "",
+  });
+  requestRender();
+}
+
+function buildTtsVoicePatch(voice) {
+  if (!voice?.voiceId) return null;
+  return {
+    voiceId: voice.voiceId,
+    voiceName: voice.name || "",
+    voiceDescription: voice.description || "",
+    voiceCategory: voice.category || "",
+    voicePreviewUrl: voice.previewUrl || "",
+  };
+}
+
+function buildTtsVoiceSearchText(voice) {
+  const labels = voice?.labels && typeof voice.labels === "object" ? Object.values(voice.labels) : [];
+  return normalizeLookupToken([voice?.name, voice?.category, voice?.description, ...labels].filter(Boolean).join(" "));
+}
+
+function formatTtsVoiceDetail(input) {
+  const parts = [input?.category, input?.description].filter((item) => typeof item === "string" && item.trim());
+  return parts.length ? parts.join(" · ") : "preview de voz";
+}
+
+function formatTtsSpeed(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(2).replace(/\.00$/, "") : "1";
+}
+
+function findSnapshotAgent(agentId) {
+  const id = normalizeTaskAgentId(agentId);
+  if (!id) return null;
+  const agents = Array.isArray(latestSnapshot?.agents) ? latestSnapshot.agents : [];
+  return agents.find((agent) => normalizeTaskAgentId(agent?.id || agent?.agentId || agent?.name) === id) || null;
+}
+
+function isTtsDefaultEnabled(defaults) {
+  const value = defaults?.tts_auto ?? defaults?.ttsAuto ?? defaults?.tts_enabled;
+  if (value === true) return true;
+  if (typeof value === "string") return ["on", "true", "1", "yes", "enabled"].includes(value.trim().toLowerCase());
+  return false;
+}
+
+function readTtsObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+
+function formatTtsJson(value) {
+  return value ? JSON.stringify(value, null, 2) : "";
+}
+
+async function saveFocusedAgentTtsSettings(form) {
+  if (ttsSettingsSaving) return;
+  const agentId = form?.dataset?.raviTtsAgentId;
+  if (!agentId) return;
+  let settings;
+  try {
+    settings = readTtsSettingsForm(form);
+  } catch (error) {
+    setSidebarNotice("warning", error?.message || String(error), 4200);
+    return;
+  }
+  ttsSettingsSaving = true;
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "ravi:set-agent-tts",
+      payload: { agentId, settings },
+    });
+    if (!response?.ok) {
+      setBridgeErrorFromResponse(response, "não consegui salvar a voz do agent");
+      if (isContextKeyBridgeResponse(response)) {
+        setSidebarNotice("warning", "context key inválido; atualize a chave nas opções da extensão", 5200);
+      }
+      return;
+    }
+    ttsDraftsByAgentId.delete(agentId);
+    setSidebarNotice("success", "voz do agent salva", 2200);
+    void refreshSnapshot();
+  } catch (error) {
+    handleRuntimeError(error);
+  } finally {
+    ttsSettingsSaving = false;
+    requestRender();
+  }
+}
+
+async function testFocusedAgentTts(form, settingsPatch = null) {
+  if (ttsPreviewInFlight) return;
+  const agentId = form?.dataset?.raviTtsAgentId;
+  if (!agentId) return;
+  let settings;
+  try {
+    settings = {
+      ...readTtsSettingsForm(form),
+      ...(settingsPatch && typeof settingsPatch === "object" ? settingsPatch : {}),
+    };
+  } catch (error) {
+    setSidebarNotice("warning", error?.message || String(error), 4200);
+    return;
+  }
+  ttsPreviewInFlight = true;
+  setSidebarNotice("info", "carregando preview de voz", 1800);
+  requestRender();
+  try {
+    primeTtsPreviewAudioContext();
+    if (settings.voicePreviewUrl) {
+      const previewStatus = await playTtsPreviewUrl(settings.voicePreviewUrl);
+      if (previewStatus === "playing") {
+        setSidebarNotice("success", "preview de voz", 1600);
+        return;
+      }
+      if (previewStatus === "blocked") {
+        setSidebarNotice("warning", "o navegador bloqueou o preview; clica no WhatsApp e tenta de novo.", 4200);
+        return;
+      }
+      setSidebarNotice("warning", "preview direto falhou; tentando gerar pelo Ravi", 2600);
+      console.debug("[ravi-wa-overlay] voice preview URL failed; falling back to generated TTS", previewStatus);
+    }
+
+    const previewId = createTtsPreviewRequestId();
+    const requestedAt = Date.now();
+    const response = await chrome.runtime.sendMessage({
+      type: "ravi:tts-say",
+      payload: {
+        id: previewId,
+        clientId,
+        text: "Teste de voz do Ravi.",
+        agentId,
+        sessionKey: form.dataset.raviTtsSessionKey || undefined,
+        sessionName: form.dataset.raviTtsSessionName || undefined,
+        chatId: form.dataset.raviTtsChatId || undefined,
+        ...settings,
+      },
+    });
+    if (!response?.ok) {
+      setBridgeErrorFromResponse(response, "não consegui disparar o teste de voz");
+      setSidebarNotice(
+        "warning",
+        isContextKeyBridgeResponse(response)
+          ? "context key inválido; preview gerado pelo Ravi não pode rodar"
+          : "não consegui gerar preview pelo Ravi",
+        4200,
+      );
+      return;
+    }
+    setSidebarNotice("info", "gerando preview de voz", 2600);
+    const generated = await waitForGeneratedTtsPreviewItem({
+      id: previewId,
+      since: requestedAt - 1000,
+      agentId,
+      sessionKey: form.dataset.raviTtsSessionKey || "",
+      sessionName: form.dataset.raviTtsSessionName || "",
+      chatId: form.dataset.raviTtsChatId || "",
+    });
+    if (generated.status === "playing") {
+      setSidebarNotice("success", "preview de voz", 1600);
+      return;
+    }
+    if (generated.status === "blocked") {
+      setSidebarNotice("warning", "o navegador bloqueou o áudio; clica no WhatsApp e tenta de novo.", 5200);
+      return;
+    }
+    if (generated.status === "timeout") {
+      scheduleTtsPlaybackPollBurst();
+      setSidebarNotice("warning", "preview gerado demorou; vou tentar tocar pela fila", 5200);
+      return;
+    }
+    setSidebarNotice(
+      "warning",
+      generated.item?.error ? `preview falhou: ${generated.item.error}` : "não consegui tocar o preview gerado",
+      5200,
+    );
+  } catch (error) {
+    handleRuntimeError(error);
+  } finally {
+    ttsPreviewInFlight = false;
+    requestRender();
+  }
+}
+
+function readTtsSettingsForm(form) {
+  const data = new FormData(form);
+  return {
+    enabled: data.get("enabled") === "on",
+    voiceId: readFormString(data, "voiceId"),
+    voiceName: readFormString(data, "voiceName"),
+    voiceDescription: readFormString(data, "voiceDescription"),
+    voiceCategory: readFormString(data, "voiceCategory"),
+    voicePreviewUrl: readFormString(data, "voicePreviewUrl"),
+    modelId: readFormString(data, "modelId"),
+    speed: readFormNumber(data, "speed"),
+    lang: readFormString(data, "lang"),
+    outputFormat: readFormString(data, "outputFormat"),
+    voiceSettings: readJsonTextarea(data, "voiceSettings", "voiceSettings"),
+    elevenlabs: readJsonTextarea(data, "elevenlabs", "elevenlabs request"),
+  };
+}
+
+function isContextKeyBridgeResponse(response) {
+  const status = typeof response?.status === "number" ? response.status : 0;
+  const code = typeof response?.code === "string" ? response.code : "";
+  const error = typeof response?.error === "string" ? response.error : "";
+  return (
+    status === 401 ||
+    status === 403 ||
+    code === "invalid_context_key" ||
+    code === "no_active_server" ||
+    code.startsWith("context_key_") ||
+    code === "http_401" ||
+    code === "http_403" ||
+    /unknown context key|context key|rctx_/i.test(error)
+  );
+}
+
+function readFormString(data, key) {
+  const value = data.get(key);
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readFormNumber(data, key) {
+  const value = readFormString(data, key);
+  if (!value) return undefined;
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) throw new Error(`${key} precisa ser número`);
+  return parsed;
+}
+
+function readJsonTextarea(data, key, label) {
+  const value = readFormString(data, key);
+  if (!value) return undefined;
+  const parsed = JSON.parse(value);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${label} precisa ser JSON object`);
+  }
+  return parsed;
+}
+
+function buildSessionFocusEventAnimationDelays(sessionKey, events) {
+  const delays = new Map();
+  if (!sessionKey || !Array.isArray(events) || !events.length) return delays;
+
+  let state = sessionFocusAnimatedEventSignatures.get(sessionKey);
+  if (!state || !(state.seen instanceof Set) || !Array.isArray(state.order)) {
+    state = { seen: new Set(), order: [] };
+    sessionFocusAnimatedEventSignatures.set(sessionKey, state);
+  }
+
+  const newSignatures = [];
+  events.forEach((event) => {
+    const signature = buildSessionFocusEventSignature(event);
+    if (!signature || state.seen.has(signature)) return;
+    state.seen.add(signature);
+    state.order.push(signature);
+    newSignatures.push(signature);
+  });
+
+  newSignatures
+    .slice()
+    .reverse()
+    .forEach((signature, index) => {
+      delays.set(signature, index * SESSION_FOCUS_EVENT_STAGGER_MS);
+    });
+
+  while (state.order.length > 120) {
+    const expired = state.order.shift();
+    state.seen.delete(expired);
+  }
+
+  return delays;
+}
+
+function buildSessionFocusEventSignature(event) {
+  return [
+    event.id,
+    event.turnId,
+    event.runId,
+    event.messageId,
+    event.kind,
+    event.timestamp,
+    event.label,
+    event.detail,
+  ]
+    .filter((value) => value !== null && value !== undefined && value !== "")
+    .join("|");
+}
+
+function getSessionFocusLifeEvents(session, traceEvents = []) {
+  const liveEvents = Array.isArray(session?.live?.events)
+    ? session.live.events.map(normalizeLiveSessionFocusEvent).filter(Boolean)
+    : [];
+  if (liveEvents.length) return liveEvents;
+
+  const fallbackEvents = Array.isArray(traceEvents)
+    ? traceEvents
+    : getSessionFocusTraceEvents(session);
+  return fallbackEvents.map(normalizeTraceSessionFocusEvent).filter(Boolean);
+}
+
+function getSessionFocusTraceEvents(session) {
+  const sessionKey = session?.sessionKey;
+  if (!sessionKey) return [];
+  const cached = sessionFocusTraceCache.get(sessionKey);
+  return Array.isArray(cached?.events) ? cached.events : [];
+}
+
+function normalizeLiveSessionFocusEvent(event) {
+  if (!event || typeof event !== "object") return null;
+  const kind = event.kind || event.label || "event";
+  return {
+    ...event,
+    kind,
+    category: resolveSessionFocusEventCategory(event),
+    label: event.label || kind,
+    detail: event.detail || event.label || kind,
+    timestamp: normalizeSessionFocusTimestamp(event.timestamp),
+  };
+}
+
+function normalizeTraceSessionFocusEvent(event) {
+  if (!event || typeof event !== "object") return null;
+  const presenter = resolveSessionTraceEventPresenter(event);
+  if (!presenter) return null;
+  const rawKind = event.eventType || event.kind || event.type || "event";
+  const kind = presenter.kind || rawKind;
+  const label =
+    typeof presenter.label === "function"
+      ? presenter.label(event)
+      : presenter.label || rawKind;
+  const detail =
+    typeof presenter.detail === "function"
+      ? presenter.detail(event)
+      : presenter.detail || buildSessionTraceEventDetail(event, label);
+  return {
+    id: event.id ?? null,
+    turnId: event.turnId ?? null,
+    runId: event.runId ?? null,
+    messageId: event.messageId ?? null,
+    kind,
+    category: presenter.category || resolveSessionFocusEventCategory({ category: event.eventGroup, kind }),
+    activity: presenter.activity || eventKindToActivity(rawKind),
+    label,
+    detail,
+    timestamp: normalizeSessionFocusTimestamp(event.timestamp ?? event.createdAt),
+  };
+}
+
+function resolveSessionTraceEventPresenter(event) {
+  const eventType = String(event?.eventType || event?.kind || event?.type || "").toLowerCase();
+  const eventGroup = String(event?.eventGroup || "").toLowerCase();
+  if (!eventType) return null;
+  if (SESSION_TRACE_IGNORED_EVENT_TYPES.has(eventType)) return null;
+  if (SESSION_TRACE_IGNORED_GROUPS.has(eventGroup)) return null;
+
+  if (SESSION_TRACE_EVENT_PRESENTERS[eventType]) {
+    return SESSION_TRACE_EVENT_PRESENTERS[eventType];
+  }
+  const grouped = SESSION_TRACE_GROUP_PRESENTERS[eventGroup] || null;
+  if (!grouped) {
+    return {
+      kind: eventType,
+      category: resolveSessionFocusEventCategory({ category: eventGroup, kind: eventType }),
+      activity: eventKindToActivity(eventType),
+      label: eventType,
+      detail: (entry) => buildSessionTraceEventDetail(entry, eventType),
+    };
+  }
+
+  const terminalFailure = /fail|dropped|blocked|timeout|interrupt|rejected/.test(eventType);
+  return {
+    ...grouped,
+    kind: eventType,
+    activity: terminalFailure ? "blocked" : grouped.activity,
+    label: grouped.label,
+    detail: (entry) => buildSessionTraceEventDetail(entry, eventType),
+  };
+}
+
+function buildSessionTraceEventDetail(event, fallback) {
+  if (event?.error) return event.error;
+  if (event?.preview) return event.preview;
+
+  const parts = [
+    event?.status,
+    event?.provider,
+    event?.model,
+    typeof event?.durationMs === "number" && Number.isFinite(event.durationMs)
+      ? formatDurationCompactMs(event.durationMs)
+      : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : fallback;
+}
+
+function tracePreview(event, fallback) {
+  return shorten(event?.preview || event?.status || fallback, 96);
+}
+
+function traceStatusDetail(event, fallback) {
+  return shorten(event?.status || event?.preview || fallback, 96);
+}
+
+function traceDurationDetail(event, fallback) {
+  const duration =
+    typeof event?.durationMs === "number" && Number.isFinite(event.durationMs)
+      ? formatDurationCompactMs(event.durationMs)
+      : "";
+  return [duration, event?.status].filter(Boolean).join(" · ") || tracePreview(event, fallback);
+}
+
+function traceProviderDetail(event, fallback) {
+  return (
+    [event?.provider, event?.model, traceDurationDetail(event, "")]
+      .filter(Boolean)
+      .join(" · ") || tracePreview(event, fallback)
+  );
+}
+
+function normalizeSessionFocusTimestamp(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  return null;
+}
+
+function formatSessionFocusEventSummary(event) {
+  const normalized = normalizeTraceSessionFocusEvent(event);
+  if (!normalized) return "";
+  return normalized.detail || normalized.label || normalized.kind || "";
+}
+
+function resolveSessionFocusEventCategory(event) {
+  const raw = String(event?.category || event?.kind || "").toLowerCase();
+  if (/channel|message|msg/.test(raw)) return "msg";
+  if (/deliver/.test(raw)) return "delivery";
+  if (/tool|command|exec|adapter|dispatch|prompt/.test(raw)) return "tool";
+  if (/route/.test(raw)) return "route";
+  if (/response|assistant|outbound|emit/.test(raw)) return "out";
+  return "runtime";
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    SESSION WORKSPACE v2 — reconciliation-based renderer
    ═══════════════════════════════════════════════════════════════════
@@ -6617,7 +9635,7 @@ function swBindHostDelegation(host) {
 
     const closeBtn = e.target.closest("[data-ravi-session-workspace-close]");
     if (closeBtn) {
-      clearSessionWorkspace();
+      hideSelectedSessionWorkspaceChat();
       return;
     }
 
@@ -6631,7 +9649,7 @@ function swBindHostDelegation(host) {
       const target = session || workspace?.session || null;
       if (!target || target.sessionKey !== key) return;
       openCockpitChat(target).then((opened) => {
-        if (opened) clearSessionWorkspace();
+        if (opened) hideSelectedSessionWorkspaceChat();
       });
       return;
     }
@@ -7053,7 +10071,11 @@ function syncSessionWorkspaceMain(snapshot = latestSnapshot, options = {}) {
   const host = ensureSessionWorkspaceMainHost();
   if (!(host instanceof HTMLElement)) return;
 
-  if (activeWorkspace !== "ravi" || !selectedWorkspaceSessionKey) {
+  if (
+    activeWorkspace !== "ravi" ||
+    !selectedWorkspaceSessionKey ||
+    !sessionWorkspaceMainVisible
+  ) {
     hideSessionWorkspaceMain();
     return;
   }
@@ -7125,6 +10147,8 @@ function syncSessionWorkspaceMain(snapshot = latestSnapshot, options = {}) {
 function clearSessionWorkspace() {
   selectedWorkspaceSessionKey = null;
   persistWorkspaceSessionKey(null);
+  sessionWorkspaceMainVisible = false;
+  selectedWorkspaceChatFocusKey = null;
   latestSessionWorkspace = null;
   pendingHumanChatListIntent = null;
   expandedSessionWorkspaceTools.clear();
@@ -7177,18 +10201,47 @@ async function submitSessionWorkspacePrompt() {
 
 function openSessionWorkspace(session) {
   if (!session?.sessionKey) return;
+  const sameSession = selectedWorkspaceSessionKey === session.sessionKey;
+  pendingDetectedChatFocus = null;
+
   selectedWorkspaceSessionKey = session.sessionKey;
   persistWorkspaceSessionKey(selectedWorkspaceSessionKey);
+  selectedWorkspaceChatFocusKey =
+    buildSnapshotChatFocusKey(latestSnapshot) || lastSnapshotChatFocusKey;
+  pinnedSessionKey = session.sessionKey;
+  persistPinnedSessionKey(session.sessionKey);
+
+  if (sameSession) {
+    sessionWorkspaceMainVisible = !sessionWorkspaceMainVisible;
+    if (!sessionWorkspaceMainVisible) {
+      sessionWorkspaceShouldScrollToEnd = false;
+      hideSessionWorkspaceMain();
+      render();
+      return;
+    }
+    sessionWorkspaceShouldScrollToEnd = true;
+    setActiveWorkspace("ravi");
+    refreshSessionWorkspace(true);
+    return;
+  }
+
   latestSessionWorkspace = null;
   pendingHumanChatListIntent = null;
   expandedSessionWorkspaceTools.clear();
   swNodeMap.clear();
   sessionWorkspaceDraft = "";
-  pinnedSessionKey = session.sessionKey;
-  persistPinnedSessionKey(session.sessionKey);
+  sessionWorkspaceMainVisible = true;
   sessionWorkspaceShouldScrollToEnd = true;
   setActiveWorkspace("ravi");
   refreshSessionWorkspace(true);
+}
+
+function hideSelectedSessionWorkspaceChat() {
+  if (!selectedWorkspaceSessionKey) return;
+  sessionWorkspaceMainVisible = false;
+  sessionWorkspaceShouldScrollToEnd = false;
+  hideSessionWorkspaceMain();
+  render();
 }
 
 function rememberTaskSelection(selection) {
@@ -11769,12 +14822,20 @@ function requestArtifactBlobLoad(artifactId) {
         });
       }
       applyArtifactBlobToTiles(artifactId);
+      applyArtifactBlobToNotifications(artifactId);
     })
     .finally(() => {
       ARTIFACT_BLOB_INFLIGHT.delete(artifactId);
     });
 
   ARTIFACT_BLOB_INFLIGHT.set(artifactId, promise);
+}
+
+function applyArtifactBlobToNotifications(artifactId) {
+  const cached = ARTIFACT_BLOB_CACHE.get(artifactId);
+  if (!cached || !cached.ok) return;
+  const hasVisibleCard = artifactNotificationCards.some((card) => card?.item?.id === artifactId);
+  if (hasVisibleCard) renderArtifactNotificationStack();
 }
 
 function applyArtifactBlobToTiles(artifactId) {
@@ -11983,7 +15044,35 @@ function buildArtifactsWorkspaceModalData(item) {
     imageSrc,
     glyph: imageSrc ? null : getArtifactGlyph(item.kind, item.mimeType),
     links: item.links || [],
+    componentPreview: normalizeArtifactComponentPreview(item.componentPreview),
   };
+}
+
+function normalizeArtifactComponentPreview(value) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    id: typeof value.id === "string" && value.id.trim() ? value.id.trim() : null,
+    version: typeof value.version === "string" && value.version.trim() ? value.version.trim() : null,
+    description:
+      typeof value.description === "string" && value.description.trim()
+        ? value.description.trim()
+        : null,
+    propsSchema: value.propsSchema ?? null,
+    slots: normalizeArtifactComponentStringArray(value.slots),
+    actions: normalizeArtifactComponentStringArray(value.actions),
+    events: normalizeArtifactComponentStringArray(value.events),
+    surfaces: normalizeArtifactComponentStringArray(value.surfaces),
+    renderers: Array.isArray(value.renderers) ? value.renderers.slice(0, 8) : [],
+    fixtures: Array.isArray(value.fixtures) ? value.fixtures.slice(0, 6) : [],
+  };
+}
+
+function normalizeArtifactComponentStringArray(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean)
+    .slice(0, 12);
 }
 
 async function copyArtifactValue(value, label) {
@@ -14858,6 +17947,23 @@ function renderTaskDetailCard(selectedTask) {
 }
 
 function eventKindToActivity(kind) {
+  const raw = String(kind || "").toLowerCase();
+  if (/fail|error|dropped|blocked|timeout|interrupt/.test(raw)) {
+    return "blocked";
+  }
+  if (/approval/.test(raw)) {
+    return "awaiting_approval";
+  }
+  if (/compact/.test(raw)) {
+    return "compacting";
+  }
+  if (/response|assistant|delivery|emit|outbound/.test(raw)) {
+    return "streaming";
+  }
+  if (/channel|message|route|prompt|dispatch|runtime|adapter|tool|command|exec|presence/.test(raw)) {
+    return "thinking";
+  }
+
   switch (kind) {
     case "stream":
       return "streaming";
@@ -14903,6 +18009,17 @@ function filterCockpitSessions(items) {
       .map(normalizeLookupToken)
       .some((value) => value && value.includes(needle));
   });
+}
+
+function hasSessionWithKey(items, session) {
+  if (!session?.sessionKey || !Array.isArray(items)) return false;
+  return items.some((item) => item?.sessionKey === session.sessionKey);
+}
+
+function ensureSessionInList(items, session) {
+  const list = Array.isArray(items) ? items : [];
+  if (!session?.sessionKey || hasSessionWithKey(list, session)) return list;
+  return [session, ...list];
 }
 
 function filterOmniInstances(items) {
@@ -15346,7 +18463,18 @@ function getCockpitChatTitle(session) {
     session.displayName ||
     session.subject ||
     session.chatId ||
-    session.sessionName
+    getSessionDisplayName(session)
+  );
+}
+
+function getSessionDisplayName(session) {
+  return (
+    session?.sessionName ||
+    session?.name ||
+    session?.label ||
+    session?.displayName ||
+    session?.sessionKey ||
+    "sessão"
   );
 }
 
@@ -15632,6 +18760,33 @@ function loadPinnedSessionKey() {
   }
 }
 
+function loadSessionFocusDebugOpen() {
+  try {
+    return window.localStorage.getItem(SESSION_FOCUS_DEBUG_OPEN_STORAGE) !== "false";
+  } catch {
+    return true;
+  }
+}
+
+function loadTtsLastSeenAt() {
+  try {
+    const value = Number(window.localStorage.getItem(TTS_LAST_SEEN_STORAGE));
+    return Number.isFinite(value) && value > 0 ? value : Date.now();
+  } catch {
+    return Date.now();
+  }
+}
+
+function loadTtsSeenIds() {
+  try {
+    const raw = window.localStorage.getItem(TTS_SEEN_IDS_STORAGE);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
 function loadActiveWorkspace() {
   try {
     const stored = window.localStorage.getItem(ACTIVE_WORKSPACE_KEY_STORAGE);
@@ -15707,6 +18862,23 @@ function loadOverlayPanelVisible() {
   }
 }
 
+function loadNativeSidebarWidth() {
+  try {
+    const value = Number(window.localStorage.getItem(NATIVE_SIDEBAR_WIDTH_KEY_STORAGE));
+    return Number.isFinite(value) && value > 0 ? Math.round(value) : null;
+  } catch {
+    return null;
+  }
+}
+
+function loadNativeSidebarCollapsed() {
+  try {
+    return window.localStorage.getItem(NATIVE_SIDEBAR_COLLAPSED_KEY_STORAGE) === "true";
+  } catch {
+    return false;
+  }
+}
+
 function loadV3PlaceholdersEnabled() {
   try {
     return window.localStorage.getItem(V3_PLACEHOLDERS_KEY_STORAGE) === "true";
@@ -15733,6 +18905,33 @@ function persistOverlayPanelVisible(value) {
       window.localStorage.removeItem(OVERLAY_PANEL_VISIBLE_KEY_STORAGE);
     } else {
       window.localStorage.setItem(OVERLAY_PANEL_VISIBLE_KEY_STORAGE, "false");
+    }
+  } catch {
+    // ignore localStorage failures inside WhatsApp Web
+  }
+}
+
+function persistNativeSidebarWidth(value) {
+  try {
+    if (Number.isFinite(Number(value)) && Number(value) > 0) {
+      window.localStorage.setItem(
+        NATIVE_SIDEBAR_WIDTH_KEY_STORAGE,
+        String(Math.round(Number(value))),
+      );
+    } else {
+      window.localStorage.removeItem(NATIVE_SIDEBAR_WIDTH_KEY_STORAGE);
+    }
+  } catch {
+    // ignore localStorage failures inside WhatsApp Web
+  }
+}
+
+function persistNativeSidebarCollapsed(value) {
+  try {
+    if (value) {
+      window.localStorage.setItem(NATIVE_SIDEBAR_COLLAPSED_KEY_STORAGE, "true");
+    } else {
+      window.localStorage.removeItem(NATIVE_SIDEBAR_COLLAPSED_KEY_STORAGE);
     }
   } catch {
     // ignore localStorage failures inside WhatsApp Web
@@ -15788,6 +18987,40 @@ function persistPinnedSessionKey(value) {
   }
 }
 
+function persistSessionFocusDebugOpen(value) {
+  try {
+    window.localStorage.setItem(
+      SESSION_FOCUS_DEBUG_OPEN_STORAGE,
+      value ? "true" : "false",
+    );
+  } catch {
+    // ignore localStorage failures inside WhatsApp Web
+  }
+}
+
+function persistTtsLastSeenAt(value) {
+  try {
+    window.localStorage.setItem(TTS_LAST_SEEN_STORAGE, String(Math.floor(value)));
+  } catch {
+    // ignore localStorage failures inside WhatsApp Web
+  }
+}
+
+function markTtsSeen(id) {
+  if (!id) return;
+  ttsSeenIds.add(id);
+  while (ttsSeenIds.size > 80) {
+    const first = ttsSeenIds.values().next().value;
+    if (!first) break;
+    ttsSeenIds.delete(first);
+  }
+  try {
+    window.localStorage.setItem(TTS_SEEN_IDS_STORAGE, JSON.stringify([...ttsSeenIds]));
+  } catch {
+    // ignore localStorage failures inside WhatsApp Web
+  }
+}
+
 function normalizeLookupToken(value) {
   if (typeof value !== "string") return "";
   return value.trim().toLowerCase();
@@ -15829,6 +19062,34 @@ function escapeHtml(value) {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
+}
+
+function formatWarningsText(warnings, fallback, separator = " ") {
+  const source =
+    Array.isArray(warnings) && warnings.length
+      ? warnings
+      : fallback
+        ? [fallback]
+        : [];
+  return source
+    .map(formatWarningText)
+    .filter(Boolean)
+    .join(separator);
+}
+
+function formatWarningText(warning) {
+  if (typeof warning === "string") return warning.trim();
+  if (!warning || typeof warning !== "object") return "";
+  if (typeof warning.message === "string" && warning.message.trim()) {
+    return warning.message.trim();
+  }
+  if (typeof warning.error === "string" && warning.error.trim()) {
+    return warning.error.trim();
+  }
+  if (typeof warning.code === "string" && warning.code.trim()) {
+    return warning.code.trim();
+  }
+  return "";
 }
 
 function shorten(value, max) {

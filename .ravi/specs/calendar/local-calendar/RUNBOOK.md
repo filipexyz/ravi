@@ -15,16 +15,14 @@ owners:
 ## Inspect Local State
 
 ```bash
-ravi calendar accounts list --json
-ravi calendar calendars list --json
-ravi calendar events list --from now --to +7d --json
-ravi calendar outbox status --json
+ravi calendars list --json
+ravi calendars events list --from now --to +7d --json
 ```
 
 ## Create A Local Event
 
 ```bash
-ravi calendar events create \
+ravi calendars events create \
   --calendar <calendar-id> \
   --title "Follow-up" \
   --start "2026-06-05T14:00:00-03:00" \
@@ -49,7 +47,7 @@ ravi calendar events create \
 
 ## Debug Recurrence
 
-1. Query a bounded window with `ravi calendar events list --from ... --to ...`.
+1. Query a bounded window with `ravi calendars events list --from ... --to ...`.
 2. Confirm only occurrences inside the requested window are expanded.
 3. Confirm each occurrence has a stable local instance key.
 4. Confirm cancelled/overridden instances do not duplicate the base series.

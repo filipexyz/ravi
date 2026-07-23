@@ -7,7 +7,7 @@
 import "reflect-metadata";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { Arg, Command, Group, Option, Returns } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -231,6 +231,7 @@ function serializeEvent(event: CallEvent) {
 })
 export class ProxCallsProfileCommands {
   @Command({ name: "list", description: "List available call profiles" })
+  @CommandAccess({ kind: "read", resource: "prox.calls.profiles", action: "list", risk: "low" })
   @Returns(pagedItemsReturnSchema)
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -290,6 +291,7 @@ export class ProxCallsProfileCommands {
   }
 
   @Command({ name: "show", description: "Show a call profile by ID" })
+  @CommandAccess({ kind: "read", resource: "prox.calls.profiles", action: "show", risk: "low" })
   @Returns(proxRecordReturnSchema)
   show(
     @Arg("profile_id") profileId: string,
@@ -327,6 +329,7 @@ export class ProxCallsProfileCommands {
   }
 
   @Command({ name: "configure", description: "Configure a call profile's provider settings" })
+  @CommandAccess({ kind: "read", resource: "prox.calls.profiles", action: "configure", risk: "low" })
   @Returns(proxProfileConfigureReturnSchema)
   async configure(
     @Arg("profile_id") profileId: string,
@@ -454,6 +457,7 @@ export class ProxCallsProfileCommands {
 })
 export class ProxCallsCommands {
   @Command({ name: "rules", description: "Show active call rules" })
+  @CommandAccess({ kind: "read", resource: "prox.calls", action: "rules", risk: "low" })
   @Returns(proxRulesReturnSchema)
   rules(
     @Option({ flags: "--scope <scope>", description: "Rule scope type (global, project, person, profile, agent)" })
@@ -494,6 +498,7 @@ export class ProxCallsCommands {
   }
 
   @Command({ name: "request", description: "Request a call to a person" })
+  @CommandAccess({ kind: "read", resource: "prox.calls", action: "request", risk: "low" })
   @Returns(proxCallRequestReturnSchema)
   async request(
     @Option({ flags: "--profile <profile_id>", description: "Call profile ID" }) profileId: string,
@@ -597,6 +602,7 @@ export class ProxCallsCommands {
   }
 
   @Command({ name: "show", description: "Show details of a call request" })
+  @CommandAccess({ kind: "read", resource: "prox.calls", action: "show", risk: "low" })
   @Returns(proxCallShowReturnSchema)
   show(
     @Arg("call_request_id") callRequestId: string,
@@ -679,6 +685,7 @@ export class ProxCallsCommands {
   }
 
   @Command({ name: "events", description: "Show event timeline for a call request" })
+  @CommandAccess({ kind: "read", resource: "prox.calls", action: "events", risk: "low" })
   @Returns(proxEventsReturnSchema)
   events(
     @Arg("call_request_id") callRequestId: string,
@@ -716,6 +723,7 @@ export class ProxCallsCommands {
   }
 
   @Command({ name: "transcript", description: "Show call transcript, syncing provider state when needed" })
+  @CommandAccess({ kind: "read", resource: "prox.calls", action: "transcript", risk: "low" })
   @Returns(proxTranscriptReturnSchema)
   async transcript(
     @Arg("call_request_id") callRequestId: string,
@@ -764,6 +772,7 @@ export class ProxCallsCommands {
   }
 
   @Command({ name: "cancel", description: "Cancel a pending call request" })
+  @CommandAccess({ kind: "mutate", resource: "prox.calls", action: "cancel", risk: "high" })
   @Returns(proxCancelReturnSchema)
   cancel(
     @Arg("call_request_id") callRequestId: string,
@@ -878,6 +887,7 @@ function serializeToolRun(run: CallToolRun) {
 })
 export class ProxCallsVoiceAgentCommands {
   @Command({ name: "list", description: "List voice agents" })
+  @CommandAccess({ kind: "read", resource: "prox.calls.voice-agents", action: "list", risk: "low" })
   @Returns(pagedItemsReturnSchema)
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -937,6 +947,7 @@ export class ProxCallsVoiceAgentCommands {
   }
 
   @Command({ name: "show", description: "Show a voice agent by ID" })
+  @CommandAccess({ kind: "read", resource: "prox.calls.voice-agents", action: "show", risk: "low" })
   @Returns(proxRecordReturnSchema)
   show(
     @Arg("voice_agent_id") voiceAgentId: string,
@@ -975,6 +986,7 @@ export class ProxCallsVoiceAgentCommands {
   }
 
   @Command({ name: "create", description: "Create a new voice agent" })
+  @CommandAccess({ kind: "mutate", resource: "prox.calls.voice-agents", action: "create", risk: "high" })
   @Returns(proxRecordReturnSchema)
   create(
     @Arg("voice_agent_id") voiceAgentId: string,
@@ -1027,6 +1039,7 @@ export class ProxCallsVoiceAgentCommands {
   }
 
   @Command({ name: "configure", description: "Configure a voice agent" })
+  @CommandAccess({ kind: "read", resource: "prox.calls.voice-agents", action: "configure", risk: "low" })
   @Returns(proxRecordReturnSchema)
   configure(
     @Arg("voice_agent_id") voiceAgentId: string,
@@ -1082,6 +1095,7 @@ export class ProxCallsVoiceAgentCommands {
   }
 
   @Command({ name: "bind-tool", description: "Bind a tool to a voice agent" })
+  @CommandAccess({ kind: "read", resource: "prox.calls.voice-agents", action: "bind-tool", risk: "low" })
   @Returns(proxRecordReturnSchema)
   bindTool(
     @Arg("voice_agent_id") voiceAgentId: string,
@@ -1118,6 +1132,7 @@ export class ProxCallsVoiceAgentCommands {
   }
 
   @Command({ name: "unbind-tool", description: "Unbind a tool from a voice agent" })
+  @CommandAccess({ kind: "read", resource: "prox.calls.voice-agents", action: "unbind-tool", risk: "low" })
   @Returns(proxUnbindReturnSchema)
   unbindTool(
     @Arg("voice_agent_id") voiceAgentId: string,
@@ -1143,6 +1158,7 @@ export class ProxCallsVoiceAgentCommands {
   }
 
   @Command({ name: "sync", description: "Sync voice agent to provider (dry-run by default)" })
+  @CommandAccess({ kind: "mutate", resource: "prox.calls.voice-agents", action: "sync", risk: "high" })
   @Returns(proxVoiceAgentSyncReturnSchema)
   sync(
     @Arg("voice_agent_id") voiceAgentId: string,
@@ -1216,6 +1232,7 @@ const VALID_SIDE_EFFECTS = new Set([
 })
 export class ProxCallsToolCommands {
   @Command({ name: "list", description: "List call tools" })
+  @CommandAccess({ kind: "read", resource: "prox.calls.tools", action: "list", risk: "low" })
   @Returns(pagedItemsReturnSchema)
   list(
     @Option({ flags: "--profile <profile_id>", description: "Filter tools by profile binding" }) profileId?: string,
@@ -1276,6 +1293,7 @@ export class ProxCallsToolCommands {
   }
 
   @Command({ name: "show", description: "Show a call tool by ID" })
+  @CommandAccess({ kind: "read", resource: "prox.calls.tools", action: "show", risk: "low" })
   @Returns(proxRecordReturnSchema)
   show(
     @Arg("tool_id") toolId: string,
@@ -1307,6 +1325,7 @@ export class ProxCallsToolCommands {
   }
 
   @Command({ name: "create", description: "Create a new call tool" })
+  @CommandAccess({ kind: "mutate", resource: "prox.calls.tools", action: "create", risk: "high" })
   @Returns(proxRecordReturnSchema)
   create(
     @Arg("tool_id") toolId: string,
@@ -1386,6 +1405,7 @@ export class ProxCallsToolCommands {
   }
 
   @Command({ name: "configure", description: "Configure a call tool" })
+  @CommandAccess({ kind: "read", resource: "prox.calls.tools", action: "configure", risk: "low" })
   @Returns(proxRecordReturnSchema)
   configure(
     @Arg("tool_id") toolId: string,
@@ -1420,6 +1440,7 @@ export class ProxCallsToolCommands {
   }
 
   @Command({ name: "bind", description: "Bind a tool to a profile" })
+  @CommandAccess({ kind: "read", resource: "prox.calls.tools", action: "bind", risk: "low" })
   @Returns(proxRecordReturnSchema)
   bind(
     @Arg("profile_id") profileId: string,
@@ -1461,6 +1482,7 @@ export class ProxCallsToolCommands {
   }
 
   @Command({ name: "unbind", description: "Unbind a tool from a profile" })
+  @CommandAccess({ kind: "read", resource: "prox.calls.tools", action: "unbind", risk: "low" })
   @Returns(proxUnbindReturnSchema)
   unbind(
     @Arg("profile_id") profileId: string,
@@ -1486,6 +1508,7 @@ export class ProxCallsToolCommands {
   }
 
   @Command({ name: "runs", description: "List tool runs for a call request" })
+  @CommandAccess({ kind: "read", resource: "prox.calls.tools", action: "runs", risk: "low" })
   @Returns(proxToolRunsReturnSchema)
   runs(
     @Arg("call_request_id") callRequestId: string,
@@ -1517,6 +1540,7 @@ export class ProxCallsToolCommands {
   }
 
   @Command({ name: "run", description: "Execute a tool (dry-run validates without side effects)" })
+  @CommandAccess({ kind: "mutate", resource: "prox.calls.tools", action: "run", risk: "high" })
   @Returns(proxToolRunReturnSchema)
   run(
     @Arg("tool_id") toolId: string,

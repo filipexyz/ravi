@@ -30,10 +30,13 @@ Ravi can send native channel mentions while keeping Omni as the transport adapte
 ## WhatsApp Outbound Contract
 
 - WhatsApp mentions MUST be delivered to Omni as both:
-  - text containing a visible placeholder such as `@<phone-number>` or `@<lid-number>`
+  - text containing a human-readable visible placeholder such as `@<display-name>` when Ravi knows a safe display label for the participant
   - `mentions: [{ id: "<jid-or-platform-user-id>", type: "user" }]`
-- When Ravi has a trusted WhatsApp LID-to-phone mapping for a participant, outbound mention delivery SHOULD use the phone JID/phone placeholder for rendering and keep the LID/raw id as match provenance.
+- Ravi MUST NOT introduce WhatsApp LIDs, JIDs, bare phone-like ids, or other raw channel identifiers into user-visible outbound text while resolving automatic inline mentions.
+- When Ravi has a trusted WhatsApp LID-to-phone mapping for a participant, outbound mention delivery SHOULD use the phone JID as the native mention id and keep the LID/raw id as match provenance. The visible text still SHOULD use the participant's safe display label.
 - When no trusted phone mapping exists, the mention `id` MAY preserve the strongest provider identity available from Omni, including WhatsApp LID JIDs such as `<lid-number>@lid`.
+- When no safe display label exists for an automatic inline mention target, Ravi MUST fail closed: leave the visible text unchanged and MUST NOT attach native mention metadata for that alias.
+- Operator-supplied explicit raw targets MAY still be accepted for CLI/diagnostic sends when no participant display label is available. That exception MUST NOT be used by runtime agents as a default rendering strategy.
 - Ravi MUST NOT rely on the Omni CLI or generated SDK types for this MVP; the Omni API `/api/v2/messages/send` is the transport contract.
 - Gateway direct sends MUST pass a provided structured `mentions` array through to Omni without reconstructing or dropping it.
 
@@ -45,14 +48,16 @@ Ravi can send native channel mentions while keeping Omni as the transport adapte
 - A session-level participant list MUST NOT be used for outbound mention resolution. The resolver MUST receive a chat-scoped participant set.
 - Participant metadata from Omni MAY be used as the transport source for `displayName -> platformUserId/JID` resolution.
 - Chat participant metadata MAY enrich Omni group members with trusted normalized phone aliases discovered from inbound provider mappings.
-- Raw JID, LID, and phone-like targets MAY be accepted as explicit mention targets.
+- Raw JID, LID, and phone-like targets MAY be accepted as explicit mention targets for operator/CLI sends, but automatic runtime output SHOULD prefer names and MUST NOT synthesize raw visible placeholders.
 - Ambiguous explicit display-name matches MUST fail closed and ask for a JID/phone instead of guessing.
 - Automatic inline `@name` placeholders MUST only resolve against exact participant aliases in the target chat/group.
 - Automatic inline matching MAY use the full display name, a unique exact first-name alias, accent-insensitive spelling, or an exact participant numeric id.
 - Automatic inline matching MUST NOT resolve prefixes or substrings. For example, `@Nomealgo` MUST NOT match participant `Nome`, and `@AQUIalgo` MUST NOT match participant `AQUI`.
 - Automatic numeric id matching MUST only resolve when the full numeric token matches a participant identifier with a plausible WhatsApp id length.
+- Automatic numeric id matching MUST only attach native mention metadata when the matched participant has a safe display label that can replace the raw visible token.
 - Display name matching MUST NOT create or merge contacts. It is only a local addressing hint for the current send operation.
 - If automatic inline resolution cannot prove that the alias belongs to the target output chat, Ravi MUST leave the visible text unchanged and MUST NOT attach a native mention for that alias.
+- Group/member prompt context MUST NOT expose raw participant identifiers as member labels. Participants without a safe display label SHOULD be omitted from human-readable member lists while their raw ids remain preserved as provenance in transport caches and structured records.
 
 ## Multi-Chat Sessions
 

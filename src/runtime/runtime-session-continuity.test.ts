@@ -6,12 +6,19 @@ import { resolveRuntimeSessionContinuity } from "./runtime-session-continuity.js
 
 const PARENT_SESSION_KEY = "agent:test:whatsapp:group:runtime-continuity";
 const THREAD_SESSION_KEY = `${PARENT_SESSION_KEY}:thread:child`;
+const ALIAS_PARENT_SESSION_KEY = "ravi-hil";
+const ALIAS_THREAD_SESSION_KEY = `${ALIAS_PARENT_SESSION_KEY}:thread:1713000000.000100`;
 
 let stateDir: string | null = null;
 
 function cleanupSessions() {
   const db = getDb();
-  db.prepare("DELETE FROM sessions WHERE session_key IN (?, ?)").run(PARENT_SESSION_KEY, THREAD_SESSION_KEY);
+  db.prepare("DELETE FROM sessions WHERE session_key IN (?, ?, ?, ?)").run(
+    PARENT_SESSION_KEY,
+    THREAD_SESSION_KEY,
+    ALIAS_PARENT_SESSION_KEY,
+    ALIAS_THREAD_SESSION_KEY,
+  );
 }
 
 describe("runtime session continuity", () => {
@@ -62,6 +69,26 @@ describe("runtime session continuity", () => {
 
     expect(continuity).toEqual({
       resumeProviderSessionId: "child-provider-session",
+    });
+  });
+
+  it("forks from a forced route parent session key", () => {
+    getOrCreateSession(ALIAS_PARENT_SESSION_KEY, "ravi-hil", "/tmp/ravi-hil", { name: "ravi-hil" });
+    updateProviderSession(ALIAS_PARENT_SESSION_KEY, "codex", "parent-provider-session");
+
+    const continuity = resolveRuntimeSessionContinuity({
+      dbSessionKey: ALIAS_THREAD_SESSION_KEY,
+      runtimeProviderId: "codex",
+      supportsSessionFork: true,
+      supportsSessionResume: true,
+      storedProviderSessionId: undefined,
+      canResumeStoredSession: false,
+      defaultRuntimeProviderId: "codex",
+    });
+
+    expect(continuity).toEqual({
+      forkFromProviderSessionId: "parent-provider-session",
+      resumeProviderSessionId: "parent-provider-session",
     });
   });
 });

@@ -2,15 +2,19 @@ import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 let currentJsm: PromptJsm;
 
-const { ensureSessionConsumer, ensureSessionPromptInfrastructure, ensureSessionPromptsStream } = await import(
-  "./session-stream.js"
-);
+const {
+  ensureSessionConsumer,
+  ensureSessionPromptInfrastructure,
+  ensureSessionPromptsStream,
+  resetSessionPromptInfrastructureCacheForTests,
+} = await import("./session-stream.js");
 
 afterAll(() => {
   mock.restore();
 });
 
 beforeEach(() => {
+  resetSessionPromptInfrastructureCacheForTests();
   currentJsm = makePromptJsm();
 });
 
@@ -59,6 +63,36 @@ describe("session prompt JetStream infrastructure", () => {
 
     expect(calls.streamAdds).toBe(1);
     expect(calls.consumerAdds).toBe(1);
+  });
+
+  it("caches successful infrastructure validation off the publish hot path", async () => {
+    const streamInfo = mock(async () => ({}));
+    const consumerInfo = mock(async () => ({}));
+    currentJsm = makePromptJsm({
+      streams: { info: streamInfo },
+      consumers: { info: consumerInfo },
+    });
+
+    await ensureSessionPromptInfrastructure(currentJsm as never);
+    await ensureSessionPromptInfrastructure(currentJsm as never);
+
+    expect(streamInfo).toHaveBeenCalledTimes(1);
+    expect(consumerInfo).toHaveBeenCalledTimes(1);
+  });
+
+  it("force revalidates cached infrastructure for health checks and recovery", async () => {
+    const streamInfo = mock(async () => ({}));
+    const consumerInfo = mock(async () => ({}));
+    currentJsm = makePromptJsm({
+      streams: { info: streamInfo },
+      consumers: { info: consumerInfo },
+    });
+
+    await ensureSessionPromptInfrastructure(currentJsm as never);
+    await ensureSessionPromptInfrastructure(currentJsm as never, { force: true });
+
+    expect(streamInfo).toHaveBeenCalledTimes(2);
+    expect(consumerInfo).toHaveBeenCalledTimes(2);
   });
 
   it("treats stream add conflicts as success when the stream now exists", async () => {

@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg, Option, Returns } from "../decorators.js";
+import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -17,6 +17,7 @@ import { getScopeContext, isScopeEnforced, canAccessResource } from "../../permi
 import { getAgent } from "../../router/config.js";
 import { getAccountForAgent, getDefaultAgentId } from "../../router/router-db.js";
 import { parseDurationMs, formatDurationMs } from "../../cron/schedule.js";
+import { DEFAULT_CRON_SHELL_TIMEOUT_MS } from "../../cron/shell-executor.js";
 import {
   dbCreateTrigger,
   dbGetTrigger,
@@ -42,8 +43,13 @@ function printJson(payload: unknown): void {
 function serializeTrigger(trigger: Trigger) {
   return {
     ...trigger,
+    executionType: trigger.executionType ?? "agent",
     effectiveAgentId: trigger.agentId ?? getDefaultAgentId(),
     cooldownDescription: formatDurationMs(trigger.cooldownMs),
+    shellTimeoutDescription:
+      (trigger.executionType ?? "agent") === "shell"
+        ? formatDurationMs(trigger.shellTimeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS)
+        : undefined,
   };
 }
 
@@ -121,6 +127,35 @@ function resolveTriggerMessage(topic: string, message: string | undefined) {
   fail("--message is required for topics without a catalog default message template");
 }
 
+function parseTriggerShellTimeout(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (/^\d+$/.test(trimmed)) {
+    const seconds = Number.parseInt(trimmed, 10);
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+      fail(`Invalid timeout: ${value}`);
+    }
+    return seconds * 1000;
+  }
+  try {
+    return parseDurationMs(trimmed);
+  } catch (err) {
+    fail(`Invalid timeout: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+function normalizeTriggerOnError(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed || trimmed === "-" || trimmed === "null") return undefined;
+
+  const prefix = "notify-session:";
+  if (!trimmed.startsWith(prefix) || !trimmed.slice(prefix.length).trim()) {
+    fail(`Invalid --on-error value: ${value}. Use notify-session:<session>`);
+  }
+  return `${prefix}${trimmed.slice(prefix.length).trim()}`;
+}
+
 @Group({
   name: "triggers",
   description: "Event triggers",
@@ -128,6 +163,7 @@ function resolveTriggerMessage(topic: string, message: string | undefined) {
 })
 export class TriggersCommands {
   @Command({ name: "topics", description: "List trigger-ready NATS topics" })
+  @CommandAccess({ kind: "read", resource: "triggers", action: "topics", risk: "low" })
   @Returns(triggerTopicsReturnSchema)
   topics(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const topics = getTriggerTopicCatalog();
@@ -141,6 +177,7 @@ export class TriggersCommands {
   }
 
   @Command({ name: "list", description: "List all event triggers" })
+  @CommandAccess({ kind: "read", resource: "triggers", action: "list", risk: "low" })
   @Returns(triggerListReturnSchema)
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -219,6 +256,7 @@ export class TriggersCommands {
   }
 
   @Command({ name: "show", description: "Show trigger details" })
+  @CommandAccess({ kind: "read", resource: "triggers", action: "show", risk: "low" })
   @Returns(triggerShowReturnSchema)
   show(
     @Arg("id", { description: "Trigger ID" }) id: string,
@@ -239,6 +277,13 @@ export class TriggersCommands {
       console.log(`  Account:         ${trigger.accountId ?? "(auto)"}`);
       console.log(`  Enabled:         ${trigger.enabled ? "yes" : "no"}`);
       console.log(`  Topic:           ${trigger.topic}`);
+      console.log(`  Execution:       ${trigger.executionType ?? "agent"}`);
+      if ((trigger.executionType ?? "agent") === "shell") {
+        console.log(`  Shell:           ${trigger.shellCommand ?? "(missing)"}`);
+        console.log(`  Timeout:         ${formatDurationMs(trigger.shellTimeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS)}`);
+        if (trigger.shellEnvFile) console.log(`  Env file:        ${trigger.shellEnvFile}`);
+        if (trigger.onError) console.log(`  On error:        ${trigger.onError}`);
+      }
       console.log(`  Session:         ${trigger.session}`);
       if (trigger.replySession) {
         console.log(`  Reply session:   ${trigger.replySession}`);
@@ -248,8 +293,10 @@ export class TriggersCommands {
         console.log(`  Filter:          ${trigger.filter}`);
       }
       console.log("");
-      console.log(`  Message:`);
-      console.log(`    ${trigger.message.split("\n").join("\n    ")}`);
+      if ((trigger.executionType ?? "agent") === "agent") {
+        console.log(`  Message:`);
+        console.log(`    ${trigger.message.split("\n").join("\n    ")}`);
+      }
       console.log("");
       console.log(`  Fire count:      ${trigger.fireCount}`);
       if (trigger.lastFiredAt) {
@@ -263,6 +310,7 @@ export class TriggersCommands {
   }
 
   @Command({ name: "add", description: "Add a new event trigger" })
+  @CommandAccess({ kind: "mutate", resource: "triggers", action: "add", risk: "medium" })
   @Returns(triggerMutationReturnSchema)
   async add(
     @Arg("name", { description: "Trigger name" }) name: string,
@@ -298,12 +346,48 @@ export class TriggersCommands {
       description: "Filter expression (e.g. 'data.cwd == \"/path/to/workspace\"')",
     })
     filter?: string,
+    @Option({
+      flags: "--reply-session <name|key>",
+      description: "Override the session used for outbound delivery (defaults to caller session)",
+    })
+    replySessionOverride?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--shell <cmd>", description: "Run a shell command directly without invoking an agent" })
+    shell?: string,
+    @Option({ flags: "--exec <cmd>", description: "Alias for --shell" })
+    exec?: string,
+    @Option({ flags: "--timeout <seconds|duration>", description: "Shell timeout, e.g. 60 or 5m" })
+    timeout?: string,
+    @Option({ flags: "--env-file <path>", description: "Env file loaded for shell triggers" })
+    envFile?: string,
+    @Option({ flags: "--on-error <action>", description: "Error action, e.g. notify-session:<session>" })
+    onError?: string,
   ) {
     if (!topic) {
       fail("--topic is required");
     }
-    const resolvedMessage = resolveTriggerMessage(topic, message);
+    const shellCommand = shell?.trim() || exec?.trim();
+    const shellFlagCount = [shell, exec].filter((value) => value?.trim()).length;
+    const isShellTrigger = Boolean(shellCommand);
+
+    if (shellFlagCount > 1) {
+      fail("Only one of --shell or --exec can be specified");
+    }
+    if (isShellTrigger && message) {
+      fail("--message cannot be combined with --shell/--exec");
+    }
+    if (!isShellTrigger && (onError || timeout || envFile)) {
+      fail("--on-error, --timeout and --env-file are only valid with --shell/--exec");
+    }
+
+    const resolvedMessage = isShellTrigger
+      ? {
+          message: "",
+          source: "explicit" as const,
+          topicCatalogEntry: findTriggerTopicCatalogEntry(topic),
+          templateId: undefined,
+        }
+      : resolveTriggerMessage(topic, message);
     const topicWarnings = getTriggerTopicWarnings(topic);
     assertValidTriggerFilter(filter);
 
@@ -352,7 +436,9 @@ export class TriggersCommands {
     // Prefer the friendly session name when available so `triggers show`
     // surfaces something legible; resolveSession accepts both name and
     // session_key, so resolution at fire time is identical either way.
-    const replySession = ctx?.sessionName ?? ctx?.sessionKey;
+    // --reply-session overrides the auto-capture when the caller knows the
+    // trigger should reply to a different session than the one creating it.
+    const replySession = replySessionOverride?.trim() || (ctx?.sessionName ?? ctx?.sessionKey);
 
     // Freeze the creator's outbound source as a fallback for when the live
     // session can no longer resolve a deliverable target (lastChannel empty,
@@ -372,6 +458,11 @@ export class TriggersCommands {
       name,
       topic,
       message: resolvedMessage.message,
+      executionType: isShellTrigger ? "shell" : "agent",
+      shellCommand: isShellTrigger ? shellCommand : undefined,
+      shellTimeoutMs: isShellTrigger ? parseTriggerShellTimeout(timeout) : undefined,
+      shellEnvFile: isShellTrigger ? envFile : undefined,
+      onError: isShellTrigger ? normalizeTriggerOnError(onError) : undefined,
       messageSource: resolvedMessage.source === "catalog_default" ? "catalog" : "manual",
       messageTemplateId: resolvedMessage.templateId ?? null,
       agentId: resolvedAgent,
@@ -420,6 +511,7 @@ export class TriggersCommands {
   }
 
   @Command({ name: "enable", description: "Enable a trigger" })
+  @CommandAccess({ kind: "mutate", resource: "triggers", action: "enable", risk: "medium" })
   @Returns(triggerMutationReturnSchema)
   async enable(
     @Arg("id", { description: "Trigger ID" }) id: string,
@@ -451,6 +543,7 @@ export class TriggersCommands {
   }
 
   @Command({ name: "disable", description: "Disable a trigger" })
+  @CommandAccess({ kind: "mutate", resource: "triggers", action: "disable", risk: "medium" })
   @Returns(triggerMutationReturnSchema)
   async disable(
     @Arg("id", { description: "Trigger ID" }) id: string,
@@ -482,11 +575,13 @@ export class TriggersCommands {
   }
 
   @Command({ name: "set", description: "Set trigger property" })
+  @CommandAccess({ kind: "mutate", resource: "triggers", action: "set", risk: "medium" })
   @Returns(triggerMutationReturnSchema)
   async set(
     @Arg("id", { description: "Trigger ID" }) id: string,
     @Arg("key", {
-      description: "Property: name, message, topic, agent, account, session, cooldown",
+      description:
+        "Property: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, filter, replySession",
     })
     key: string,
     @Arg("value", { description: "Property value" }) value: string,
@@ -512,9 +607,68 @@ export class TriggersCommands {
           break;
 
         case "message":
-          updated = dbUpdateTrigger(id, { message: value, messageSource: "manual", messageTemplateId: null });
+          updated = dbUpdateTrigger(id, {
+            message: value,
+            executionType: "agent",
+            shellCommand: null,
+            shellTimeoutMs: null,
+            shellEnvFile: null,
+            onError: null,
+            messageSource: "manual",
+            messageTemplateId: null,
+          });
           logHuman(`✓ Message set: ${id}`);
           break;
+
+        case "shell":
+        case "exec": {
+          const shellCommand = value.trim();
+          if (!shellCommand) {
+            fail("Shell command cannot be empty");
+          }
+          updated = dbUpdateTrigger(id, {
+            executionType: "shell",
+            shellCommand,
+            message: "",
+            messageSource: "manual",
+            messageTemplateId: null,
+          });
+          logHuman(`✓ Shell command set: ${id}`);
+          break;
+        }
+
+        case "timeout": {
+          if ((trigger.executionType ?? "agent") !== "shell") {
+            fail("timeout only applies to shell triggers");
+          }
+          const shellTimeoutMs = value === "null" || value === "-" ? null : parseTriggerShellTimeout(value);
+          updated = dbUpdateTrigger(id, { shellTimeoutMs });
+          normalizedValue = shellTimeoutMs;
+          logHuman(`✓ Shell timeout set: ${id} -> ${shellTimeoutMs ? formatDurationMs(shellTimeoutMs) : "(default)"}`);
+          break;
+        }
+
+        case "env-file": {
+          if ((trigger.executionType ?? "agent") !== "shell") {
+            fail("env-file only applies to shell triggers");
+          }
+          const shellEnvFile = value === "null" || value === "-" ? null : value;
+          updated = dbUpdateTrigger(id, { shellEnvFile });
+          normalizedValue = shellEnvFile;
+          logHuman(`✓ Shell env file set: ${id} -> ${shellEnvFile ?? "(none)"}`);
+          break;
+        }
+
+        case "on-error": {
+          if ((trigger.executionType ?? "agent") !== "shell") {
+            fail("on-error only applies to shell triggers");
+          }
+          const normalizedOnError = normalizeTriggerOnError(value);
+          updated = dbUpdateTrigger(id, { onError: normalizedOnError ?? null });
+          normalizedValue = normalizedOnError ?? null;
+          logHuman(`✓ Shell on-error set: ${id} -> ${normalizedOnError ?? "(none)"}`);
+          break;
+        }
 
         case "topic": {
           warnings = getTriggerTopicWarnings(value);
@@ -575,8 +729,23 @@ export class TriggersCommands {
           break;
         }
 
+        case "replySession": {
+          // null/undefined distinction matters here: dbUpdateTrigger's outer
+          // guard skips fields that are `undefined`, so passing `undefined`
+          // for a clear request would leave the column unchanged. Use `null`
+          // to force the SQL UPDATE to set reply_session = NULL.
+          const cleared = value === "null" || value === "-";
+          const replySession: string | null = cleared ? null : value.trim();
+          updated = dbUpdateTrigger(id, { replySession });
+          normalizedValue = replySession;
+          logHuman(`✓ Reply session set: ${id} -> ${replySession ?? "(none)"}`);
+          break;
+        }
+
         default:
-          fail(`Unknown property: ${key}. Valid: name, message, topic, agent, account, session, cooldown, filter`);
+          fail(
+            `Unknown property: ${key}. Valid: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, filter, replySession`,
+          );
       }
 
       await nats.emit("ravi.triggers.refresh", {});
@@ -600,6 +769,7 @@ export class TriggersCommands {
   }
 
   @Command({ name: "test", description: "Test trigger with fake event data" })
+  @CommandAccess({ kind: "read", resource: "triggers", action: "test", risk: "low" })
   @Returns(triggerMutationReturnSchema)
   async test(
     @Arg("id", { description: "Trigger ID" }) id: string,
@@ -640,6 +810,7 @@ export class TriggersCommands {
     description: "Delete a trigger",
     aliases: ["delete", "remove"],
   })
+  @CommandAccess({ kind: "mutate", resource: "triggers", action: "rm", risk: "destructive" })
   @Returns(triggerMutationReturnSchema)
   async rm(
     @Arg("id", { description: "Trigger ID" }) id: string,

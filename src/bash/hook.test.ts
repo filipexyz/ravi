@@ -1,15 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { runWithContext, type ToolContext } from "../cli/context.js";
 import { listPermissionDenials } from "../permissions/denials.js";
-import { grantRelation } from "../permissions/relations.js";
 import type { ContextCapability, ContextRecord } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { createBashPermissionHook, createToolPermissionHook, evaluateBashPermission } from "./hook.js";
-
-// Helpers
-function grant(subjectType: string, subjectId: string, relation: string, objectType: string, objectId: string) {
-  grantRelation(subjectType, subjectId, relation, objectType, objectId, "test");
-}
 
 function makeToolContext(agentId: string, capabilities: ContextCapability[], kind = "test-runtime"): ToolContext {
   const context: ContextRecord = {
@@ -76,9 +70,9 @@ describe("createBashPermissionHook", () => {
   // --------------------------------------------------------------------------
 
   describe("no agent context", () => {
-    it("allows any command when no agentId", async () => {
+    it("denies commands when no agentId is available", async () => {
       const result = await callBashHook("rm -rf /", undefined);
-      expect(isDenied(result)).toBe(false);
+      expect(isDenied(result)).toBe(true);
     });
   });
 
@@ -88,21 +82,22 @@ describe("createBashPermissionHook", () => {
 
   describe("env spoofing", () => {
     it("blocks RAVI_AGENT_ID override for non-superadmin", async () => {
-      grant("agent", "dev", "execute", "executable", "*");
       const result = await callBashHook("RAVI_AGENT_ID=main ravi sessions list", "dev");
       expect(isDenied(result)).toBe(true);
       expect(getDenyReason(result)).toContain("RAVI environment");
     });
 
     it("blocks RAVI_SESSION_KEY override", async () => {
-      grant("agent", "dev", "execute", "executable", "*");
       const result = await callBashHook("RAVI_SESSION_KEY=x ravi sessions list", "dev");
       expect(isDenied(result)).toBe(true);
     });
 
-    it("allows RAVI_* for superadmin", async () => {
-      grant("agent", "main", "admin", "system", "*");
-      const result = await callBashHook("RAVI_AGENT_ID=dev ravi sessions list", "main");
+    it("allows RAVI_* only for an explicit admin runtime context", async () => {
+      const result = await callBashHook(
+        "RAVI_AGENT_ID=dev ravi sessions list",
+        "main",
+        makeToolContext("main", [{ permission: "admin", objectType: "system", objectId: "*" }]),
+      );
       expect(isDenied(result)).toBe(false);
     });
   });
@@ -113,90 +108,93 @@ describe("createBashPermissionHook", () => {
 
   describe("executable permissions", () => {
     it("allows with wildcard executable access", async () => {
-      grant("agent", "dev", "execute", "executable", "*");
-      const result = await callBashHook("git status", "dev");
+      const result = await callBashHook(
+        "git status",
+        "dev",
+        makeToolContext("dev", [{ permission: "execute", objectType: "executable", objectId: "*" }]),
+      );
       expect(isDenied(result)).toBe(false);
     });
 
     it("allows with specific executable grant", async () => {
-      grant("agent", "test", "execute", "executable", "git");
-      const result = await callBashHook("git status", "test");
+      const result = await callBashHook(
+        "git status",
+        "test",
+        makeToolContext("test", [{ permission: "execute", objectType: "executable", objectId: "git" }]),
+      );
       expect(isDenied(result)).toBe(false);
     });
 
     it("blocks without executable grant", async () => {
-      grant("agent", "test", "execute", "executable", "ls");
-      const result = await callBashHook("git status", "test");
+      const result = await callBashHook(
+        "python3 --version",
+        "test",
+        makeToolContext("test", [{ permission: "execute", objectType: "executable", objectId: "ls" }]),
+      );
       expect(isDenied(result)).toBe(true);
-      expect(getDenyReason(result)).toContain("git");
+      expect(getDenyReason(result)).toContain("python3");
     });
 
     it("blocks unconditional blocks regardless of grants", async () => {
-      grant("agent", "test", "execute", "executable", "bash");
-      const result = await callBashHook("bash -c 'echo hi'", "test");
+      const result = await callBashHook(
+        "bash -c 'echo hi'",
+        "test",
+        makeToolContext("test", [{ permission: "execute", objectType: "executable", objectId: "bash" }]),
+      );
       expect(isDenied(result)).toBe(true);
     });
 
     it("checks all executables in piped commands", async () => {
-      grant("agent", "test", "execute", "executable", "cat");
       // Has cat but not grep
-      const result = await callBashHook("cat file | grep foo", "test");
+      const result = await callBashHook(
+        "cat file | grep foo",
+        "test",
+        makeToolContext("test", [{ permission: "execute", objectType: "executable", objectId: "cat" }]),
+      );
       expect(isDenied(result)).toBe(true);
       expect(getDenyReason(result)).toContain("grep");
     });
 
     it("checks all executables in chained commands", async () => {
-      grant("agent", "test", "execute", "executable", "git");
-      grant("agent", "test", "execute", "executable", "ravi");
-      const result = await callBashHook("git status && ravi sessions list", "test");
+      const result = await callBashHook(
+        "git status && ravi sessions list",
+        "test",
+        makeToolContext("test", [
+          { permission: "execute", objectType: "executable", objectId: "git" },
+          { permission: "execute", objectType: "executable", objectId: "ravi" },
+        ]),
+      );
       expect(isDenied(result)).toBe(false);
     });
 
     it("blocks dangerous patterns before checking executables", async () => {
-      grant("agent", "test", "execute", "executable", "echo");
-      const result = await callBashHook("echo $(whoami)", "test");
+      const result = await callBashHook(
+        "echo $(whoami)",
+        "test",
+        makeToolContext("test", [{ permission: "execute", objectType: "executable", objectId: "echo" }]),
+      );
       expect(isDenied(result)).toBe(true);
       expect(getDenyReason(result)).toContain("command substitution");
     });
 
-    it("allows pwd and rg for live superadmin with stale runtime capabilities", () => {
+    it("allows bootstrap safe executables with stale agent-runtime capabilities", () => {
       const decision = evaluateBashPermission("pwd && rg foo", {
         agentId: "dev",
         kind: "agent-runtime",
         capabilities: [],
       });
 
-      expect(decision.allowed).toBe(false);
-
-      grant("agent", "dev", "admin", "system", "*");
-
-      const superadminDecision = evaluateBashPermission("pwd && rg foo", {
-        agentId: "dev",
-        kind: "agent-runtime",
-        capabilities: [],
-      });
-
-      expect(superadminDecision.allowed).toBe(true);
+      expect(decision.allowed).toBe(true);
     });
 
-    it("allows specific executable grants added after a stale agent-runtime context was issued", () => {
-      const decision = evaluateBashPermission("git status", {
+    it("keeps executable grants bounded to the issued context", () => {
+      const decision = evaluateBashPermission("python3 --version", {
         agentId: "dev",
         kind: "agent-runtime",
         capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash" }],
       });
 
       expect(decision.allowed).toBe(false);
-
-      grant("agent", "dev", "execute", "executable", "git");
-
-      const liveGrantDecision = evaluateBashPermission("git status", {
-        agentId: "dev",
-        kind: "agent-runtime",
-        capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash" }],
-      });
-
-      expect(liveGrantDecision.allowed).toBe(true);
     });
   });
 
@@ -206,7 +204,6 @@ describe("createBashPermissionHook", () => {
 
   describe("session scope", () => {
     it("blocks access to unauthorized session via ravi sessions send", async () => {
-      grant("agent", "test", "execute", "executable", "ravi");
       const result = await callBashHook("ravi sessions send main 'hello'", "test", {
         agentId: "test",
         sessionName: "test-own",
@@ -216,17 +213,15 @@ describe("createBashPermissionHook", () => {
     });
 
     it("allows access to authorized session", async () => {
-      grant("agent", "test", "execute", "executable", "ravi");
-      grant("agent", "test", "access", "session", "main");
-      const result = await callBashHook("ravi sessions send main 'hello'", "test", {
-        agentId: "test",
-        sessionName: "test-own",
-      });
+      const result = await callBashHook(
+        "ravi sessions send main 'hello'",
+        "test",
+        makeToolContext("test", [{ permission: "access", objectType: "session", objectId: "main" }]),
+      );
       expect(isDenied(result)).toBe(false);
     });
 
     it("allows access to own session", async () => {
-      grant("agent", "test", "execute", "executable", "ravi");
       const result = await callBashHook("ravi sessions send test-own 'hello'", "test", {
         agentId: "test",
         sessionName: "test-own",
@@ -235,28 +230,25 @@ describe("createBashPermissionHook", () => {
     });
 
     it("allows non-session commands without session grants", async () => {
-      grant("agent", "test", "execute", "executable", "ravi");
       const result = await callBashHook("ravi contacts list", "test", { agentId: "test" });
       expect(isDenied(result)).toBe(false);
     });
 
-    it("allows session access for live superadmin with stale runtime capabilities", () => {
+    it("allows session access for an explicit admin runtime context", () => {
       const decision = evaluateBashPermission("ravi sessions send main 'hello'", {
         agentId: "dev",
-        kind: "agent-runtime",
+        kind: "test-runtime",
         sessionName: "dev-own",
         capabilities: [],
       });
 
       expect(decision.allowed).toBe(false);
 
-      grant("agent", "dev", "admin", "system", "*");
-
       const superadminDecision = evaluateBashPermission("ravi sessions send main 'hello'", {
         agentId: "dev",
-        kind: "agent-runtime",
+        kind: "test-runtime",
         sessionName: "dev-own",
-        capabilities: [],
+        capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
       });
 
       expect(superadminDecision.allowed).toBe(true);
@@ -274,20 +266,23 @@ describe("createToolPermissionHook", () => {
     expect(hook.matcher).toBeUndefined();
   });
 
-  it("allows when no agentId", async () => {
+  it("denies SDK tools when no agentId is available", async () => {
     const result = await callToolHook("Bash", undefined);
+    expect(isDenied(result)).toBe(true);
+  });
+
+  it("allows SDK tool with context capability", async () => {
+    const result = await callToolHook(
+      "Bash",
+      "dev",
+      makeToolContext("dev", [{ permission: "use", objectType: "tool", objectId: "Bash" }]),
+    );
     expect(isDenied(result)).toBe(false);
   });
 
-  it("allows SDK tool with grant", async () => {
-    grant("agent", "dev", "use", "tool", "Bash");
-    const result = await callToolHook("Bash", "dev");
-    expect(isDenied(result)).toBe(false);
-  });
-
-  it("blocks SDK tool without grant", async () => {
+  it("blocks SDK tool when the scoped runtime context lacks the capability", async () => {
     const result = await callToolHook("Bash", "dev", {
-      agentId: "dev",
+      ...makeToolContext("dev", []),
       sessionKey: "agent:dev:main",
       sessionName: "dev-main",
     });
@@ -306,8 +301,11 @@ describe("createToolPermissionHook", () => {
   });
 
   it("allows with wildcard tool grant", async () => {
-    grant("agent", "dev", "use", "tool", "*");
-    const result = await callToolHook("Read", "dev");
+    const result = await callToolHook(
+      "Read",
+      "dev",
+      makeToolContext("dev", [{ permission: "use", objectType: "tool", objectId: "*" }]),
+    );
     expect(isDenied(result)).toBe(false);
   });
 
@@ -318,29 +316,27 @@ describe("createToolPermissionHook", () => {
   });
 
   it("blocks multiple different SDK tools independently", async () => {
-    grant("agent", "dev", "use", "tool", "Bash");
+    const context = makeToolContext("dev", [{ permission: "use", objectType: "tool", objectId: "Bash" }]);
     // Bash allowed, Read not
-    expect(isDenied(await callToolHook("Bash", "dev"))).toBe(false);
-    expect(isDenied(await callToolHook("Read", "dev"))).toBe(true);
-    expect(isDenied(await callToolHook("Edit", "dev"))).toBe(true);
+    expect(isDenied(await callToolHook("Bash", "dev", context))).toBe(false);
+    expect(isDenied(await callToolHook("Read", "dev", context))).toBe(true);
+    expect(isDenied(await callToolHook("Edit", "dev", context))).toBe(true);
   });
 
   it("superadmin allows all tools", async () => {
-    grant("agent", "main", "admin", "system", "*");
-    expect(isDenied(await callToolHook("Bash", "main"))).toBe(false);
-    expect(isDenied(await callToolHook("Read", "main"))).toBe(false);
-    expect(isDenied(await callToolHook("Write", "main"))).toBe(false);
+    const context = makeToolContext("main", [{ permission: "admin", objectType: "system", objectId: "*" }]);
+    expect(isDenied(await callToolHook("Bash", "main", context))).toBe(false);
+    expect(isDenied(await callToolHook("Read", "main", context))).toBe(false);
+    expect(isDenied(await callToolHook("Write", "main", context))).toBe(false);
   });
 
-  it("allows all SDK tools for live superadmin even with stale scoped capabilities", async () => {
+  it("keeps scoped contexts bounded to their issued capabilities", async () => {
     const context = makeToolContext("dev", [{ permission: "use", objectType: "tool", objectId: "Read" }]);
 
     expect(isDenied(await callToolHook("Bash", "dev", context))).toBe(true);
 
-    grant("agent", "dev", "admin", "system", "*");
-
-    expect(isDenied(await callToolHook("Bash", "dev", context))).toBe(false);
+    expect(isDenied(await callToolHook("Bash", "dev", context))).toBe(true);
     expect(isDenied(await callToolHook("Read", "dev", context))).toBe(false);
-    expect(isDenied(await callToolHook("Write", "dev", context))).toBe(false);
+    expect(isDenied(await callToolHook("Write", "dev", context))).toBe(true);
   });
 });

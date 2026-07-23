@@ -25,6 +25,7 @@ class FakePiRpcTransport implements PiRpcTransport {
 
   responseFor?: (command: PiRpcCommand) => PiRpcResponse | Promise<PiRpcResponse> | undefined;
   closed = false;
+  closeCalls = 0;
 
   async start(input: PiRpcStartInput): Promise<void> {
     this.starts.push(input);
@@ -41,6 +42,7 @@ class FakePiRpcTransport implements PiRpcTransport {
 
   async close(): Promise<void> {
     this.closed = true;
+    this.closeCalls++;
   }
 
   pushEvent(event: PiRpcEvent): void {
@@ -76,6 +78,16 @@ describe("Pi runtime provider", () => {
         guarantee: "adapter",
       },
     });
+  });
+
+  it("closes the Pi RPC transport idempotently", async () => {
+    const transport = new FakePiRpcTransport();
+    const handle = createPiRuntimeProvider({ transport }).startSession(createStartRequest("close"));
+
+    await handle.close?.();
+    await handle.close?.();
+
+    expect(transport.closeCalls).toBe(1);
   });
 
   it("normalizes a successful Pi RPC run into canonical runtime events", async () => {

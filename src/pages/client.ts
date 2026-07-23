@@ -13,6 +13,10 @@ export interface PageSiteListOptions extends PagesClientOptions {
   project: string;
 }
 
+export interface PublishedPageListOptions extends PagesClientOptions {
+  project: string;
+}
+
 export interface PageSiteCreateOptions extends PagesClientOptions {
   defaultVisibility?: PageVisibility;
   isDefault?: boolean;
@@ -47,6 +51,7 @@ export interface AuthenticatedPagesContext {
 }
 
 export type PageSitePayload = Record<string, unknown>;
+export type PublishedPagePayload = Record<string, unknown>;
 
 export interface PageSiteListResult {
   success: true;
@@ -57,8 +62,18 @@ export interface PageSiteListResult {
   items: PageSitePayload[];
 }
 
+export interface PublishedPageListResult {
+  success: true;
+  consoleUrl: string;
+  projectRef: string;
+  total: number;
+  pages: PublishedPagePayload[];
+  items: PublishedPagePayload[];
+}
+
 export interface PageSiteCreateResult {
   success: true;
+  contentPublishCommand: string | null;
   consoleUrl: string;
   projectRef: string;
   site: PageSitePayload;
@@ -97,6 +112,16 @@ export class RaviPagesClient {
       accessToken,
     );
     return normalizeSiteListPayload(payload);
+  }
+
+  async listPublishedPages(accessToken: string, options: PublishedPageListOptions): Promise<PublishedPagePayload[]> {
+    const payload = await this.request<unknown>(
+      "GET",
+      `/api/cli/projects/${encodeURIComponent(requireText(options.project, "project"))}/pages/published`,
+      undefined,
+      accessToken,
+    );
+    return normalizePublishedPageListPayload(payload);
   }
 
   async createSite(accessToken: string, options: PageSiteCreateOptions): Promise<PageSitePayload> {
@@ -213,16 +238,34 @@ export async function listPageSites(
   };
 }
 
+export async function listPublishedPages(
+  options: PublishedPageListOptions,
+  deps: PagesClientDeps = {},
+): Promise<PublishedPageListResult> {
+  const auth = await createAuthenticatedPagesContext(options, deps);
+  const pages = await new RaviPagesClient(auth.client).listPublishedPages(auth.accessToken, options);
+  return {
+    success: true,
+    consoleUrl: auth.consoleUrl,
+    projectRef: requireText(options.project, "project"),
+    total: pages.length,
+    pages,
+    items: pages,
+  };
+}
+
 export async function createPageSite(
   options: PageSiteCreateOptions,
   deps: PagesClientDeps = {},
 ): Promise<PageSiteCreateResult> {
   const auth = await createAuthenticatedPagesContext(options, deps);
   const site = await new RaviPagesClient(auth.client).createSite(auth.accessToken, options);
+  const projectRef = requireText(options.project, "project");
   return {
     success: true,
+    contentPublishCommand: contentPublishCommandForSite(projectRef, site),
     consoleUrl: auth.consoleUrl,
-    projectRef: requireText(options.project, "project"),
+    projectRef,
     site,
     url: hostedSiteUrl(site),
   };
@@ -305,6 +348,14 @@ function normalizeSiteListPayload(payload: unknown): PageSitePayload[] {
   return [];
 }
 
+function normalizePublishedPageListPayload(payload: unknown): PublishedPagePayload[] {
+  if (Array.isArray(payload)) return payload.map(normalizeSitePayload);
+  const record = objectValue(payload);
+  if (Array.isArray(record?.pages)) return record.pages.map(normalizeSitePayload);
+  if (Array.isArray(record?.items)) return record.items.map(normalizeSitePayload);
+  return [];
+}
+
 function normalizeSitePayload(payload: unknown): PageSitePayload {
   const record = objectValue(payload);
   const nested = objectValue(record?.site);
@@ -321,6 +372,13 @@ function normalizeHostnames(values: string[]): string[] {
 function hostedSiteUrl(site: PageSitePayload): string | null {
   const hostname = stringValue(site.defaultHostname) ?? stringValue(site.hostname);
   return hostname ? `https://${hostname}/` : null;
+}
+
+function contentPublishCommandForSite(projectRef: string, site: PageSitePayload): string | null {
+  const siteRef = stringValue(site.slug) ?? stringValue(site.id);
+  if (!siteRef) return null;
+  const visibility = stringValue(site.defaultVisibility) ?? stringValue(site.visibility) ?? "public";
+  return `ravi pages publish ${projectRef} ${siteRef} ./site --route / --visibility ${visibility} --entrypoint index.html`;
 }
 
 function requireText(value: string | undefined, label: string): string {

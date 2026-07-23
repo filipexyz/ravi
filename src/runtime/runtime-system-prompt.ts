@@ -11,11 +11,13 @@ import { buildStickerPromptSection } from "../stickers/prompt.js";
 import { buildRaviRulesPromptSection } from "./ravi-rules.js";
 import { buildRuntimeOperationalContextContent } from "./runtime-operational-context.js";
 import type { ContextRecord } from "../router/router-db.js";
+import { buildSessionGoalPromptSection } from "./session-goals.js";
 
 export interface RuntimeSystemPromptInput {
   agent: AgentConfig;
   ctx?: ChannelContext;
   sessionName?: string;
+  sessionKey?: string;
   cwd: string;
   extraSections?: PromptSection[];
   sessionRuntimeParams?: Record<string, unknown>;
@@ -36,6 +38,7 @@ export async function buildRuntimeSystemPrompt(input: RuntimeSystemPromptInput):
       agentMode: input.agent.mode,
     }),
     buildRuntimeOperationalContextSection(input),
+    ...buildSessionGoalPromptSections(input),
     ...buildStickerPromptSectionsForRuntime(input.agent, input.ctx, input.sessionRuntimeParams),
     ...(await buildWorkspacePromptSections(input.cwd)),
     ...(await buildRaviRulesPromptSections(input.cwd)),
@@ -132,4 +135,20 @@ function buildExtraPromptSections(extraSections: PromptSection[] | undefined): P
     priority: 100 + index,
     source: "extra",
   }));
+}
+
+function buildSessionGoalPromptSections(input: RuntimeSystemPromptInput): PromptContextSection[] {
+  const sessionKey = input.sessionKey ?? input.runtimeContext?.sessionKey;
+  if (!sessionKey) return [];
+  const content = buildSessionGoalPromptSection(sessionKey);
+  if (!content) return [];
+  return [
+    {
+      id: "session.goal",
+      title: "Session Goal",
+      priority: 23,
+      source: "session-goals",
+      content,
+    },
+  ];
 }

@@ -1,16 +1,13 @@
-import { resolveToolGroup } from "../cli/tool-registry.js";
-import { publishSessionPrompt } from "../omni/session-stream.js";
 import { getDb } from "../router/router-db.js";
-import { getSession } from "../router/sessions.js";
-import { logger } from "../utils/logger.js";
-import { matchPattern } from "./capability-context.js";
-import type { Relation } from "./relations.js";
+import { publish } from "../nats.js";
+import type { AuditContextProvenance } from "./audit-provenance.js";
 
-const log = logger.child("permissions:denials");
 const MAX_REASON_LENGTH = 500;
 const MAX_COMMAND_LENGTH = 500;
-type PermissionDenialNotifier = typeof publishSessionPrompt;
-let permissionDenialNotifier: PermissionDenialNotifier = publishSessionPrompt;
+type PermissionAuditPublisher = (topic: string, data: Record<string, unknown>) => Promise<void> | void;
+
+let permissionAuditPublisher: PermissionAuditPublisher = publish;
+const pendingPermissionAuditPublishes: Promise<void>[] = [];
 
 export interface PermissionDenialInput {
   subjectType?: string;
@@ -47,6 +44,27 @@ export interface PermissionDenial {
   notifiedAt: number | null;
 }
 
+export interface PermissionDeniedAuditEvent {
+  type: string;
+  agentId?: string | null;
+  denied?: string | null;
+  reason?: string | null;
+  detail?: unknown;
+  blockType?: string;
+  missingPrincipals?: string[];
+  missingPrincipalDetails?: unknown[];
+  recommendedGrantSubjects?: string[];
+  command?: string;
+  denialId?: number;
+  dedupeKey?: string;
+  context?: AuditContextProvenance;
+  [key: string]: unknown;
+}
+
+export interface RecordAndEmitPermissionDenialInput extends PermissionDenialInput {
+  audit: PermissionDeniedAuditEvent;
+}
+
 interface PermissionDenialRow {
   id: number;
   subject_type: string;
@@ -65,16 +83,6 @@ interface PermissionDenialRow {
   resolved_at: number | null;
   resolved_relation_id: number | null;
   notified_at: number | null;
-}
-
-export interface ResolvedPermissionDenialsResult {
-  matched: number;
-  notified: number;
-  sessions: string[];
-}
-
-export function setPermissionDenialNotifierForTest(notifier?: PermissionDenialNotifier): void {
-  permissionDenialNotifier = notifier ?? publishSessionPrompt;
 }
 
 export function recordPermissionDenial(input: PermissionDenialInput): PermissionDenial | null {
@@ -120,62 +128,47 @@ export function recordPermissionDenial(input: PermissionDenialInput): Permission
   return getPermissionDenial(id);
 }
 
-export function resolvePermissionDenialsForGrant(relation: Relation): ResolvedPermissionDenialsResult {
-  if (relation.subjectType !== "agent") {
-    return { matched: 0, notified: 0, sessions: [] };
-  }
+export function recordAndEmitPermissionDenial(input: RecordAndEmitPermissionDenialInput): PermissionDenial | null {
+  const { audit, ...denialInput } = input;
+  const denial = recordPermissionDenial(denialInput);
+  emitPermissionDeniedAudit({
+    ...audit,
+    ...(denial?.id ? { denialId: denial.id } : {}),
+  });
+  return denial;
+}
 
-  const pending = listPendingPermissionDenials(relation.subjectType, relation.subjectId).filter((denial) =>
-    relationCoversDenial(relation, denial),
-  );
-  if (pending.length === 0) {
-    return { matched: 0, notified: 0, sessions: [] };
-  }
-
-  const now = Date.now();
-  const ids = pending.map((denial) => denial.id);
-  const placeholders = ids.map(() => "?").join(", ");
-  getDb()
-    .prepare(
-      `
-      UPDATE permission_denials
-      SET resolved_at = ?, resolved_relation_id = ?
-      WHERE id IN (${placeholders})
-    `,
-    )
-    .run(now, relation.id, ...ids);
-
-  const bySession = new Map<string, PermissionDenial[]>();
-  for (const denial of pending) {
-    const sessionName = resolveDenialSessionName(denial);
-    if (!sessionName) continue;
-    const bucket = bySession.get(sessionName) ?? [];
-    bucket.push(denial);
-    bySession.set(sessionName, bucket);
-  }
-
-  for (const [sessionName, denials] of bySession) {
-    notifySessionPermissionGranted(sessionName, relation, denials, now);
-  }
-
-  if (bySession.size > 0) {
-    getDb()
-      .prepare(
-        `
-        UPDATE permission_denials
-        SET notified_at = ?
-        WHERE id IN (${placeholders})
-          AND (session_name IS NOT NULL OR session_key IS NOT NULL)
-      `,
-      )
-      .run(now, ...ids);
-  }
-
-  return {
-    matched: pending.length,
-    notified: bySession.size,
-    sessions: [...bySession.keys()],
+export function emitPermissionDeniedAudit(event: PermissionDeniedAuditEvent): void {
+  if (process.env.RAVI_SUPPRESS_AUDIT_EVENTS === "1") return;
+  const enriched = {
+    ...event,
+    dedupeKey: event.dedupeKey ?? buildAuditDeniedDedupeKey(event),
   };
+
+  const p = Promise.resolve(permissionAuditPublisher("ravi.audit.denied", enriched as Record<string, unknown>))
+    .then(() => {
+      if (typeof enriched.denialId === "number") {
+        markPermissionDenialNotified(enriched.denialId);
+      }
+    })
+    .catch((err) => {
+      console.error("[audit] emitPermissionDeniedAudit failed", err);
+    });
+
+  pendingPermissionAuditPublishes.push(p);
+  p.finally(() => {
+    const index = pendingPermissionAuditPublishes.indexOf(p);
+    if (index >= 0) pendingPermissionAuditPublishes.splice(index, 1);
+  }).catch(() => {});
+}
+
+export async function flushPermissionAuditEvents(): Promise<void> {
+  if (pendingPermissionAuditPublishes.length === 0) return;
+  await Promise.allSettled([...pendingPermissionAuditPublishes]);
+}
+
+export function setPermissionAuditPublisherForTest(publisher?: PermissionAuditPublisher): void {
+  permissionAuditPublisher = publisher ?? publish;
 }
 
 export function listPermissionDenials(filter?: {
@@ -205,81 +198,14 @@ export function listPermissionDenials(filter?: {
   return rows.map(rowToPermissionDenial);
 }
 
-function listPendingPermissionDenials(subjectType: string, subjectId: string): PermissionDenial[] {
-  return listPermissionDenials({ subjectType, subjectId, resolved: false });
-}
-
-function relationCoversDenial(relation: Relation, denial: PermissionDenial): boolean {
-  if (relation.subjectType !== denial.subjectType || relation.subjectId !== denial.subjectId) {
-    return false;
-  }
-
-  if (relation.relation === "admin" && relation.objectType === "system" && relation.objectId === "*") {
-    return true;
-  }
-
-  if (relation.relation === "use" && relation.objectType === "toolgroup") {
-    if (denial.relation !== "use" || denial.objectType !== "tool") return false;
-    return resolveToolGroup(relation.objectId)?.includes(denial.objectId) ?? false;
-  }
-
-  if (relation.relation !== denial.relation || relation.objectType !== denial.objectType) {
-    return false;
-  }
-
-  if (relation.objectId === denial.objectId || relation.objectId === "*") {
-    return true;
-  }
-
-  return relation.objectId.includes("*") && matchPattern(relation.objectId, denial.objectId);
-}
-
-function notifySessionPermissionGranted(
-  sessionName: string,
-  relation: Relation,
-  denials: PermissionDenial[],
-  now: number,
-): void {
-  const sample = denials[0];
-  const deniedList = denials
-    .map((denial) => `${denial.relation} ${denial.objectType}:${denial.objectId}`)
-    .filter((value, index, list) => list.indexOf(value) === index)
-    .slice(0, 5)
-    .join(", ");
-  const prompt = [
-    `[Permission Granted: ${relation.relation} ${relation.objectType}:${relation.objectId} | Event: ravi.permissions.grant.resolved]`,
-    `A permissão que tinha falhado nesta sessão foi concedida para agent:${relation.subjectId}.`,
-    `Denial resolvido: ${deniedList || `${sample.relation} ${sample.objectType}:${sample.objectId}`}.`,
-    "Tente novamente a ação bloqueada, se ela ainda for necessária.",
-  ].join("\n");
-
-  permissionDenialNotifier(sessionName, {
-    prompt,
-    event: "ravi.permissions.grant.resolved",
-    permissionGrant: {
-      subjectType: relation.subjectType,
-      subjectId: relation.subjectId,
-      relation: relation.relation,
-      objectType: relation.objectType,
-      objectId: relation.objectId,
-      relationId: relation.id,
-      resolvedDenialIds: denials.map((denial) => denial.id),
-      timestamp: now,
-    },
-  }).catch((err) => {
-    log.warn("Failed to publish permission grant event to session", { sessionName, error: err });
-  });
-}
-
-function resolveDenialSessionName(denial: PermissionDenial): string | null {
-  if (denial.sessionName) return denial.sessionName;
-  if (!denial.sessionKey) return null;
-  return getSession(denial.sessionKey)?.name ?? denial.sessionKey;
-}
-
-function getPermissionDenial(id: number): PermissionDenial | null {
+export function getPermissionDenial(id: number): PermissionDenial | null {
   const row = getDb().prepare("SELECT * FROM permission_denials WHERE id = ?").get(id) as PermissionDenialRow | null;
   return row ? rowToPermissionDenial(row) : null;
+}
+
+export function markPermissionDenialNotified(id: number, notifiedAt = Date.now()): PermissionDenial | null {
+  getDb().prepare("UPDATE permission_denials SET notified_at = ? WHERE id = ?").run(notifiedAt, id);
+  return getPermissionDenial(id);
 }
 
 function rowToPermissionDenial(row: PermissionDenialRow): PermissionDenial {
@@ -307,6 +233,19 @@ function rowToPermissionDenial(row: PermissionDenialRow): PermissionDenial {
 function normalizeText(value: string | null | undefined): string | null {
   const normalized = value?.trim();
   return normalized ? normalized : null;
+}
+
+function buildAuditDeniedDedupeKey(event: {
+  type?: string | null;
+  agentId?: string | null;
+  denied?: string | null;
+  reason?: string | null;
+}): string {
+  return ["audit.denied", event.type, event.agentId, event.denied, event.reason].map(normalizeDedupePart).join(":");
+}
+
+function normalizeDedupePart(value: string | null | undefined): string {
+  return (value ?? "-").trim().replace(/\s+/g, " ").slice(0, 240) || "-";
 }
 
 function normalizeNullableText(value: string | null | undefined): string | null {

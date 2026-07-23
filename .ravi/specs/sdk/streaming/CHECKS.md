@@ -7,6 +7,13 @@
 Estas verificações garantem que handlers streaming/process/interactive não
 voltam para o dispatcher single-shot.
 
+- Streaming, process, and interactive handlers MUST NOT enter the single-shot
+  dispatcher route table.
+- OpenAPI and SDK codegen MUST NOT expose CLI-only streaming handlers as normal
+  request/response operations.
+- Gateway stream channels MUST enforce auth, audit open/close, keepalive,
+  drop-tail backpressure behavior, and reconnect semantics.
+
 1. **Nenhum handler streaming/process/interactive escapa pra route-table**
 
    ```bash
@@ -75,12 +82,13 @@ voltam para o dispatcher single-shot.
 
 ### Regressões a Prevenir
 
-- **Bug que esta spec consertou:** request `/api/v1/events/stream` ficar
+- **Bug que esta spec consertou:** request `/api/v1/events/stream` MUST NOT
+  ficar
   pendurada eternamente sem audit. Garantir que adicionar handler streaming
   novo sem `@CliOnly()` (ou sem registrar como channel) seja erro de build,
   não erro silencioso em runtime.
 
-- **Vazamento de context-key:** stream que abre context-key e não fecha em
+- **Vazamento de context-key:** stream que abre context-key MUST fechar em
   desconexão deixa context vivo no DB. Quando implementar, garantir cleanup
   no `onclose` do socket SSE.
 

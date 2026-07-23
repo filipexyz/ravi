@@ -19,7 +19,7 @@ describe("Omni mention preparation", () => {
       participants,
     });
 
-    expect(prepared.text).toBe("@91015272759397 olha isso");
+    expect(prepared.text).toBe("@Ravi Bot olha isso");
     expect(prepared.mentions).toEqual([{ id: "91015272759397@lid", type: "user" }]);
     expect(prepared.resolved[0]).toMatchObject({
       id: "91015272759397@lid",
@@ -34,7 +34,7 @@ describe("Omni mention preparation", () => {
       participants,
     });
 
-    expect(prepared.text).toBe("oi @91015272759397");
+    expect(prepared.text).toBe("oi @Ravi Bot");
     expect(prepared.mentions).toEqual([{ id: "91015272759397@lid", type: "user" }]);
   });
 
@@ -45,7 +45,7 @@ describe("Omni mention preparation", () => {
       participants,
     });
 
-    expect(prepared.text).toBe("@5511999999999 olha isso");
+    expect(prepared.text).toBe("@Israel Nunes olha isso");
     expect(prepared.mentions).toEqual([{ id: "5511999999999@s.whatsapp.net", type: "user" }]);
   });
 
@@ -65,11 +65,11 @@ describe("Omni mention preparation", () => {
       participants,
     });
 
-    expect(prepared.text).toBe("@5511947879044 confere");
+    expect(prepared.text).toBe("@Luís Filipe confere");
     expect(prepared.mentions).toEqual([{ id: "5511947879044@s.whatsapp.net", type: "user" }]);
   });
 
-  it("prefers a trusted phone alias when the group member id is a raw WhatsApp LID", () => {
+  it("uses the native LID mention id when a group member has a distinct phone alias", () => {
     const prepared = prepareOmniMentionMessage({
       text: "@Luis confere",
       participants: [
@@ -81,12 +81,29 @@ describe("Omni mention preparation", () => {
       ],
     });
 
-    expect(prepared.text).toBe("@5511947879044 confere");
-    expect(prepared.mentions).toEqual([{ id: "5511947879044@s.whatsapp.net", type: "user" }]);
+    expect(prepared.text).toBe("@Luís Filipe confere");
+    expect(prepared.mentions).toEqual([{ id: "178035101794451@lid", type: "user" }]);
     expect(prepared.resolved[0]).toMatchObject({
-      id: "5511947879044@s.whatsapp.net",
+      id: "178035101794451@lid",
       displayName: "Luís Filipe",
     });
+  });
+
+  it("can emit native WhatsApp placeholders for outbound group delivery", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: "@Luis confere",
+      participants: [
+        {
+          platformUserId: "178035101794451",
+          normalizedPlatformUserId: "5511947879044",
+          displayName: "Luís Filipe",
+        },
+      ],
+      placeholderMode: "native",
+    });
+
+    expect(prepared.text).toBe("@178035101794451 confere");
+    expect(prepared.mentions).toEqual([{ id: "178035101794451@lid", type: "user" }]);
   });
 
   it("does not resolve partial inline names", () => {
@@ -105,8 +122,18 @@ describe("Omni mention preparation", () => {
       participants,
     });
 
-    expect(prepared.text).toBe("oi @91015272759397 e @910152727593970");
+    expect(prepared.text).toBe("oi @Ravi Bot e @910152727593970");
     expect(prepared.mentions).toEqual([{ id: "91015272759397@lid", type: "user" }]);
+  });
+
+  it("does not auto-resolve raw participant ids without a safe display label", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: "oi @91015272759397",
+      participants: [{ platformUserId: "91015272759397@lid" }],
+    });
+
+    expect(prepared.text).toBe("oi @91015272759397");
+    expect(prepared.mentions).toEqual([]);
   });
 
   it("does not resolve inline ids that are not participants", () => {
@@ -116,6 +143,30 @@ describe("Omni mention preparation", () => {
     });
 
     expect(prepared.text).toBe("oi @12345678901234");
+    expect(prepared.mentions).toEqual([]);
+  });
+
+  it("can resolve inline phone placeholders as WhatsApp mentions when enabled", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: "@5511947879044, cola isso no terminal pra ver:",
+      autoResolvePhoneNumbers: true,
+    });
+
+    expect(prepared.text).toBe("@5511947879044, cola isso no terminal pra ver:");
+    expect(prepared.mentions).toEqual([{ id: "5511947879044@s.whatsapp.net", type: "user" }]);
+    expect(prepared.resolved[0]).toMatchObject({
+      id: "5511947879044@s.whatsapp.net",
+      placeholder: "@5511947879044",
+      source: "inline",
+    });
+  });
+
+  it("keeps inline phone placeholders as plain text unless the WhatsApp fallback is enabled", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: "oi @5511947879044",
+    });
+
+    expect(prepared.text).toBe("oi @5511947879044");
     expect(prepared.mentions).toEqual([]);
   });
 

@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { Command, Group, Option } from "../decorators.js";
+import { Command, CommandAccess, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import {
   declareCommandReturns,
@@ -54,6 +54,21 @@ interface SelfContextSummary {
   revokedAt: number | null;
 }
 
+interface SelfActorSummary {
+  actorType: string | null;
+  contactId: string | null;
+  agentId: string | null;
+  platformIdentityId: string | null;
+  canonicalChatId: string | null;
+  rawSenderId: string | null;
+  normalizedSenderId: string | null;
+  senderId: string | null;
+  senderPhone: string | null;
+  sourceMessageId: string | null;
+  identityConfidence: number | null;
+  source: "context_metadata" | "environment" | "recent_message";
+}
+
 interface SelfSessionSummary {
   sessionKey: string;
   name: string | null;
@@ -62,6 +77,7 @@ interface SelfSessionSummary {
   runtimeProvider: string | null;
   runtimeSessionDisplayId: string | null;
   modelOverride: string | null;
+  effortOverride: string | null;
   thinkingLevel: string | null;
   channel: string | null;
   accountId: string | null;
@@ -150,6 +166,8 @@ interface SelfRecentSummary {
     contactId: string | null;
     agentId: string | null;
     platformIdentityId: string | null;
+    rawSenderId: string | null;
+    normalizedSenderId: string | null;
     mediaType: string | null;
     hasTranscription: boolean;
     createdAt: number;
@@ -180,6 +198,7 @@ interface SelfContextPacket {
   depth: SelfDepth;
   limit: number;
   identity: SelfContextSummary;
+  actor: SelfSection<SelfActorSummary>;
   session: SelfSection<SelfSessionSummary>;
   chat: SelfSection<SelfChatSummary>;
   route: SelfSection<SelfRouteSummary>;
@@ -197,11 +216,13 @@ interface SelfContextPacket {
 })
 export class SelfCommands {
   @Command({ name: "whoami", description: "Show the current agent/session identity" })
+  @CommandAccess({ kind: "read", resource: "self", action: "whoami", risk: "low" })
   whoami(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const packet = this.buildPacket({ depth: "summary", limit: 5 });
     const payload = {
       generatedAt: packet.generatedAt,
       identity: packet.identity,
+      actor: packet.actor,
       session: packet.session,
       chat: packet.chat,
       route: packet.route,
@@ -212,6 +233,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "context", description: "Show the full current self-context packet" })
+  @CommandAccess({ kind: "read", resource: "self", action: "context", risk: "low" })
   context(
     @Option({ flags: "--depth <depth>", description: "Depth: summary, normal, or full" }) depth?: string,
     @Option({ flags: "--limit <limit>", description: "Maximum recent messages to inspect" }) limit?: string,
@@ -223,6 +245,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "chat", description: "Show the current chat binding and participants" })
+  @CommandAccess({ kind: "read", resource: "self", action: "chat", risk: "low" })
   chat(
     @Option({ flags: "--depth <depth>", description: "Depth: summary, normal, or full" }) depth?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
@@ -234,6 +257,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "route", description: "Show route information that led to the current session" })
+  @CommandAccess({ kind: "read", resource: "self", action: "route", risk: "low" })
   route(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const packet = this.buildPacket({ depth: "normal", limit: 5 });
     const payload = packet.route;
@@ -242,6 +266,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "recent", description: "Show bounded recent message metadata for the current chat" })
+  @CommandAccess({ kind: "read", resource: "self", action: "recent", risk: "low" })
   recent(
     @Option({ flags: "--limit <limit>", description: "Maximum recent messages to inspect" }) limit?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
@@ -253,6 +278,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "permissions", description: "Show capabilities inherited by the current context" })
+  @CommandAccess({ kind: "read", resource: "self", action: "permissions", risk: "low" })
   permissions(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const packet = this.buildPacket({ depth: "summary", limit: 5 });
     const payload = packet.permissions;
@@ -261,6 +287,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "knowledge", description: "Show current knowledge integration status for this context" })
+  @CommandAccess({ kind: "read", resource: "self", action: "knowledge", risk: "low" })
   knowledge(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const packet = this.buildPacket({ depth: "summary", limit: 5 });
     const payload = packet.knowledge;
@@ -269,6 +296,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "explain", description: "Explain how Ravi resolved the current self-context" })
+  @CommandAccess({ kind: "read", resource: "self", action: "explain", risk: "low" })
   explain(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const packet = this.buildPacket({ depth: "full", limit: 5 });
     const payload = {
@@ -293,6 +321,7 @@ export class SelfCommands {
     const route = this.buildRouteSection(session.data, binding);
     const chat = this.buildChatSection(context, binding, chatRecord, options.depth);
     const recent = this.buildRecentSection(context, binding, chatRecord, options.limit);
+    const actor = this.buildActorSection(context, recent);
     const permissions = this.buildPermissionsSection(context);
     const knowledge = this.buildKnowledgeSection();
     const sessionSection: SelfSection<SelfSessionSummary> =
@@ -305,6 +334,7 @@ export class SelfCommands {
       depth: options.depth,
       limit: options.limit,
       identity: serializeContext(context),
+      actor,
       session: sessionSection,
       chat,
       route,
@@ -320,7 +350,7 @@ export class SelfCommands {
       ],
     };
 
-    packet.explain = buildExplainSteps({ context, session: packet.session, chat, route, recent, knowledge });
+    packet.explain = buildExplainSteps({ context, actor, session: packet.session, chat, route, recent, knowledge });
     return packet;
   }
 
@@ -385,6 +415,28 @@ export class SelfCommands {
       return { status: "partial", reason: `chat binding points to missing chat ${binding.chatId}`, data };
     }
     return { status: binding ? "ok" : "partial", reason: binding ? undefined : "using source fallback only", data };
+  }
+
+  private buildActorSection(
+    context: ContextRecord,
+    recent: SelfSection<SelfRecentSummary>,
+  ): SelfSection<SelfActorSummary> {
+    const fromMetadata = actorFromMetadata(context.metadata);
+    if (fromMetadata) return { status: actorStatus(fromMetadata), data: fromMetadata };
+
+    const fromEnv = actorFromEnv();
+    if (fromEnv) return { status: actorStatus(fromEnv), data: fromEnv };
+
+    const fromRecent = actorFromRecent(recent.data?.messages);
+    if (fromRecent) {
+      return {
+        status: "partial",
+        reason: "context did not carry actor metadata; using most recent non-agent message metadata",
+        data: fromRecent,
+      };
+    }
+
+    return { status: "missing", reason: "no actor metadata found in context, environment, or recent messages" };
   }
 
   private buildRouteSection(
@@ -468,6 +520,7 @@ export class SelfCommands {
     console.log(`Session: ${packet.identity.sessionName ?? packet.identity.sessionKey ?? "-"}`);
     console.log(`Context: ${packet.identity.contextId} (${packet.identity.kind})`);
     console.log(`Source: ${formatSource(packet.identity.source)}`);
+    console.log(`Actor: ${formatActor(packet.actor)}`);
     console.log(
       `Chat: ${formatSectionRef(packet.chat, (data) => data.chat?.title ?? data.chat?.id ?? data.binding?.chatId ?? "-")}`,
     );
@@ -478,6 +531,7 @@ export class SelfCommands {
 
   private printContext(packet: SelfContextPacket): void {
     this.printWhoami(packet);
+    this.printSection("Actor", packet.actor);
     this.printSection("Session", packet.session);
     this.printSection("Chat", packet.chat);
     this.printSection("Route", packet.route);
@@ -549,6 +603,7 @@ function serializeSession(session: SessionEntry): SelfSessionSummary {
     runtimeProvider: session.runtimeProvider ?? null,
     runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? null,
     modelOverride: session.modelOverride ?? null,
+    effortOverride: session.effortOverride ?? null,
     thinkingLevel: session.thinkingLevel ?? null,
     channel: session.channel ?? null,
     accountId: session.accountId ?? null,
@@ -628,10 +683,133 @@ function serializeMessageMetadata(message: MessageMetadata): SelfRecentSummary["
     contactId: message.contactId ?? null,
     agentId: message.agentId ?? null,
     platformIdentityId: message.platformIdentityId ?? null,
+    rawSenderId: message.rawSenderId ?? null,
+    normalizedSenderId: message.normalizedSenderId ?? null,
     mediaType: message.mediaType ?? null,
     hasTranscription: Boolean(message.transcription?.trim()),
     createdAt: message.createdAt,
   };
+}
+
+function actorFromMetadata(metadata: Record<string, unknown> | undefined): SelfActorSummary | null {
+  if (!metadata) return null;
+  const records = [
+    asRecord(metadata.actor),
+    asRecord(metadata.actorMetadata),
+    asRecord(metadata.currentActor),
+    metadata,
+  ].filter((record): record is Record<string, unknown> => Boolean(record));
+  for (const record of records) {
+    const actor = actorFromRecord(record, "context_metadata");
+    if (actor) return actor;
+  }
+  return null;
+}
+
+function actorFromEnv(): SelfActorSummary | null {
+  const env = process.env;
+  return actorFromRecord(
+    {
+      actorType: env.RAVI_ACTOR_TYPE,
+      contactId: env.RAVI_CONTACT_ID,
+      actorAgentId: env.RAVI_ACTOR_AGENT_ID,
+      platformIdentityId: env.RAVI_PLATFORM_IDENTITY_ID,
+      canonicalChatId: env.RAVI_CANONICAL_CHAT_ID,
+      rawSenderId: env.RAVI_RAW_SENDER_ID,
+      normalizedSenderId: env.RAVI_NORMALIZED_SENDER_ID,
+      senderId: env.RAVI_SENDER_ID,
+      senderPhone: env.RAVI_SENDER_PHONE,
+    },
+    "environment",
+  );
+}
+
+function actorFromRecent(messages: SelfRecentSummary["messages"] | undefined): SelfActorSummary | null {
+  for (const message of messages ?? []) {
+    if (message.actorType === "agent") continue;
+    const actor = actorFromRecord(
+      {
+        actorType: message.actorType,
+        contactId: message.contactId,
+        actorAgentId: message.agentId,
+        platformIdentityId: message.platformIdentityId,
+        canonicalChatId: message.canonicalChatId,
+        rawSenderId: message.rawSenderId,
+        normalizedSenderId: message.normalizedSenderId,
+        sourceMessageId: message.messageId,
+      },
+      "recent_message",
+    );
+    if (actor) return actor;
+  }
+  return null;
+}
+
+function actorFromRecord(record: Record<string, unknown>, source: SelfActorSummary["source"]): SelfActorSummary | null {
+  const actorType = stringField(record, "actorType") ?? stringField(record, "type");
+  const contactId = stringField(record, "contactId");
+  const agentId = stringField(record, "actorAgentId") ?? stringField(record, "agentId");
+  const platformIdentityId = stringField(record, "platformIdentityId");
+  const canonicalChatId = stringField(record, "canonicalChatId");
+  const rawSenderId = stringField(record, "rawSenderId");
+  const normalizedSenderId = stringField(record, "normalizedSenderId");
+  const senderId = stringField(record, "senderId");
+  const senderPhone = stringField(record, "senderPhone");
+  const sourceMessageId = stringField(record, "sourceMessageId") ?? stringField(record, "messageId");
+  const identityConfidence = numberField(record, "identityConfidence");
+
+  if (
+    !actorType &&
+    !contactId &&
+    !agentId &&
+    !platformIdentityId &&
+    !canonicalChatId &&
+    !rawSenderId &&
+    !normalizedSenderId &&
+    !senderId &&
+    !senderPhone &&
+    !sourceMessageId
+  ) {
+    return null;
+  }
+
+  return {
+    actorType: actorType ?? null,
+    contactId: contactId ?? null,
+    agentId: agentId ?? null,
+    platformIdentityId: platformIdentityId ?? null,
+    canonicalChatId: canonicalChatId ?? null,
+    rawSenderId: rawSenderId ?? null,
+    normalizedSenderId: normalizedSenderId ?? null,
+    senderId: senderId ?? null,
+    senderPhone: senderPhone ?? null,
+    sourceMessageId: sourceMessageId ?? null,
+    identityConfidence,
+    source,
+  };
+}
+
+function actorStatus(actor: SelfActorSummary): SectionStatus {
+  if (actor.contactId || actor.agentId || actor.platformIdentityId) return "ok";
+  if (actor.actorType && actor.actorType !== "unknown") return "ok";
+  return "partial";
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function stringField(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function numberField(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  return null;
 }
 
 function countBy<T>(items: T[], selector: (item: T) => string): Record<string, number> {
@@ -672,6 +850,7 @@ function isSensitiveKey(key: string): boolean {
 
 function buildExplainSteps(input: {
   context: ContextRecord;
+  actor: SelfSection<SelfActorSummary>;
   session: SelfSection<SelfSessionSummary>;
   chat: SelfSection<SelfChatSummary>;
   route: SelfSection<SelfRouteSummary>;
@@ -683,6 +862,13 @@ function buildExplainSteps(input: {
       step: "context",
       status: "ok",
       detail: `resolved context ${input.context.contextId} without exposing its context key`,
+    },
+    {
+      step: "actor",
+      status: input.actor.status,
+      detail: input.actor.data
+        ? formatActorData(input.actor.data)
+        : (input.actor.reason ?? "actor metadata unavailable"),
     },
     {
       step: "session",
@@ -719,6 +905,22 @@ function buildExplainSteps(input: {
       detail: input.knowledge.reason ?? "knowledge status unavailable",
     },
   ];
+}
+
+function formatActor(section: SelfSection<SelfActorSummary>): string {
+  if (!section.data) return `${section.status}${section.reason ? ` (${section.reason})` : ""}`;
+  return `${formatActorData(section.data)} [${section.status}]`;
+}
+
+function formatActorData(actor: SelfActorSummary): string {
+  const parts = [
+    actor.actorType ?? "unknown",
+    actor.contactId ? `contact:${actor.contactId}` : null,
+    actor.agentId ? `agent:${actor.agentId}` : null,
+    actor.platformIdentityId ? `identity:${actor.platformIdentityId}` : null,
+    !actor.contactId && actor.normalizedSenderId ? `sender:${actor.normalizedSenderId}` : null,
+  ].filter(Boolean);
+  return parts.join(" ");
 }
 
 function formatSource(source: ContextRecord["source"] | null): string {

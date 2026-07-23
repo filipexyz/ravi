@@ -4,7 +4,7 @@
 
 import "reflect-metadata";
 import { z } from "zod";
-import { Group, Command, Arg, Option, Returns } from "../decorators.js";
+import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { cliOffsetPaginationSchema, commandTargetSchema } from "../return-schemas.js";
@@ -243,6 +243,7 @@ function buildSettingsListPayload(showLegacy: boolean) {
 })
 export class SettingsCommands {
   @Command({ name: "list", description: "List live settings (legacy account.* hidden by default)" })
+  @CommandAccess({ kind: "read", resource: "settings", action: "list", risk: "low" })
   @Returns(settingsListReturnSchema)
   list(
     @Option({ flags: "--legacy", description: "Show legacy account.* settings shadowed by instances" })
@@ -299,6 +300,7 @@ export class SettingsCommands {
   }
 
   @Command({ name: "get", description: "Get a setting value" })
+  @CommandAccess({ kind: "read", resource: "settings", action: "get", risk: "low" })
   @Returns(settingsGetReturnSchema)
   get(
     @Arg("key", { description: "Setting key" }) key: string,
@@ -332,6 +334,7 @@ export class SettingsCommands {
   }
 
   @Command({ name: "set", description: "Set a setting value" })
+  @CommandAccess({ kind: "mutate", resource: "settings", action: "set", risk: "medium" })
   @Returns(settingsMutationReturnSchema)
   set(
     @Arg("key", { description: "Setting key" }) key: string,
@@ -382,6 +385,7 @@ export class SettingsCommands {
   }
 
   @Command({ name: "delete", description: "Delete a setting" })
+  @CommandAccess({ kind: "mutate", resource: "settings", action: "delete", risk: "destructive" })
   @Returns(settingsMutationReturnSchema)
   delete(
     @Arg("key", { description: "Setting key" }) key: string,

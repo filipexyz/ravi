@@ -1,7 +1,7 @@
 ---
 name: video
 description: |
-  Analisa vídeos do YouTube ou arquivos locais via Gemini. Use quando o usuário quiser:
+  Analisa vídeos do YouTube ou arquivos locais. YouTube usa legendas primeiro e Gemini como fallback. Use quando o usuário quiser:
   - Assistir/analisar um vídeo do YouTube
   - Transcrever um vídeo
   - Entender o conteúdo de um vídeo
@@ -10,7 +10,7 @@ description: |
 
 # Video Analysis
 
-Analisa vídeos usando a API do Gemini. Suporta URLs do YouTube (públicos) e arquivos locais.
+Analisa vídeos do YouTube usando legendas/captions via `yt-dlp` como caminho padrão por custo e latência. Usa Gemini como fallback quando não há legenda, quando a extração falha, ou quando o usuário pede análise visual/resumo via `--strategy gemini` ou `--force-analyze`. Arquivos locais seguem via Gemini.
 
 ## Como usar
 
@@ -18,6 +18,8 @@ Analisa vídeos usando a API do Gemini. Suporta URLs do YouTube (públicos) e ar
 ```bash
 ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
+
+Por padrão, URLs do YouTube tentam `pt-BR`, `pt` e `en` em legendas manuais/automáticas antes de chamar Gemini.
 
 ### Analisar com output específico
 ```bash
@@ -27,6 +29,12 @@ ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" -o ./video-analysi
 ### Analisar com prompt custom
 ```bash
 ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" -p "Foque nos argumentos técnicos apresentados"
+```
+
+Prompt custom é aplicado no caminho Gemini. Se precisar garantir resumo, tópicos ou descrição visual, force Gemini:
+
+```bash
+ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" --strategy gemini
 ```
 
 ### Analisar arquivo local
@@ -39,10 +47,13 @@ ravi video analyze /path/to/video.mp4
 O comando salva um `.md` no diretório atual com:
 
 - **Título** do vídeo
+- **Duração** e **capítulos**, quando disponíveis no YouTube
 - **Resumo** completo do conteúdo
 - **Tópicos** principais abordados
 - **Transcrição** de toda a fala
 - **Descrição visual** timestamped (o que acontece visualmente)
+
+No caminho por legendas, o comando não gera resumo/tópicos/descrição visual para evitar chamada ao modelo; ele prioriza título, duração, capítulos e transcrição fiel.
 
 ## Fluxo recomendado
 
@@ -53,8 +64,9 @@ O comando salva um `.md` no diretório atual com:
 ## Limitações
 
 - Só vídeos **públicos** do YouTube (não funciona com privados/não listados)
+- Caminho de legenda requer `yt-dlp` instalado no ambiente
 - Vídeos muito longos (>1h) podem demorar ou exceder limites de token
-- Requer `GEMINI_API_KEY` configurada no `~/.ravi/.env`
+- Requer `GEMINI_API_KEY` configurada no `~/.ravi/.env` apenas quando cair em Gemini ou quando usar arquivo local
 - Formatos locais suportados: mp4, mpeg, mov, avi, flv, webm, wmv, 3gpp
 
 ## Configuração

@@ -567,6 +567,11 @@ export function dbUpsertTagBinding(input: UpsertTagBindingInput): TagBinding {
   const existing = getExistingBindingRow(tag.id, assetType, assetId);
   const previous = existing ? rowToTagBinding(existing) : null;
   const source = input.source === undefined && previous ? previous.source : normalizeTagSource(input.source);
+  if (previous && slug.startsWith("policy.") && source !== previous.source) {
+    throw new Error(
+      `Cannot change source for policy tag binding ${slug} on ${assetType}:${assetId}; detach and reattach with an explicit audit trail.`,
+    );
+  }
   const metadata = input.metadata === undefined && previous ? previous.metadata : input.metadata;
   const metadataJson = stringifyRecord(metadata);
 

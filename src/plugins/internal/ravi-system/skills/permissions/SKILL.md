@@ -1,344 +1,141 @@
 ---
 name: permissions-manager
 description: |
-  Gerencia permissões REBAC do sistema Ravi. Use quando o usuário quiser:
-  - Ver, conceder ou revocar permissões de agents
-  - Verificar se um agent tem permissão pra algo
-  - Sincronizar permissões com configs dos agents
-  - Entender o modelo de permissões
+  Inspeciona a autorização provider-runtime do Ravi. Use quando o usuário quiser:
+  - Ver a cadeia ativa de providers de permissão
+  - Verificar uma decisão provider-runtime
+  - Materializar capabilities de um subject
+  - Resolver denials com profiles/tags provider-owned
+  - Aplicar autorização recorrente sem listas longas de capability
 ---
 
-# Permissions Manager (REBAC)
+# Permissions Manager
 
-Permissões no Ravi são relações: **(sujeito) tem (relação) sobre (objeto)**.
-
-Exemplo: `(agent:dev) access (session:dev-*)` — o agent dev pode acessar sessões que começam com "dev-".
-
-## IMPORTANTE: Object Types
-
-O object type no grant DEVE corresponder ao que o engine checa. Se errar o type, a permissão não funciona.
-
-**Regra:** Comandos CLI usam `group:<nome-do-grupo>`. Sessões usam `session:<pattern>`. Sistema usa `system:*`.
-
-## Referência Rápida de Grants
-
-### Acesso a grupos de comandos CLI (scope: admin)
-
-O scope `admin` no decorator `@Group` checa `execute` no object type `group`:
+O Ravi autoriza pelo **Permission Provider Runtime**. A superfície normal de
+inspeção é:
 
 ```bash
-# Formato: ravi permissions grant agent:<id> execute group:<grupo>
-
-# Daemon (restart, status, logs)
-ravi permissions grant agent:dev execute group:daemon
-
-# Agents (create, delete, set, tools, bash)
-ravi permissions grant agent:dev execute group:agents
-
-# Sessions (list, send, ask, read, reset, delete...)
-ravi permissions grant agent:dev execute group:sessions
-
-# Contacts (list, add, approve, block, tags)
-ravi permissions grant agent:dev execute group:contacts
-
-# Routes (add, remove, set, list)
-ravi permissions grant agent:dev execute group:routes
-
-# Settings (list, get, set)
-ravi permissions grant agent:dev execute group:settings
-
-# Channels (status, start, stop, restart)
-ravi permissions grant agent:dev execute group:channels
-
-# Heartbeat (set, enable, disable, trigger)
-ravi permissions grant agent:dev execute group:heartbeat
-
-# Matrix (add, remove, send, rooms)
-ravi permissions grant agent:dev execute group:matrix
-
-# WhatsApp groups (create, members, invite)
-ravi permissions grant agent:dev execute group:whatsapp.group
-
-# Service (install, uninstall, start, stop)
-ravi permissions grant agent:dev execute group:service
+ravi permissions status
+ravi permissions check --permission <perm> --object-type <type> --object-id <id>
+ravi permissions materialize --subject-type <type> --subject-id <id>
 ```
 
-**Subcomando específico** — dá acesso a só um comando dentro do grupo:
-```bash
-# Só restart, não status/logs
-ravi permissions grant agent:dev execute group:daemon_restart
-
-# Só list, não create/delete
-ravi permissions grant agent:dev execute group:agents_list
-```
-
-### Superadmin (scope: superadmin)
+Fluxo agent-first para destravar um denial:
 
 ```bash
-# Acesso total — permissions, e todos os outros grupos
-ravi permissions grant agent:dev admin system:*
+ravi permissions resolve <denial-id>
+ravi permissions resolve <denial-id> --apply
 ```
 
-### Sessões (inline scope checks)
+Quando não existir `denialId`, monte um plano explícito:
 
 ```bash
-# Acessar sessões (ler, enviar)
-ravi permissions grant agent:dev access session:dev-*
+ravi permissions allow <profile> \
+  --to agent:<executor-agent-id> \
+  --capabilities <permission>:<objectType>:<objectId>
 
-# Modificar sessões (reset, delete, rename, set-model)
-ravi permissions grant agent:dev modify session:dev-*
+ravi permissions allow <profile> ... --apply
 ```
 
-### Contatos (scope: writeContacts)
+`allow` e `resolve` fazem dry-run por padrão. Só persistem com `--apply`.
+Eles não gravam num grafo legado: orquestram superfícies provider-owned
+existentes, como permission tags e `agent.defaults.runtimePermissions`.
+Contact policy tags existem como legado/user-overlay; não são o caminho padrão
+para destravar tool authority em turnos multiplayer.
+
+Só use capability solta quando ainda não existir profile adequado. Nesse caso,
+coloque a capability em `--capabilities` como bootstrap de um profile estreito.
+`full-access` é break-glass e exige aprovação explícita do operador.
+
+Contrato de guidance:
+
+- `canonicalCapability`: capability técnica faltante.
+- `inspectCommands`: comandos usados para provar o estado atual.
+- `preferredPath`: profile/tag provider-owned recomendado.
+- `rawCapabilityFallback`: capability crua só como bootstrap temporário.
+- `breakGlass`: aviso explícito para não pedir `full-access`.
+- `requestShape`: forma correta de pedir autorização ao operador.
+
+Ao consumir JSON de denial/check, use esse envelope. Não parseie frase de erro
+para decidir o que pedir.
+
+Regras:
+
+- `ravi permissions status/check/materialize` são inspeção provider-runtime.
+- `ravi permissions allow/resolve` são orquestração provider-owned com dry-run
+  obrigatório por padrão e `--apply` explícito.
+- `ravi agents permissions` grava em `agent.defaults.runtimePermissions`.
+  Use diretamente apenas para correção agent-only; para fluxos iniciados por
+  humanos, prefira `ravi permissions allow/resolve`.
+- `runtime-bootstrap`, `agent-default-capabilities`,
+  `agent-identity-permissions` e `contact-policy-permissions` são os
+  materializers padrão.
+- `operator-control` é o authorization provider explícito para operador local;
+  ele não materializa capabilities de agent e não autoriza execução de tools.
+- O contexto efetivo de um turno externo usa `authorityMode=agent-identity`:
+  capabilities do executor agent projetadas em
+  `agent_identity:<agent>:<compartment>`, intersectadas com turn caps quando
+  existirem.
+- Ator/contact e chat/surface são provenance, invocação e compartimento por
+  default; eles não são branches obrigatórios de tool authority. Ator
+  desconhecido continua falhando fechado.
+- O modelo antigo `agent ∩ actor ∩ surface ∩ turn` está aposentado na criação
+  de contexto runtime; trate menções a ele como histórico/test fixture.
+- Tags são labels; elas não concedem autoridade sem provider explícito.
+- Tags de permissão só concedem autoridade quando a tag definition é
+  provider-owned (`kind=system`, `source=permissions`) e declara capabilities.
+- Não peça `full-access` para resolver denial operacional comum.
+
+Capability format:
+
+```text
+<permission>:<objectType>:<objectId>
+```
+
+Exemplos:
 
 ```bash
-# Criar/aprovar/bloquear contatos
-ravi permissions grant agent:dev write_contacts system:*
-
-# Ler contatos das próprias sessões
-ravi permissions grant agent:dev read_own_contacts system:*
-
-# Ler contatos com tag específica
-ravi permissions grant agent:dev read_tagged_contacts system:leads
+ravi permissions materialize --subject-type agent --subject-id main --json
+ravi permissions materialize --subject-type agent_identity --subject-id <agent-id>:chat:<chat-id> --json
+ravi permissions materialize --subject-type contact --subject-id <contact-id> --json
+ravi permissions check --permission view --object-type agent --object-id worker --local-operator
+ravi permissions resolve <denial-id>
+ravi permissions allow image-generation --to agent:image-agent --capabilities mutate:image:generate
+ravi tags show permission-family --json
 ```
 
-### Grupos que NÃO precisam de grant (scope: open/resource)
+CLI command capabilities:
 
-Estes funcionam pra qualquer agent sem grant:
-- `sessions` (open) — mas comandos de modificação checam session scope inline
-- `media` (open)
-- `react` (open)
-- `stickers` (open)
-- `tools` (open)
-- `transcribe` (open)
-- `video` (open)
-- `whatsapp.dm` (open)
-- `cron` (resource) — checa ownership do recurso
-- `triggers` (resource) — checa ownership do recurso
+- Comandos decorados com `@CommandAccess` usam capabilities semânticas:
+  `<read|mutate>:<resource>:<action>`.
+- Exemplos corretos: `read:skills:show`, `read:self:permissions`,
+  `read:tasks.profiles:list`, `read:tasks.profiles:*`, `read:cron:show`.
+- `execute:group:<group>` e `execute:group:<group>_<command>` existem como
+  compatibilidade, mas não são o formato recomendado para novas instruções.
+- A capability canônica indicada pelo denial deve bastar para repetir o mesmo
+  comando. Nunca peça `execute:group:*` depois que o grant semântico já foi
+  aplicado; isso indica regressão no pipeline de autorização.
+- Evite formato com `resource` e `action` fundidos por ponto. O formato
+  canônico separa a action no terceiro segmento, como `read:skills:show`.
 
-## ERROS COMUNS
+Ao orientar outro agente, responda com:
 
-❌ **ERRADO** — usar `system:daemon` pra liberar o grupo daemon:
-```bash
-ravi permissions grant agent:dev execute system:daemon
-```
-Isso não funciona! O engine checa `group:daemon`, não `system:daemon`.
+1. a capability canônica que faltou;
+2. qual ponto bloqueou, se disponível: agent identity/executor, ator
+   desconhecido, turn cap, provider runtime ou legado actor/surface;
+3. o profile/tag provider-owned recomendado para `agent:<executor>`;
+4. o comando `ravi permissions resolve <denial-id>` quando houver denial id;
+5. aviso claro se a alternativa for break-glass.
 
-✅ **CERTO:**
-```bash
-ravi permissions grant agent:dev execute group:daemon
-```
+Forma recomendada de pedido:
 
-❌ **ERRADO** — usar `admin` pra dar acesso a um grupo específico:
-```bash
-ravi permissions grant agent:dev admin group:daemon
-```
-`admin` só funciona com `system:*` (superadmin total).
-
-✅ **CERTO** — usar `execute`:
-```bash
-ravi permissions grant agent:dev execute group:daemon
+```text
+Preciso do profile/tag <slug> para <workflow> em <escopo>.
+Evidência: faltou <canonicalCapability>; inspecionei com <command>.
+TTL: temporário por padrão; permanente só se o operador explicitar.
 ```
 
-❌ **ERRADO** — confundir `group` com `executable`:
-```bash
-ravi permissions grant agent:dev execute group:*   # libera comandos CLI, NÃO executáveis
-```
-
-✅ **CERTO** — object types separados:
-```bash
-ravi permissions grant agent:dev execute group:*        # comandos CLI
-ravi permissions grant agent:dev execute executable:*   # executáveis do sistema
-```
-
-❌ **ERRADO** — relação errada pra executáveis:
-```bash
-ravi permissions grant agent:dev use executable:git   # "use" é pra SDK tools
-```
-
-✅ **CERTO:**
-```bash
-ravi permissions grant agent:dev execute executable:git  # executáveis usam "execute"
-ravi permissions grant agent:dev use tool:Bash           # SDK tools usam "use"
-```
-
-### SDK Tools (use tool:*)
-
-Controla quais SDK tools um agent pode usar:
-
-```bash
-# Permitir tool específica
-ravi permissions grant agent:dev use tool:Bash
-ravi permissions grant agent:dev use tool:Read
-
-# Permitir TODAS as tools (bypass)
-ravi permissions grant agent:dev use tool:*
-
-# Verificar
-ravi permissions check agent:dev use tool:Bash
-```
-
-SDK tools disponíveis: `Bash`, `Read`, `Edit`, `Write`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `Task`, `TaskOutput`, `TaskStop`, `TodoWrite`, `NotebookEdit`, `AskUserQuestion`, `EnterPlanMode`, `ExitPlanMode`, `EnterWorktree`, `Skill`, `TeamCreate`, `TeamDelete`, `SendMessage`, `LSP`, `ToolSearch`.
-
-### Tool Groups (use toolgroup:*)
-
-Em vez de dar grant tool por tool, use **tool groups** pra conceder acesso a um conjunto de tools de uma vez:
-
-```bash
-# Conceder um grupo
-ravi permissions grant agent:dev use toolgroup:read-only
-
-# Conceder todos os grupos
-ravi permissions init agent:dev tool-groups
-
-# Revocar um grupo
-ravi permissions revoke agent:dev use toolgroup:read-only
-
-# Verificar — o check resolve transparentemente
-ravi permissions check agent:dev use tool:Read   # ✓ se tem toolgroup:read-only
-```
-
-**Grupos disponíveis:**
-
-| Grupo | Tools |
-|---|---|
-| `read-only` | Read, Glob, Grep, WebFetch, WebSearch, LSP, ToolSearch |
-| `write` | Edit, Write, NotebookEdit |
-| `execute` | Bash, Task, TaskOutput, TaskStop |
-| `plan` | EnterPlanMode, ExitPlanMode, AskUserQuestion, TodoWrite |
-| `teams` | TeamCreate, TeamDelete, SendMessage |
-| `navigate` | EnterWorktree, Skill |
-
-**Como funciona:** Quando o engine checa `can(agent:X, use, tool, Read)`, se não encontra grant direto pra `tool:Read`, verifica se o agent tem algum `toolgroup` que inclui `Read`. Se sim, permite.
-
-**Combina com grants individuais:** Um agent pode ter `toolgroup:read-only` + `tool:Bash` — os dois se somam.
-
-### Executáveis do sistema (execute executable:*)
-
-Controla quais binários do sistema um agent pode rodar via Bash:
-
-```bash
-# Permitir executável específico
-ravi permissions grant agent:dev execute executable:git
-ravi permissions grant agent:dev execute executable:node
-ravi permissions grant agent:dev execute executable:ravi
-
-# Permitir TODOS os executáveis (bypass)
-ravi permissions grant agent:dev execute executable:*
-
-# Verificar
-ravi permissions check agent:dev execute executable:git
-```
-
-### Templates (atalhos)
-
-```bash
-# SDK tools padrão (uma relação por tool)
-ravi permissions init agent:dev sdk-tools
-
-# Todas as SDK tools (wildcard)
-ravi permissions init agent:dev all-tools
-
-# Todos os tool groups (read-only, write, execute, plan, teams, navigate)
-ravi permissions init agent:dev tool-groups
-
-# Executáveis seguros (git, node, bun, ravi, etc.)
-ravi permissions init agent:dev safe-executables
-
-# Cobertura completa: wildcards em TODOS os object types reconhecidos pelo engine
-# (tool, executable, toolgroup, agent, contact, cron, group, session, system, team, trigger).
-# Use quando o agent precisa operar livremente em todas as superfícies (sessions, contatos,
-# triggers, crons, agents, system admin), não só rodar tools SDK + binários do sistema.
-ravi permissions init agent:dev full-access
-```
-
-`full-access` significa "permitido pelo Ravi". Ele não promete que hooks globais do provider, policies locais, RTK, Codex/Claude PreToolUse ou outras integrações externas vão permitir o comando final. Se `permissions check` retorna permitido mas a tool ainda falha, trate como fronteira de runtime/hook e investigue a mensagem de denial antes de adicionar mais grants.
-
-> **Nota histórica:** antes deste PR, `full-access` aplicava apenas `use tool:*` + `execute executable:*` (2 grants) — o nome prometia "tudo" mas deixava de fora as superfícies in-process do REBAC (sessions, contacts, agents, etc), forçando o operador a aplicar 24 wildcards adicionais via `permissions grant`. Agora `full-access` cobre os 27 pares (relation, objectType) válidos em um único comando.
-
-## Comandos
-
-### Listar permissões
-```bash
-# Todas
-ravi permissions list
-
-# De um agent específico
-ravi permissions list --subject agent:dev
-
-# De um tipo de objeto
-ravi permissions list --object group:contacts
-
-# Por relação
-ravi permissions list --relation access
-
-# Por source
-ravi permissions list --source manual
-```
-
-### Conceder permissão
-```bash
-ravi permissions grant <sujeito> <relação> <objeto>
-```
-
-### Revocar permissão
-```bash
-ravi permissions revoke <sujeito> <relação> <objeto>
-```
-
-### Verificar permissão
-```bash
-ravi permissions check <sujeito> <permissão> <objeto>
-```
-
-Verifica se a permissão é resolvida (incluindo wildcards e admin).
-
-```bash
-# Dev pode restartar o daemon?
-ravi permissions check agent:dev execute group:daemon
-
-# Dev pode acessar sessão dev-grupo1?
-ravi permissions check agent:dev access session:dev-grupo1
-
-# Main é superadmin?
-ravi permissions check agent:main admin system:*
-```
-
-### Sincronizar com configs
-```bash
-ravi permissions sync
-```
-
-Re-lê as configs dos agents e regenera as relações `source=config`. Relações manuais não são afetadas.
-
-### Limpar permissões
-```bash
-# Limpar só manuais
-ravi permissions clear
-
-# Limpar TUDO (inclusive config — rode sync depois)
-ravi permissions clear --all
-```
-
-## Wildcards
-
-Wildcards só funcionam no final do object ID:
-- `*` — tudo
-- `dev-*` — tudo que começa com "dev-"
-- ❌ `*-dev` ou `a*b` — inválidos
-
-## Sources
-
-- `config` — Geradas automaticamente a partir da config dos agents (re-sync no boot)
-- `manual` — Criadas via CLI, persistem entre restarts
-
-## Como Funciona a Resolução
-
-Quando o engine verifica `can(agent:dev, execute, group:daemon)`:
-
-1. Agent é superadmin? → checa `(agent:dev, admin, system:*)` → sim = allowed
-2. Relação direta? → checa `(agent:dev, execute, group:daemon)` → sim = allowed
-3. Wildcard? → checa `(agent:dev, execute, group:*)` → sim = allowed
-4. Pattern match? → checa patterns como `group:dae*` → match = allowed
-5. **Tool group?** → se objectType é `tool`, checa se o agent tem algum `toolgroup` que contém essa tool → sim = allowed
-6. Nenhum match → denied
+Para denials com `authorityMode=agent-identity`, não peça grant para cada
+contato ou chat só porque `actorCapabilityCount`/`surfaceCapabilityCount` é 0.
+Isso é esperado: o fix recorrente é no agent executor/agent identity, salvo se
+o erro for ator desconhecido ou uma policy de invocação explícita.

@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   assertRuntimeCompatibility,
   createRuntimeProvider,
+  DEFAULT_RUNTIME_PROVIDER_ID,
   getRuntimeCompatibilityIssues,
   listRegisteredRuntimeProviderIds,
   registerRuntimeProvider,
@@ -10,6 +11,13 @@ import {
 import type { RuntimeProvider } from "./types.js";
 
 describe("runtime compatibility preflight", () => {
+  it("uses Codex as the default runtime provider", () => {
+    expect(DEFAULT_RUNTIME_PROVIDER_ID).toBe("codex");
+    expect(createRuntimeProvider().id).toBe("codex");
+    expect(listRegisteredRuntimeProviderIds()).toContain("claude");
+    expect(listRegisteredRuntimeProviderIds()).toEqual(expect.arrayContaining(["codex", "claude", "pi"]));
+  });
+
   it("allows Claude providers to satisfy restricted tool access", () => {
     const provider = createRuntimeProvider("claude");
 
@@ -122,5 +130,10 @@ describe("runtime compatibility preflight", () => {
     } finally {
       unregisterRuntimeProvider("test-provider");
     }
+  });
+
+  it("keeps built-in runtime providers registered", () => {
+    expect(() => unregisterRuntimeProvider("codex")).toThrow("Cannot unregister built-in runtime provider 'codex'");
+    expect(createRuntimeProvider("codex").id).toBe("codex");
   });
 });

@@ -56,6 +56,24 @@ Expected:
 - matched rules include the tag reason;
 - inherited matches are only present when the rule allows inherited tags.
 
+## Permission Policy Boundary Smoke
+
+```bash
+ravi tags search --tag policy.profile.trusted-dev --json
+ravi permissions policies dry-run --json
+```
+
+Expected:
+
+- policy tags do not grant authority by themselves;
+- dry-run shows explicit relation tuples before any write;
+- generated permission grants have `source=policy:<rule-id>`;
+- auto-generated policy tags are ignored unless the permission policy rule
+  explicitly accepts that source.
+- `policy.*` bindings include trusted source, creator, created context, and
+  binding id/version;
+- re-attaching a `policy.*` tag does not silently overwrite trust provenance.
+
 ## Local Tag Debt Scan
 
 ```bash

@@ -37,30 +37,23 @@ describe("ConsoleApiClient", () => {
       if (path === "/api/cli/auth/config") {
         return jsonResponse({
           configured: true,
-          clientId: "client_123",
-          scopes: ["openid", "profile", "email"],
+          clientId: "ravi-cli",
+          mode: "console_device",
+          scopes: [],
           endpoints: {
-            deviceAuthorization: "https://api.workos.com/user_management/authorize/device",
-            token: "https://api.workos.com/user_management/authenticate",
+            deviceAuthorization: "https://console.example/api/cli/auth/device",
+            token: null,
           },
         });
       }
-      if (url === "https://api.workos.com/user_management/authorize/device") {
+      if (path === "/api/cli/auth/device") {
         return jsonResponse({
           device_code: "device-secret",
           user_code: "ABC",
-          verification_uri: "https://console.example/device",
-          verification_uri_complete: "https://console.example/device?user_code=ABC",
+          verification_uri: "https://console.example/cli/authorize",
+          verification_uri_complete: "https://console.example/cli/authorize?user_code=ABC",
           expires_in: 600,
           interval: 1,
-        });
-      }
-      if (url === "https://api.workos.com/user_management/authenticate") {
-        return jsonResponse({
-          access_token: "provider-secret",
-          refresh_token: "provider-refresh-secret",
-          token_type: "Bearer",
-          expires_in: 900,
         });
       }
       if (path === "/api/cli/auth/exchange") {
@@ -91,16 +84,14 @@ describe("ConsoleApiClient", () => {
 
     const config = await client.getAuthConfig();
     const device = await client.startDeviceAuthorization(config);
-    const providerToken = await client.pollDeviceToken(config, device.deviceCode);
     const credentials = await client.exchange({
       installationId: "ins_123",
-      workosAccessToken: providerToken.accessToken,
+      deviceCode: device.deviceCode,
     });
     const me = await client.me("access-secret");
 
-    expect(config.clientId).toBe("client_123");
+    expect(config.clientId).toBe("ravi-cli");
     expect(device.userCode).toBe("ABC");
-    expect(providerToken.accessToken).toBe("provider-secret");
     expect(credentials).toMatchObject({
       consoleUrl: "https://console.example",
       installationId: "ins_123",
@@ -114,26 +105,15 @@ describe("ConsoleApiClient", () => {
       {
         url: "https://console.example/api/cli/auth/config",
         method: "GET",
-        headers: { Accept: "application/json" },
+        headers: { Accept: "application/json", "x-ravi-cli-auth-flow": "console_device" },
         body: null,
       },
       {
-        url: "https://api.workos.com/user_management/authorize/device",
+        url: "https://console.example/api/cli/auth/device",
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded" },
         body: {
-          client_id: "client_123",
-          scope: "openid profile email",
-        },
-      },
-      {
-        url: "https://api.workos.com/user_management/authenticate",
-        method: "POST",
-        headers: { Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded" },
-        body: {
-          grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-          device_code: "device-secret",
-          client_id: "client_123",
+          client_id: "ravi-cli",
         },
       },
       {
@@ -142,7 +122,7 @@ describe("ConsoleApiClient", () => {
         headers: { Accept: "application/json", "Content-Type": "application/json" },
         body: {
           installationId: "ins_123",
-          workosAccessToken: "provider-secret",
+          deviceCode: "device-secret",
         },
       },
       {

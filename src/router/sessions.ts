@@ -44,6 +44,7 @@ interface SessionRow {
   name: string | null;
   sdk_session_id: string | null;
   runtime_provider: string | null;
+  runtime_provider_override: string | null;
   runtime_session_json: string | null;
   runtime_session_display_id: string | null;
   agent_id: string;
@@ -60,6 +61,7 @@ interface SessionRow {
   last_thread_id: string | null;
   last_context: string | null;
   model_override: string | null;
+  effort_override: string | null;
   thinking_level: string | null;
   queue_mode: string | null;
   queue_debounce_ms: number | null;
@@ -88,6 +90,7 @@ function rowToEntry(row: SessionRow): SessionEntry {
     sessionKey: row.session_key,
     name: row.name ?? undefined,
     runtimeProvider: row.runtime_provider ?? undefined,
+    runtimeProviderOverride: row.runtime_provider_override ?? undefined,
     runtimeSessionParams,
     runtimeSessionDisplayId: row.runtime_session_display_id ?? undefined,
     providerSessionId,
@@ -106,6 +109,7 @@ function rowToEntry(row: SessionRow): SessionEntry {
     lastThreadId: row.last_thread_id ?? undefined,
     lastContext: row.last_context ?? undefined,
     modelOverride: row.model_override ?? undefined,
+    effortOverride: (row.effort_override ?? undefined) as SessionEntry["effortOverride"],
     thinkingLevel: row.thinking_level as SessionEntry["thinkingLevel"],
     queueMode: row.queue_mode as SessionEntry["queueMode"],
     queueDebounceMs: row.queue_debounce_ms ?? undefined,
@@ -142,6 +146,7 @@ interface SessionStatements {
   updateSdkId: Statement;
   updateProviderState: Statement;
   updateRuntimeProviderOnly: Statement;
+  updateRuntimeProviderOverride: Statement;
   clearProviderState: Statement;
   updateTokens: Statement;
   updateName: Statement;
@@ -154,7 +159,38 @@ interface SessionStatements {
   updateDisplayName: Statement;
   updateContext: Statement;
   updateModelOverride: Statement;
+  updateEffortOverride: Statement;
   updateThinkingLevel: Statement;
+}
+
+export interface SessionTurnUsage {
+  runId: string | null;
+  status: string;
+  startedAt: number;
+  completedAt: number | null;
+  durationMs: number | null;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  effectiveContextTokens: number;
+  costUsd: number;
+}
+
+export interface SessionRecentTurnUsage {
+  windowMs: number;
+  completeTurns: number;
+  inputTokensAvg: number;
+  outputTokensAvg: number;
+  effectiveContextTokensAvg: number;
+  effectiveContextTokensMax: number;
+  durationMsAvg: number | null;
+  costUsdTotal: number;
+}
+
+export interface SessionTurnUsageSummary {
+  lastTurn: SessionTurnUsage | null;
+  recent: SessionRecentTurnUsage;
 }
 
 let stmts: SessionStatements | null = null;
@@ -177,19 +213,19 @@ function getStatements(): SessionStatements {
   stmts = {
     upsert: db.prepare(`
       INSERT INTO sessions (
-        session_key, name, sdk_session_id, runtime_provider, runtime_session_json, runtime_session_display_id, agent_id, agent_cwd,
+        session_key, name, sdk_session_id, runtime_provider, runtime_provider_override, runtime_session_json, runtime_session_display_id, agent_id, agent_cwd,
         chat_type, channel, account_id, group_id, subject, display_name,
         last_channel, last_to, last_account_id, last_thread_id,
-        model_override, thinking_level,
+        model_override, effort_override, thinking_level,
         queue_mode, queue_debounce_ms, queue_cap,
         input_tokens, output_tokens, total_tokens, context_tokens,
         system_sent, aborted_last_run, compaction_count,
         created_at, updated_at
       ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?,
-        ?, ?,
+        ?, ?, ?,
         ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?,
@@ -199,6 +235,7 @@ function getStatements(): SessionStatements {
         name = COALESCE(excluded.name, sessions.name),
         sdk_session_id = COALESCE(excluded.sdk_session_id, sessions.sdk_session_id),
         runtime_provider = COALESCE(excluded.runtime_provider, sessions.runtime_provider),
+        runtime_provider_override = COALESCE(excluded.runtime_provider_override, sessions.runtime_provider_override),
         runtime_session_json = COALESCE(excluded.runtime_session_json, sessions.runtime_session_json),
         runtime_session_display_id = COALESCE(excluded.runtime_session_display_id, sessions.runtime_session_display_id),
         chat_type = COALESCE(excluded.chat_type, sessions.chat_type),
@@ -211,6 +248,7 @@ function getStatements(): SessionStatements {
         last_account_id = COALESCE(excluded.last_account_id, sessions.last_account_id),
         last_thread_id = COALESCE(excluded.last_thread_id, sessions.last_thread_id),
         model_override = COALESCE(excluded.model_override, sessions.model_override),
+        effort_override = COALESCE(excluded.effort_override, sessions.effort_override),
         thinking_level = COALESCE(excluded.thinking_level, sessions.thinking_level),
         input_tokens = sessions.input_tokens + excluded.input_tokens,
         output_tokens = sessions.output_tokens + excluded.output_tokens,
@@ -232,6 +270,9 @@ function getStatements(): SessionStatements {
     ),
     updateRuntimeProviderOnly: db.prepare(
       "UPDATE sessions SET runtime_provider = ?, updated_at = ? WHERE session_key = ?",
+    ),
+    updateRuntimeProviderOverride: db.prepare(
+      "UPDATE sessions SET runtime_provider_override = ?, updated_at = ? WHERE session_key = ?",
     ),
     clearProviderState: db.prepare(
       "UPDATE sessions SET sdk_session_id = NULL, runtime_provider = NULL, runtime_session_json = NULL, runtime_session_display_id = NULL, updated_at = ? WHERE session_key = ?",
@@ -259,6 +300,7 @@ function getStatements(): SessionStatements {
     updateDisplayName: db.prepare("UPDATE sessions SET display_name = ?, updated_at = ? WHERE session_key = ?"),
     updateContext: db.prepare("UPDATE sessions SET last_context = ?, updated_at = ? WHERE session_key = ?"),
     updateModelOverride: db.prepare("UPDATE sessions SET model_override = ?, updated_at = ? WHERE session_key = ?"),
+    updateEffortOverride: db.prepare("UPDATE sessions SET effort_override = ?, updated_at = ? WHERE session_key = ?"),
     updateThinkingLevel: db.prepare("UPDATE sessions SET thinking_level = ?, updated_at = ? WHERE session_key = ?"),
   };
   statementsDbPath = currentDbPath;
@@ -307,6 +349,7 @@ export function getOrCreateSession(
     defaults?.name ?? null,
     defaults?.providerSessionId ?? defaults?.sdkSessionId ?? null,
     defaults?.runtimeProvider ?? null,
+    defaults?.runtimeProviderOverride ?? null,
     serializeRuntimeSessionParams(defaults?.runtimeSessionParams),
     defaults?.runtimeSessionDisplayId ?? defaults?.providerSessionId ?? defaults?.sdkSessionId ?? null,
     agentId,
@@ -322,6 +365,7 @@ export function getOrCreateSession(
     defaults?.lastAccountId ?? null,
     defaults?.lastThreadId ?? null,
     defaults?.modelOverride ?? null,
+    defaults?.effortOverride ?? null,
     defaults?.thinkingLevel ?? null,
     defaults?.queueMode ?? null,
     defaults?.queueDebounceMs ?? null,
@@ -451,6 +495,18 @@ export function updateRuntimeProviderState(
   });
 }
 
+export function updateSessionRuntimeProviderOverride(
+  sessionKey: string,
+  runtimeProvider: SessionEntry["runtimeProviderOverride"] | null,
+): void {
+  const s = getStatements();
+  s.updateRuntimeProviderOverride.run(runtimeProvider ?? null, Date.now(), sessionKey);
+  log.debug("Updated session runtime provider override", {
+    sessionKey,
+    runtimeProvider,
+  });
+}
+
 export function updateProviderSessionId(
   sessionKey: string,
   providerSessionId: string,
@@ -477,6 +533,110 @@ export function updateTokens(sessionKey: string, input: number, output: number, 
   s.updateTokens.run(input, output, input + output, context ?? 0, Date.now(), sessionKey);
 }
 
+function numberFromRow(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function nullableNumberFromRow(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function turnUsageFromRow(row: Record<string, unknown> | null): SessionTurnUsage | null {
+  if (!row) return null;
+  const inputTokens = numberFromRow(row.input_tokens);
+  const cacheReadTokens = numberFromRow(row.cache_read_tokens);
+  const cacheCreationTokens = numberFromRow(row.cache_creation_tokens);
+  return {
+    runId: typeof row.run_id === "string" ? row.run_id : null,
+    status: typeof row.status === "string" ? row.status : "unknown",
+    startedAt: numberFromRow(row.started_at),
+    completedAt: nullableNumberFromRow(row.completed_at),
+    durationMs: nullableNumberFromRow(row.duration_ms),
+    inputTokens,
+    outputTokens: numberFromRow(row.output_tokens),
+    cacheReadTokens,
+    cacheCreationTokens,
+    effectiveContextTokens: inputTokens + cacheReadTokens + cacheCreationTokens,
+    costUsd: numberFromRow(row.cost_usd),
+  };
+}
+
+/**
+ * Read recent per-turn usage for session diagnostics.
+ *
+ * The `sessions.input_tokens`/`output_tokens` counters are lifetime accumulators.
+ * This query is the source for "how large is this session right now/recently?"
+ * style inspection.
+ */
+export function getSessionTurnUsageSummary(
+  sessionKey: string,
+  options: { windowMs?: number } = {},
+): SessionTurnUsageSummary {
+  const windowMs = options.windowMs ?? 24 * 60 * 60_000;
+  const since = Date.now() - windowMs;
+  const db = getDb();
+  const lastTurn = turnUsageFromRow(
+    (db
+      .prepare(
+        `
+        SELECT
+          run_id,
+          status,
+          started_at,
+          completed_at,
+          CASE
+            WHEN completed_at IS NOT NULL THEN completed_at - started_at
+            ELSE NULL
+          END AS duration_ms,
+          input_tokens,
+          output_tokens,
+          cache_read_tokens,
+          cache_creation_tokens,
+          cost_usd
+        FROM session_turns
+        WHERE session_key = ?
+        ORDER BY started_at DESC
+        LIMIT 1
+      `,
+      )
+      .get(sessionKey) as Record<string, unknown> | null) ?? null,
+  );
+
+  const recentRow =
+    (db
+      .prepare(
+        `
+      SELECT
+        COUNT(*) AS complete_turns,
+        AVG(input_tokens) AS input_tokens_avg,
+        AVG(output_tokens) AS output_tokens_avg,
+        AVG(input_tokens + cache_read_tokens + cache_creation_tokens) AS effective_context_tokens_avg,
+        MAX(input_tokens + cache_read_tokens + cache_creation_tokens) AS effective_context_tokens_max,
+        AVG(completed_at - started_at) AS duration_ms_avg,
+        SUM(cost_usd) AS cost_usd_total
+      FROM session_turns
+      WHERE session_key = ?
+        AND status = 'complete'
+        AND started_at >= ?
+    `,
+      )
+      .get(sessionKey, since) as Record<string, unknown> | null) ?? {};
+
+  return {
+    lastTurn,
+    recent: {
+      windowMs,
+      completeTurns: numberFromRow(recentRow.complete_turns),
+      inputTokensAvg: numberFromRow(recentRow.input_tokens_avg),
+      outputTokensAvg: numberFromRow(recentRow.output_tokens_avg),
+      effectiveContextTokensAvg: numberFromRow(recentRow.effective_context_tokens_avg),
+      effectiveContextTokensMax: numberFromRow(recentRow.effective_context_tokens_max),
+      durationMsAvg: nullableNumberFromRow(recentRow.duration_ms_avg),
+      costUsdTotal: numberFromRow(recentRow.cost_usd_total),
+    },
+  };
+}
+
 /**
  * Delete a session
  */
@@ -492,7 +652,8 @@ export function deleteSession(sessionKey: string): boolean {
  */
 export function resetSession(sessionKey: string): boolean {
   const db = getDb();
-  db.prepare(`
+  db.prepare(
+    `
     UPDATE sessions SET
       sdk_session_id = NULL,
       runtime_provider = NULL,
@@ -507,7 +668,8 @@ export function resetSession(sessionKey: string): boolean {
       context_tokens = 0,
       updated_at = ?
     WHERE session_key = ?
-  `).run(Date.now(), sessionKey);
+  `,
+  ).run(Date.now(), sessionKey);
   return getDbChanges() > 0;
 }
 
@@ -600,6 +762,14 @@ export function updateSessionContext(sessionKey: string, contextJson: string): v
 export function updateSessionModelOverride(sessionKey: string, model: string | null): void {
   const s = getStatements();
   s.updateModelOverride.run(model, Date.now(), sessionKey);
+}
+
+/**
+ * Update session reasoning effort override (null to clear)
+ */
+export function updateSessionEffortOverride(sessionKey: string, effort: SessionEntry["effortOverride"] | null): void {
+  const s = getStatements();
+  s.updateEffortOverride.run(effort, Date.now(), sessionKey);
 }
 
 /**
@@ -888,12 +1058,15 @@ export class SessionAttachInstanceMismatchError extends Error {
 }
 
 /**
- * Returns true when the chat and the session live on the same Omni
- * instance. Cross-instance attach is forbidden because output
- * would be sent via the chat's instance — which may be a different
- * account entirely (e.g. an "observer" instance bound to the operator's
- * personal WhatsApp number rather than the bot's number). The 2026-05-21
- * production loop was caused by exactly this jump.
+ * Returns true when the chat and the session can be attached together.
+ * Same-channel cross-instance attach is forbidden because output would be
+ * sent via the chat's instance — which may be a different account entirely
+ * (e.g. an "observer" instance bound to the operator's personal WhatsApp
+ * number rather than the bot's number). The 2026-05-21 production loop was
+ * caused by exactly this jump.
+ *
+ * Cross-channel attach is allowed: that is the native model for one session
+ * consuming WhatsApp, Slack, and future channels without forking history.
  *
  * The session_key encodes `agent:<agent>:<channel>:<account>:...` where
  * `<account>` is the instance NAME. The chat row stores `instance_id`
@@ -911,10 +1084,20 @@ function isChatOnSameInstanceAsSession(
   if (!sessionInstance) return { ok: true };
   const chat = dbGetChat(chatId);
   if (!chat) return { ok: true };
+  const sessionChannel = canonicalAttachChannel(session?.channel);
+  const chatChannel = canonicalAttachChannel(chat.channel);
+  if (sessionChannel && chatChannel && sessionChannel !== chatChannel) return { ok: true };
   const chatInstanceRow = dbGetInstanceByInstanceId(chat.instanceId);
   const chatInstance = chatInstanceRow?.name ?? chat.instanceId;
   if (chatInstance === sessionInstance) return { ok: true };
   return { ok: false, chatInstance, sessionInstance };
+}
+
+function canonicalAttachChannel(value: string | null | undefined): string | null {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized.startsWith("whatsapp")) return "whatsapp";
+  return normalized;
 }
 
 /**
@@ -988,7 +1171,11 @@ export function attachChatToSession(input: AttachChatToSessionInput): AttachChat
         input.speechMode,
         input.speechReason ?? input.attachedReason ?? "attach-speech-update",
       );
-      return { subscription, created: false, outputAttached: subscription.outputAttachedAt !== undefined };
+      return {
+        subscription,
+        created: false,
+        outputAttached: subscription.outputAttachedAt !== undefined,
+      };
     }
     return { subscription: ownActive, created: false, outputAttached: false };
   }
@@ -1010,11 +1197,19 @@ export function attachChatToSession(input: AttachChatToSessionInput): AttachChat
     });
     if (setOutputTarget) {
       const outputSubscription = dbSetSessionOutputAttachment(input.sessionKey, input.chatId);
-      return { subscription: outputSubscription, created: true, outputAttached: true };
+      return {
+        subscription: outputSubscription,
+        created: true,
+        outputAttached: true,
+      };
     }
     if (input.role === "primary" && !dbGetSessionOutputAttachment(input.sessionKey)) {
       const outputSubscription = dbSetSessionOutputAttachment(input.sessionKey, input.chatId);
-      return { subscription: outputSubscription, created: true, outputAttached: true };
+      return {
+        subscription: outputSubscription,
+        created: true,
+        outputAttached: true,
+      };
     }
     return { subscription, created: true, outputAttached: false };
   } catch (err) {

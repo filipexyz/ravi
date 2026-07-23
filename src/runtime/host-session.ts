@@ -1,5 +1,6 @@
 import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barriers.js";
 import type { SessionEntry } from "../router/index.js";
+import type { TurnProvenance } from "./turn-provenance.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
 import type { MessageActorMetadata, RaviCommandPromptMetadata, RuntimeLaunchPrompt } from "./message-types.js";
 import type {
@@ -20,6 +21,11 @@ export interface RuntimeMessageTarget extends MessageActorMetadata {
   threadId?: string;
   /** Original inbound channel message ID, used for session trace correlation. */
   sourceMessageId?: string;
+  /**
+   * Internal routing hint: deliver responses to this target, but do not expose
+   * typing/presence while background automation is working.
+   */
+  suppressPresence?: boolean;
 }
 
 export interface RuntimeUserMessage extends RuntimePromptMessage {
@@ -88,6 +94,13 @@ export interface RuntimeHostStreamingSession {
   _promptTooLong?: boolean;
   /** Whether the SDK is currently compacting (do not interrupt during compaction) */
   compacting: boolean;
+  /**
+   * Whether external compaction announcements may be externalized for the turn
+   * effectively executing. Snapshotted per turn from the turn's origin so that
+   * automation-originated turns compact silently while human/channel turns keep
+   * announcements. Internal compaction observability is unaffected.
+   */
+  currentTurnProvenance?: TurnProvenance;
   /** Tool safety classification - "safe" tools can be interrupted, "unsafe" cannot */
   currentToolSafety: "safe" | "unsafe" | null;
   /** Pending abort - set when abort is requested during an unsafe tool call */
@@ -111,6 +124,8 @@ export interface RuntimeHostStreamingSession {
   currentRuntimeCredential?: RuntimeCredentialAttemptBinding;
   /** Recovery timer for the narrow state where a provider is alive but not accepting queued input. */
   idleGapRecoveryTimer?: ReturnType<typeof setTimeout>;
+  /** Timer that evicts an idle provider process from the runtime pool. */
+  idleSessionEvictionTimer?: ReturnType<typeof setTimeout>;
 }
 
 async function* emptyRuntimeEvents(): AsyncGenerator<never> {}
@@ -170,6 +185,10 @@ export function shutdownRuntimeStreamingSession(session: RuntimeHostStreamingSes
     clearTimeout(session.idleGapRecoveryTimer);
     session.idleGapRecoveryTimer = undefined;
   }
+  if (session.idleSessionEvictionTimer) {
+    clearTimeout(session.idleSessionEvictionTimer);
+    session.idleSessionEvictionTimer = undefined;
+  }
 
   session.queryHandle.interrupt().catch(() => {});
 
@@ -190,16 +209,21 @@ export function shutdownRuntimeStreamingSession(session: RuntimeHostStreamingSes
 
 export function resolveStoredRuntimeProvider(
   session: Pick<SessionEntry, "runtimeProvider" | "providerSessionId" | "sdkSessionId">,
-  defaultRuntimeProviderId: RuntimeProviderId,
 ): RuntimeProviderId | undefined {
   if (session.runtimeProvider) {
     return session.runtimeProvider;
   }
 
   if (session.providerSessionId || session.sdkSessionId) {
-    // Legacy sessions predate runtime_provider and belong to the default runtime.
-    return defaultRuntimeProviderId;
+    // Legacy sessions predate the runtime_provider column. Modern sessions always
+    // record runtime_provider (session-launcher), so a stored session id with no
+    // provider can only be a pre-multi-provider Claude session — not the current
+    // default (which has since moved to codex).
+    return LEGACY_RUNTIME_PROVIDER_ID;
   }
 
   return undefined;
 }
+
+/** Provider that owned sessions created before the runtime_provider column existed. */
+export const LEGACY_RUNTIME_PROVIDER_ID: RuntimeProviderId = "claude";

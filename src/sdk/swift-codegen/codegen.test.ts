@@ -60,6 +60,46 @@ class CrmAccountCommands {
   }
 }
 
+@Group({ name: "image", description: "Image ops", scope: "open" })
+class ImageCommands {
+  @Command({ name: "split", description: "Split an image atlas" })
+  @Returns(
+    z.object({
+      artifactId: z.string(),
+      artifact_id: z.string(),
+      "artifact-id": z.string(),
+    }),
+  )
+  split() {
+    return { artifactId: "canonical", artifact_id: "snake", "artifact-id": "kebab" };
+  }
+}
+
+@Group({ name: "collisions", description: "Swift identifier collisions", scope: "open" })
+class CollisionCommands {
+  @Command({ name: "arguments", description: "Exercise colliding argument names" })
+  arguments(
+    @Arg("artifactId") _canonical: string,
+    @Arg("artifact_id") _snake: string,
+    @Arg("artifact-id") _kebab: string,
+  ) {
+    return {};
+  }
+
+  @Command({ name: "option-fields", description: "Exercise colliding option field names" })
+  optionFields(
+    @Option({ flags: "--artifact-id <id>" }) _canonical?: string,
+    @Option({ flags: "--artifact-ID <id>" }) _alternate?: string,
+  ) {
+    return {};
+  }
+
+  @Command({ name: "reserved-argument", description: "Exercise the reserved options parameter" })
+  reservedArgument(@Arg("options") _wireOptions: string, @Option({ flags: "--force" }) _force?: boolean) {
+    return {};
+  }
+}
+
 const FIXED_VERSION = {
   sdkVersion: "9.9.9",
   registryHash: "sha256:fixed",
@@ -131,6 +171,54 @@ describe("swift-codegen :: emitAllSwift", () => {
     expect(output.types).toContain("public struct ArtifactsShowReturn: Codable, Sendable");
     expect(output.types).toContain("public var id: String");
     expect(output.types).toContain("public var links: [RaviJSON]");
+  });
+
+  it("disambiguates property names that normalize to the same Swift identifier", () => {
+    const registry = buildRegistry([ImageCommands]);
+    const output = emitAllSwift(registry, { version: FIXED_VERSION });
+
+    expect(output.types).toContain("public var artifactId: String");
+    expect(output.types).toContain("public var artifact_id: String");
+    expect(output.types).toContain("public var artifact_id_2: String");
+    expect(output.types).toContain(`case artifactId = "artifactId"`);
+    expect(output.types).toContain(`case artifact_id = "artifact_id"`);
+    expect(output.types).toContain(`case artifact_id_2 = "artifact-id"`);
+  });
+
+  it("disambiguates colliding positional argument names without changing their wire keys", () => {
+    const registry = buildRegistry([CollisionCommands]);
+    const output = emitAllSwift(registry, { version: FIXED_VERSION });
+
+    expect(output.client).toContain(
+      "public func arguments(_ artifactId: String, _ artifact_id: String, _ artifact_id_2: String)",
+    );
+    expect(output.client).toContain(`requestBody["artifactId"] = try RaviJSON.fromEncodable(artifactId)`);
+    expect(output.client).toContain(`requestBody["artifact_id"] = try RaviJSON.fromEncodable(artifact_id)`);
+    expect(output.client).toContain(`requestBody["artifact-id"] = try RaviJSON.fromEncodable(artifact_id_2)`);
+  });
+
+  it("disambiguates colliding option struct fields without changing their coding keys", () => {
+    const registry = buildRegistry([CollisionCommands]);
+    const output = emitAllSwift(registry, { version: FIXED_VERSION });
+
+    expect(output.types).toContain("public struct CollisionsOptionFieldsOptions: Codable, Sendable");
+    expect(output.types).toContain("public var artifactId: String?");
+    expect(output.types).toContain("public var artifact_ID: String?");
+    expect(output.types).toContain(`case artifactId = "artifactId"`);
+    expect(output.types).toContain(`case artifact_ID = "artifact-ID"`);
+    expect(output.types).toContain(`body["artifactId"] = try RaviJSON.fromEncodable(value)`);
+    expect(output.types).toContain(`body["artifact-ID"] = try RaviJSON.fromEncodable(value)`);
+  });
+
+  it("keeps the generated options bag distinct from an argument named options", () => {
+    const registry = buildRegistry([CollisionCommands]);
+    const output = emitAllSwift(registry, { version: FIXED_VERSION });
+
+    expect(output.client).toContain(
+      "public func reservedArgument(_ options_2: String, _ options: CollisionsReservedArgumentOptions = .init())",
+    );
+    expect(output.client).toContain(`requestBody["options"] = try RaviJSON.fromEncodable(options_2)`);
+    expect(output.client).toContain("try options.encodeBody(into: &requestBody)");
   });
 
   it("disambiguates commands that are also namespace nodes", () => {

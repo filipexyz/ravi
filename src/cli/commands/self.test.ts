@@ -118,6 +118,7 @@ function seedLinkedContext(): void {
     runtimeProvider: "codex",
     runtimeSessionDisplayId: "thread_123",
     modelOverride: undefined,
+    effortOverride: "ultra",
     thinkingLevel: undefined,
     channel: "whatsapp",
     accountId: "main",
@@ -202,16 +203,34 @@ function seedLinkedContext(): void {
 
 describe("SelfCommands", () => {
   const originalContextKey = process.env.RAVI_CONTEXT_KEY;
+  const actorEnvKeys = [
+    "RAVI_ACTOR_TYPE",
+    "RAVI_CONTACT_ID",
+    "RAVI_ACTOR_AGENT_ID",
+    "RAVI_PLATFORM_IDENTITY_ID",
+    "RAVI_CANONICAL_CHAT_ID",
+    "RAVI_RAW_SENDER_ID",
+    "RAVI_NORMALIZED_SENDER_ID",
+    "RAVI_SENDER_ID",
+    "RAVI_SENDER_PHONE",
+  ] as const;
+  const originalActorEnv = Object.fromEntries(actorEnvKeys.map((key) => [key, process.env[key]]));
 
   beforeEach(() => {
     seedLinkedContext();
     resolvedContextOptions = undefined;
     messageMetaLimits = [];
+    for (const key of actorEnvKeys) delete process.env[key];
   });
 
   afterEach(() => {
     if (originalContextKey === undefined) delete process.env.RAVI_CONTEXT_KEY;
     else process.env.RAVI_CONTEXT_KEY = originalContextKey;
+    for (const key of actorEnvKeys) {
+      const value = originalActorEnv[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
     inlineContext = undefined;
     resolvedContext = undefined;
     session = null;
@@ -233,9 +252,21 @@ describe("SelfCommands", () => {
       agentId: "main",
       sessionName: "main",
     });
+    expect(payload.actor).toMatchObject({
+      status: "partial",
+      reason: "context did not carry actor metadata; using most recent non-agent message metadata",
+      data: {
+        actorType: "contact",
+        contactId: "contact_luis",
+        canonicalChatId: "chat_123",
+        sourceMessageId: "msg_1",
+        source: "recent_message",
+      },
+    });
     expect(payload.session.data).toMatchObject({
       sessionKey: "agent:main:main",
       agentId: "main",
+      effortOverride: "ultra",
     });
     expect(payload.chat.data.chat).toMatchObject({ id: "chat_123", title: "Ravi Main" });
     expect(payload.chat.data.participants).toHaveLength(1);

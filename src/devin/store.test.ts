@@ -120,6 +120,56 @@ describe("Devin store", () => {
     }
   });
 
+  it("persists audit fields through insert and update", () => {
+    const session = fakeSession({ user_id: "user_abc", service_user_id: "svc_123" });
+    const stored = upsertDevinSession(session, {
+      effectiveCreateAsUserId: "user_abc",
+      devinMode: "fast",
+      platform: "windows",
+      resumable: false,
+      structuredOutputRequired: true,
+      maxAcuLimit: 500,
+      maxAcuLimitSource: "explicit",
+      sessionSecretCount: 2,
+    });
+
+    expect(stored.userId).toBe("user_abc");
+    expect(stored.serviceUserId).toBe("svc_123");
+    expect(stored.effectiveCreateAsUserId).toBe("user_abc");
+    expect(stored.devinMode).toBe("fast");
+    expect(stored.platform).toBe("windows");
+    expect(stored.resumable).toBe(false);
+    expect(stored.structuredOutputRequired).toBe(true);
+    expect(stored.maxAcuLimit).toBe(500);
+    expect(stored.maxAcuLimitSource).toBe("explicit");
+    expect(stored.sessionSecretCount).toBe(2);
+
+    const updated = upsertDevinSession(fakeSession({ status: "exit", updated_at: 99 }));
+    expect(updated.devinMode).toBe("fast");
+    expect(updated.platform).toBe("windows");
+    expect(updated.resumable).toBe(false);
+    expect(updated.maxAcuLimit).toBe(500);
+    expect(updated.sessionSecretCount).toBe(2);
+  });
+
+  it("shows audit fields in list and show", () => {
+    upsertDevinSession(fakeSession({ session_id: "audit-show", user_id: "user_x" }), {
+      devinMode: "ultra",
+      maxAcuLimit: 1000,
+      maxAcuLimitSource: "env",
+    });
+
+    const listed = listDevinSessions();
+    const found = listed.find((s) => s.devinId === "devin-audit-show");
+    expect(found?.devinMode).toBe("ultra");
+    expect(found?.maxAcuLimit).toBe(1000);
+
+    const fetched = getDevinSession("devin-audit-show");
+    expect(fetched?.devinMode).toBe("ultra");
+    expect(fetched?.maxAcuLimitSource).toBe("env");
+    expect(fetched?.userId).toBe("user_x");
+  });
+
   it("handles concurrent session upserts and message writes without lock errors", async () => {
     upsertDevinSession(fakeSession());
 

@@ -1,6 +1,6 @@
 {
   "name": "@ravi-os/sdk",
-  "version": "0.2.1",
+  "version": "0.260716.1",
   "description": "Type-safe TypeScript SDK for the Ravi gateway, generated from the live registry.",
   "type": "module",
   "main": "./dist/index.js",
@@ -13,6 +13,10 @@
     "./client": {
       "types": "./dist/client.d.ts",
       "default": "./dist/client.js"
+    },
+    "./inherit": {
+      "types": "./dist/inherit.d.ts",
+      "default": "./dist/inherit.js"
     },
     "./schemas": {
       "types": "./dist/schemas.d.ts",

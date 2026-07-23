@@ -10,11 +10,37 @@ fi
 
 echo "Running pre-push checks..."
 
+run_local_check() {
+  env \
+    -u RAVI_ACCOUNT_ID \
+    -u RAVI_ACTOR_AGENT_ID \
+    -u RAVI_ACTOR_TYPE \
+    -u RAVI_AGENT_ID \
+    -u RAVI_CANONICAL_CHAT_ID \
+    -u RAVI_CHANNEL \
+    -u RAVI_CHAT_ID \
+    -u RAVI_CONTACT_ID \
+    -u RAVI_CONTEXT_KEY \
+    -u RAVI_GROUP_ID \
+    -u RAVI_GROUP_NAME \
+    -u RAVI_INSTANCE_ID \
+    -u RAVI_NORMALIZED_SENDER_ID \
+    -u RAVI_PLATFORM_IDENTITY_ID \
+    -u RAVI_RAW_SENDER_ID \
+    -u RAVI_SENDER_ID \
+    -u RAVI_SENDER_NAME \
+    -u RAVI_SENDER_PHONE \
+    -u RAVI_SESSION_KEY \
+    -u RAVI_SESSION_NAME \
+    -u RAVI_TURN_SCOPED_AUTHORITY \
+    "$@"
+}
+
 echo "Checking generated SDK drift..."
-if ! bun run sdk:check; then
+if ! run_local_check bun run sdk:check; then
   echo ""
   echo "SDK drift detected. Regenerating generated client files..."
-  if ! bun run sdk:generate; then
+  if ! run_local_check bun run sdk:generate; then
     echo "Failed to regenerate SDK client." >&2
     exit 1
   fi
@@ -28,12 +54,12 @@ if ! bun run sdk:check; then
 fi
 
 echo "Running build..."
-bun run build
+run_local_check bun run build
 
 echo "Running typecheck..."
-bun run typecheck
+run_local_check bun run typecheck
 
 echo "Running tests..."
-bun run test
+run_local_check bun run test
 
 echo "Pre-push checks passed."

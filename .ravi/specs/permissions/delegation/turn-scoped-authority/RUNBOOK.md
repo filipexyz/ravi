@@ -42,7 +42,9 @@ normative: true
 
 1. Confirm whether the context is internal admin, automation, or user-initiated.
 2. If user-initiated, check whether `canWithCapabilityContext` used live `isAgentSuperadmin(agentId)` as a bypass.
-3. Check whether the context kind is a long-lived `agent-runtime` root reused across actors.
+3. Check whether the context kind is a historical `agent-runtime` root. If yes,
+   treat it as a production-readiness failure and clean it through the explicit
+   context cleanup path after reviewing blast radius.
 4. Check whether the cached context key omitted `contact_id` or actor authority version.
 5. Check whether an observer rule grant was accidentally applied to the source session.
 6. Check whether a role expansion used union instead of intersection.
@@ -59,6 +61,26 @@ Preferred flow:
 5. Trigger a test turn and inspect trace provenance.
 
 Avoid granting directly to broad agents as a fix for a user denial. That widens every actor using the agent.
+
+## Grant A Narrow Delegation Override
+
+Use an override when a specific group/agent is allowed to delegate one
+capability even though the current contact lacks it directly.
+
+1. Confirm the executor agent already has the normal capability, for example
+   `agent:<agent-id> use tool:Bash`.
+2. Prefer a surface override when the exception belongs to a group/chat:
+   `chat:<chat-id> delegate_use tool:Bash`.
+3. Use an agent override only when the exception belongs to that executor agent:
+   `agent:<agent-id> delegate_use tool:Bash`.
+4. For agent overrides, confirm the chat/surface still has a normal grant or
+   surface override for the capability.
+5. Trigger a new turn and inspect metadata:
+   `actorOverrideCapabilityCount`, `surfaceOverrideCapabilityCount`, and
+   `delegationOverridePrincipals`.
+
+Do not use overrides for unknown actors or automations. Give automations their
+own explicit `automation:<id>` grants.
 
 ## Revoke A Critical Capability
 
@@ -99,4 +121,3 @@ select owner_type, count(*) as participants
 from session_participants
 group by owner_type;
 ```
-

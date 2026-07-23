@@ -3,7 +3,7 @@ import { execSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { z } from "zod";
-import { Command, Group, Option, Returns } from "../decorators.js";
+import { Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { getRegistry } from "../registry-snapshot.js";
 import { emitJson } from "../../sdk/openapi/index.js";
@@ -29,6 +29,7 @@ function writeFileSafe(target: string, body: string): string {
 const DEFAULT_CLIENT_OUT_DIR = "packages/ravi-os-sdk/src";
 const DEFAULT_TYPESCRIPT_SDK_VERSION = "0.2.1";
 const DEFAULT_SWIFT_SDK_VERSION = "0.1.0";
+const DEFAULT_OPENAPI_SNAPSHOT_PATH = "docs/openapi.json";
 const GENERATED_FILES = ["client.ts", "schemas.ts", "types.ts", "version.ts", "streaming.generated.ts"] as const;
 const DEFAULT_SWIFT_OUT_DIR = "packages/ravi-os-swift-sdk/Sources/RaviSDK";
 const GENERATED_SWIFT_FILES = [
@@ -148,9 +149,14 @@ function detectGitSha(): string {
 })
 export class SdkOpenApiCommands {
   @Command({ name: "emit", description: "Emit OpenAPI 3.1 spec from the CLI registry" })
+  @CommandAccess({ kind: "read", resource: "sdk.openapi", action: "emit", risk: "low" })
   @Returns(openApiEmitReturnSchema)
   emit(
-    @Option({ flags: "--out <path>", description: "Write spec JSON to this path" }) out?: string,
+    @Option({
+      flags: "--out <path>",
+      description: `Write spec JSON to this path (default: ${DEFAULT_OPENAPI_SNAPSHOT_PATH})`,
+    })
+    out?: string,
     @Option({ flags: "--stdout", description: "Print spec JSON to stdout" }) toStdout?: boolean,
     @Option({ flags: "--json", description: "Print the result payload as JSON" }) asJson?: boolean,
   ) {
@@ -165,7 +171,7 @@ export class SdkOpenApiCommands {
         return { status: "stdout", bytes: json.length };
       }
 
-      const target = out?.trim() ? out : "openapi.json";
+      const target = out?.trim() ? out : DEFAULT_OPENAPI_SNAPSHOT_PATH;
       const absolute = writeFileSafe(target, `${json}\n`);
       const payload = { status: "written" as const, path: absolute, bytes: json.length };
       if (asJson) {
@@ -180,6 +186,7 @@ export class SdkOpenApiCommands {
   }
 
   @Command({ name: "check", description: "Diff a stored OpenAPI spec against the live registry" })
+  @CommandAccess({ kind: "read", resource: "sdk.openapi", action: "check", risk: "low" })
   @Returns(openApiCheckReturnSchema)
   check(
     @Option({ flags: "--against <path>", description: "Path to the stored spec to diff against" }) against?: string,
@@ -230,6 +237,7 @@ export class SdkClientCommands {
     name: "generate",
     description: "Generate the four @ravi-os/sdk source files from the live registry",
   })
+  @CommandAccess({ kind: "mutate", resource: "sdk.client", action: "generate", risk: "high" })
   @Returns(sdkGenerateReturnSchema)
   generate(
     @Option({
@@ -270,6 +278,7 @@ export class SdkClientCommands {
     name: "check",
     description: "Compare on-disk @ravi-os/sdk sources to a fresh emit; exit 1 on drift",
   })
+  @CommandAccess({ kind: "read", resource: "sdk.client", action: "check", risk: "low" })
   @Returns(sdkCheckReturnSchema)
   check(
     @Option({
@@ -340,6 +349,7 @@ export class SdkSwiftCommands {
     name: "generate",
     description: "Generate the Ravi Swift SDK source files from the live registry",
   })
+  @CommandAccess({ kind: "mutate", resource: "sdk.swift", action: "generate", risk: "high" })
   @Returns(sdkGenerateReturnSchema)
   generate(
     @Option({
@@ -380,6 +390,7 @@ export class SdkSwiftCommands {
     name: "check",
     description: "Compare on-disk Ravi Swift SDK sources to a fresh emit; exit 1 on drift",
   })
+  @CommandAccess({ kind: "read", resource: "sdk.swift", action: "check", risk: "low" })
   @Returns(sdkCheckReturnSchema)
   check(
     @Option({

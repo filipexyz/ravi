@@ -42,9 +42,7 @@ function resolveRuntimeForkSession(
   const parentSession = getSession(parentKey);
   const parentProviderSessionId =
     parentSession?.runtimeSessionDisplayId ?? parentSession?.providerSessionId ?? parentSession?.sdkSessionId;
-  const parentRuntimeProvider = parentSession
-    ? resolveStoredRuntimeProvider(parentSession, options.defaultRuntimeProviderId)
-    : undefined;
+  const parentRuntimeProvider = parentSession ? resolveStoredRuntimeProvider(parentSession) : undefined;
 
   return parentProviderSessionId && parentRuntimeProvider === options.runtimeProviderId
     ? parentProviderSessionId

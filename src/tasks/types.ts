@@ -34,6 +34,7 @@ export type TaskRuntimeOptionsSource =
   | "task_override"
   | "profile_default"
   | "session_override"
+  | "agent_preset"
   | "agent_default"
   | "global_default"
   | "runtime_default";
@@ -51,6 +52,10 @@ export interface TaskRuntimeResolution {
     effort: TaskRuntimeOptionsSource | null;
     thinking: TaskRuntimeOptionsSource | null;
   };
+  /** Runtime model preset id when the effective model was resolved via an agent preset. */
+  modelPresetId?: string;
+  /** Runtime model preset version when the effective model was resolved via an agent preset. */
+  modelPresetVersion?: number;
   hasTaskRuntimeContext: boolean;
 }
 
@@ -71,6 +76,7 @@ export type TaskEventType =
   | "task.progress"
   | "task.checkpoint.missed"
   | "task.comment"
+  | "task.updated"
   | "task.archived"
   | "task.unarchived"
   | "task.blocked"
@@ -482,6 +488,16 @@ export interface TaskCommentInput {
   authorAgentId?: string;
   authorSessionName?: string;
   body: string;
+}
+
+export interface TaskUpdateInput {
+  actor?: string;
+  agentId?: string;
+  sessionName?: string;
+  title?: string;
+  instructions?: string;
+  priority?: TaskPriority;
+  message?: string;
 }
 
 export type TaskListSort = "updated" | "created";

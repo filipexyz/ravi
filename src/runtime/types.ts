@@ -419,6 +419,13 @@ export interface RuntimeStartRequest {
   hooks?: Record<string, RuntimeHookMatcher[]>;
   plugins?: RuntimePlugin[];
   remoteSpawn?: unknown;
+  /**
+   * Per-agent skill visibility (spec skills/scoping/per-agent-visibility).
+   * When present + non-empty the provider adapter narrows the runtime skill
+   * catalog to this list. When absent or empty, providers keep their default
+   * "load every discovered skill" behavior (Invariant F — grandfather).
+   */
+  allowedSkills?: string[];
 }
 
 export type RuntimeEvent =
@@ -516,6 +523,8 @@ export interface RuntimeSessionHandle {
    */
   concurrentInputStrategy?: RuntimeConcurrentInputStrategy;
   interrupt(): Promise<void>;
+  /** Release provider-owned transports and subprocesses when the host session ends. */
+  close?(): Promise<void>;
   setModel?(model: string): Promise<void>;
   control?(request: RuntimeControlRequest): Promise<RuntimeControlResult>;
 }

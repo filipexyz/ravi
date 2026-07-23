@@ -18,6 +18,8 @@ import {
 } from "./observation-profiles.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID } from "./provider-registry.js";
 import type { RuntimeProviderId } from "./types.js";
+import { compilePredicate, type CompiledPredicate } from "../policy/predicate.js";
+import { classifyTurnProvenance, type TurnProvenance } from "./turn-provenance.js";
 
 const log = logger.child("runtime:observation-plane");
 
@@ -25,6 +27,7 @@ export type ObserverScope = "global" | "agent" | "session" | "task" | "profile" 
 export type ObserverMode = "observe" | "summarize" | "report" | "intervene";
 export type ObservationDeliveryPolicy = "realtime" | "debounce" | "end_of_turn" | "manual";
 export type ObserverTagTargetType = "agent" | "session" | "task" | "project" | "contact" | "profile" | "any";
+export type ObserverReconcileMode = "attach-missing" | "detach-disabled" | "refresh-profile" | "full-reconcile";
 
 const OBSERVER_SCOPES = new Set<ObserverScope>(["global", "agent", "session", "task", "profile", "project", "tag"]);
 const OBSERVER_MODES = new Set<ObserverMode>(["observe", "summarize", "report", "intervene"]);
@@ -64,6 +67,7 @@ export interface ObserverRule {
   tagSlug?: string;
   tagInherited: boolean;
   permissionGrants: string[];
+  selector?: string;
   metadata?: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;
@@ -92,6 +96,8 @@ export interface ObserverRuleInput {
   tagSlug?: string;
   tagInherited?: boolean;
   permissionGrants?: string[];
+  /** Predicate over source.*, turn.* and event.*; invalid selectors fail closed. */
+  selector?: string | null;
   metadata?: Record<string, unknown>;
 }
 
@@ -115,6 +121,7 @@ export interface ObserverBinding {
   deliveryPolicy: ObservationDeliveryPolicy;
   debounceMs?: number;
   permissionGrants: string[];
+  selector?: string;
   metadata?: Record<string, unknown>;
   enabled: boolean;
   createdAt: number;
@@ -129,6 +136,8 @@ export interface ObservationEvent {
   turnId?: string;
   preview?: string;
   payload?: Record<string, unknown>;
+  /** Snapshot of the turn cause; required for correct deferred/debounced selection. */
+  turn: TurnProvenance;
 }
 
 export interface ObservationSourceTag {
@@ -160,6 +169,12 @@ export interface ObservationSourceDescriptor {
   projectId?: string;
   projectSlug?: string;
   contactIds?: string[];
+  channel?: string;
+  accountId?: string;
+  chatId?: string;
+  threadId?: string;
+  chatType?: SessionEntry["chatType"];
+  actorType?: string;
   tags: ObservationSourceTag[];
 }
 
@@ -192,6 +207,7 @@ interface ObserverRuleRow {
   tag_slug: string | null;
   tag_inherited: number;
   permission_grants_json: string;
+  selector: string | null;
   metadata_json: string | null;
   created_at: number;
   updated_at: number;
@@ -217,6 +233,7 @@ interface ObserverBindingRow {
   delivery_policy: ObservationDeliveryPolicy;
   debounce_ms: number | null;
   permission_grants_json: string;
+  selector: string | null;
   metadata_json: string | null;
   enabled: number;
   created_at: number;
@@ -270,6 +287,7 @@ export function ensureObservationSchema(): void {
       tag_slug TEXT,
       tag_inherited INTEGER NOT NULL DEFAULT 0 CHECK(tag_inherited IN (0,1)),
       permission_grants_json TEXT NOT NULL,
+      selector TEXT,
       metadata_json TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
@@ -302,6 +320,7 @@ export function ensureObservationSchema(): void {
       delivery_policy TEXT NOT NULL CHECK(delivery_policy IN ('realtime','debounce','end_of_turn','manual')),
       debounce_ms INTEGER,
       permission_grants_json TEXT NOT NULL,
+      selector TEXT,
       metadata_json TEXT,
       enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
       created_at INTEGER NOT NULL,
@@ -316,6 +335,13 @@ export function ensureObservationSchema(): void {
       ON observer_bindings(observer_session_name);
     CREATE INDEX IF NOT EXISTS idx_observer_bindings_rule
       ON observer_bindings(rule_id);
+
+    CREATE TABLE IF NOT EXISTS observer_delivery_events (
+      binding_id TEXT NOT NULL REFERENCES observer_bindings(id) ON DELETE CASCADE,
+      event_id TEXT NOT NULL,
+      delivered_at INTEGER NOT NULL,
+      PRIMARY KEY(binding_id, event_id)
+    );
   `);
   ensureObservationColumn("observer_rules", "observer_runtime_provider_id", "TEXT");
   ensureObservationColumn("observer_rules", "observer_model", "TEXT");
@@ -327,6 +353,8 @@ export function ensureObservationSchema(): void {
   ensureObservationColumn("observer_bindings", "observer_profile_source", "TEXT");
   ensureObservationColumn("observer_bindings", "observer_profile_snapshot_markdown", "TEXT");
   ensureObservationColumn("observer_bindings", "debounce_ms", "INTEGER");
+  ensureObservationColumn("observer_rules", "selector", "TEXT");
+  ensureObservationColumn("observer_bindings", "selector", "TEXT");
   schemaReady = true;
   schemaDbPath = dbPath;
 }
@@ -362,6 +390,109 @@ function cleanOptionalText(value: string | null | undefined): string | null {
 
 function resolveOptionalTextOverride(value: string | null | undefined, existing?: string): string | undefined {
   return cleanOptionalText(value === undefined ? existing : value) ?? undefined;
+}
+
+const OBSERVER_SELECTOR_ROOTS = ["source", "turn", "event"] as const;
+const observerSelectorCache = new Map<string, CompiledPredicate>();
+
+function compileObserverSelector(selector: string): CompiledPredicate {
+  const cached = observerSelectorCache.get(selector);
+  if (cached) return cached;
+  const result = compilePredicate(selector, {
+    allowedRoots: OBSERVER_SELECTOR_ROOTS,
+    pathLabel: "source.<path>, turn.<path> or event.<path>",
+  });
+  if (!result.ok) throw new Error(`Invalid observer selector: ${result.error}`);
+  observerSelectorCache.set(selector, result.predicate);
+  if (observerSelectorCache.size > 500) {
+    observerSelectorCache.delete(observerSelectorCache.keys().next().value ?? "");
+  }
+  return result.predicate;
+}
+
+function resolveSelectorOverride(value: string | null | undefined, existing?: string): string | undefined {
+  const selector = resolveOptionalTextOverride(value, existing);
+  if (selector) compileObserverSelector(selector);
+  return selector;
+}
+
+interface ObserverSourceExclusions {
+  agentIds: string[];
+  sessionKeys: string[];
+  sessionNames: string[];
+  sessionKeyFragments: string[];
+}
+
+const OBSERVER_SOURCE_EXCLUSION_KEYS = [
+  "agentIds",
+  "sessionKeys",
+  "sessionNames",
+  "sessionKeyFragments",
+] as const satisfies readonly (keyof ObserverSourceExclusions)[];
+const OBSERVER_SOURCE_EXCLUSION_KEY_SET = new Set<string>(OBSERVER_SOURCE_EXCLUSION_KEYS);
+
+function sourceExclusionList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function observerSourceExclusions(metadata?: Record<string, unknown>): ObserverSourceExclusions | null {
+  validateObserverSourceExclusions(metadata);
+  const value = metadata?.sourceExclusions;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  return {
+    agentIds: sourceExclusionList(raw.agentIds),
+    sessionKeys: sourceExclusionList(raw.sessionKeys),
+    sessionNames: sourceExclusionList(raw.sessionNames),
+    sessionKeyFragments: sourceExclusionList(raw.sessionKeyFragments),
+  };
+}
+
+function validateObserverSourceExclusions(metadata?: Record<string, unknown>): void {
+  const value = metadata?.sourceExclusions;
+  if (value === undefined) return;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Observer metadata.sourceExclusions must be an object.");
+  }
+  const raw = value as Record<string, unknown>;
+  for (const key of Object.keys(raw)) {
+    if (!OBSERVER_SOURCE_EXCLUSION_KEY_SET.has(key)) {
+      throw new Error(`Observer metadata.sourceExclusions.${key} is not supported.`);
+    }
+  }
+  for (const key of OBSERVER_SOURCE_EXCLUSION_KEYS) {
+    const list = raw[key];
+    if (list === undefined) continue;
+    if (!Array.isArray(list) || list.some((item) => typeof item !== "string" || !item.trim())) {
+      throw new Error(`Observer metadata.sourceExclusions.${key} must be an array of non-empty strings.`);
+    }
+  }
+}
+
+function sourceExclusionReason(
+  metadata: Record<string, unknown> | undefined,
+  source: ObservationSourceDescriptor,
+): string | null {
+  let exclusions: ObserverSourceExclusions | null;
+  try {
+    exclusions = observerSourceExclusions(metadata);
+  } catch {
+    // Persisted legacy metadata may predate validation or have been edited
+    // directly. Unknown/malformed exclusions must never become an allow.
+    return "invalid_source_exclusions";
+  }
+  if (!exclusions) return null;
+  if (exclusions.agentIds.includes(source.agentId)) return "excluded_source_agent";
+  if (exclusions.sessionKeys.includes(source.sessionKey)) return "excluded_source_session_key";
+  if (exclusions.sessionNames.includes(source.sessionName)) return "excluded_source_session_name";
+  if (exclusions.sessionKeyFragments.some((fragment) => source.sessionKey.includes(fragment))) {
+    return "excluded_source_session_key_fragment";
+  }
+  return null;
 }
 
 function normalizeId(value: string, label: string): string {
@@ -517,6 +648,7 @@ function rowToRule(row: ObserverRuleRow): ObserverRule {
     ...(row.tag_slug ? { tagSlug: row.tag_slug } : {}),
     tagInherited: row.tag_inherited === 1,
     permissionGrants: parseJsonArray(row.permission_grants_json),
+    ...(row.selector ? { selector: row.selector } : {}),
     ...(parseJsonObject(row.metadata_json) ? { metadata: parseJsonObject(row.metadata_json) } : {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -546,6 +678,7 @@ function rowToBinding(row: ObserverBindingRow): ObserverBinding {
     deliveryPolicy: row.delivery_policy,
     ...(row.debounce_ms !== null ? { debounceMs: row.debounce_ms } : {}),
     permissionGrants: parseJsonArray(row.permission_grants_json),
+    ...(row.selector ? { selector: row.selector } : {}),
     ...(parseJsonObject(row.metadata_json) ? { metadata: parseJsonObject(row.metadata_json) } : {}),
     enabled: row.enabled === 1,
     createdAt: row.created_at,
@@ -593,6 +726,9 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
   const permissionGrants = normalizePermissionGrants(input.permissionGrants ?? existing?.permissionGrants);
   const tagTargetType = normalizeTagTargetType(input.tagTargetType ?? existing?.tagTargetType);
   const tagSlug = normalizeTagSlug(input.tagSlug ?? existing?.tagSlug);
+  const selector = resolveSelectorOverride(input.selector, existing?.selector);
+  const metadata = input.metadata ?? existing?.metadata;
+  validateObserverSourceExclusions(metadata);
 
   validateRuleSafety({
     scope,
@@ -616,9 +752,9 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
           observer_runtime_provider_id, observer_model, observer_profile_id, observer_mode,
           event_types_json, delivery_policy, debounce_ms,
           source_agent_id, source_session, source_task_id, source_profile_id, source_project_id,
-          tag_target_type, tag_slug, tag_inherited, permission_grants_json, metadata_json,
+          tag_target_type, tag_slug, tag_inherited, permission_grants_json, selector, metadata_json,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           enabled = excluded.enabled,
           scope = excluded.scope,
@@ -641,6 +777,7 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
           tag_slug = excluded.tag_slug,
           tag_inherited = excluded.tag_inherited,
           permission_grants_json = excluded.permission_grants_json,
+          selector = excluded.selector,
           metadata_json = excluded.metadata_json,
           updated_at = excluded.updated_at
       `,
@@ -668,7 +805,8 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
       tagSlug,
       (input.tagInherited ?? existing?.tagInherited) ? 1 : 0,
       stringifyJson(permissionGrants),
-      (input.metadata ?? existing?.metadata) ? stringifyJson(input.metadata ?? existing?.metadata) : null,
+      selector ?? null,
+      metadata ? stringifyJson(metadata) : null,
       existing?.createdAt ?? now,
       now,
     );
@@ -779,9 +917,9 @@ function upsertObserverBinding(input: {
           observer_runtime_provider_id, observer_model,
           observer_profile_id, observer_profile_version, observer_profile_source, observer_profile_snapshot_markdown,
           observer_role, observer_mode, rule_id,
-          event_types_json, delivery_policy, debounce_ms, permission_grants_json, metadata_json,
+          event_types_json, delivery_policy, debounce_ms, permission_grants_json, selector, metadata_json,
           enabled, created_at, updated_at, last_delivered_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(source_session_key, observer_role) DO UPDATE SET
           source_session_name = excluded.source_session_name,
           source_agent_id = excluded.source_agent_id,
@@ -798,6 +936,7 @@ function upsertObserverBinding(input: {
           delivery_policy = excluded.delivery_policy,
           debounce_ms = excluded.debounce_ms,
           permission_grants_json = excluded.permission_grants_json,
+          selector = excluded.selector,
           metadata_json = excluded.metadata_json,
           enabled = excluded.enabled,
           updated_at = excluded.updated_at
@@ -823,6 +962,7 @@ function upsertObserverBinding(input: {
       input.rule.deliveryPolicy,
       input.rule.debounceMs ?? null,
       stringifyJson(input.rule.permissionGrants),
+      input.rule.selector ?? null,
       metadata ? stringifyJson(metadata) : null,
       input.rule.enabled ? 1 : 0,
       existing?.createdAt ?? now,
@@ -900,6 +1040,8 @@ export function buildObservationSourceDescriptor(input: {
   const workflow = task?.id ? dbGetTaskWorkflowSurface(task.id) : null;
   const project = workflow ? getProjectSurfaceByWorkflowRunId(workflow.workflowRunId) : null;
   const contactIds = resolveSessionContactIds(input.session);
+  const promptSource = input.prompt?.source;
+  const promptContext = input.prompt?.context;
   const tags = uniqueTags([
     ...collectTagsForTarget("session", sourceSessionName),
     ...(sourceSessionName !== input.session.sessionKey
@@ -924,6 +1066,28 @@ export function buildObservationSourceDescriptor(input: {
     ...(project?.projectId ? { projectId: project.projectId } : {}),
     ...(project?.projectSlug ? { projectSlug: project.projectSlug } : {}),
     ...(contactIds.length > 0 ? { contactIds } : {}),
+    ...((promptSource?.channel ?? input.session.channel ?? input.session.lastChannel)
+      ? { channel: promptSource?.channel ?? input.session.channel ?? input.session.lastChannel }
+      : {}),
+    ...((promptSource?.accountId ?? promptContext?.accountId ?? input.session.accountId ?? input.session.lastAccountId)
+      ? {
+          accountId:
+            promptSource?.accountId ??
+            promptContext?.accountId ??
+            input.session.accountId ??
+            input.session.lastAccountId,
+        }
+      : {}),
+    ...((promptSource?.chatId ?? promptContext?.chatId ?? input.session.lastTo)
+      ? { chatId: promptSource?.chatId ?? promptContext?.chatId ?? input.session.lastTo }
+      : {}),
+    ...((promptSource?.threadId ?? input.session.lastThreadId)
+      ? { threadId: promptSource?.threadId ?? input.session.lastThreadId }
+      : {}),
+    ...(input.session.chatType ? { chatType: input.session.chatType } : {}),
+    ...((promptContext?.actorType ?? promptSource?.actorType)
+      ? { actorType: promptContext?.actorType ?? promptSource?.actorType }
+      : {}),
     tags,
   };
 }
@@ -936,7 +1100,7 @@ function isObserverSessionName(sessionName: string): boolean {
   return sessionName.startsWith("obs:");
 }
 
-function matchRule(rule: ObserverRule, source: ObservationSourceDescriptor): ObserverRuleMatchResult {
+function matchLegacyRule(rule: ObserverRule, source: ObservationSourceDescriptor): ObserverRuleMatchResult {
   if (!rule.enabled) return { matched: false, reason: "disabled" };
   switch (rule.scope) {
     case "global":
@@ -1006,6 +1170,26 @@ function matchRule(rule: ObserverRule, source: ObservationSourceDescriptor): Obs
           }
         : { matched: false, reason: "tag_mismatch" };
     }
+  }
+}
+
+function matchRule(rule: ObserverRule, source: ObservationSourceDescriptor): ObserverRuleMatchResult {
+  const legacy = matchLegacyRule(rule, source);
+  if (!legacy.matched) return legacy;
+  const exclusionReason = sourceExclusionReason(rule.metadata, source);
+  if (exclusionReason) return { matched: false, reason: exclusionReason };
+  if (!rule.selector) return legacy;
+
+  try {
+    const selector = compileObserverSelector(rule.selector);
+    if (selector.roots.some((root) => root !== "source")) {
+      return { ...legacy, reason: `${legacy.reason}+selector_deferred` };
+    }
+    return selector.evaluate({ source })
+      ? { ...legacy, reason: `${legacy.reason}+selector` }
+      : { matched: false, reason: "selector_mismatch" };
+  } catch {
+    return { matched: false, reason: "invalid_selector" };
   }
 }
 
@@ -1082,17 +1266,107 @@ export function ensureObserverBindingsForSession(input: {
   return { source, bindings, created, skipped };
 }
 
+/** Reconcile durable bindings against the current rule/profile desired state. */
+export function reconcileObserverBindingsForSession(input: {
+  sessionName: string;
+  session: SessionEntry;
+  agent?: AgentConfig;
+  prompt?: RuntimeLaunchPrompt;
+  mode?: ObserverReconcileMode;
+}): ReturnType<typeof ensureObserverBindingsForSession> & {
+  mode: ObserverReconcileMode;
+  disabled: ObserverBinding[];
+  refreshedProfiles: ObserverBinding[];
+} {
+  const mode = input.mode ?? "attach-missing";
+  const result = ensureObserverBindingsForSession(input);
+  if (!result.source || mode === "attach-missing") {
+    return { ...result, mode, disabled: [], refreshedProfiles: [] };
+  }
+
+  const selectedIds = new Set(result.bindings.map((binding) => binding.id));
+  const disabled: ObserverBinding[] = [];
+  const refreshedProfiles: ObserverBinding[] = [];
+  const shouldDetach = mode === "detach-disabled" || mode === "full-reconcile";
+  const shouldRefreshProfiles = mode === "refresh-profile" || mode === "full-reconcile";
+
+  const existingBindings = dbListObserverBindings({ sourceSessionKey: result.source.sessionKey });
+  const db = getDb();
+  db.transaction(() => {
+    for (const binding of existingBindings) {
+      const selected = selectedIds.has(binding.id);
+      if (shouldDetach && !selected && binding.enabled) {
+        db.prepare("UPDATE observer_bindings SET enabled = 0, updated_at = ? WHERE id = ?").run(Date.now(), binding.id);
+        const updated = dbGetObserverBinding(binding.id);
+        if (updated) disabled.push(updated);
+        continue;
+      }
+      if (!shouldRefreshProfiles || !selected) continue;
+
+      const rule = dbGetObserverRule(binding.ruleId);
+      // A present rule is authoritative even when its explicit profile was cleared.
+      // Only an orphaned binding falls back to its previously persisted profile id.
+      const profile = resolveObserverProfile(rule ? rule.observerProfileId : binding.observerProfileId);
+      db.prepare(
+        `UPDATE observer_bindings
+         SET observer_profile_id = ?, observer_profile_version = ?, observer_profile_source = ?,
+             observer_profile_snapshot_markdown = ?, updated_at = ?
+         WHERE id = ?`,
+      ).run(
+        profile.id,
+        profile.version,
+        profile.source,
+        buildObserverProfileSnapshotMarkdown(profile),
+        Date.now(),
+        binding.id,
+      );
+      const updated = dbGetObserverBinding(binding.id);
+      if (updated) refreshedProfiles.push(updated);
+    }
+  })();
+
+  const reload = (binding: ObserverBinding): ObserverBinding => dbGetObserverBinding(binding.id) ?? binding;
+  return {
+    ...result,
+    bindings: result.bindings.map(reload),
+    created: result.created.map(reload),
+    mode,
+    disabled,
+    refreshedProfiles,
+  };
+}
+
 function bindingAllowsEvent(
   binding: ObserverBinding,
+  source: ObservationSourceDescriptor,
   event: ObservationEvent,
   deliveryPolicies?: Set<ObservationDeliveryPolicy>,
 ): boolean {
-  return (
+  const basicMatch =
     binding.enabled &&
     binding.deliveryPolicy !== "manual" &&
     (!deliveryPolicies || deliveryPolicies.has(binding.deliveryPolicy)) &&
-    binding.eventTypes.includes(event.type)
-  );
+    binding.eventTypes.includes(event.type);
+  if (!basicMatch) return false;
+  if (sourceExclusionReason(binding.metadata, source)) return false;
+  if (!binding.selector) return true;
+  try {
+    return compileObserverSelector(binding.selector).evaluate({
+      source,
+      turn: event.turn,
+      event: {
+        id: event.id,
+        type: event.type,
+        timestamp: event.timestamp,
+        turnId: event.turnId,
+        preview: event.preview,
+        payload: event.payload,
+      },
+    });
+  } catch {
+    // Persisted invalid selectors fail closed even if the database was edited manually.
+    return false;
+  }
 }
 
 function composeObservationPrompt(input: {
@@ -1112,6 +1386,19 @@ function composeObservationPrompt(input: {
     deliveryPolicy: input.binding.deliveryPolicy,
     runId: input.runId,
   });
+}
+
+function claimObservationEvents(bindingId: string, events: ObservationEvent[]): ObservationEvent[] {
+  const statement = getDb().prepare(
+    "INSERT OR IGNORE INTO observer_delivery_events (binding_id, event_id, delivered_at) VALUES (?, ?, ?)",
+  );
+  const now = Date.now();
+  return events.filter((event) => statement.run(bindingId, event.id, now).changes > 0);
+}
+
+function releaseObservationEventClaims(bindingId: string, events: ObservationEvent[]): void {
+  const statement = getDb().prepare("DELETE FROM observer_delivery_events WHERE binding_id = ? AND event_id = ?");
+  for (const event of events) statement.run(bindingId, event.id);
 }
 
 export async function deliverObservationEvents(input: {
@@ -1150,44 +1437,67 @@ export async function deliverObservationEvents(input: {
   const deliveryPolicies = input.deliveryPolicies ? new Set(input.deliveryPolicies) : undefined;
 
   for (const binding of bindings) {
-    const selected = input.events.filter((event) => bindingAllowsEvent(binding, event, deliveryPolicies));
+    const exclusionReason = sourceExclusionReason(binding.metadata, source);
+    if (exclusionReason) {
+      skipped.push({ bindingId: binding.id, reason: exclusionReason });
+      continue;
+    }
+    const selected = input.events.filter((event) => bindingAllowsEvent(binding, source, event, deliveryPolicies));
     if (selected.length === 0) {
-      skipped.push({ bindingId: binding.id, reason: "no_matching_events" });
+      skipped.push({
+        bindingId: binding.id,
+        reason: binding.selector ? "selector_or_event_mismatch" : "no_matching_events",
+      });
+      continue;
+    }
+
+    const claimed = claimObservationEvents(binding.id, selected);
+    if (claimed.length === 0) {
+      skipped.push({ bindingId: binding.id, reason: "events_already_delivered" });
       continue;
     }
 
     const prompt = composeObservationPrompt({
       binding,
       source,
-      events: selected,
+      events: claimed,
       runId: input.runId,
     });
-    await observationPromptPublisher(binding.observerSessionName, {
-      prompt,
-      _agentId: binding.observerAgentId,
-      ...(binding.observerRuntimeProviderId ? { _runtimeProviderId: binding.observerRuntimeProviderId } : {}),
-      ...(binding.observerModel ? { _runtimeModel: binding.observerModel } : {}),
-      _observation: {
-        sourceSessionKey: source.sessionKey,
-        sourceSessionName: source.sessionName,
-        bindingId: binding.id,
-        ruleId: binding.ruleId,
-        role: binding.observerRole,
-        mode: binding.observerMode,
-        ...(binding.observerProfileId ? { profileId: binding.observerProfileId } : {}),
-        ...(binding.observerProfileVersion ? { profileVersion: binding.observerProfileVersion } : {}),
-        ...(binding.permissionGrants.length > 0 ? { permissionGrants: binding.permissionGrants } : {}),
-        eventIds: selected.map((event) => event.id),
-      },
-      deliveryBarrier: "after_response",
-    });
+    const sourceTurnIds = [
+      ...new Set(claimed.map((event) => event.turnId).filter((id): id is string => Boolean(id))),
+    ].sort();
+    try {
+      await observationPromptPublisher(binding.observerSessionName, {
+        prompt,
+        _agentId: binding.observerAgentId,
+        ...(binding.observerRuntimeProviderId ? { _runtimeProviderId: binding.observerRuntimeProviderId } : {}),
+        ...(binding.observerModel ? { _runtimeModel: binding.observerModel } : {}),
+        _observation: {
+          sourceSessionKey: source.sessionKey,
+          sourceSessionName: source.sessionName,
+          bindingId: binding.id,
+          ruleId: binding.ruleId,
+          role: binding.observerRole,
+          mode: binding.observerMode,
+          ...(binding.observerProfileId ? { profileId: binding.observerProfileId } : {}),
+          ...(binding.observerProfileVersion ? { profileVersion: binding.observerProfileVersion } : {}),
+          ...(binding.permissionGrants.length > 0 ? { permissionGrants: binding.permissionGrants } : {}),
+          eventIds: claimed.map((event) => event.id),
+          ...(sourceTurnIds.length > 0 ? { sourceTurnIds } : {}),
+        },
+        deliveryBarrier: "after_response",
+      });
+    } catch (error) {
+      releaseObservationEventClaims(binding.id, claimed);
+      throw error;
+    }
     getDb()
       .prepare("UPDATE observer_bindings SET last_delivered_at = ?, updated_at = ? WHERE id = ?")
       .run(Date.now(), Date.now(), binding.id);
     delivered.push({
       bindingId: binding.id,
       observerSessionName: binding.observerSessionName,
-      eventCount: selected.length,
+      eventCount: claimed.length,
     });
   }
 
@@ -1215,6 +1525,16 @@ export function getObservationDebounceMs(input: {
   const delays = bindings
     .filter(
       (binding) =>
+        !sourceExclusionReason(binding.metadata, source) &&
+        (!binding.selector ||
+          (() => {
+            try {
+              const selector = compileObserverSelector(binding.selector);
+              return selector.roots.some((root) => root !== "source") || selector.evaluate({ source });
+            } catch {
+              return false;
+            }
+          })()) &&
         binding.deliveryPolicy === "debounce" &&
         input.eventTypes.some((eventType) => binding.eventTypes.includes(eventType)),
     )
@@ -1229,6 +1549,8 @@ export function validateObserverRules(): {
   const errors: Array<{ ruleId: string; message: string }> = [];
   for (const rule of dbListObserverRules()) {
     try {
+      if (rule.selector) compileObserverSelector(rule.selector);
+      validateObserverSourceExclusions(rule.metadata);
       validateRuleSafety({
         scope: rule.scope,
         mode: rule.observerMode,
@@ -1251,10 +1573,11 @@ export function validateObserverRules(): {
 }
 
 export function createObservationEvent(
-  input: Omit<ObservationEvent, "id" | "timestamp"> & {
+  input: Omit<ObservationEvent, "id" | "timestamp" | "turn"> & {
     runId: string;
     sequence: number;
     timestamp?: number;
+    turn?: TurnProvenance;
   },
 ): ObservationEvent {
   return {
@@ -1264,6 +1587,7 @@ export function createObservationEvent(
     ...(input.turnId ? { turnId: input.turnId } : {}),
     ...(input.preview ? { preview: input.preview } : {}),
     ...(input.payload ? { payload: input.payload } : {}),
+    turn: input.turn ?? classifyTurnProvenance(),
   };
 }
 

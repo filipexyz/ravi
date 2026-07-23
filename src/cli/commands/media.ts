@@ -4,7 +4,7 @@
 
 import "reflect-metadata";
 import { z } from "zod";
-import { Group, Command, Arg, Option, Returns } from "../decorators.js";
+import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { looseObjectSchema } from "../return-schemas.js";
 import { sendMediaWithOmniCli } from "../media-send.js";
@@ -40,6 +40,7 @@ const mediaSendReturnSchema = z.object({
 })
 export class MediaCommands {
   @Command({ name: "send", description: "Send a media file (image, video, audio, document)" })
+  @CommandAccess({ kind: "mutate", resource: "media", action: "send", risk: "high" })
   @Returns(mediaSendReturnSchema)
   async send(
     @Arg("filePath", { description: "Path to the file to send" }) filePath: string,

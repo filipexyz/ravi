@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { readFileSync, rmSync } from "node:fs";
-import { Arg, Command, Group, Option, Returns } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -106,6 +106,7 @@ async function emitDispatchResult(result: Awaited<ReturnType<typeof queueOrDispa
 })
 export class WorkflowSpecCommands {
   @Command({ name: "create", description: "Create one workflow spec from narrow JSON definition" })
+  @CommandAccess({ kind: "mutate", resource: "workflows.specs", action: "create", risk: "medium" })
   @Returns(workflowSpecReturnSchema)
   create(
     @Arg("specId", { description: "Stable workflow spec id" }) specId: string,
@@ -140,6 +141,7 @@ export class WorkflowSpecCommands {
   }
 
   @Command({ name: "list", description: "List workflow specs" })
+  @CommandAccess({ kind: "read", resource: "workflows.specs", action: "list", risk: "low" })
   @Returns(workflowSpecsListReturnSchema)
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -175,6 +177,7 @@ export class WorkflowSpecCommands {
   }
 
   @Command({ name: "show", description: "Show one workflow spec" })
+  @CommandAccess({ kind: "read", resource: "workflows.specs", action: "show", risk: "low" })
   @Returns(workflowSpecReturnSchema)
   show(
     @Arg("specId", { description: "Workflow spec id" }) specId: string,
@@ -217,6 +220,7 @@ export class WorkflowSpecCommands {
 })
 export class WorkflowRunCommands {
   @Command({ name: "start", description: "Instantiate one workflow run from a spec" })
+  @CommandAccess({ kind: "mutate", resource: "workflows.runs", action: "start", risk: "high" })
   @Returns(workflowRunDetailsReturnSchema)
   start(
     @Arg("specId", { description: "Workflow spec id" }) specId: string,
@@ -241,6 +245,7 @@ export class WorkflowRunCommands {
   }
 
   @Command({ name: "list", description: "List workflow runs" })
+  @CommandAccess({ kind: "read", resource: "workflows.runs", action: "list", risk: "low" })
   @Returns(workflowRunsListReturnSchema)
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -276,6 +281,7 @@ export class WorkflowRunCommands {
   }
 
   @Command({ name: "show", description: "Show one workflow run with node state" })
+  @CommandAccess({ kind: "read", resource: "workflows.runs", action: "show", risk: "low" })
   @Returns(workflowRunDetailsReturnSchema)
   show(
     @Arg("runId", { description: "Workflow run id" }) runId: string,
@@ -295,6 +301,7 @@ export class WorkflowRunCommands {
   }
 
   @Command({ name: "release", description: "Release a manual node transition or gate" })
+  @CommandAccess({ kind: "read", resource: "workflows.runs", action: "release", risk: "low" })
   @Returns(workflowRunMutationReturnSchema)
   release(
     @Arg("runId", { description: "Workflow run id" }) runId: string,
@@ -313,6 +320,7 @@ export class WorkflowRunCommands {
   }
 
   @Command({ name: "skip", description: "Skip one optional workflow node" })
+  @CommandAccess({ kind: "read", resource: "workflows.runs", action: "skip", risk: "low" })
   @Returns(workflowRunMutationReturnSchema)
   skip(
     @Arg("runId", { description: "Workflow run id" }) runId: string,
@@ -330,6 +338,7 @@ export class WorkflowRunCommands {
   }
 
   @Command({ name: "cancel", description: "Cancel one workflow node run" })
+  @CommandAccess({ kind: "mutate", resource: "workflows.runs", action: "cancel", risk: "medium" })
   @Returns(workflowRunMutationReturnSchema)
   cancel(
     @Arg("runId", { description: "Workflow run id" }) runId: string,
@@ -347,6 +356,7 @@ export class WorkflowRunCommands {
   }
 
   @Command({ name: "archive-node", description: "Archive one node run from workflow aggregate state" })
+  @CommandAccess({ kind: "mutate", resource: "workflows.runs", action: "archive-node", risk: "medium" })
   @Returns(workflowRunMutationReturnSchema)
   archiveNode(
     @Arg("runId", { description: "Workflow run id" }) runId: string,
@@ -364,6 +374,7 @@ export class WorkflowRunCommands {
   }
 
   @Command({ name: "task-attach", description: "Attach an existing task to a workflow task node" })
+  @CommandAccess({ kind: "mutate", resource: "workflows.runs", action: "task-attach", risk: "medium" })
   @Returns(workflowRunMutationReturnSchema)
   taskAttach(
     @Arg("runId", { description: "Workflow run id" }) runId: string,
@@ -382,6 +393,7 @@ export class WorkflowRunCommands {
   }
 
   @Command({ name: "task-create", description: "Create a new task attempt for one workflow task node" })
+  @CommandAccess({ kind: "mutate", resource: "workflows.runs", action: "task-create", risk: "medium" })
   @Returns(workflowTaskCreateReturnSchema)
   async taskCreate(
     @Arg("runId", { description: "Workflow run id" }) runId: string,

@@ -1,9 +1,28 @@
 import "reflect-metadata";
 import { readFileSync } from "node:fs";
-import { Arg, Group, Command, Option } from "../decorators.js";
+import { Arg, Group, Command, CommandAccess, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
-import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
+import {
+  contextAuthorizeReturnSchema,
+  contextCapabilitiesReturnSchema,
+  contextCheckReturnSchema,
+  contextCleanupAgentRuntimeReturnSchema,
+  contextCodexBashHookReturnSchema,
+  contextCredentialsAddReturnSchema,
+  contextCredentialsListReturnSchema,
+  contextCredentialsRemoveReturnSchema,
+  contextCredentialsSetDefaultReturnSchema,
+  contextInfoReturnSchema,
+  contextIssueReturnSchema,
+  contextLineageReturnSchema,
+  contextListReturnSchema,
+  contextPruneReturnSchema,
+  contextRevokeReturnSchema,
+  contextVisibilityReturnSchema,
+  contextWhoamiReturnSchema,
+  declareCommandReturns,
+} from "./operational-return-schemas.js";
 import {
   issueRuntimeContext,
   resolveRuntimeContextOrThrow,
@@ -11,7 +30,7 @@ import {
   getContextLineage,
   RAVI_CONTEXT_KEY_ENV,
 } from "../../runtime/context-registry.js";
-import { dbGetContext, dbListContexts, type ContextRecord } from "../../router/router-db.js";
+import { dbGetContext, dbListContexts, dbPruneContexts, type ContextRecord } from "../../router/router-db.js";
 import { listSessions, resolveSession } from "../../router/sessions.js";
 import { buildRuntimeSessionVisibilityPayload } from "../../runtime/session-visibility.js";
 import {
@@ -24,7 +43,7 @@ import {
   writeCredentialsFile,
   type CredentialsFile,
 } from "../../runtime/credentials-store.js";
-import { canWithCapabilityContext } from "../../permissions/engine.js";
+import { canWithCapabilityContext } from "../../permissions/provider-runtime.js";
 import { authorizeRuntimeContext } from "../../approval/service.js";
 import type { ContextCapability } from "../../router/router-db.js";
 import { buildPreToolUseDenyResult, emitBashDeniedAudit, evaluateBashPermission } from "../../bash/hook.js";
@@ -133,6 +152,7 @@ interface AgentRuntimeCleanupCandidate {
 })
 export class ContextCommands {
   @Command({ name: "list", description: "List issued runtime contexts without exposing context keys" })
+  @CommandAccess({ kind: "read", resource: "context", action: "list", risk: "low" })
   list(
     @Option({ flags: "--agent <agentId>", description: "Filter by agent ID" }) agentId?: string,
     @Option({ flags: "--session <sessionKey>", description: "Filter by session key" }) sessionKey?: string,
@@ -170,6 +190,7 @@ export class ContextCommands {
   }
 
   @Command({ name: "info", description: "Show full runtime context details without exposing the context key" })
+  @CommandAccess({ kind: "read", resource: "context", action: "info", risk: "low" })
   info(
     @Arg("contextId", { description: "Context ID to inspect" }) contextId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
@@ -185,6 +206,7 @@ export class ContextCommands {
   }
 
   @Command({ name: "whoami", description: "Resolve the current runtime context" })
+  @CommandAccess({ kind: "read", resource: "context", action: "whoami", risk: "low" })
   whoami(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const context = this.requireResolvedContext();
     const payload = this.serializeContextDetail(context);
@@ -193,6 +215,7 @@ export class ContextCommands {
   }
 
   @Command({ name: "capabilities", description: "List inherited capabilities for the current runtime context" })
+  @CommandAccess({ kind: "read", resource: "context", action: "capabilities", risk: "low" })
   capabilities(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const context = this.requireResolvedContext();
     const payload: ContextCapabilitiesPayload = {
@@ -209,6 +232,7 @@ export class ContextCommands {
   }
 
   @Command({ name: "visibility", description: "Show the current context session visibility" })
+  @CommandAccess({ kind: "read", resource: "context", action: "visibility", risk: "low" })
   visibility(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const context = this.requireResolvedContext();
     const session =
@@ -235,6 +259,7 @@ export class ContextCommands {
   }
 
   @Command({ name: "check", description: "Check whether the current runtime context allows an action" })
+  @CommandAccess({ kind: "read", resource: "context", action: "check", risk: "low" })
   check(
     @Arg("permission", { description: "Permission name (e.g. execute, access, use)" }) permission: string,
     @Arg("objectType", { description: "Object type (e.g. group, session, tool)" }) objectType: string,
@@ -257,6 +282,7 @@ export class ContextCommands {
   }
 
   @Command({ name: "authorize", description: "Request approval and extend the current runtime context if approved" })
+  @CommandAccess({ kind: "read", resource: "context", action: "authorize", risk: "low" })
   async authorize(
     @Arg("permission", { description: "Permission name (e.g. execute, access, use)" }) permission: string,
     @Arg("objectType", { description: "Object type (e.g. group, session, tool)" }) objectType: string,
@@ -289,6 +315,7 @@ export class ContextCommands {
   }
 
   @Command({ name: "issue", description: "Issue a least-privilege child context for an external CLI" })
+  @CommandAccess({ kind: "read", resource: "context", action: "issue", risk: "low" })
   issue(
     @Arg("cliName", { description: "Logical CLI name for audit and lineage" }) cliName: string,
     @Option({
@@ -338,22 +365,24 @@ export class ContextCommands {
   }
 
   @Command({ name: "revoke", description: "Revoke a runtime context by context ID" })
+  @CommandAccess({ kind: "mutate", resource: "context", action: "revoke", risk: "destructive" })
   revoke(
     @Arg("contextId", { description: "Context ID to revoke" }) contextId: string,
     @Option({
       flags: "--no-cascade",
       description: "Do not revoke descendant contexts (use only for narrow rotation; emits a loud warning)",
     })
-    cascade = true,
+    noCascade = false,
     @Option({ flags: "--reason <text>", description: "Reason recorded in metadata for audit and forensics" })
     reason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
-    if (cascade === false) {
+    if (noCascade) {
       console.error(
         "WARNING: --no-cascade leaves descendant contexts active. Workers using child rctx_* keys will keep auth.",
       );
     }
+    const cascade = !noCascade;
     const result = revokeRuntimeContext(contextId, { cascade, reason });
     const payload = this.serializeRevokeResult(result.context, result.cascaded, result.revokedAt);
     this.printPayload(payload, asJson, () =>
@@ -366,6 +395,7 @@ export class ContextCommands {
     name: "cleanup-agent-runtime",
     description: "Dry-run or revoke stale agent-runtime contexts left by old turn-scoped issuance",
   })
+  @CommandAccess({ kind: "mutate", resource: "context", action: "cleanup-agent-runtime", risk: "destructive" })
   cleanupAgentRuntime(
     @Option({
       flags: "--older-than <duration>",
@@ -435,7 +465,46 @@ export class ContextCommands {
     return payload;
   }
 
+  @Command({
+    name: "prune",
+    description: "Compact the context store by deleting inactive (revoked/expired) contexts",
+  })
+  @CommandAccess({ kind: "mutate", resource: "context", action: "prune", risk: "destructive" })
+  prune(
+    @Option({
+      flags: "--older-than <duration>",
+      description: "Only delete contexts created at least this long ago (default: 7d)",
+    })
+    olderThan = "7d",
+    @Option({ flags: "--apply", description: "Delete the matched contexts. Requires --confirm prune-contexts." })
+    apply = false,
+    @Option({ flags: "--confirm <text>", description: "Required with --apply; must be exactly prune-contexts" })
+    confirm?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+  ) {
+    if (apply && confirm !== "prune-contexts") {
+      fail("--apply requires --confirm prune-contexts");
+    }
+    const olderThanMs = parseDurationMs(olderThan);
+    const result = dbPruneContexts({ apply, olderThanMs });
+    const payload = {
+      status: apply ? ("pruned" as const) : ("planned" as const),
+      dryRun: !apply,
+      olderThan,
+      matchedCount: result.matched,
+      changedCount: result.pruned,
+    };
+    this.printPayload(payload, asJson, () => {
+      console.log(
+        `${apply ? "✓ Pruned" : "✓ Planned prune of"} ${result.matched} inactive context(s) older than ${olderThan}` +
+          (apply ? "" : "; pass --apply --confirm prune-contexts to delete"),
+      );
+    });
+    return payload;
+  }
+
   @Command({ name: "lineage", description: "Show ancestor chain and descendant tree for a runtime context" })
+  @CommandAccess({ kind: "read", resource: "context", action: "lineage", risk: "low" })
   lineage(
     @Arg("contextId", { description: "Context ID to inspect" }) contextId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
@@ -459,6 +528,7 @@ export class ContextCommands {
     name: "codex-bash-hook",
     description: "Evaluate a Codex PreToolUse Bash hook payload from stdin using the current Ravi context",
   })
+  @CommandAccess({ kind: "read", resource: "context", action: "codex-bash-hook", risk: "low" })
   codexBashHook(@Option({ flags: "--json", description: "Print raw JSON result" }) _asJson = false) {
     const output = this.handleCodexBashHook();
     console.log(JSON.stringify(output));
@@ -508,16 +578,21 @@ export class ContextCommands {
         return buildPreToolUseDenyResult("Codex hook payload is missing tool_input.command");
       }
 
-      const decision = evaluateBashPermission(command, {
+      const bashContext = {
+        contextId: context.contextId,
+        context,
         agentId: context.agentId,
         kind: context.kind,
         sessionKey: context.sessionKey,
         sessionName: context.sessionName,
+        source: context.source,
         capabilities: context.capabilities,
-      });
+        metadata: context.metadata,
+      };
+      const decision = evaluateBashPermission(command, bashContext);
 
       if (!decision.allowed) {
-        emitBashDeniedAudit(command, decision, context.agentId);
+        emitBashDeniedAudit(command, decision, context.agentId, bashContext);
         return buildPreToolUseDenyResult(decision.reason ?? "Bash command denied by Ravi");
       }
 
@@ -847,6 +922,7 @@ interface SerializedCredentialEntry {
 })
 export class ContextCredentialsCommands {
   @Command({ name: "list", description: "List entries in the local credentials store" })
+  @CommandAccess({ kind: "read", resource: "context.credentials", action: "list", risk: "low" })
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
@@ -909,6 +985,7 @@ export class ContextCredentialsCommands {
   }
 
   @Command({ name: "add", description: "Add a runtime context-key to the local credentials store" })
+  @CommandAccess({ kind: "mutate", resource: "context.credentials", action: "add", risk: "medium" })
   add(
     @Arg("contextKey", { description: "Runtime context-key (rctx_*)" }) contextKey: string,
     @Option({ flags: "--label <label>", description: "Human label (defaults to hostname)" }) label?: string,
@@ -945,6 +1022,7 @@ export class ContextCredentialsCommands {
   }
 
   @Command({ name: "set-default", description: "Mark a stored context-key as the default" })
+  @CommandAccess({ kind: "mutate", resource: "context.credentials", action: "set-default", risk: "medium" })
   setDefault(
     @Arg("contextKey", { description: "Runtime context-key (rctx_*)" }) contextKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
@@ -969,6 +1047,7 @@ export class ContextCredentialsCommands {
   }
 
   @Command({ name: "remove", description: "Remove a stored context-key from the credentials store" })
+  @CommandAccess({ kind: "mutate", resource: "context.credentials", action: "remove", risk: "destructive" })
   remove(
     @Arg("contextKey", { description: "Runtime context-key (rctx_*)" }) contextKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
@@ -1005,25 +1084,26 @@ export class ContextCredentialsCommands {
 }
 
 declareCommandReturns(ContextCommands, {
-  authorize: commandEnvelopeReturnSchema,
-  capabilities: commandEnvelopeReturnSchema,
-  check: commandEnvelopeReturnSchema,
-  cleanupAgentRuntime: commandEnvelopeReturnSchema,
-  codexBashHook: commandEnvelopeReturnSchema,
-  info: commandEnvelopeReturnSchema,
-  issue: commandEnvelopeReturnSchema,
-  lineage: commandEnvelopeReturnSchema,
-  list: commandEnvelopeReturnSchema,
-  revoke: commandEnvelopeReturnSchema,
-  visibility: commandEnvelopeReturnSchema,
-  whoami: commandEnvelopeReturnSchema,
+  authorize: contextAuthorizeReturnSchema,
+  capabilities: contextCapabilitiesReturnSchema,
+  check: contextCheckReturnSchema,
+  cleanupAgentRuntime: contextCleanupAgentRuntimeReturnSchema,
+  codexBashHook: contextCodexBashHookReturnSchema,
+  info: contextInfoReturnSchema,
+  issue: contextIssueReturnSchema,
+  lineage: contextLineageReturnSchema,
+  list: contextListReturnSchema,
+  prune: contextPruneReturnSchema,
+  revoke: contextRevokeReturnSchema,
+  visibility: contextVisibilityReturnSchema,
+  whoami: contextWhoamiReturnSchema,
 });
 
 declareCommandReturns(ContextCredentialsCommands, {
-  add: commandEnvelopeReturnSchema,
-  list: commandEnvelopeReturnSchema,
-  remove: commandEnvelopeReturnSchema,
-  setDefault: commandEnvelopeReturnSchema,
+  add: contextCredentialsAddReturnSchema,
+  list: contextCredentialsListReturnSchema,
+  remove: contextCredentialsRemoveReturnSchema,
+  setDefault: contextCredentialsSetDefaultReturnSchema,
 });
 
 function serializeCredentialsFile(data: CredentialsFile): SerializedCredentialEntry[] {

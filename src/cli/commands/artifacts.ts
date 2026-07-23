@@ -6,7 +6,7 @@ import "reflect-metadata";
 import { file as bunFile } from "bun";
 import { statSync } from "node:fs";
 import { resolve } from "node:path";
-import { Arg, Command, Group, Option, Returns } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, parseCliListLimit, parseCliListOffset } from "../pagination.js";
 import {
@@ -96,6 +96,14 @@ function parseInteger(value: string | undefined, label: string): number | undefi
   if (parsed === undefined) return undefined;
   if (!Number.isInteger(parsed)) fail(`${label} must be an integer.`);
   return parsed;
+}
+
+function parseArtifactOrderBy(value: string | undefined): "createdAt" | "updatedAt" | undefined {
+  if (!value?.trim()) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "created" || normalized === "createdat" || normalized === "created_at") return "createdAt";
+  if (normalized === "updated" || normalized === "updatedat" || normalized === "updated_at") return "updatedAt";
+  fail(`Invalid --order-by: ${value}. Use createdAt|updatedAt.`);
 }
 
 function contextDefaults() {
@@ -265,6 +273,7 @@ function isDirectoryPath(path: string): boolean {
 })
 export class ArtifactsCommands {
   @Command({ name: "create", description: "Create a generic Ravi artifact record" })
+  @CommandAccess({ kind: "mutate", resource: "artifacts", action: "create", risk: "medium" })
   @Returns(artifactCreateReturnSchema)
   create(
     @Option({ flags: "--kind <kind>", description: "Optional semantic artifact kind, e.g. image, report, trace" })
@@ -373,6 +382,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "list", description: "List artifacts" })
+  @CommandAccess({ kind: "read", resource: "artifacts", action: "list", risk: "low" })
   @Returns(artifactListReturnSchema)
   list(
     @Option({ flags: "--kind <kind>", description: "Filter by artifact kind" }) kind?: string,
@@ -382,12 +392,14 @@ export class ArtifactsCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500; rich max: 200)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching artifacts to skip (default: 0)" })
     offset?: string,
+    @Option({ flags: "--order-by <field>", description: "Sort by createdAt or updatedAt (default: createdAt)" })
+    orderBy?: string,
     @Option({ flags: "--include-deleted", description: "Include archived/deleted artifacts" }) includeDeleted?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({
       flags: "--rich",
       description:
-        "Return rich projection with stats and per-item lineage (task/session/agent refs). Honors --kind/--session/--task/--limit/--lifecycle/--agent; ignores --tag/--include-deleted.",
+        "Return rich projection with stats and per-item lineage (task/session/agent refs). Honors --kind/--session/--task/--tag/--limit/--lifecycle/--agent; ignores --include-deleted.",
     })
     rich?: boolean,
     @Option({
@@ -406,8 +418,10 @@ export class ArtifactsCommands {
       const payload = buildOverlayArtifactsPayload({
         ...(limit ? { limit: parseInteger(limit, "--limit") } : {}),
         ...(offset ? { offset: parseCliListOffset(offset) } : {}),
+        ...(orderBy ? { orderBy: parseArtifactOrderBy(orderBy) } : {}),
         ...(normalizedLifecycle ? { lifecycle: normalizedLifecycle } : {}),
         ...(kind?.trim() ? { kind: kind.trim() } : {}),
+        ...(tag?.trim() ? { tag: tag.trim() } : {}),
         ...(taskId?.trim() ? { taskId: taskId.trim() } : {}),
         ...(session?.trim() ? { sessionId: session.trim() } : {}),
         ...(agentId?.trim() ? { agentId: agentId.trim() } : {}),
@@ -418,11 +432,13 @@ export class ArtifactsCommands {
 
     const pageLimit = parseCliListLimit(limit);
     const pageOffset = parseCliListOffset(offset);
+    const parsedOrderBy = parseArtifactOrderBy(orderBy);
     const filterOptions = {
       ...(kind?.trim() ? { kind: kind.trim() } : {}),
       ...(session?.trim() ? { session: session.trim() } : {}),
       ...(taskId?.trim() ? { taskId: taskId.trim() } : {}),
       ...(tag?.trim() ? { tag: tag.trim() } : {}),
+      ...(parsedOrderBy ? { orderBy: parsedOrderBy } : {}),
       includeDeleted: includeDeleted === true,
     };
     const page = listArtifactsPage({
@@ -446,6 +462,8 @@ export class ArtifactsCommands {
         taskId?.trim() || null,
         "--tag",
         tag?.trim() || null,
+        "--order-by",
+        parsedOrderBy && parsedOrderBy !== "createdAt" ? parsedOrderBy : null,
         includeDeleted ? "--include-deleted" : null,
       ],
     });
@@ -476,6 +494,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "show", description: "Show artifact details, links and events" })
+  @CommandAccess({ kind: "read", resource: "artifacts", action: "show", risk: "low" })
   @Returns(artifactDetailsReturnSchema)
   show(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -502,6 +521,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "snapshot", description: "Create an immutable version snapshot for an artifact" })
+  @CommandAccess({ kind: "read", resource: "artifacts", action: "snapshot", risk: "low" })
   @Returns(artifactSnapshotReturnSchema)
   snapshot(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -533,6 +553,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "versions", description: "List immutable versions for an artifact" })
+  @CommandAccess({ kind: "read", resource: "artifacts", action: "versions", risk: "low" })
   @Returns(artifactVersionsReturnSchema)
   versions(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -557,6 +578,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "version", description: "Show one immutable artifact version" })
+  @CommandAccess({ kind: "read", resource: "artifacts", action: "version", risk: "low" })
   @Returns(artifactVersionShowReturnSchema)
   version(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -579,6 +601,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "restore", description: "Restore current artifact content from an immutable version" })
+  @CommandAccess({ kind: "mutate", resource: "artifacts", action: "restore", risk: "medium" })
   @Returns(artifactRestoreReturnSchema)
   restore(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -611,6 +634,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "update", description: "Edit artifact metadata and high-level fields" })
+  @CommandAccess({ kind: "mutate", resource: "artifacts", action: "update", risk: "medium" })
   @Returns(artifactMutationReturnSchema)
   update(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -680,6 +704,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "attach", description: "Attach an artifact to a task, session, message or any target" })
+  @CommandAccess({ kind: "mutate", resource: "artifacts", action: "attach", risk: "medium" })
   @Returns(artifactMutationReturnSchema)
   attach(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -706,6 +731,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "archive", description: "Soft-archive an artifact" })
+  @CommandAccess({ kind: "mutate", resource: "artifacts", action: "archive", risk: "medium" })
   @Returns(artifactMutationReturnSchema)
   archive(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -722,6 +748,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "event", description: "Append an artifact lifecycle event" })
+  @CommandAccess({ kind: "read", resource: "artifacts", action: "event", risk: "low" })
   @Returns(artifactEventReturnSchema)
   event(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -752,6 +779,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "events", description: "List artifact lifecycle events" })
+  @CommandAccess({ kind: "read", resource: "artifacts", action: "events", risk: "low" })
   @Returns(artifactEventsReturnSchema)
   events(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -779,10 +807,15 @@ export class ArtifactsCommands {
     }
   }
 
-  @Command({ name: "publish", description: "Publish a local artifact package through a Console-compatible endpoint" })
+  @Command({
+    name: "publish",
+    description: "Upload a local artifact/file/directory to Console and optionally release it to Ravi Pages",
+  })
+  @CommandAccess({ kind: "mutate", resource: "artifacts", action: "publish", risk: "high" })
   @Returns(artifactPublishReturnSchema)
   async publish(
-    @Arg("target", { description: "Local artifact id, file, or directory" }) target: string,
+    @Arg("target", { description: "Local artifact id, file, or directory; use a directory with index.html for Pages" })
+    target: string,
     @Option({ flags: "--project <project>", description: "Console project id or slug" }) project?: string,
     @Option({ flags: "--site <site>", description: "Console site id or slug to release to" }) site?: string,
     @Option({ flags: "--route <path>", description: "Site route path to mount the artifact at" }) route?: string,
@@ -804,7 +837,7 @@ export class ArtifactsCommands {
     @Option({ flags: "--replace-release", description: "Replace the full active route map instead of merging" })
     replaceRelease?: boolean,
     @Option({ flags: "--no-activate", description: "Create publish records without activating a site release" })
-    activate?: boolean,
+    noActivate?: boolean,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
@@ -826,7 +859,7 @@ export class ArtifactsCommands {
         idempotencyKey,
         reason,
         replaceRelease,
-        activate,
+        activate: !noActivate,
         console: consoleUrl,
         json: asJson,
       });
@@ -851,6 +884,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "blob", description: "Stream raw artifact bytes" })
+  @CommandAccess({ kind: "read", resource: "artifacts", action: "blob", risk: "low" })
   @Returns.binary()
   async blob(@Arg("id", { description: "Artifact id" }) id: string): Promise<Response> {
     const result = await resolveArtifactBlob({ artifactId: id });
@@ -873,6 +907,7 @@ export class ArtifactsCommands {
 })
 export class ArtifactReleaseCommands {
   @Command({ name: "activate", description: "Activate an existing Pages release for a local artifact" })
+  @CommandAccess({ kind: "mutate", resource: "artifacts.release", action: "activate", risk: "high" })
   @Returns(artifactReleaseActivateReturnSchema)
   async activate(
     @Arg("id", { description: "Local artifact id" }) id: string,

@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { grantRelation } from "../permissions/relations.js";
-import { canWithCapabilities } from "../permissions/engine.js";
+import { createContact } from "../contacts.js";
+import { canWithCapabilities } from "../permissions/provider-runtime.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { dbCreateAgent, dbGetContext } from "../router/router-db.js";
+import { dbCreateAgent, dbGetContext, dbUpdateAgent } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/sessions.js";
+import { dbCreateTagDefinition } from "../tags/index.js";
+import { dbCreateTask, dbDispatchTask } from "../tasks/task-db.js";
 import type { AgentConfig } from "../router/index.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
@@ -11,14 +13,13 @@ import { buildRuntimeRequestContext, refreshRuntimeRequestContextForTurn } from 
 import { getRuntimeToolAccessMode } from "./host-services.js";
 
 let stateDir: string | null = null;
-let previousTurnScopedAuthority: string | undefined;
 
 const agent: AgentConfig = {
-  id: "rebac-agent",
-  cwd: "/tmp/rebac-agent",
+  id: "provider-agent",
+  cwd: "/tmp/provider-agent",
 };
-const sessionKey = "agent:rebac-agent:whatsapp:group:chat_group_1";
-const sessionName = "rebac-group";
+const sessionKey = "agent:provider-agent:whatsapp:group:chat_group_1";
+const sessionName = "provider-group";
 
 const runtimeResolution: TaskRuntimeResolution = {
   options: {},
@@ -33,34 +34,404 @@ const runtimeResolution: TaskRuntimeResolution = {
 describe("runtime request context authority", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-runtime-authority-test-");
-    previousTurnScopedAuthority = process.env.RAVI_TURN_SCOPED_AUTHORITY;
-    process.env.RAVI_TURN_SCOPED_AUTHORITY = "1";
   });
 
   afterEach(async () => {
-    if (previousTurnScopedAuthority === undefined) {
-      delete process.env.RAVI_TURN_SCOPED_AUTHORITY;
-    } else {
-      process.env.RAVI_TURN_SCOPED_AUTHORITY = previousTurnScopedAuthority;
-    }
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
   });
 
-  it("creates and refreshes turn-runtime authority from agent, contact and chat grants", () => {
+  it("uses agent identity authority by default when the env var is unset", () => {
+    const previous = process.env.RAVI_TURN_SCOPED_AUTHORITY;
+    delete process.env.RAVI_TURN_SCOPED_AUTHORITY;
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
-    grantRelation("agent", agent.id, "admin", "system", "*");
-    grantRelation("contact", "luis", "use", "tool", "Read");
-    grantRelation("contact", "ana", "use", "tool", "Bash");
-    grantRelation("chat", "chat_group_1", "use", "tool", "*");
+
+    const prompt = promptForContact("luis", "read");
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.kind).toBe("turn-runtime");
+    expect(runtimeContext.metadata?.authorityMode).toBe("agent-identity");
+    expect(runtimeContext.metadata?.agentIdentityPrincipal).toBe("agent_identity:provider-agent:chat:chat_group_1");
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+    if (previous === undefined) {
+      delete process.env.RAVI_TURN_SCOPED_AUTHORITY;
+    } else {
+      process.env.RAVI_TURN_SCOPED_AUTHORITY = previous;
+    }
+  });
+
+  it("ignores the retired turn-scoped env flag and still issues workspace agent identity contexts", () => {
+    const previous = process.env.RAVI_TURN_SCOPED_AUTHORITY;
+    process.env.RAVI_TURN_SCOPED_AUTHORITY = "0";
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt: { prompt: "internal task without a channel surface" },
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+    });
+
+    expect(runtimeContext.kind).toBe("turn-runtime");
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "agent-identity",
+      actorPrincipal: "unknown",
+      actorResolution: "not_applicable",
+      agentIdentityPrincipal: "agent_identity:provider-agent:workspace:default",
+      agentIdentityCompartment: "workspace:default",
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
+    if (previous === undefined) {
+      delete process.env.RAVI_TURN_SCOPED_AUTHORITY;
+    } else {
+      process.env.RAVI_TURN_SCOPED_AUTHORITY = previous;
+    }
+  });
+
+  it("keeps actor and surface as audit-only branches in agent identity turns", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt = promptForContact("luis", "audit");
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "agent-identity",
+      actorPrincipal: "contact:luis",
+      actorAuthorizationMode: "invoke-only",
+      surfacePrincipal: "chat:chat_group_1",
+      surfaceAuthorizationMode: "compartment",
+      agentIdentityPrincipal: "agent_identity:provider-agent:chat:chat_group_1",
+      agentIdentityCompartment: "chat:chat_group_1",
+    });
+    expect(runtimeContext.metadata?.actorCapabilityCount).toBe(0);
+    expect(runtimeContext.metadata?.surfaceCapabilityCount).toBe(0);
+    expect(runtimeContext.metadata?.effectiveCapabilityCount).toBeGreaterThan(0);
+    expect(canWithCapabilities(runtimeContext.capabilities, "read", "context", "codex-bash-hook")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
+    expect(canWithCapabilities(runtimeContext.capabilities, "access", "session", "main")).toBe(false);
+  });
+
+  it("does not materialize role authority without a provider-owned runtime config", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt = promptForContact("luis", "audit");
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "agent-identity",
+      actorPrincipal: "contact:luis",
+      agentIdentityPrincipal: "agent_identity:provider-agent:chat:chat_group_1",
+    });
+    expect(runtimeContext.metadata?.actorCapabilityCount).toBe(0);
+    expect(runtimeContext.metadata?.effectiveCapabilityCount).toBeGreaterThan(0);
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "access", "session", "restricted")).toBe(false);
+  });
+
+  it("stores observation permission grants as turn capabilities for live agent-identity rechecks", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    dbUpdateAgent(agent.id, {
+      defaults: {
+        runtimePermissions: {
+          capabilities: ["execute:group:observer_report"],
+        },
+      },
+    });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt = promptForContact("luis", "observe");
+    prompt._observation = {
+      sourceSessionKey: "source-session",
+      sourceSessionName: "source",
+      bindingId: "binding-1",
+      ruleId: "rule-1",
+      role: "observer",
+      mode: "report",
+      permissionGrants: ["execute:group:observer_report"],
+      eventIds: ["event-1"],
+    };
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "agent-identity",
+      turnCapabilityCount: 1,
+      turnCapabilities: [
+        {
+          permission: "execute",
+          objectType: "group",
+          objectId: "observer_report",
+          source: "observer-rule",
+        },
+      ],
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "observer_report")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions_info")).toBe(false);
+  });
+
+  it("expands observation CLI shortcuts to both tool and command-gate capabilities", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    dbUpdateAgent(agent.id, {
+      defaults: {
+        runtimePermissions: {
+          capabilities: ["execute:group:tasks_report"],
+        },
+      },
+    });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt = promptForContact("luis", "observe");
+    prompt._observation = {
+      sourceSessionKey: "source-session",
+      sourceSessionName: "source",
+      bindingId: "binding-1",
+      ruleId: "rule-1",
+      role: "observer",
+      mode: "report",
+      permissionGrants: ["tasks.report"],
+      eventIds: ["event-1"],
+    };
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      turnCapabilityCount: 2,
+      turnCapabilities: [
+        {
+          permission: "use",
+          objectType: "tool",
+          objectId: "tasks_report",
+          source: "observer-rule",
+        },
+        {
+          permission: "execute",
+          objectType: "group",
+          objectId: "tasks_report",
+          source: "observer-rule",
+        },
+      ],
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "tasks_report")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "tasks_report")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions_info")).toBe(false);
+  });
+
+  it("does not let turn permission grants widen agent identity authority", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt = promptForContact("luis", "observe");
+    prompt._observation = {
+      sourceSessionKey: "source-session",
+      sourceSessionName: "source",
+      bindingId: "binding-1",
+      ruleId: "rule-1",
+      role: "observer",
+      mode: "observe",
+      permissionGrants: ["execute:executable:curl"],
+      eventIds: ["event-1"],
+    };
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "agent-identity",
+      turnCapabilityCount: 1,
+      agentIdentityPrincipal: "agent_identity:provider-agent:chat:chat_group_1",
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "executable", "curl")).toBe(false);
+  });
+
+  it("adds task-scoped self capabilities for the active task session only", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    const ownTask = dbCreateTask({
+      title: "Own Task",
+      instructions: "Report from the assigned runtime session",
+      createdBy: "test",
+      createdByAgentId: agent.id,
+      createdBySessionName: "launcher",
+    }).task;
+    const otherTask = dbCreateTask({
+      title: "Other Task",
+      instructions: "Must remain isolated",
+      createdBy: "test",
+      createdByAgentId: agent.id,
+      createdBySessionName: "launcher",
+    }).task;
+    dbDispatchTask(ownTask.id, {
+      agentId: agent.id,
+      sessionName,
+      assignedBy: "test",
+    });
+
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt: {
+        prompt: "Report progress",
+        taskBarrierTaskId: ownTask.id,
+      },
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "agent-identity",
+      taskSelfCapabilityCount: 2,
+      taskSelfTaskId: ownTask.id,
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "read", "task", ownTask.id)).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "mutate", "task", ownTask.id)).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "mutate", "task", otherTask.id)).toBe(false);
+    expect(canWithCapabilities(runtimeContext.capabilities, "mutate", "tasks", "report")).toBe(false);
+  });
+
+  it("allows turn permission grants when the agent identity already has the capability", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    dbUpdateAgent(agent.id, {
+      defaults: {
+        runtimePermissions: {
+          capabilities: ["execute:executable:curl", "execute:group:sessions_info"],
+        },
+      },
+    });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt = promptForContact("luis", "observe");
+    prompt._observation = {
+      sourceSessionKey: "source-session",
+      sourceSessionName: "source",
+      bindingId: "binding-1",
+      ruleId: "rule-1",
+      role: "observer",
+      mode: "observe",
+      permissionGrants: ["execute:executable:curl"],
+      eventIds: ["event-1"],
+    };
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "executable", "curl")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions_info")).toBe(false);
+  });
+
+  it("does not block an agent identity turn just because the surface has no capability policy", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt = promptForContact("luis", "audit");
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "agent-identity",
+      actorPrincipal: "contact:luis",
+      surfacePrincipal: "chat:chat_group_1",
+    });
+    expect(runtimeContext.metadata?.surfaceCapabilityCount).toBe(0);
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions")).toBe(true);
+  });
+
+  it("creates and refreshes turn-runtime authority from provider materialization", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
 
     const initialPrompt = promptForContact("luis", "read");
     const source = initialPrompt.source!;
     const { runtimeContext, toolContext, raviEnv } = buildRuntimeRequestContext({
       dbSessionKey: sessionKey,
       sessionName,
-      sessionCwd: "/tmp/rebac-agent",
+      sessionCwd: "/tmp/provider-agent",
       agent,
       prompt: initialPrompt,
       runtimeProviderId: "codex",
@@ -68,19 +439,39 @@ describe("runtime request context authority", () => {
       runtimeResolution,
       resolvedSource: source,
     });
-    const runtimeEnv: Record<string, string> = { ...raviEnv, RAVI_TASK_ID: "stale-task" };
+    const runtimeEnv: Record<string, string> = {
+      ...raviEnv,
+      RAVI_TASK_ID: "stale-task",
+    };
 
     expect(runtimeContext.kind).toBe("turn-runtime");
     expect(
       getRuntimeToolAccessMode({} as Parameters<typeof getRuntimeToolAccessMode>[0], agent.id, runtimeContext),
     ).toBe("restricted");
     expect(runtimeContext.metadata).toMatchObject({
-      authorityMode: "delegated",
+      authorityMode: "agent-identity",
       actorPrincipal: "contact:luis",
+      actorDisplayName: "Luís",
       surfacePrincipal: "chat:chat_group_1",
+      surfaceDisplayName: "Ravi Dev",
+      agentIdentityPrincipal: "agent_identity:provider-agent:chat:chat_group_1",
+      actor: {
+        actorType: "contact",
+        contactId: "luis",
+        canonicalChatId: "chat_group_1",
+        chatId: "120363428243036323@g.us",
+        senderName: "Luís",
+        groupName: "Ravi Dev",
+      },
+      actorMetadata: {
+        actorType: "contact",
+        contactId: "luis",
+        senderName: "Luís",
+        groupName: "Ravi Dev",
+      },
     });
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
-    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(false);
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(true);
 
     const initialContextId = runtimeContext.contextId;
     const nextPrompt = promptForContact("ana", "run");
@@ -90,7 +481,7 @@ describe("runtime request context authority", () => {
       runtimeEnv,
       dbSessionKey: sessionKey,
       sessionName,
-      sessionCwd: "/tmp/rebac-agent",
+      sessionCwd: "/tmp/provider-agent",
       agent,
       prompt: nextPrompt,
       runtimeProviderId: "codex",
@@ -109,19 +500,142 @@ describe("runtime request context authority", () => {
     expect(runtimeEnv.RAVI_ACTOR_TYPE).toBe("contact");
     expect(runtimeEnv.RAVI_TASK_ID).toBeUndefined();
     expect(runtimeContext.metadata).toMatchObject({
-      authorityMode: "delegated",
+      authorityMode: "agent-identity",
       actorPrincipal: "contact:ana",
+      actorDisplayName: "Ana",
       surfacePrincipal: "chat:chat_group_1",
+      surfaceDisplayName: "Ravi Dev",
+      agentIdentityPrincipal: "agent_identity:provider-agent:chat:chat_group_1",
+      actor: {
+        actorType: "contact",
+        contactId: "ana",
+        canonicalChatId: "chat_group_1",
+        senderName: "Ana",
+        groupName: "Ravi Dev",
+      },
     });
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(true);
-    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(false);
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+  });
+
+  it("does not require admin-tagged contact authority for agent identity group turns", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    dbUpdateAgent(agent.id, {
+      defaults: {
+        runtimePermissions: {
+          capabilities: ["execute:group:pages", "execute:group:sessions_trace"],
+        },
+      },
+    });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    const owner = createContact({
+      phone: "5511988887777",
+      name: "Owner",
+      tags: ["permission.admin"],
+      status: "allowed",
+    });
+
+    const prompt = promptForContact(owner.id, "publish page");
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "agent-identity",
+      actorPrincipal: `contact:${owner.id}`,
+      actorCapabilityCount: 0,
+      surfaceCapabilityCount: 0,
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "pages")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "group", "sessions_trace")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
+  });
+
+  it("materializes image authority from the agent identity instead of the contact tag", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    dbCreateTagDefinition({
+      slug: "permission-family",
+      label: "Family Image",
+      kind: "system",
+      source: "permissions",
+      metadata: {
+        permissions: {
+          capabilities: [
+            "mutate:image:generate",
+            "use:tool:image_generate",
+            "use:tool:Bash",
+            "execute:executable:ravi",
+            "read:skills:show",
+            "read:context:codex-bash-hook",
+            "read:sessions:actions",
+          ],
+        },
+      },
+    });
+    dbUpdateAgent(agent.id, {
+      defaults: {
+        runtimePermissions: {
+          capabilities: [
+            "mutate:image:generate",
+            "use:tool:image_generate",
+            "use:tool:Bash",
+            "execute:executable:ravi",
+            "read:skills:show",
+            "read:context:codex-bash-hook",
+            "read:sessions:actions",
+          ],
+        },
+      },
+    });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    const family = createContact({
+      phone: "5511977776666",
+      name: "Family",
+      tags: ["permission.family"],
+      status: "allowed",
+    });
+
+    const prompt = promptForContact(family.id, "generate an image");
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "agent-identity",
+      actorPrincipal: `contact:${family.id}`,
+      actorCapabilityCount: 0,
+      surfaceCapabilityCount: 0,
+      agentIdentityPrincipal: "agent_identity:provider-agent:chat:chat_group_1",
+    });
+    expect(Number(runtimeContext.metadata?.effectiveCapabilityCount)).toBeGreaterThanOrEqual(7);
+    expect(canWithCapabilities(runtimeContext.capabilities, "mutate", "image", "generate")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "image_generate")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "execute", "executable", "ravi")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "read", "skills", "show")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
+    expect(canWithCapabilities(runtimeContext.capabilities, "mutate", "mail", "send")).toBe(false);
   });
 
   it("fails closed for external prompts without a resolved contact actor", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
-    grantRelation("agent", agent.id, "admin", "system", "*");
-    grantRelation("chat", "chat_group_1", "use", "tool", "*");
 
     const prompt = promptForContact("", "unknown");
     delete prompt.source!.contactId;
@@ -132,7 +646,7 @@ describe("runtime request context authority", () => {
     const { runtimeContext } = buildRuntimeRequestContext({
       dbSessionKey: sessionKey,
       sessionName,
-      sessionCwd: "/tmp/rebac-agent",
+      sessionCwd: "/tmp/provider-agent",
       agent,
       prompt,
       runtimeProviderId: "codex",
@@ -143,17 +657,410 @@ describe("runtime request context authority", () => {
 
     expect(runtimeContext.kind).toBe("turn-runtime");
     expect(runtimeContext.metadata).toMatchObject({
-      authorityMode: "delegated",
+      authorityMode: "agent-identity",
       actorPrincipal: "unknown",
       actorResolution: "missing_contact",
+      actorDisplayName: "Desconhecido",
     });
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(false);
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(false);
     expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
   });
+
+  it("resolves a verified external agent actor without stripping executor capabilities", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    dbCreateAgent({ id: "foreign-agent", cwd: "/tmp/foreign-agent" });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt = promptForContact("", "agent interop");
+    for (const actor of [prompt.source!, prompt.context!]) {
+      actor.actorType = "agent";
+      actor.actorAgentId = "foreign-agent";
+      delete actor.contactId;
+    }
+
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      actorPrincipal: "agent:foreign-agent",
+      actorResolution: "resolved",
+    });
+    expect(Number(runtimeContext.metadata?.agentIdentityCapabilityCount)).toBeGreaterThan(0);
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+  });
+
+  it("does not require chat delegation overrides in the agent identity model", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt = promptForContact("luis", "run bash");
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.kind).toBe("turn-runtime");
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "agent-identity",
+      actorPrincipal: "contact:luis",
+      surfacePrincipal: "chat:chat_group_1",
+      agentIdentityPrincipal: "agent_identity:provider-agent:chat:chat_group_1",
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+  });
+
+  it("does not grant non-bootstrap resource access without provider-owned agent identity config", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt = promptForContact("luis", "run bash");
+    const denied = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    }).runtimeContext;
+
+    expect(denied.metadata).toMatchObject({
+      authorityMode: "agent-identity",
+      agentIdentityPrincipal: "agent_identity:provider-agent:chat:chat_group_1",
+    });
+    expect(canWithCapabilities(denied.capabilities, "use", "tool", "Bash")).toBe(true);
+    expect(canWithCapabilities(denied.capabilities, "access", "session", "restricted")).toBe(false);
+  });
+
+  it("runs cron prompts under an automation-scoped agent identity", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt: RuntimeLaunchPrompt = {
+      prompt: "[Cron: audit] run",
+      _cron: true,
+      _jobId: "job-1",
+    };
+
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+    });
+
+    expect(runtimeContext.kind).toBe("turn-runtime");
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "agent-identity",
+      actorPrincipal: "automation:cron:job-1",
+      actorResolution: "resolved",
+      agentIdentityPrincipal: "agent_identity:provider-agent:automation:cron:job-1",
+      agentIdentityCompartment: "automation:cron:job-1",
+      actor: {
+        actorType: "automation",
+        automationId: "cron:job-1",
+        identityProvenance: { source: "cron", jobId: "job-1" },
+      },
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
+  });
+
+  it("runs heartbeat and observer prompts under explicit automation principals", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const heartbeat = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt: { prompt: "heartbeat", _heartbeat: true },
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+    }).runtimeContext;
+    expect(heartbeat.metadata).toMatchObject({
+      actorPrincipal: "automation:heartbeat",
+      agentIdentityCompartment: "automation:heartbeat",
+      turnProvenance: { origin: "heartbeat", background: true },
+      actor: { identityProvenance: { source: "heartbeat" } },
+    });
+
+    const observer = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt: {
+        prompt: "observe",
+        _observation: {
+          sourceSessionKey: "source-key",
+          sourceSessionName: "source",
+          bindingId: "binding-1",
+          ruleId: "rule-1",
+          role: "observer",
+          mode: "observe",
+          eventIds: ["event-1"],
+          sourceTurnIds: ["turn-source-1"],
+        },
+      },
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+    }).runtimeContext;
+    expect(observer.metadata).toMatchObject({
+      actorPrincipal: "automation:observer:binding-1",
+      agentIdentityCompartment: "automation:observer:binding-1",
+      turnProvenance: { origin: "observer", background: true },
+      actor: { identityProvenance: { source: "observer", bindingId: "binding-1", ruleId: "rule-1" } },
+      observation: { ruleId: "rule-1", sourceTurnIds: ["turn-source-1"] },
+    });
+  });
+
+  it("runs session followup prompts as automation principals with their delivery surface", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt: RuntimeLaunchPrompt = {
+      prompt: "[Session Followup: audit] run",
+      source: {
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "120363428243036323@g.us",
+        canonicalChatId: "chat_group_1",
+        actorType: "automation",
+        automationId: "session-followup:cadence-1",
+        identityProvenance: { source: "session-followup", cadenceId: "cadence-1", runId: "run-1" },
+      },
+      _sessionFollowup: true,
+      _sessionFollowupCadenceId: "cadence-1",
+      _sessionFollowupRunId: "run-1",
+    };
+
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "agent-identity",
+      actorPrincipal: "automation:session-followup",
+      actorResolution: "resolved",
+      surfacePrincipal: "chat:chat_group_1",
+      agentIdentityPrincipal: "agent_identity:provider-agent:chat:chat_group_1",
+      agentIdentityCompartment: "chat:chat_group_1",
+      actor: {
+        actorType: "automation",
+        automationId: "session-followup",
+        identityProvenance: { source: "session-followup", cadenceId: "cadence-1", runId: "run-1" },
+      },
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
+  });
+
+  it("runs daemon restart resume prompts as automation principals with their delivery surface", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt: RuntimeLaunchPrompt = {
+      prompt: "[System] Daemon reiniciou (test). Continue de onde parou.",
+      source: {
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "120363428243036323@g.us",
+        canonicalChatId: "chat_group_1",
+      },
+      _daemonRestartResume: {
+        restartEpoch: "restart-test",
+        sessionKey,
+      },
+    };
+
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "agent-identity",
+      actorPrincipal: "automation:daemon-restart",
+      actorResolution: "resolved",
+      surfacePrincipal: "chat:chat_group_1",
+      agentIdentityPrincipal: "agent_identity:provider-agent:chat:chat_group_1",
+      agentIdentityCompartment: "chat:chat_group_1",
+      actor: {
+        actorType: "automation",
+        automationId: "daemon-restart",
+        canonicalChatId: "chat_group_1",
+      },
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
+  });
+
+  it("preserves the contact principal for daemon restart resume prompts with a human snapshot source", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const source = promptForContact("luis", "original user request").source;
+    const prompt: RuntimeLaunchPrompt = {
+      prompt: "[System] Daemon reiniciou (test). Continue de onde parou.",
+      source,
+      _daemonRestartResume: {
+        restartEpoch: "restart-test",
+        sessionKey,
+      },
+    };
+
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "agent-identity",
+      actorPrincipal: "contact:luis",
+      actorResolution: "resolved",
+      surfacePrincipal: "chat:chat_group_1",
+      agentIdentityPrincipal: "agent_identity:provider-agent:chat:chat_group_1",
+      actor: {
+        actorType: "contact",
+        contactId: "luis",
+        canonicalChatId: "chat_group_1",
+      },
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
+  });
+
+  it("preserves the agent principal for daemon restart resume prompts with an agent snapshot source", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    dbCreateAgent({ id: "foreign-agent", cwd: "/tmp/foreign-agent" });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt: RuntimeLaunchPrompt = {
+      prompt: "[System] Daemon reiniciou (test). Continue de onde parou.",
+      source: {
+        channel: "slack",
+        accountId: "ravi-slack",
+        chatId: "C123",
+        canonicalChatId: "chat_group_1",
+        actorType: "agent",
+        actorAgentId: "foreign-agent",
+      },
+      _daemonRestartResume: {
+        restartEpoch: "restart-agent-test",
+        sessionKey,
+      },
+    };
+
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      authorityMode: "agent-identity",
+      actorPrincipal: "agent:foreign-agent",
+      actorResolution: "resolved",
+      surfacePrincipal: "chat:chat_group_1",
+      actor: {
+        actorType: "agent",
+        actorAgentId: "foreign-agent",
+        canonicalChatId: "chat_group_1",
+      },
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
+  });
+
+  it("runs trigger automation prompts with bootstrap capabilities but without system admin", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: "/tmp/provider-agent",
+      agent,
+      prompt: {
+        prompt: "[Trigger: audit] run",
+        _trigger: true,
+        _triggerId: "trigger-1",
+      },
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+    });
+
+    expect(runtimeContext.kind).toBe("turn-runtime");
+    expect(runtimeContext.metadata?.authorityMode).toBe("agent-identity");
+    expect(runtimeContext.metadata?.actorPrincipal).toBe("automation:trigger:trigger-1");
+    expect(runtimeContext.metadata?.agentIdentityPrincipal).toBe(
+      "agent_identity:provider-agent:automation:trigger:trigger-1",
+    );
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
+  });
 });
 
 function promptForContact(contactId: string, text: string): RuntimeLaunchPrompt {
+  const senderName = contactId === "ana" ? "Ana" : contactId ? "Luís" : "Desconhecido";
   return {
     prompt: text,
     source: {
@@ -172,7 +1079,9 @@ function promptForContact(contactId: string, text: string): RuntimeLaunchPrompt 
       canonicalChatId: "chat_group_1",
       messageId: `msg_${contactId}`,
       senderId: contactId,
+      senderName,
       isGroup: true,
+      groupName: "Ravi Dev",
       timestamp: 1000,
       actorType: "contact",
       contactId,

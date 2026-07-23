@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkAppManifests, discoverAppManifests, getAppManifest } from "./service.js";
+import { checkAppManifests, discoverAppManifests, getAppManifest, isPackagedAppRuntime } from "./service.js";
 
 const tempRoots: string[] = [];
 const originalCwd = process.cwd();
@@ -66,6 +66,35 @@ afterEach(() => {
 });
 
 describe("Ravi app manifest service", () => {
+  it("distinguishes packaged discovery from source discovery", () => {
+    expect(isPackagedAppRuntime("/opt/ravi/dist/bundle/index.js")).toBe(true);
+    expect(isPackagedAppRuntime("C:\\ravi\\dist\\bundle\\index.js")).toBe(true);
+    expect(isPackagedAppRuntime("/opt/ravi/src/cli/index.ts")).toBe(false);
+  });
+
+  it("ignores cached mirrors of internal plugins during source discovery", () => {
+    const root = makeRepo();
+    writeManifest(root, "apps", validManifest());
+    const cachedAppDir = join(root, ".cache", "ravi", "plugins", "ravi-system", "apps", "apps");
+    mkdirSync(cachedAppDir, { recursive: true });
+    writeFileSync(join(cachedAppDir, "ravi.app.json"), JSON.stringify(validManifest(), null, 2));
+    const externalAppDir = join(root, ".cache", "ravi", "plugins", "partner-plugin", "apps", "partner");
+    mkdirSync(externalAppDir, { recursive: true });
+    writeFileSync(
+      join(externalAppDir, "ravi.app.json"),
+      JSON.stringify(validManifest({ id: "partner", name: "Partner App" }), null, 2),
+    );
+
+    const apps = discoverAppManifests({
+      cwd: root,
+      env: { ...process.env, HOME: root, RAVI_STATE_DIR: join(root, ".state") },
+    });
+
+    expect(apps.filter((app) => app.id === "apps")).toHaveLength(1);
+    expect(apps.find((app) => app.id === "apps")?.source).toBe("repo");
+    expect(apps.find((app) => app.id === "partner")?.source).toBe("plugin");
+  });
+
   it("discovers and validates repo app manifests", () => {
     const root = makeRepo();
     writeManifest(root, "apps", validManifest());
@@ -245,6 +274,106 @@ describe("Ravi app manifest service", () => {
     expect(app.errors).toEqual([]);
   });
 
+  it("accepts app permission provider metadata without executing the provider", () => {
+    const root = makeRepo();
+    const marker = join(root, "provider-ran");
+    writeManifest(
+      root,
+      "apps",
+      validManifest({
+        operations: {
+          "apps.permissions.decide": {
+            interface: "cli",
+            command: `touch ${marker} && echo '{"decision":"allow"}' --json`,
+            mutating: false,
+            inputSchema: "schemas/permission-request.v1.json",
+            outputSchema: "schemas/permission-decision.v1.json",
+          },
+          "apps.list": {
+            interface: "cli",
+            command: "ravi apps list --json",
+            mutating: false,
+          },
+        },
+        permissions: {
+          required: [],
+          optional: [],
+          mutating: [],
+          provider: {
+            id: "apps.local",
+            version: "2026-06-13",
+            interface: "cli",
+            operation: "apps.permissions.decide",
+            decisionSchema: "schemas/permission-decision.v1.json",
+            requestSchema: "schemas/permission-request.v1.json",
+            timeoutMs: 500,
+            cacheTtlSec: 30,
+            failClosed: true,
+            scope: ["visibility", "operation", "resource"],
+          },
+        },
+      }),
+    );
+
+    const app = getAppManifest("apps");
+    expect(app.valid).toBe(true);
+    expect(app.permissions.provider).toMatchObject({
+      id: "apps.local",
+      version: "2026-06-13",
+      interface: "cli",
+      operation: "apps.permissions.decide",
+    });
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it("rejects malformed app permission provider declarations", () => {
+    const root = makeRepo();
+    writeManifest(
+      root,
+      "apps",
+      validManifest({
+        operations: {
+          "apps.create": {
+            interface: "builtin",
+            handler: "apps.stub.list",
+            mutating: true,
+            permission: "apps:write",
+          },
+        },
+        permissions: {
+          required: [],
+          optional: [],
+          mutating: [],
+          provider: {
+            id: "Bad Provider",
+            interface: "stream",
+            operation: "apps.create",
+            timeoutMs: 60_000,
+            cacheTtlSec: 10_000,
+            failClosed: false,
+            scope: "everything",
+          },
+        },
+      }),
+    );
+
+    const app = getAppManifest("apps");
+    const errors = app.errors.join("\n");
+    expect(app.valid).toBe(false);
+    expect(errors).toContain("permissions.provider.id");
+    expect(errors).toContain("permissions.provider.version");
+    expect(errors).toContain("permissions.provider.interface");
+    expect(errors).toContain("permissions.provider.operation must reference an operation with interface stream");
+    expect(errors).toContain("permissions.provider.operation must not reference a mutating operation");
+    expect(errors).toContain("permissions.provider.operation must not reference an operation that declares permission");
+    expect(errors).toContain("permissions.provider.decisionSchema");
+    expect(errors).toContain("permissions.provider.requestSchema");
+    expect(errors).toContain("permissions.provider.timeoutMs");
+    expect(errors).toContain("permissions.provider.cacheTtlSec");
+    expect(errors).toContain("permissions.provider.failClosed");
+    expect(errors).toContain("permissions.provider.scope");
+  });
+
   it("rejects malformed storage and event declarations", () => {
     const root = makeRepo();
     writeManifest(
@@ -348,6 +477,18 @@ describe("Ravi app manifest service", () => {
             interface: "cli",
             command: "",
             mutating: false,
+            authorization: {
+              resource: {
+                type: "",
+                idFromArg: -1,
+                idFromOption: "",
+                ownerFrom: "title",
+              },
+              input: {
+                includeArgs: "yes",
+                includeOptions: "all",
+              },
+            },
           },
         },
       }),
@@ -374,6 +515,72 @@ describe("Ravi app manifest service", () => {
     expect(errors).toContain("operations.bad operation.mutating");
     expect(errors).toContain("operations.apps.check.interface");
     expect(errors).toContain("operations.apps.check.command");
+    expect(errors).toContain("operations.apps.check.authorization.resource.type");
+    expect(errors).toContain("operations.apps.check.authorization.resource.idFromArg");
+    expect(errors).toContain("operations.apps.check.authorization.resource.idFromOption");
+    expect(errors).toContain("operations.apps.check.authorization.resource.ownerFrom");
+    expect(errors).toContain("operations.apps.check.authorization.input.includeArgs");
+    expect(errors).toContain("operations.apps.check.authorization.input.includeOptions");
+  });
+
+  it("validates UI artifact references", () => {
+    const root = makeRepo();
+    writeManifest(
+      root,
+      "ui-artifacts-valid",
+      validManifest({
+        id: "ui-artifacts-valid",
+        name: "UI Artifacts Valid",
+        interfaces: {
+          ui: {
+            views: [
+              {
+                id: "artifact-feed",
+                type: "timeline",
+                uiArtifact: {
+                  kind: "ui.spec",
+                  artifactId: "art_ui_spec_123",
+                  version: 3,
+                },
+              },
+            ],
+          },
+        },
+      }),
+    );
+
+    expect(getAppManifest("ui-artifacts-valid").valid).toBe(true);
+
+    writeManifest(
+      root,
+      "ui-artifacts-invalid",
+      validManifest({
+        id: "ui-artifacts-invalid",
+        name: "UI Artifacts Invalid",
+        interfaces: {
+          ui: {
+            views: [
+              {
+                id: "artifact-feed",
+                type: "timeline",
+                uiArtifact: {
+                  kind: "ui.render",
+                  artifactId: "not-artifact",
+                  version: 0,
+                },
+              },
+            ],
+          },
+        },
+      }),
+    );
+
+    const invalid = getAppManifest("ui-artifacts-invalid");
+    const errors = invalid.errors.join("\n");
+    expect(invalid.valid).toBe(false);
+    expect(errors).toContain("interfaces.ui.views[0].uiArtifact.kind");
+    expect(errors).toContain("interfaces.ui.views[0].uiArtifact.artifactId");
+    expect(errors).toContain("interfaces.ui.views[0].uiArtifact.version");
   });
 
   it("accepts builtin operations and rejects recursive dynamic app commands", () => {
@@ -388,7 +595,7 @@ describe("Ravi app manifest service", () => {
           cli: {
             command: "ravi khal-tasks",
             json: true,
-            health: "ravi apps run khal-tasks check --json",
+            health: "ravi khal-tasks check --json",
           },
         },
         operations: {
@@ -421,7 +628,7 @@ describe("Ravi app manifest service", () => {
           cli: {
             command: "ravi recursive-app",
             json: true,
-            health: "ravi recursive-app check --json",
+            health: "ravi recursive-app list --json",
           },
         },
         operations: {
@@ -432,7 +639,7 @@ describe("Ravi app manifest service", () => {
           },
         },
         health: {
-          checks: [{ type: "cli", command: "ravi recursive-app check --json" }],
+          checks: [{ type: "cli", command: "ravi recursive-app list --json" }],
         },
       }),
     );

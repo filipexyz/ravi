@@ -5,6 +5,9 @@ kind: domain
 domain: sessions
 capabilities:
   - attach
+  - actions
+  - visibility
+  - provider-runtime
 tags:
   - sessions
   - runtime
@@ -16,6 +19,7 @@ applies_to:
   - src/omni/consumer.ts
   - src/runtime/host-event-loop.ts
   - src/cli/commands/sessions.ts
+  - src/prompt-builder.ts
 owners:
   - ravi-dev
 status: draft
@@ -42,6 +46,7 @@ Those capabilities all *reference* a session, but they MUST NOT redefine what a 
 Sessions own:
 
 - session identity (`session_key`, `session_name`, `agent_id`, `cwd`);
+- session runtime preferences (`model_override`, `effort_override`, `thinking_level`) used as fallbacks after task/profile runtime selection and before agent/runtime defaults;
 - which chats can dispatch input into the session (attach);
 - which chat receives the session's external output (attach);
 - last-source provenance for trace/correlation;
@@ -72,11 +77,52 @@ Sessions do NOT own:
 - If a response has neither a speak-enabled source subscription nor a speak-enabled default output attachment, it MUST NOT emit externally.
 - `ravi sessions send` and related inter-session commands inject prompt/context into a Ravi session. They MUST NOT be documented as direct external channel delivery primitives. Visible outbound channel delivery belongs to the session response path or to explicit channel/media/outbound commands.
 - Session reset MUST clear provider continuity state (per `runtime/session-continuity`) but MUST NOT silently drop attach subscriptions — those are routing/wiring, not provider state.
+- `ravi sessions set-effort <session> <level>` MUST persist an effort override using `none|minimal|low|medium|high|xhigh|max|ultra`; `clear` MUST remove only the session override.
+- Session effort is separate from thinking. `ravi sessions set-thinking` MUST NOT accept effort values such as `max` or `ultra`, and `ravi sessions set-effort` MUST NOT mutate `thinking_level`.
+- `ravi sessions list --json`, `ravi sessions info --json`, and runtime trace payloads SHOULD expose both effective runtime value and source where available.
 - Deletion of a session MUST cascade to delete its subscriptions.
+- Session visibility is authorization-bearing. Runtime principals MUST only
+  list, inspect, read, trace, or mutate sessions they own or have explicit
+  grants for.
+- `access session:<id>` authorizes session discovery/read/trace beyond the
+  current own session.
+- `modify session:<id>` authorizes session mutation beyond the current own
+  session.
+- A chat attached to a session is not by itself permission to read or mutate
+  that session.
+- Hidden sessions SHOULD appear missing on direct lookup.
+
+## Session Actions
+
+`ravi sessions actions --json` is the canonical conversational action surface for a runtime session.
+
+It MUST expose:
+
+- the current session identity;
+- active chat surfaces/subscriptions needed to confirm the target chat;
+- recent own outbound message ids usable for own-message actions;
+- `promptHint` and `usage.tools` with command-specific constraints;
+- an `actions` list with stable action ids and status.
+
+The action catalog MUST include existing executable conversational/channel commands instead of relying only on system-prompt prose. At minimum, when the underlying CLIs exist, it SHOULD advertise:
+
+- `message.delete` via `ravi sessions delete-message`;
+- `message.edit` via `ravi sessions edit-message`;
+- `message.react` via `ravi react send`;
+- `sticker.send` via `ravi stickers send`;
+- `media.send` via `ravi media send`;
+- `session.read` via `ravi sessions read --json`.
+
+Actions that are conceptually useful but do not have an implemented command MUST be listed as `planned`, not documented as executable.
+
+Agents MUST consult `ravi sessions actions --json` before using a conversational action whose availability or target is uncertain. The system prompt MAY name examples, but MUST NOT be the only source of truth for available action commands.
 
 ## Validation
 
 - `bun test src/router/sessions.test.ts src/router/sessions.rename.test.ts src/router/commit-matched-route.test.ts`
+- `bun test src/cli/commands/sessions.test.ts src/prompt-builder.test.ts`
+- Scope tests SHOULD cover `sessions list/info/read/trace` filtering through
+  `access session:<id>` and mutation through `modify session:<id>`.
 
 ## Known Failure Modes
 
@@ -84,4 +130,15 @@ Sessions do NOT own:
 - Treating `session_chat_bindings` as "the only chat" instead of "the primary chat" — blocks multi-input attach.
 - Reintroducing `focus` as a separate primitive instead of using `attach` as the output attachment.
 - Falling back to inbound source for output after attach lands — causes sessions to reply in the wrong chat.
+- Mentioning a conversational tool in the prompt without exposing it through `ravi sessions actions --json`.
+- Marking a not-yet-implemented action as available instead of `planned`.
 - Letting threads, observers, or knowledge collapse into the session concept.
+
+## Effective Model And Presets
+
+Session JSON (`sessions list/info`) exposes the resolved `effectiveProvider`,
+`effectiveModel`, `modelSource` (`session_override` | `agent_preset` |
+`agent_default` | `global_default`), `modelPresetId`, and `modelPresetVersion`.
+A session `modelOverride` continues to win over the agent-level selection and is
+reported as `session_override`, shadowing any agent preset. Applying a preset
+MUST NOT mutate session state. See `runtime/model-presets`.

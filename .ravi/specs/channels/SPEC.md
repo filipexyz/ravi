@@ -5,6 +5,7 @@ kind: domain
 domain: channels
 capabilities:
   - chats
+  - meetings
 tags:
   - omni
   - gateway
@@ -33,6 +34,10 @@ Ravi MUST abstract Omni as a transport/gateway adapter. Product and agent-facing
 - Omni/raw channel identifiers MUST remain stored as provenance and debugging data, but they MUST NOT be the primary product model exposed to agents or operators.
 - Channel-specific behavior SHOULD be exposed to Ravi through typed capabilities and normalized events when a feature needs it, not through provider conditionals spread across features.
 - A dedicated channel capability registry MAY be deferred until a concrete feature needs it. The source of capability facts SHOULD be Omni.
+- Agent-executed channel CLIs MUST default to the current runtime source account when it is available. Falling back to the first configured account is only valid outside a sourced runtime context.
+- Native channel adapters MUST bind inbound routing to an explicit Ravi channel/account identity. A missing route account MUST NOT cause cross-account route matching.
+- Native channel adapters MUST resolve provider secrets through the credential broker/manager using the Ravi channel config as the authority.
+- Environment variables such as `RAVI_SLACK_CONNECTION`, `RAVI_SLACK_CONNECTIONS`, or provider tokens MUST NOT introduce channel identity, connection identity, instance ownership, or runtime credential selection.
 
 ## Boundary
 

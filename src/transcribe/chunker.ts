@@ -19,6 +19,8 @@ interface ChunkOptions {
   chunkDuration?: number;
   /** Overlap in seconds added before and after each chunk (default: 15) */
   overlap?: number;
+  /** Duration hint for containers such as live WebM that do not store format duration. */
+  durationHintSec?: number;
 }
 
 export interface AudioChunk {
@@ -49,7 +51,11 @@ export async function getAudioDuration(buffer: Buffer, ext: string): Promise<num
       "csv=p=0",
       tmpFile,
     ]);
-    return parseFloat(stdout.trim());
+    const duration = parseFloat(stdout.trim());
+    if (!Number.isFinite(duration)) {
+      throw new Error(`Could not parse audio duration from ffprobe output: ${stdout.trim() || "<empty>"}`);
+    }
+    return duration;
   } finally {
     await unlink(tmpFile).catch(() => {});
   }
@@ -73,8 +79,9 @@ export async function splitAudioChunks(buffer: Buffer, ext: string, opts: ChunkO
   try {
     await writeFile(inputFile, buffer);
 
-    // Get total duration
-    const duration = await getAudioDuration(buffer, ext);
+    // Get total duration. Browser-recorded live WebM files frequently omit
+    // container duration, so meeting capture can provide a trusted track hint.
+    const duration = sanitizeDurationHint(opts.durationHintSec) ?? (await getAudioDuration(buffer, ext));
     log.debug("Audio duration", { duration, chunkDuration, overlap });
 
     // If short enough, no need to split
@@ -83,14 +90,18 @@ export async function splitAudioChunks(buffer: Buffer, ext: string, opts: ChunkO
     }
 
     const chunks: AudioChunk[] = [];
-    const step = chunkDuration - overlap; // advance by chunkDuration minus overlap
+    const step = chunkDuration - overlap; // keep one overlap window between adjacent chunks
     let start = 0;
     let index = 0;
 
     while (start < duration) {
       const chunkFile = join(CHUNK_DIR, `chunk-${sessionId}-${index}.${CHUNK_OUTPUT_EXT}`);
-      const startSec = Math.max(0, start - (index === 0 ? 0 : overlap));
+      const startSec = start;
       const segmentDuration = Math.min(chunkDuration, duration - startSec);
+      if (segmentDuration < MIN_TRANSCRIBABLE_DURATION_SEC) {
+        log.warn("Skipping too-short trailing audio chunk", { index, startSec, duration: segmentDuration });
+        break;
+      }
 
       try {
         await execFileAsync("ffmpeg", [
@@ -147,7 +158,7 @@ export async function splitAudioChunks(buffer: Buffer, ext: string, opts: ChunkO
         await unlink(chunkFile).catch(() => {});
       }
 
-      start += step;
+      start = Number((start + step).toFixed(6));
       index++;
     }
 
@@ -156,4 +167,9 @@ export async function splitAudioChunks(buffer: Buffer, ext: string, opts: ChunkO
   } finally {
     await unlink(inputFile).catch(() => {});
   }
+}
+
+function sanitizeDurationHint(value: number | undefined): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined;
+  return value;
 }

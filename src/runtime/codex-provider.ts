@@ -5,10 +5,12 @@ import { basename, dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { syncCodexSkills } from "../plugins/codex-skills.js";
+import { RUNTIME_BUILTIN_TOOL_HOOK_NAMES } from "../cli/tool-registry.js";
 import { logger } from "../utils/logger.js";
 import {
   createCodexTransport,
   resolveCodexTransportKind,
+  signalCodexTransportProcess,
   type CodexTransport,
   type CodexTransportKind,
 } from "./codex-transport.js";
@@ -60,8 +62,10 @@ import { createRuntimeTerminalEventTracker } from "./terminality.js";
 const DEFAULT_CODEX_MODEL = "gpt-5";
 const INTERRUPT_GRACE_MS = 1_500;
 const CODEX_APP_SERVER_SANDBOX = "danger-full-access";
+const CODEX_SUB_AGENT_DIRECT_INPUT_ERROR = "direct app-server input is not allowed for multi-agent v2 sub-agents";
 const RAVI_CODEX_BASH_HOOK_STATUS = "ravi codex bash permission gate";
-const RAVI_CODEX_BASH_HOOK_MATCHER = "^(Bash|shell)$";
+const RAVI_CODEX_TOOL_HOOK_STATUS = "ravi codex native tool permission gate";
+const RAVI_CODEX_TOOL_HOOK_MATCHER = buildCodexNativeToolHookMatcher();
 const CODEX_APP_SERVER_ENV_KEY_PREFIXES = ["RAVI_"];
 const CODEX_APP_SERVER_ENV_KEYS = new Set(["CODEX_HOME", "PATH"]);
 const CODEX_SHELL_ENV_INCLUDE_ONLY = [
@@ -116,6 +120,7 @@ interface CodexCliTurnRequest {
   effort?: string;
   prompt: string;
   resume?: string;
+  forkFrom?: string;
   systemPromptAppend: string;
   approveRuntimeRequest?: RuntimeApprovalHandler;
   dynamicTools?: RuntimeDynamicToolSpec[];
@@ -139,6 +144,11 @@ interface CodexCliTransport {
   startTurn(input: CodexCliTurnRequest): CodexCliTurnHandle;
   control?(request: RuntimeControlRequest): Promise<RuntimeControlResult>;
   close?(): Promise<void>;
+}
+
+function isCodexSubAgentDirectInputError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.toLowerCase().includes(CODEX_SUB_AGENT_DIRECT_INPUT_ERROR);
 }
 
 interface CodexSessionState {
@@ -233,7 +243,7 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
           loadedState: "instruction-sources",
         },
         supportsSessionResume: true,
-        supportsSessionFork: false,
+        supportsSessionFork: true,
         supportsPartialText: true,
         supportsToolHooks: true,
         supportsHostSessionHooks: false,
@@ -260,6 +270,13 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
     },
     startSession(input) {
       const transport = options.transport ?? createCodexAppServerTransport({ command: options.command });
+      let closePromise: Promise<void> | null = null;
+      const closeTransport = (): Promise<void> => {
+        closePromise ??= (async () => {
+          await transport.close?.();
+        })();
+        return closePromise;
+      };
       const state: CodexSessionState = {
         activeTurn: null,
         interrupted: false,
@@ -276,6 +293,7 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
           defaultModel,
           state,
           skillVisibilityByCwd.get(input.cwd)?.syncedSkillNames ?? [],
+          closeTransport,
         ),
         interrupt: async () => {
           if (!state.activeTurn) {
@@ -284,6 +302,7 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
           state.interrupted = true;
           await state.activeTurn.interrupt();
         },
+        close: closeTransport,
         control: async (request) => {
           if (transport.control) {
             return transport.control(request);
@@ -531,8 +550,10 @@ async function* normalizeCodexEvents(
   defaultModel: string,
   state: CodexSessionState,
   syncedSkillNames: string[],
+  closeTransport: () => Promise<void>,
 ): AsyncGenerator<RuntimeEvent> {
   let previousSessionId = resolveCodexResumeId(input.resumeSession, input.resume, input.cwd);
+  let forkFromSessionId = input.forkSession ? previousSessionId : undefined;
   const outerAbortSignal = input.abortController.signal;
   const systemPromptAppend = await buildCodexSystemPromptAppend(input.cwd, input.systemPromptAppend, syncedSkillNames);
   const effort = toCodexRuntimeEffort(input.effort);
@@ -555,11 +576,13 @@ async function* normalizeCodexEvents(
         effort,
         prompt: promptText,
         resume: previousSessionId,
+        forkFrom: forkFromSessionId,
         systemPromptAppend,
         approveRuntimeRequest: input.approveRuntimeRequest,
         dynamicTools: undefined,
         handleRuntimeToolCall: undefined,
       });
+      forkFromSessionId = undefined;
 
       state.activeTurn = turn;
 
@@ -855,7 +878,7 @@ async function* normalizeCodexEvents(
       }
     }
   } finally {
-    await transport.close?.();
+    await closeTransport();
   }
 }
 
@@ -891,6 +914,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   let activeTurn: AppServerTurnState | null = null;
   let activeSpawnEnvSignature: string | null = null;
   let intentionalChildRestart = false;
+  let closePromise: Promise<void> | null = null;
 
   const clearForcedKillTimer = () => {
     if (forcedKillTimer) {
@@ -995,18 +1019,14 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           if (activeTurn) {
             settleTurn(activeTurn, { exitCode: 1, stderr: getStderr() }, { failQueue: error });
           }
-          newTransport.child.kill("SIGKILL");
+          signalCodexTransportProcess(newTransport.child, "SIGKILL");
         }
       },
       onTransportError: (error) => {
         if (activeTurn) {
           settleTurn(activeTurn, { exitCode: 1, stderr: getStderr() }, { failQueue: error });
         }
-        try {
-          newTransport.child.kill("SIGKILL");
-        } catch {
-          // child already gone
-        }
+        signalCodexTransportProcess(newTransport.child, "SIGKILL");
       },
     });
 
@@ -1159,10 +1179,10 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       if (!child || closed) {
         return;
       }
-      child.kill("SIGINT");
+      signalCodexTransportProcess(child, "SIGINT");
       forcedKillTimer = setTimeout(() => {
         if (!closed && child) {
-          child.kill("SIGKILL");
+          signalCodexTransportProcess(child, "SIGKILL");
         }
       }, INTERRUPT_GRACE_MS);
       forcedKillTimer.unref?.();
@@ -1555,6 +1575,80 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
   }
 
+  async function bootstrapThread(
+    input: CodexCliTurnRequest,
+    resumeThreadId: string | null,
+    forkThreadId: string | null = null,
+  ): Promise<void> {
+    const effort = toCodexRuntimeEffort(input.effort);
+    if (!resumeThreadId && !forkThreadId) {
+      // Do not let a rejected resumed thread leak into the fresh-thread fallback.
+      currentThreadId = undefined;
+    }
+
+    const threadResponse = forkThreadId
+      ? await sendRequest("thread/fork", {
+          threadId: forkThreadId,
+          path: null,
+          model: null,
+          modelProvider: null,
+          serviceTier: null,
+          cwd: input.cwd,
+          approvalPolicy: "never",
+          approvalsReviewer: null,
+          sandbox: CODEX_APP_SERVER_SANDBOX,
+          config: { model_reasoning_effort: effort },
+          baseInstructions: null,
+          developerInstructions: null,
+          ephemeral: false,
+          persistExtendedHistory: true,
+        })
+      : resumeThreadId
+        ? await sendRequest("thread/resume", {
+            threadId: resumeThreadId,
+            model: input.model ?? null,
+            modelProvider: null,
+            cwd: input.cwd,
+            approvalPolicy: "never",
+            sandbox: CODEX_APP_SERVER_SANDBOX,
+            config: { model_reasoning_effort: effort },
+            baseInstructions: null,
+            developerInstructions: input.systemPromptAppend || null,
+            dynamicTools: null,
+            personality: null,
+            persistExtendedHistory: false,
+          })
+        : await sendRequest("thread/start", {
+            model: input.model ?? null,
+            modelProvider: null,
+            cwd: input.cwd,
+            approvalPolicy: "never",
+            sandbox: CODEX_APP_SERVER_SANDBOX,
+            config: { model_reasoning_effort: effort },
+            serviceName: null,
+            baseInstructions: null,
+            developerInstructions: input.systemPromptAppend || null,
+            dynamicTools: null,
+            personality: null,
+            ephemeral: false,
+            experimentalRawEvents: false,
+            persistExtendedHistory: false,
+          });
+
+    const nextThreadId = firstString(asRecord(threadResponse.thread)?.id);
+    if (forkThreadId && !nextThreadId) {
+      throw new Error("Codex app-server did not return a forked thread id");
+    }
+    currentThreadId = firstString(
+      nextThreadId,
+      forkThreadId ? undefined : currentThreadId,
+      forkThreadId ? undefined : (resumeThreadId ?? undefined),
+    );
+    currentInstructionSources = stringArray(threadResponse.instructionSources);
+    resolvedModel = firstString(threadResponse.model, input.model) ?? null;
+    resolvedModelProvider = firstString(threadResponse.modelProvider, resolvedModelProvider) ?? "openai";
+  }
+
   async function ensureClient(input: CodexCliTurnRequest): Promise<void> {
     const nextEnvSignature = buildCodexAppServerEnvSignature(input.env);
     if (!closed && child && !bootstrapPromise && activeSpawnEnvSignature !== nextEnvSignature) {
@@ -1601,44 +1695,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           params: {},
         });
 
-        const resumeThreadId = currentThreadId ?? input.resume;
-        const effort = toCodexRuntimeEffort(input.effort);
-        const threadResponse = resumeThreadId
-          ? await sendRequest("thread/resume", {
-              threadId: resumeThreadId,
-              model: input.model ?? null,
-              modelProvider: null,
-              cwd: input.cwd,
-              approvalPolicy: "never",
-              sandbox: CODEX_APP_SERVER_SANDBOX,
-              config: { model_reasoning_effort: effort },
-              baseInstructions: null,
-              developerInstructions: input.systemPromptAppend || null,
-              dynamicTools: null,
-              personality: null,
-              persistExtendedHistory: false,
-            })
-          : await sendRequest("thread/start", {
-              model: input.model ?? null,
-              modelProvider: null,
-              cwd: input.cwd,
-              approvalPolicy: "never",
-              sandbox: CODEX_APP_SERVER_SANDBOX,
-              config: { model_reasoning_effort: effort },
-              serviceName: null,
-              baseInstructions: null,
-              developerInstructions: input.systemPromptAppend || null,
-              dynamicTools: null,
-              personality: null,
-              ephemeral: false,
-              experimentalRawEvents: false,
-              persistExtendedHistory: false,
-            });
-
-        currentThreadId = firstString(asRecord(threadResponse.thread)?.id, resumeThreadId);
-        currentInstructionSources = stringArray(threadResponse.instructionSources);
-        resolvedModel = firstString(threadResponse.model, input.model) ?? null;
-        resolvedModelProvider = firstString(threadResponse.modelProvider, resolvedModelProvider) ?? "openai";
+        await bootstrapThread(input, currentThreadId ?? input.resume ?? null, input.forkFrom ?? null);
       } finally {
         bootstrapPromise = null;
       }
@@ -1647,27 +1704,35 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     await bootstrapPromise;
   }
 
-  const close = async () => {
+  const close = (): Promise<void> => {
+    if (closePromise) {
+      return closePromise;
+    }
     if (!child || closed) {
-      return;
+      return Promise.resolve();
     }
     const targetChild = child;
-    targetChild.stdin?.end();
-    targetChild.kill("SIGTERM");
-    forcedKillTimer = setTimeout(() => {
-      if (child === targetChild && !closed) {
-        targetChild.kill("SIGKILL");
-      }
-    }, INTERRUPT_GRACE_MS);
-    forcedKillTimer.unref?.();
+    closePromise = (async () => {
+      transport?.closeChannel();
+      signalCodexTransportProcess(targetChild, "SIGTERM");
+      forcedKillTimer = setTimeout(() => {
+        if (child === targetChild && !closed) {
+          signalCodexTransportProcess(targetChild, "SIGKILL");
+        }
+      }, INTERRUPT_GRACE_MS);
+      forcedKillTimer.unref?.();
 
-    await new Promise<void>((resolve) => {
-      if (closed || child !== targetChild) {
-        resolve();
-        return;
-      }
-      targetChild.once("close", () => resolve());
+      await new Promise<void>((resolve) => {
+        if (closed || child !== targetChild) {
+          resolve();
+          return;
+        }
+        targetChild.once("close", () => resolve());
+      });
+    })().finally(() => {
+      closePromise = null;
     });
+    return closePromise;
   };
 
   return {
@@ -1696,33 +1761,59 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       void (async () => {
         try {
           await ensureClient(input);
-          turn.threadId = currentThreadId ?? input.resume;
-          if (!turn.threadId) {
-            throw new Error("Codex app-server did not initialize a thread");
+          const requestTurnStart = async () => {
+            turn.threadId = currentThreadId ?? input.resume;
+            if (!turn.threadId) {
+              throw new Error("Codex app-server did not initialize a thread");
+            }
+            await sendRequest("turn/start", {
+              threadId: turn.threadId,
+              input: [
+                {
+                  type: "text",
+                  text: input.prompt,
+                  text_elements: [],
+                },
+              ],
+              cwd: null,
+              approvalPolicy: null,
+              sandboxPolicy: null,
+              model: null,
+              effort: input.effort ?? null,
+              summary: null,
+              personality: null,
+              outputSchema: null,
+              collaborationMode: null,
+            });
+          };
+
+          try {
+            await requestTurnStart();
+          } catch (error) {
+            if (!turn.threadId || turn.turnId || !isCodexSubAgentDirectInputError(error)) {
+              throw error;
+            }
+
+            const rejectedThreadId = turn.threadId;
+            log.warn("codex resumed sub-agent thread rejected direct input; starting a fresh top-level thread", {
+              rejectedThreadId,
+            });
+            await bootstrapThread(input, null);
+            if (!currentThreadId || currentThreadId === rejectedThreadId) {
+              throw new Error("Codex app-server did not initialize a fresh top-level thread", { cause: error });
+            }
+            turn.queue.push({
+              type: "thread.resume_recovered",
+              source: "codex.app-server",
+              rejected_thread_id: rejectedThreadId,
+              thread_id: currentThreadId,
+            });
+            await requestTurnStart();
           }
-          await sendRequest("turn/start", {
-            threadId: turn.threadId,
-            input: [
-              {
-                type: "text",
-                text: input.prompt,
-                text_elements: [],
-              },
-            ],
-            cwd: null,
-            approvalPolicy: null,
-            sandboxPolicy: null,
-            model: null,
-            effort: input.effort ?? null,
-            summary: null,
-            personality: null,
-            outputSchema: null,
-            collaborationMode: null,
-          });
         } catch (error) {
           settleTurn(turn, { exitCode: 1, stderr: getStderr().slice(turn.stderrOffset) }, { failQueue: error });
           if (child && !closed) {
-            child.kill("SIGKILL");
+            signalCodexTransportProcess(child, "SIGKILL");
           }
         }
       })();
@@ -1767,6 +1858,7 @@ function _createCodexCliTransport(options: { command?: string } = {}): CodexCliT
       const args = buildExecArgs(input.resume, input.model, toCodexRuntimeEffort(input.effort));
       const child = spawn(command, args, {
         cwd: input.cwd,
+        detached: true,
         env: input.env,
         stdio: ["pipe", "pipe", "pipe"],
       });
@@ -1836,10 +1928,10 @@ function _createCodexCliTransport(options: { command?: string } = {}): CodexCliT
             return;
           }
 
-          child.kill("SIGINT");
+          signalCodexTransportProcess(child, "SIGINT");
           forcedKillTimer = setTimeout(() => {
             if (!closed) {
-              child.kill("SIGKILL");
+              signalCodexTransportProcess(child, "SIGKILL");
             }
           }, INTERRUPT_GRACE_MS);
           forcedKillTimer.unref?.();
@@ -3033,12 +3125,12 @@ function upsertRaviCodexBashHook(config: Record<string, unknown>): Record<string
   const hooks = asRecord(config.hooks) ?? {};
   const preToolUse = Array.isArray(hooks.PreToolUse) ? [...hooks.PreToolUse] : [];
   const raviGroup = {
-    matcher: RAVI_CODEX_BASH_HOOK_MATCHER,
+    matcher: RAVI_CODEX_TOOL_HOOK_MATCHER,
     hooks: [
       {
         type: "command",
         command: buildRaviCodexHookCommand(),
-        statusMessage: RAVI_CODEX_BASH_HOOK_STATUS,
+        statusMessage: RAVI_CODEX_TOOL_HOOK_STATUS,
       },
     ],
   };
@@ -3057,15 +3149,23 @@ function upsertRaviCodexBashHook(config: Record<string, unknown>): Record<string
 
 function isRaviCodexHookGroup(value: unknown): boolean {
   const group = asRecord(value);
-  if (!group || group.matcher !== RAVI_CODEX_BASH_HOOK_MATCHER) {
+  if (!group) {
     return false;
   }
 
   const handlers = Array.isArray(group.hooks) ? group.hooks : [];
   return handlers.some((handler) => {
     const entry = asRecord(handler);
-    return entry?.statusMessage === RAVI_CODEX_BASH_HOOK_STATUS;
+    return entry?.statusMessage === RAVI_CODEX_BASH_HOOK_STATUS || entry?.statusMessage === RAVI_CODEX_TOOL_HOOK_STATUS;
   });
+}
+
+function buildCodexNativeToolHookMatcher(): string {
+  return `^(${RUNTIME_BUILTIN_TOOL_HOOK_NAMES.map(escapeRegex).join("|")})$`;
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function shouldMaterializeCodexHookForCommand(command: string): boolean {
@@ -3076,20 +3176,20 @@ function shouldMaterializeCodexHookForCommand(command: string): boolean {
 function buildRaviCodexHookCommand(): string {
   const configuredRaviBin = process.env.RAVI_BIN?.trim();
   if (configuredRaviBin) {
-    return [configuredRaviBin, "context", "codex-bash-hook"].map(shellEscape).join(" ");
+    return [configuredRaviBin, "context", "codex-tool-hook"].map(shellEscape).join(" ");
   }
 
   const bundlePath = process.argv[1];
   if (isRunnableRaviCliEntrypoint(bundlePath)) {
-    return [process.execPath, bundlePath, "context", "codex-bash-hook"].map(shellEscape).join(" ");
+    return [process.execPath, bundlePath, "context", "codex-tool-hook"].map(shellEscape).join(" ");
   }
 
   const sourceRaviBin = resolveSourceRaviBinPath();
   if (sourceRaviBin) {
-    return [sourceRaviBin, "context", "codex-bash-hook"].map(shellEscape).join(" ");
+    return [sourceRaviBin, "context", "codex-tool-hook"].map(shellEscape).join(" ");
   }
 
-  return ["ravi", "context", "codex-bash-hook"].map(shellEscape).join(" ");
+  return ["ravi", "context", "codex-tool-hook"].map(shellEscape).join(" ");
 }
 
 function isRunnableRaviCliEntrypoint(entrypoint?: string): entrypoint is string {

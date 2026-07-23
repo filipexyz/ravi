@@ -9,6 +9,7 @@ export interface MessageActorMetadata {
   actorType?: "contact" | "agent" | "system" | "unknown" | (string & {});
   contactId?: string;
   actorAgentId?: string;
+  automationId?: string;
   platformIdentityId?: string;
   rawSenderId?: string;
   normalizedSenderId?: string;
@@ -69,6 +70,15 @@ export interface MessageTarget extends MessageActorMetadata {
   threadId?: string;
   /** Original inbound channel message ID, used for session trace correlation. */
   sourceMessageId?: string;
+  /** Preferred user-visible runtime status anchor message for this session/chat/thread. */
+  statusAnchorMessageId?: string;
+  /** Canonical status anchor kind, following the channels model spec. */
+  statusAnchorKind?: "last_outbound_message" | "chat_thread_transient" | "draft_outbound_message" | "none";
+  /**
+   * Internal routing hint: deliver responses to this target, but do not expose
+   * typing/presence while background automation is working.
+   */
+  suppressPresence?: boolean;
 }
 
 export interface RaviCommandPromptMetadata {
@@ -91,6 +101,8 @@ export interface ObservationPromptMetadata {
   profileVersion?: string;
   permissionGrants?: string[];
   eventIds: string[];
+  /** Source trace turns used to derive durable reaction idempotency. */
+  sourceTurnIds?: string[];
 }
 
 export interface DaemonRestartResumePromptMetadata {
@@ -127,6 +139,22 @@ export interface PromptMessage {
   _runtimeModel?: string;
   /** Observation Plane metadata for observer-session prompts. */
   _observation?: ObservationPromptMetadata;
+  /** Heartbeat runner prompt marker. */
+  _heartbeat?: boolean;
+  /** Cron runner prompt marker. */
+  _cron?: boolean;
+  /** Cron job id when `_cron` is true. */
+  _jobId?: string;
+  /** Trigger runner prompt marker. */
+  _trigger?: boolean;
+  /** Trigger id when `_trigger` is true. */
+  _triggerId?: string;
+  /** Session followup runner prompt marker. */
+  _sessionFollowup?: boolean;
+  /** Session followup cadence id when `_sessionFollowup` is true. */
+  _sessionFollowupCadenceId?: string;
+  /** Session followup run id when `_sessionFollowup` is true. */
+  _sessionFollowupRunId?: string;
   /** Ravi thread metadata. Distinct from provider-native thread/topic IDs. */
   _thread?: ThreadHandoffPromptMetadata;
   /**

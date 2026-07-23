@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { z } from "zod";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { CloudAuthError, cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../../cloud-auth/storage.js";
@@ -68,6 +68,7 @@ export class MailAccountsCommands {
   constructor(private readonly deps: MailCommandDeps = defaultMailDeps()) {}
 
   @Command({ name: "list", description: "List local mail accounts" })
+  @CommandAccess({ kind: "read", resource: "mail.accounts", action: "list", risk: "low" })
   async list(
     @Option({ flags: "--provider <provider>", description: "Filter by provider" }) provider?: string,
     @Option({ flags: "--status <status>", description: "Filter by account status" }) status?: string,
@@ -89,6 +90,7 @@ export class MailAccountsCommands {
   }
 
   @Command({ name: "create", description: "Create or update a local mail provider account" })
+  @CommandAccess({ kind: "mutate", resource: "mail.accounts", action: "create", risk: "medium" })
   async create(
     @Option({ flags: "--provider <provider>", description: "Provider id, e.g. ravi-mail or gmail" }) provider?: string,
     @Option({ flags: "--id <id>", description: "Stable local account id" }) id?: string,
@@ -112,6 +114,7 @@ export class MailAccountsCommands {
   }
 
   @Command({ name: "sync", description: "Run one local provider sync tick for an account" })
+  @CommandAccess({ kind: "mutate", resource: "mail.accounts", action: "sync", risk: "high" })
   async sync(
     @Arg("account", { description: "Local mail account id" }) accountId: string,
     @Option({ flags: "--once", description: "Run one foreground tick" }) _once?: boolean,
@@ -143,6 +146,7 @@ export class MailAccountsCommands {
 })
 export class MailMailboxesCommands {
   @Command({ name: "list", description: "List local mailboxes" })
+  @CommandAccess({ kind: "read", resource: "mail.mailboxes", action: "list", risk: "low" })
   async list(
     @Option({ flags: "--account <account>", description: "Local account id" }) accountId?: string,
     @Option({ flags: "--status <status>", description: "Filter by mailbox status" }) status?: string,
@@ -164,6 +168,7 @@ export class MailMailboxesCommands {
   }
 
   @Command({ name: "create", description: "Create or update a local mailbox projection" })
+  @CommandAccess({ kind: "mutate", resource: "mail.mailboxes", action: "create", risk: "medium" })
   async create(
     @Arg("address", { description: "Mailbox email address" }) address: string,
     @Option({ flags: "--account <account>", description: "Local account id" }) accountId?: string,
@@ -192,6 +197,7 @@ export class MailMailboxesCommands {
   }
 
   @Command({ name: "show", description: "Show a local mailbox" })
+  @CommandAccess({ kind: "read", resource: "mail.mailboxes", action: "show", risk: "low" })
   async show(
     @Arg("mailbox", { description: "Local mailbox id or address" }) mailboxRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -207,6 +213,7 @@ export class MailMailboxesCommands {
   }
 
   @Command({ name: "disable", description: "Disable a local mailbox projection" })
+  @CommandAccess({ kind: "mutate", resource: "mail.mailboxes", action: "disable", risk: "medium" })
   async disable(
     @Arg("mailbox", { description: "Local mailbox id or address" }) mailboxRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -230,6 +237,7 @@ export class MailMailboxesCommands {
 })
 export class MailMessagesCommands {
   @Command({ name: "list", description: "List local mail messages" })
+  @CommandAccess({ kind: "read", resource: "mail.messages", action: "list", risk: "low" })
   async list(
     @Option({ flags: "--mailbox <mailbox>", description: "Local mailbox id or address" }) mailbox?: string,
     @Option({ flags: "--query <query>", description: "Search subject/snippet/body" }) query?: string,
@@ -262,6 +270,7 @@ export class MailMessagesCommands {
   }
 
   @Command({ name: "search", description: "Search local mail messages" })
+  @CommandAccess({ kind: "read", resource: "mail.messages", action: "search", risk: "low" })
   async search(
     @Arg("query", { description: "Search query" }) query: string,
     @Option({ flags: "--mailbox <mailbox>", description: "Local mailbox id or address" }) mailbox?: string,
@@ -272,6 +281,7 @@ export class MailMessagesCommands {
   }
 
   @Command({ name: "read", description: "Read a local mail message" })
+  @CommandAccess({ kind: "read", resource: "mail.messages", action: "read", risk: "low" })
   async read(
     @Arg("message", { description: "Local message id" }) messageId: string,
     @Option({ flags: "--addresses", description: "Include local address rows" }) includeAddresses?: boolean,
@@ -289,6 +299,7 @@ export class MailMessagesCommands {
   }
 
   @Command({ name: "import", description: "Import one normalized provider message into the local mailbox" })
+  @CommandAccess({ kind: "mutate", resource: "mail.messages", action: "import", risk: "high" })
   async importMessage(
     @Option({ flags: "--mailbox <mailbox>", description: "Local mailbox id or address" }) mailbox?: string,
     @Option({ flags: "--from <email>", description: "Sender email" }) from?: string,
@@ -341,6 +352,7 @@ export class MailMessagesCommands {
 })
 export class MailOutboxCommands {
   @Command({ name: "status", description: "Show local mail outbox status" })
+  @CommandAccess({ kind: "read", resource: "mail.outbox", action: "status", risk: "low" })
   async status(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     return runMailCommand(asJson, async () => {
       const rows = listMailOutbox({ limit: 500 }).filter((row) => canUseRowMailbox("send", row.mailboxId));
@@ -355,6 +367,7 @@ export class MailOutboxCommands {
   }
 
   @Command({ name: "list", description: "List local outbox rows" })
+  @CommandAccess({ kind: "read", resource: "mail.outbox", action: "list", risk: "low" })
   async list(
     @Option({ flags: "--status <status>", description: "Filter by outbox status" }) status?: string,
     @Option({ flags: "--mailbox <mailbox>", description: "Local mailbox id or address" }) mailbox?: string,
@@ -383,6 +396,7 @@ export class MailOutboxCommands {
   }
 
   @Command({ name: "inspect", description: "Inspect a local outbox row" })
+  @CommandAccess({ kind: "read", resource: "mail.outbox", action: "inspect", risk: "low" })
   async inspect(
     @Arg("outbox", { description: "Local outbox id" }) outboxId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -400,6 +414,7 @@ export class MailOutboxCommands {
   }
 
   @Command({ name: "retry", description: "Move a failed/dead local outbox row back to pending" })
+  @CommandAccess({ kind: "mutate", resource: "mail.outbox", action: "retry", risk: "medium" })
   async retry(
     @Arg("outbox", { description: "Local outbox id" }) outboxId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -425,6 +440,7 @@ export class MailOutboxCommands {
 })
 export class MailProvidersCommands {
   @Command({ name: "list", description: "List known mail providers and local account counts" })
+  @CommandAccess({ kind: "read", resource: "mail.providers", action: "list", risk: "low" })
   async list(
     @Option({ flags: "--limit <n>", description: "Maximum records" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Records to skip before returning results" }) offset?: string,
@@ -455,6 +471,7 @@ export class MailProvidersCommands {
 })
 export class MailCommands {
   @Command({ name: "send", description: "Queue mail in the local outbox" })
+  @CommandAccess({ kind: "mutate", resource: "mail", action: "send", risk: "high" })
   async send(
     @Option({ flags: "--to <email>", description: "Recipient email or comma-separated recipients" }) to?: string,
     @Option({ flags: "--subject <subject>", description: "Message subject" }) subject?: string,
@@ -488,6 +505,7 @@ export class MailCommands {
   }
 
   @Command({ name: "reply", description: "Queue a local reply in the outbox" })
+  @CommandAccess({ kind: "mutate", resource: "mail", action: "reply", risk: "high" })
   async reply(
     @Arg("message", { description: "Local message id to reply to" }) messageId: string,
     @Option({ flags: "--body <text>", description: "Reply body" }) body?: string,
@@ -537,6 +555,7 @@ export class MailCommands {
 })
 export class MailThreadsCommands {
   @Command({ name: "read", description: "Read a local mail thread and its safe message timeline" })
+  @CommandAccess({ kind: "read", resource: "mail.threads", action: "read", risk: "low" })
   async read(
     @Arg("thread", { description: "Local thread id" }) threadId: string,
     @Option({ flags: "--addresses", description: "Include local address rows" }) includeAddresses?: boolean,
@@ -575,6 +594,7 @@ export class MailDomainsCommands {
   constructor(private readonly deps: MailCommandDeps = defaultMailDeps()) {}
 
   @Command({ name: "list", description: "List managed Ravi Mail domains through Console" })
+  @CommandAccess({ kind: "read", resource: "mail.domains", action: "list", risk: "low" })
   async list(
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--limit <n>", description: "Maximum records to request" }) limit?: string,
@@ -596,6 +616,7 @@ export class MailDomainsCommands {
   }
 
   @Command({ name: "create", description: "Register a managed Ravi Mail domain in Console" })
+  @CommandAccess({ kind: "mutate", resource: "mail.domains", action: "create", risk: "medium" })
   async create(
     @Arg("domain", { description: "Managed domain to register, such as ravi.bot" }) domain: string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
@@ -618,6 +639,7 @@ export class MailRaviMailMailboxesCommands {
   constructor(private readonly deps: MailCommandDeps = defaultMailDeps()) {}
 
   @Command({ name: "list", description: "List Ravi Mail provider mailboxes through Console" })
+  @CommandAccess({ kind: "read", resource: "mail.providers.ravi-mail.mailboxes", action: "list", risk: "low" })
   async list(
     @Option({ flags: "--domain <domain>", description: "Filter by domain id, slug, or name" }) domain?: string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
@@ -641,6 +663,7 @@ export class MailRaviMailMailboxesCommands {
   }
 
   @Command({ name: "create", description: "Create a Ravi Mail provider mailbox through Console" })
+  @CommandAccess({ kind: "mutate", resource: "mail.providers.ravi-mail.mailboxes", action: "create", risk: "high" })
   async create(
     @Arg("addressOrLocalPart", { description: "Full address or local part" }) addressOrLocalPart: string,
     @Option({ flags: "--domain <domain>", description: "Domain id, slug, or name" }) domain?: string,
@@ -663,6 +686,7 @@ export class MailRaviMailMailboxesCommands {
   }
 
   @Command({ name: "show", description: "Show Ravi Mail provider mailbox metadata" })
+  @CommandAccess({ kind: "read", resource: "mail.providers.ravi-mail.mailboxes", action: "show", risk: "low" })
   async show(
     @Arg("mailbox", { description: "Provider mailbox id or address" }) mailbox: string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
@@ -676,6 +700,7 @@ export class MailRaviMailMailboxesCommands {
   }
 
   @Command({ name: "disable", description: "Disable a managed Ravi Mail provider mailbox and active routes" })
+  @CommandAccess({ kind: "mutate", resource: "mail.providers.ravi-mail.mailboxes", action: "disable", risk: "high" })
   async disable(
     @Arg("mailbox", { description: "Provider mailbox id or address" }) mailbox: string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
@@ -698,6 +723,7 @@ export class MailRaviMailMessagesCommands {
   constructor(private readonly deps: MailCommandDeps = defaultMailDeps()) {}
 
   @Command({ name: "list", description: "List Ravi Mail provider message metadata" })
+  @CommandAccess({ kind: "read", resource: "mail.providers.ravi-mail.messages", action: "list", risk: "low" })
   async list(
     @Option({ flags: "--mailbox <mailbox>", description: "Provider mailbox id or address" }) mailbox?: string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
@@ -727,6 +753,7 @@ export class MailRaviMailMessagesCommands {
   }
 
   @Command({ name: "show", description: "Show Ravi Mail provider message metadata" })
+  @CommandAccess({ kind: "read", resource: "mail.providers.ravi-mail.messages", action: "show", risk: "low" })
   async show(
     @Arg("message", { description: "Provider message id" }) message: string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
@@ -742,6 +769,7 @@ export class MailRaviMailMessagesCommands {
   }
 
   @Command({ name: "read", description: "Read one authorized Ravi Mail provider message body through Console" })
+  @CommandAccess({ kind: "read", resource: "mail.providers.ravi-mail.messages", action: "read", risk: "low" })
   async read(
     @Arg("message", { description: "Provider message id" }) message: string,
     @Option({
@@ -777,6 +805,7 @@ export class MailRaviMailCommands {
   constructor(private readonly deps: MailCommandDeps = defaultMailDeps()) {}
 
   @Command({ name: "send", description: "Send mail directly through Console Ravi Mail" })
+  @CommandAccess({ kind: "mutate", resource: "mail.providers.ravi-mail", action: "send", risk: "high" })
   async send(
     @Option({ flags: "--to <email>", description: "Recipient email or comma-separated recipients" }) to?: string,
     @Option({ flags: "--subject <subject>", description: "Message subject" }) subject?: string,

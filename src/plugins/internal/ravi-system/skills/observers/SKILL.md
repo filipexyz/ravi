@@ -46,10 +46,11 @@ ravi chats lists list --json                     # filas de leitura (se observer
 ravi observers list
 ravi observers show <binding-id>
 ravi observers refresh <session>
+ravi observers refresh <session> --reconcile full-reconcile
 
 ravi observers rules list
 ravi observers rules show <rule-id>
-ravi observers rules set <rule-id> <observer-agent> [--scope profile] [--source-profile observed-task] [--profile tasks]
+ravi observers rules set <rule-id> <observer-agent> [--scope profile] [--source-profile observed-task] [--profile tasks] [--selector <expression>]
 ravi observers rules validate
 ravi observers rules explain --session <session>
 
@@ -59,6 +60,24 @@ ravi observers profiles preview <profile-id> --event message.assistant
 ravi observers profiles validate [profile-id]
 ravi observers profiles init <profile-id>
 ```
+
+## Selectors Genéricos
+
+`--selector` usa um predicado restrito, sem JavaScript/eval, sobre `source.*`, `turn.*` e `event.*`. Operadores: `==`, `!=`, `startsWith`, `endsWith`, `includes`, `!`, `&&`, `||` e parênteses.
+
+Exemplo para observar somente turnos interativos, mesmo quando um cron executa dentro da sessão `main`:
+
+```bash
+ravi observers rules set proactive-followups proactive-followup-observer \
+  --scope global \
+  --selector 'turn.background == "false"'
+```
+
+Selectors de `source.*` são avaliados antes de criar o binding. Selectors com `turn.*` ou `event.*` são avaliados por evento e sobrevivem corretamente a debounce. Expressões inválidas falham fechadas. Use `--selector clear` para remover.
+
+`metadata.sourceExclusions` continua sendo lido para compatibilidade com regras antigas, mas novas regras devem preferir `--selector`.
+
+Reconciliação é explícita: `attach-missing` (padrão), `detach-disabled`, `refresh-profile` ou `full-reconcile`. Ela desativa bindings obsoletos sem apagar o histórico.
 
 ## Profiles
 
@@ -105,7 +124,10 @@ ravi observers rules set observed-task-status <observer-agent> \
 
 `--permissions` aceita atalhos como `tasks.report` ou capability completa como
 `use:tool:tasks_report`. Esses grants entram apenas no runtime context do
-observer, não na sessão fonte.
+observer, não na sessão fonte. Para acesso recorrente de contato/agent fora do
+contexto do observer, use `ravi permissions resolve <denial-id>` ou
+`ravi permissions allow <profile> --to <subject> --agent <agent>
+--capabilities <cap>`.
 
 Depois:
 

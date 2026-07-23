@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { resolve } from "node:path";
 import { z } from "zod";
-import { Arg, Command, Group, Option, Returns } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { looseObjectSchema } from "../return-schemas.js";
 import {
@@ -81,6 +81,7 @@ function formatSourceStatus(source: RaviRulesImportSource): string {
 })
 export class RulesCommands {
   @Command({ name: "sources", description: "List importable provider rule sources" })
+  @CommandAccess({ kind: "read", resource: "rules", action: "sources", risk: "low" })
   @Returns(rulesSourcesReturnSchema)
   async sources(
     @Arg("source", { required: false, description: "Source provider: all, claude, agents", defaultValue: "all" })
@@ -127,6 +128,7 @@ export class RulesCommands {
   }
 
   @Command({ name: "import", description: "Import provider rules into .ravi/rules/imported" })
+  @CommandAccess({ kind: "mutate", resource: "rules", action: "import", risk: "high" })
   @Returns(rulesImportReturnSchema)
   async importRules(
     @Arg("source", { required: false, description: "Source provider: all, claude, agents", defaultValue: "all" })

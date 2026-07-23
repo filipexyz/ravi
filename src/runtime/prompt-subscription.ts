@@ -1,8 +1,14 @@
 import { StringCodec } from "nats";
 import { getNats, nats } from "../nats.js";
-import { SESSION_STREAM, ensureSessionPromptInfrastructure, getConsumerName } from "../omni/session-stream.js";
+import {
+  SESSION_STREAM,
+  ensureSessionPromptInfrastructure,
+  getConsumerName,
+  type EnsureSessionPromptInfrastructureOptions,
+} from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { classifyTurnProvenance } from "./turn-provenance.js";
 import type { RuntimeSessionPoolSnapshot } from "./session-pool.js";
 
 const log = logger.child("runtime:prompt-subscription");
@@ -11,7 +17,7 @@ export interface RuntimePromptSubscriptionOptions {
   isRunning(): boolean;
   getStreamingSessionCount(): number;
   getRuntimeSessionPoolSnapshot?(): RuntimeSessionPoolSnapshot;
-  ensurePromptInfrastructure?(): Promise<void>;
+  ensurePromptInfrastructure?(options?: EnsureSessionPromptInfrastructureOptions): Promise<void>;
   markConsumerReady(): void;
   handlePrompt(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void>;
 }
@@ -81,7 +87,7 @@ export class RuntimePromptSubscription {
       const js = nc.jetstream();
 
       const consumerName = getConsumerName();
-      await this.ensurePromptInfrastructure();
+      await this.ensurePromptInfrastructure({ force: true });
 
       while (this.options.isRunning()) {
         try {
@@ -131,6 +137,7 @@ export class RuntimePromptSubscription {
                 taskBarrierTaskId: prompt.taskBarrierTaskId,
                 commands: prompt.commands,
                 observation: prompt._observation,
+                turnProvenance: classifyTurnProvenance({ prompt }),
                 thread: prompt._thread,
                 _agentId: prompt._agentId,
                 timestamp: new Date().toISOString(),
@@ -160,7 +167,7 @@ export class RuntimePromptSubscription {
 
           if (isPromptBootstrapError(err)) {
             log.warn("Prompt pull unavailable during bootstrap, re-ensuring stream/consumer", { error: err });
-            await this.ensurePromptInfrastructure();
+            await this.ensurePromptInfrastructure({ force: true });
           } else {
             log.error("Prompt subscription error - will reconnect pull", {
               error: err,
@@ -199,7 +206,7 @@ export class RuntimePromptSubscription {
   private ensurePromptInfrastructureForHealthCheck(): void {
     if (this.healthProbeInFlight) return;
     this.healthProbeInFlight = true;
-    this.ensurePromptInfrastructure()
+    this.ensurePromptInfrastructure({ force: true })
       .catch((error) => {
         log.warn("Subscriber health check: failed to verify prompt infrastructure", { error });
       })
@@ -208,8 +215,8 @@ export class RuntimePromptSubscription {
       });
   }
 
-  private ensurePromptInfrastructure(): Promise<void> {
-    return this.options.ensurePromptInfrastructure?.() ?? ensureSessionPromptInfrastructure();
+  private ensurePromptInfrastructure(options?: EnsureSessionPromptInfrastructureOptions): Promise<void> {
+    return this.options.ensurePromptInfrastructure?.(options) ?? ensureSessionPromptInfrastructure(undefined, options);
   }
 }
 

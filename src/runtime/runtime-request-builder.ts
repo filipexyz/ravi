@@ -9,6 +9,8 @@ import {
   summarizeRuntimeCapabilities,
 } from "../session-trace/runtime-trace.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
+import { classifyTurnProvenance } from "./turn-provenance.js";
+import { resolveAgentSkills } from "./allowed-skills.js";
 import { createRuntimeMessageGenerator } from "./delivery-queue.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import {
@@ -73,6 +75,9 @@ export function resolveRuntimePromptSource(
   session: SessionEntry,
 ): RuntimeMessageTarget | undefined {
   let resolvedSource = prompt.source;
+  if (resolvedSource) {
+    resolvedSource = enrichSourceFromSessionChatBinding(resolvedSource, session);
+  }
   if (!resolvedSource) {
     resolvedSource = resolveSourceFromSessionChatBinding(session);
   }
@@ -110,6 +115,34 @@ function resolveSourceFromSessionChatBinding(session: SessionEntry): RuntimeMess
     canonicalChatId: chat.id,
     ...target,
   };
+}
+
+function enrichSourceFromSessionChatBinding(source: RuntimeMessageTarget, session: SessionEntry): RuntimeMessageTarget {
+  if (source.canonicalChatId) return source;
+  const binding = dbGetSessionChatBinding(session.sessionKey);
+  if (!binding) return source;
+  const chat = dbGetChat(binding.chatId);
+  if (!chat || !isSourceForChat(source, chat)) return source;
+  return {
+    ...source,
+    instanceId: source.instanceId ?? chat.instanceId,
+    canonicalChatId: chat.id,
+  };
+}
+
+function isSourceForChat(source: RuntimeMessageTarget, chat: NonNullable<ReturnType<typeof dbGetChat>>): boolean {
+  if (source.channel && source.channel !== chat.channel) return false;
+  const sourceChatId = source.chatId?.trim();
+  if (!sourceChatId) return false;
+  const platformTarget = splitCanonicalPlatformChat(chat.platformChatId);
+  const candidates = new Set(
+    [chat.id, chat.platformChatId, chat.normalizedChatId, platformTarget.chatId].filter((value): value is string =>
+      Boolean(value?.trim()),
+    ),
+  );
+  if (!candidates.has(sourceChatId)) return false;
+  if (source.threadId && platformTarget.threadId && source.threadId !== platformTarget.threadId) return false;
+  return true;
 }
 
 export async function buildRuntimeStartRequest(
@@ -235,6 +268,11 @@ export async function buildRuntimeStartRequest(
   const systemPromptSectionMetadata = buildRuntimeTracePromptSectionMetadata(systemPromptSections);
   const pluginNames = runtimePlugins.map((plugin) => plugin.path);
   const mcpServerNames = specServer ? ["spec"] : [];
+  const resolvedAllowedSkills = resolveAgentSkills(agent.id);
+  const allowedSkills =
+    resolvedAllowedSkills.hasConfiguration && resolvedAllowedSkills.allowlist.length > 0
+      ? resolvedAllowedSkills.allowlist
+      : undefined;
   const toolAccessMode = getRuntimeToolAccessMode(runtimeCapabilities, agent.id, runtimeContext);
   const traceTurnStart = (input: { combinedPrompt: string; deliverableMessages: RuntimeUserMessage[] }) => {
     const firstMessage = input.deliverableMessages[0];
@@ -265,6 +303,9 @@ export async function buildRuntimeStartRequest(
       model,
       effort: runtimeResolution.options.effort ?? null,
       thinking: runtimeResolution.options.thinking ?? null,
+      modelSource: runtimeResolution.sources.model,
+      effortSource: runtimeResolution.sources.effort,
+      thinkingSource: runtimeResolution.sources.thinking,
       prompt: input.combinedPrompt,
       systemPrompt: systemPromptAppend,
       systemPromptSectionMetadata,
@@ -292,6 +333,7 @@ export async function buildRuntimeStartRequest(
       pendingIds: input.deliverableMessages.map((message) => message.pendingId).filter((id): id is string => !!id),
       commands: input.deliverableMessages.flatMap((message) => message.commands ?? []),
       runtimeCredential: runtimeCredential ? serializeRuntimeCredentialAttemptBinding(runtimeCredential) : null,
+      turnProvenance: streamingSession.currentTurnProvenance ?? null,
     });
   };
   const messageGenerator = createRuntimeMessageGenerator({
@@ -301,6 +343,13 @@ export async function buildRuntimeStartRequest(
     beforeTurnStart: (input) => {
       const turnPrompt = resolveRuntimeTurnPrompt(input.deliverableMessages, prompt);
       const turnSource = turnPrompt.source ?? resolvedSource;
+      if (turnSource) {
+        streamingSession.currentSource = turnSource;
+      }
+      streamingSession.currentTurnProvenance = classifyTurnProvenance({
+        prompt: turnPrompt,
+        source: turnSource,
+      });
       refreshRuntimeRequestContextForTurn({
         runtimeContext,
         toolContext,
@@ -349,6 +398,7 @@ export async function buildRuntimeStartRequest(
       settingSources: agent.settingSources ?? ["project"],
       ...(hooks ? { hooks } : {}),
       ...(runtimePlugins.length > 0 ? { plugins: runtimePlugins } : {}),
+      ...(allowedSkills ? { allowedSkills } : {}),
       ...(remoteSpawn ? { remoteSpawn } : {}),
     },
     toolContext,

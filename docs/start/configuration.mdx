@@ -106,6 +106,7 @@ All fields are set via `ravi agents set <id> <key> <value>`.
 | `name` | string | — | Display name |
 | `cwd` | string | — | Working directory (`AGENTS.md`, tools, optional `CLAUDE.md` compatibility bridge) |
 | `model` | string | `sonnet` | Model override (e.g., `sonnet`, `haiku`, `opus`) |
+| `effort` | `none` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` \| `max` \| `ultra` | `xhigh` | Reasoning effort default used after task/profile and session overrides |
 | `mode` | `active` \| `sentinel` | `active` | `active` responds to messages; `sentinel` observes silently |
 | `dmScope` | DmScope | per-peer | How DMs are grouped into sessions (see below) |
 | `debounceMs` | number | `0` | Message grouping window in ms for DM sessions |

@@ -19,9 +19,14 @@ import { normalizePhone } from "../utils/phone.js";
 import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
 import { timestampLikeToMs } from "../utils/provider-timestamp.js";
 import { executeWrite } from "../db/write-retry.js";
-import type { AgentConfig, RouteConfig, DmScope } from "./types.js";
+import { RUNTIME_EFFORT_LEVELS } from "../runtime/effort.js";
+import type { AgentConfig, AgentUpdateInput, RouteConfig, DmScope } from "./types.js";
 
 const log = logger.child("router:db");
+
+function isDuplicateColumnError(error: unknown): boolean {
+  return error instanceof Error && /duplicate column name/i.test(error.message);
+}
 
 // ============================================================================
 // Constants
@@ -47,7 +52,9 @@ export const AgentInputSchema = z.object({
   name: z.string().optional(),
   cwd: z.string().min(1),
   model: z.string().optional(),
+  effort: z.enum(RUNTIME_EFFORT_LEVELS).optional(),
   provider: RuntimeProviderSchema.optional(),
+  modelPresetId: z.string().min(1).optional(),
   remote: z.string().optional(),
   remoteUser: z.string().optional(),
   dmScope: DmScopeSchema.optional(),
@@ -115,6 +122,14 @@ export const InstanceInputSchema = z.object({
   defaultContactTags: z.array(z.string()).optional(),
 });
 
+export const ChannelInputSchema = z.object({
+  name: z.string().min(1),
+  provider: z.string().min(1),
+  enabled: z.boolean().default(true),
+  credentialConnection: z.string().min(1).optional(),
+  defaults: z.record(z.string(), z.unknown()).optional(),
+});
+
 // ============================================================================
 // Row Types
 // ============================================================================
@@ -124,7 +139,9 @@ interface AgentRow {
   name: string | null;
   cwd: string;
   model: string | null;
+  effort: string | null;
   provider: string | null;
+  model_preset_id: string | null;
   remote: string | null;
   remote_user: string | null;
   dm_scope: string | null;
@@ -180,6 +197,17 @@ interface InstanceRow {
   enabled: number | null;
   defaults: string | null;
   default_contact_tags: string | null;
+  created_at: number;
+  updated_at: number;
+  deleted_at: number | null;
+}
+
+interface ChannelRow {
+  name: string;
+  provider: string;
+  enabled: number | null;
+  credential_connection: string | null;
+  defaults: string | null;
   created_at: number;
   updated_at: number;
   deleted_at: number | null;
@@ -375,6 +403,17 @@ export interface InstanceConfig {
   deletedAt?: number;
 }
 
+export interface ChannelConfig {
+  name: string;
+  provider: string;
+  enabled?: boolean;
+  credentialConnection?: string;
+  defaults?: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt?: number;
+}
+
 interface SettingRow {
   key: string;
   value: string;
@@ -411,6 +450,20 @@ export interface DbSkillGateRule {
   commandRegex?: string;
   createdAt: number;
   updatedAt: number;
+}
+
+interface SkillGrantRow {
+  agent_id: string;
+  skill_name: string;
+  note: string | null;
+  granted_at: number;
+}
+
+export interface DbSkillGrant {
+  agentId: string;
+  skillName: string;
+  note?: string;
+  grantedAt: number;
 }
 
 export interface DbSkillGateRuleInput {
@@ -629,6 +682,9 @@ export interface UpsertChatMessageInput {
 export interface UpsertChatMessageResult {
   message: ChatMessageRecord;
   created: boolean;
+  canonicalMessageId: string;
+  providerMessageId: string;
+  providerTimestamp?: number;
 }
 
 export type ChatReadingListOwnerType = "user" | "agent" | "team" | "system" | "workflow" | string;
@@ -864,7 +920,11 @@ function shortSql(sql: string): string {
 
 function reportSlowQuery(elapsed: number, method: string, sql: string): void {
   if (elapsed >= SLOW_QUERY_ERROR_MS) {
-    log.error("very slow db query (possible lock contention)", { ms: elapsed, method, sql: shortSql(sql) });
+    log.error("very slow db query (possible lock contention)", {
+      ms: elapsed,
+      method,
+      sql: shortSql(sql),
+    });
   } else if (elapsed >= SLOW_QUERY_WARN_MS) {
     log.warn("slow db query", { ms: elapsed, method, sql: shortSql(sql) });
   }
@@ -992,12 +1052,27 @@ function getDb(): Database {
 
   // Initialize schema
   db.exec(`
+    CREATE TABLE IF NOT EXISTS runtime_model_presets (
+      id TEXT PRIMARY KEY,
+      provider TEXT NOT NULL,
+      model TEXT NOT NULL,
+      description TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+      version INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_runtime_model_presets_provider ON runtime_model_presets(provider);
+    CREATE INDEX IF NOT EXISTS idx_runtime_model_presets_enabled ON runtime_model_presets(enabled);
+
     CREATE TABLE IF NOT EXISTS agents (
       id TEXT PRIMARY KEY,
       name TEXT,
       cwd TEXT NOT NULL,
       model TEXT,
+      effort TEXT,
       provider TEXT,
+      model_preset_id TEXT REFERENCES runtime_model_presets(id),
       remote TEXT,
       remote_user TEXT,
       dm_scope TEXT CHECK(dm_scope IS NULL OR dm_scope IN ('main','per-peer','per-channel-peer','per-account-channel-peer')),
@@ -1006,7 +1081,6 @@ function getDb(): Database {
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
-
     CREATE TABLE IF NOT EXISTS routes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       pattern TEXT NOT NULL,
@@ -1042,11 +1116,21 @@ function getDb(): Database {
     );
     CREATE INDEX IF NOT EXISTS idx_skill_gate_rules_disabled ON skill_gate_rules(disabled);
 
+    CREATE TABLE IF NOT EXISTS skill_grants (
+      agent_id TEXT NOT NULL,
+      skill_name TEXT NOT NULL,
+      note TEXT,
+      granted_at INTEGER NOT NULL,
+      PRIMARY KEY (agent_id, skill_name)
+    );
+    CREATE INDEX IF NOT EXISTS idx_skill_grants_skill ON skill_grants(skill_name);
+
     CREATE TABLE IF NOT EXISTS sessions (
       session_key TEXT PRIMARY KEY,
       name TEXT,
       sdk_session_id TEXT,
       runtime_provider TEXT,
+      runtime_provider_override TEXT,
       runtime_session_json TEXT,
       runtime_session_display_id TEXT,
       agent_id TEXT NOT NULL,
@@ -1062,6 +1146,7 @@ function getDb(): Database {
       last_account_id TEXT,
       last_thread_id TEXT,
       model_override TEXT,
+      effort_override TEXT,
       thinking_level TEXT,
       queue_mode TEXT,
       queue_debounce_ms INTEGER,
@@ -1081,12 +1166,13 @@ function getDb(): Database {
       session_key TEXT PRIMARY KEY REFERENCES sessions(session_key) ON DELETE CASCADE,
       goal_id TEXT NOT NULL,
       objective TEXT NOT NULL,
-      status TEXT NOT NULL CHECK(status IN ('active','paused','budget_limited','complete')),
+      status TEXT NOT NULL CHECK(status IN ('active','paused','budget_limited','blocked','complete')),
       token_budget INTEGER,
       tokens_used INTEGER NOT NULL DEFAULT 0,
       time_used_seconds INTEGER NOT NULL DEFAULT 0,
       task_id TEXT,
       project_id TEXT,
+      blocked_reason TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
@@ -1441,26 +1527,8 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_routes_agent ON routes(agent_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_sdk ON sessions(sdk_session_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_name ON sessions(name) WHERE name IS NOT NULL;
-
-    -- REBAC: Relationship-based access control
-    CREATE TABLE IF NOT EXISTS relations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      subject_type TEXT NOT NULL,
-      subject_id TEXT NOT NULL,
-      relation TEXT NOT NULL,
-      object_type TEXT NOT NULL,
-      object_id TEXT NOT NULL,
-      source TEXT NOT NULL DEFAULT 'manual',
-      created_at INTEGER NOT NULL DEFAULT (unixepoch())
-    );
-
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_relations_unique
-      ON relations(subject_type, subject_id, relation, object_type, object_id);
-    CREATE INDEX IF NOT EXISTS idx_relations_subject
-      ON relations(subject_type, subject_id);
-    CREATE INDEX IF NOT EXISTS idx_relations_object
-      ON relations(object_type, object_id);
 
     CREATE TABLE IF NOT EXISTS permission_denials (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1524,6 +1592,13 @@ function getDb(): Database {
       output_cost_usd REAL NOT NULL,
       cache_cost_usd REAL DEFAULT 0,
       total_cost_usd REAL NOT NULL,
+      pricing_status TEXT NOT NULL DEFAULT 'legacy',
+      pricing_source TEXT,
+      pricing_source_url TEXT,
+      pricing_source_version TEXT,
+      pricing_fetched_at INTEGER,
+      pricing_model TEXT,
+      pricing_error TEXT,
       created_at INTEGER NOT NULL
     );
 
@@ -1595,6 +1670,17 @@ function getDb(): Database {
 
     CREATE INDEX IF NOT EXISTS idx_session_events_key_time
       ON session_events(session_key, timestamp);
+    CREATE INDEX IF NOT EXISTS idx_session_events_key_time_seq_id
+      ON session_events(session_key, timestamp, seq, id);
+    CREATE INDEX IF NOT EXISTS idx_session_events_visible_key_time_seq_id
+      ON session_events(session_key, timestamp, seq, id)
+      WHERE event_group != 'stream'
+        AND NOT (
+          event_type = 'adapter.raw'
+          OR event_type LIKE '%.stream%'
+          OR event_type LIKE '%.delta'
+          OR event_type LIKE '%provider_event%'
+        );
     CREATE INDEX IF NOT EXISTS idx_session_events_name_time
       ON session_events(session_name, timestamp);
     CREATE INDEX IF NOT EXISTS idx_session_events_run_seq
@@ -1602,6 +1688,10 @@ function getDb(): Database {
     -- Hot path: SELECT COALESCE(MAX(seq), 0) + 1 FROM session_events WHERE session_key = ?
     CREATE INDEX IF NOT EXISTS idx_session_events_key_seq
       ON session_events(session_key, seq DESC);
+    CREATE INDEX IF NOT EXISTS idx_session_events_key_id
+      ON session_events(session_key, id);
+    CREATE INDEX IF NOT EXISTS idx_session_events_key_type_id
+      ON session_events(session_key, event_type, id DESC);
     -- TTL pruning: DELETE FROM session_events WHERE timestamp < ?
     CREATE INDEX IF NOT EXISTS idx_session_events_timestamp
       ON session_events(timestamp);
@@ -1609,6 +1699,15 @@ function getDb(): Database {
       ON session_events(turn_id, seq);
     CREATE INDEX IF NOT EXISTS idx_session_events_type_time
       ON session_events(event_type, timestamp);
+    CREATE INDEX IF NOT EXISTS idx_session_events_rollup_turns
+      ON session_events(timestamp, agent_id, model, event_type)
+      WHERE event_type IN ('turn.complete', 'turn.failed', 'turn.interrupted');
+    CREATE INDEX IF NOT EXISTS idx_session_events_rollup_turns_cover
+      ON session_events(timestamp, agent_id, model, event_type, duration_ms)
+      WHERE event_type IN ('turn.complete', 'turn.failed', 'turn.interrupted');
+    CREATE INDEX IF NOT EXISTS idx_session_events_rollup_tools
+      ON session_events(timestamp, agent_id, event_type, status)
+      WHERE event_type IN ('tool.start', 'tool.end');
     CREATE INDEX IF NOT EXISTS idx_session_events_chat_time
       ON session_events(source_chat_id, timestamp);
     CREATE INDEX IF NOT EXISTS idx_session_events_contact_time
@@ -1671,6 +1770,10 @@ function getDb(): Database {
 
     CREATE INDEX IF NOT EXISTS idx_session_turns_session_time
       ON session_turns(session_key, started_at);
+    CREATE INDEX IF NOT EXISTS idx_session_turns_session_started_turn
+      ON session_turns(session_key, started_at DESC, turn_id DESC);
+    CREATE INDEX IF NOT EXISTS idx_session_turns_session_activity_started_turn
+      ON session_turns(session_key, COALESCE(completed_at, updated_at, started_at), started_at DESC, turn_id DESC);
     CREATE INDEX IF NOT EXISTS idx_session_turns_run
       ON session_turns(run_id, started_at);
 
@@ -1727,6 +1830,64 @@ function getDb(): Database {
     -- TTL pruning: DELETE FROM session_trace_blobs WHERE created_at < ?
     CREATE INDEX IF NOT EXISTS idx_session_trace_blobs_created
       ON session_trace_blobs(created_at);
+
+    -- Console delivery bridge: durable local mirror and per-org poll lease.
+    CREATE TABLE IF NOT EXISTS console_inbox_subscriptions (
+      id              TEXT PRIMARY KEY,
+      console_url     TEXT NOT NULL,
+      organization_id TEXT NOT NULL,
+      subscription_id TEXT,
+      installation_id TEXT NOT NULL,
+      status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','paused','errored')),
+      enabled         INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+      last_generation INTEGER,
+      last_sequence   INTEGER,
+      last_poll_at    INTEGER,
+      last_success_at INTEGER,
+      last_error_code TEXT,
+      last_error_at   INTEGER,
+      created_at      INTEGER NOT NULL,
+      updated_at      INTEGER NOT NULL,
+      UNIQUE(console_url, organization_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_console_inbox_subs_enabled
+      ON console_inbox_subscriptions(enabled, status);
+
+    CREATE TABLE IF NOT EXISTS console_inbox_items (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      console_url        TEXT NOT NULL,
+      organization_id    TEXT NOT NULL,
+      subscription_id    TEXT NOT NULL,
+      item_id            TEXT NOT NULL,
+      sequence           INTEGER NOT NULL,
+      event_type         TEXT NOT NULL,
+      category           TEXT NOT NULL,
+      severity           TEXT NOT NULL,
+      dedupe_key         TEXT NOT NULL,
+      nats_subject       TEXT NOT NULL,
+      nats_payload_json  TEXT NOT NULL,
+      delivered_at       INTEGER,
+      acked_at           INTEGER,
+      replay_count       INTEGER NOT NULL DEFAULT 0,
+      created_at         INTEGER NOT NULL,
+      updated_at         INTEGER NOT NULL,
+      UNIQUE(console_url, organization_id, item_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_console_inbox_items_sub
+      ON console_inbox_items(subscription_id, sequence);
+    CREATE INDEX IF NOT EXISTS idx_console_inbox_items_seq
+      ON console_inbox_items(console_url, organization_id, sequence DESC);
+    CREATE INDEX IF NOT EXISTS idx_console_inbox_items_dedupe
+      ON console_inbox_items(dedupe_key);
+
+    CREATE TABLE IF NOT EXISTS console_inbox_poll_locks (
+      lock_key    TEXT PRIMARY KEY,
+      owner_id    TEXT NOT NULL,
+      acquired_at INTEGER NOT NULL,
+      expires_at  INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_console_inbox_poll_locks_expiry
+      ON console_inbox_poll_locks(expires_at);
 
     -- Local-first sync: optional, best-effort replication ledger.
     -- SQLite remains the local source of truth; these tables are durable queues
@@ -1825,6 +1986,17 @@ function getDb(): Database {
       updated_at   INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS channels (
+      name         TEXT PRIMARY KEY,
+      provider     TEXT NOT NULL,
+      enabled      INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+      credential_connection TEXT,
+      defaults     TEXT,
+      created_at   INTEGER NOT NULL,
+      updated_at   INTEGER NOT NULL,
+      deleted_at   INTEGER
+    );
+
     CREATE TABLE IF NOT EXISTS contexts (
       context_id TEXT PRIMARY KEY,
       context_key TEXT NOT NULL UNIQUE,
@@ -1853,33 +2025,44 @@ function getDb(): Database {
     );
   `);
 
+  // This table changed shape while outbound delivery was being hardened. Reconcile
+  // it before creating indexes so existing databases never reference a column that
+  // has not been added yet (notably claim_expires_at).
+  ensureChannelOutboundReceiptSchema(db);
+
   // Migration: add matrix_account column to agents if not exists
-  const agentColumns = db.prepare("PRAGMA table_info(agents)").all() as Array<{ name: string }>;
+  const agentColumns = db.prepare("PRAGMA table_info(agents)").all() as Array<{
+    name: string;
+  }>;
   if (!agentColumns.some((c) => c.name === "matrix_account")) {
     db.exec("ALTER TABLE agents ADD COLUMN matrix_account TEXT REFERENCES matrix_accounts(username)");
     log.info("Added matrix_account column to agents table");
   }
 
   // Migration: add heartbeat columns to agents if not exists
-  if (!agentColumns.some((c) => c.name === "heartbeat_enabled")) {
-    db.exec(`
-      ALTER TABLE agents ADD COLUMN heartbeat_enabled INTEGER DEFAULT 0;
-    `);
-    db.exec(`
-      ALTER TABLE agents ADD COLUMN heartbeat_interval_ms INTEGER DEFAULT 1800000;
-    `);
-    db.exec(`
-      ALTER TABLE agents ADD COLUMN heartbeat_model TEXT;
-    `);
-    db.exec(`
-      ALTER TABLE agents ADD COLUMN heartbeat_active_start TEXT;
-    `);
-    db.exec(`
-      ALTER TABLE agents ADD COLUMN heartbeat_active_end TEXT;
-    `);
-    db.exec(`
-      ALTER TABLE agents ADD COLUMN heartbeat_last_run_at INTEGER;
-    `);
+  const addAgentColumnIfMissing = (name: string, sql: string) => {
+    if (agentColumns.some((c) => c.name === name)) return false;
+    try {
+      db.exec(sql);
+      return true;
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) throw error;
+      log.debug("Agent column already exists", { column: name });
+      return false;
+    }
+  };
+  const addedAgentHeartbeatColumns = [
+    addAgentColumnIfMissing("heartbeat_enabled", "ALTER TABLE agents ADD COLUMN heartbeat_enabled INTEGER DEFAULT 0"),
+    addAgentColumnIfMissing(
+      "heartbeat_interval_ms",
+      "ALTER TABLE agents ADD COLUMN heartbeat_interval_ms INTEGER DEFAULT 1800000",
+    ),
+    addAgentColumnIfMissing("heartbeat_model", "ALTER TABLE agents ADD COLUMN heartbeat_model TEXT"),
+    addAgentColumnIfMissing("heartbeat_active_start", "ALTER TABLE agents ADD COLUMN heartbeat_active_start TEXT"),
+    addAgentColumnIfMissing("heartbeat_active_end", "ALTER TABLE agents ADD COLUMN heartbeat_active_end TEXT"),
+    addAgentColumnIfMissing("heartbeat_last_run_at", "ALTER TABLE agents ADD COLUMN heartbeat_last_run_at INTEGER"),
+  ].some(Boolean);
+  if (addedAgentHeartbeatColumns) {
     log.info("Added heartbeat columns to agents table");
   }
 
@@ -1895,6 +2078,17 @@ function getDb(): Database {
     log.info("Added provider column to agents table");
   }
 
+  // Migration: add default reasoning effort column to agents if not exists
+  if (!agentColumns.some((c) => c.name === "effort")) {
+    try {
+      db.exec("ALTER TABLE agents ADD COLUMN effort TEXT");
+      log.info("Added effort column to agents table");
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) throw error;
+      log.debug("Effort column already exists on agents table");
+    }
+  }
+
   if (!agentColumns.some((c) => c.name === "remote")) {
     db.exec("ALTER TABLE agents ADD COLUMN remote TEXT");
     log.info("Added remote column to agents table");
@@ -1905,14 +2099,16 @@ function getDb(): Database {
     log.info("Added remote_user column to agents table");
   }
 
-  // Migration: drop legacy permission columns (replaced by REBAC)
+  // Migration: drop legacy permission columns (replaced by provider-runtime capability snapshots)
   const legacyCols = ["allowed_tools", "bash_mode", "bash_allowlist", "bash_denylist"];
   const toDrop = legacyCols.filter((c) => agentColumns.some((ac) => ac.name === c));
   if (toDrop.length > 0) {
     for (const col of toDrop) {
       db.exec(`ALTER TABLE agents DROP COLUMN ${col}`);
     }
-    log.info("Dropped legacy permission columns from agents table", { columns: toDrop });
+    log.info("Dropped legacy permission columns from agents table", {
+      columns: toDrop,
+    });
   }
 
   // Migration: add spec_mode column to agents if not exists
@@ -1946,15 +2142,46 @@ function getDb(): Database {
     log.info("Added defaults column to agents table");
   }
 
+  // Migration: add model_preset_id column + index to agents if not exists.
+  // The runtime_model_presets table is created in the base schema above, so the
+  // restrictive relation resolves for existing databases too.
+  if (!agentColumns.some((c) => c.name === "model_preset_id")) {
+    db.exec("ALTER TABLE agents ADD COLUMN model_preset_id TEXT REFERENCES runtime_model_presets(id)");
+    log.info("Added model_preset_id column to agents table");
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_agents_model_preset ON agents(model_preset_id)");
+
   // Migration: add heartbeat columns to sessions if not exists
   const sessionColumns = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;
-  if (!sessionColumns.some((c) => c.name === "last_heartbeat_text")) {
-    db.exec(`
-      ALTER TABLE sessions ADD COLUMN last_heartbeat_text TEXT;
-    `);
-    db.exec(`
-      ALTER TABLE sessions ADD COLUMN last_heartbeat_sent_at INTEGER;
-    `);
+  if (!sessionColumns.some((c) => c.name === "effort_override")) {
+    try {
+      db.exec("ALTER TABLE sessions ADD COLUMN effort_override TEXT");
+      log.info("Added effort_override column to sessions table");
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) throw error;
+      log.debug("Effort override column already exists on sessions table");
+    }
+  }
+
+  const addSessionColumnIfMissing = (name: string, sql: string) => {
+    if (sessionColumns.some((c) => c.name === name)) return false;
+    try {
+      db.exec(sql);
+      return true;
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) throw error;
+      log.debug("Session column already exists", { column: name });
+      return false;
+    }
+  };
+  const addedSessionHeartbeatColumns = [
+    addSessionColumnIfMissing("last_heartbeat_text", "ALTER TABLE sessions ADD COLUMN last_heartbeat_text TEXT"),
+    addSessionColumnIfMissing(
+      "last_heartbeat_sent_at",
+      "ALTER TABLE sessions ADD COLUMN last_heartbeat_sent_at INTEGER",
+    ),
+  ].some(Boolean);
+  if (addedSessionHeartbeatColumns) {
     log.info("Added heartbeat columns to sessions table");
   }
 
@@ -1968,6 +2195,10 @@ function getDb(): Database {
   if (!sessionColumns.some((c) => c.name === "runtime_provider")) {
     db.exec("ALTER TABLE sessions ADD COLUMN runtime_provider TEXT");
     log.info("Added runtime_provider column to sessions table");
+  }
+  if (!sessionColumns.some((c) => c.name === "runtime_provider_override")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN runtime_provider_override TEXT");
+    log.info("Added runtime_provider_override column to sessions table");
   }
   if (!sessionColumns.some((c) => c.name === "runtime_session_json")) {
     db.exec("ALTER TABLE sessions ADD COLUMN runtime_session_json TEXT");
@@ -1988,7 +2219,9 @@ function getDb(): Database {
   db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_runtime_display ON sessions(runtime_session_display_id)");
 
   // Migration: add policy column to routes if not exists
-  const routeColumns = db.prepare("PRAGMA table_info(routes)").all() as Array<{ name: string }>;
+  const routeColumns = db.prepare("PRAGMA table_info(routes)").all() as Array<{
+    name: string;
+  }>;
   if (!routeColumns.some((c) => c.name === "policy")) {
     db.exec("ALTER TABLE routes ADD COLUMN policy TEXT");
     log.info("Added policy column to routes table");
@@ -2141,6 +2374,23 @@ function getDb(): Database {
 
     CREATE INDEX IF NOT EXISTS idx_cron_jobs_enabled ON cron_jobs(enabled);
     CREATE INDEX IF NOT EXISTS idx_cron_jobs_next_run ON cron_jobs(next_run_at);
+
+    -- Durable idempotency ledger for reactions whose target may later be deleted.
+    CREATE TABLE IF NOT EXISTS reaction_actions (
+      idempotency_key_hash TEXT PRIMARY KEY,
+      key_source TEXT NOT NULL CHECK(key_source IN ('explicit','observer')),
+      action_type TEXT NOT NULL,
+      action_fingerprint TEXT NOT NULL,
+      rule_id TEXT,
+      source_turn_ids_json TEXT NOT NULL DEFAULT '[]',
+      target_type TEXT NOT NULL,
+      target_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      completed_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_reaction_actions_source
+      ON reaction_actions(rule_id, action_type, created_at);
   `);
 
   // Migration: add reply_session to cron_jobs
@@ -2197,6 +2447,26 @@ function getDb(): Database {
     db.exec("ALTER TABLE triggers ADD COLUMN message_template_id TEXT");
     log.info("Added message_template_id column to triggers table");
   }
+  if (!triggerColumns.some((c) => c.name === "execution_type")) {
+    db.exec("ALTER TABLE triggers ADD COLUMN execution_type TEXT DEFAULT 'agent'");
+    log.info("Added execution_type column to triggers table");
+  }
+  if (!triggerColumns.some((c) => c.name === "shell_command")) {
+    db.exec("ALTER TABLE triggers ADD COLUMN shell_command TEXT");
+    log.info("Added shell_command column to triggers table");
+  }
+  if (!triggerColumns.some((c) => c.name === "shell_timeout_ms")) {
+    db.exec("ALTER TABLE triggers ADD COLUMN shell_timeout_ms INTEGER");
+    log.info("Added shell_timeout_ms column to triggers table");
+  }
+  if (!triggerColumns.some((c) => c.name === "shell_env_file")) {
+    db.exec("ALTER TABLE triggers ADD COLUMN shell_env_file TEXT");
+    log.info("Added shell_env_file column to triggers table");
+  }
+  if (!triggerColumns.some((c) => c.name === "on_error")) {
+    db.exec("ALTER TABLE triggers ADD COLUMN on_error TEXT");
+    log.info("Added on_error column to triggers table");
+  }
 
   // Migration: add account_id column to cron_jobs
   const cronColumns = db.prepare("PRAGMA table_info(cron_jobs)").all() as Array<{ name: string }>;
@@ -2230,8 +2500,7 @@ function getDb(): Database {
   }
 
   // Migration: add heartbeat_account_id column to agents
-  if (!agentColumns.some((c) => c.name === "heartbeat_account_id")) {
-    db.exec("ALTER TABLE agents ADD COLUMN heartbeat_account_id TEXT");
+  if (addAgentColumnIfMissing("heartbeat_account_id", "ALTER TABLE agents ADD COLUMN heartbeat_account_id TEXT")) {
     log.info("Added heartbeat_account_id column to agents table");
   }
 
@@ -2303,6 +2572,11 @@ function getDb(): Database {
   );
   ensureColumn(db, "instances", "defaults", "TEXT");
   ensureColumn(db, "instances", "default_contact_tags", "TEXT");
+  ensureColumn(db, "channels", "enabled", "INTEGER NOT NULL DEFAULT 1");
+  ensureColumn(db, "channels", "credential_connection", "TEXT");
+  ensureColumn(db, "channels", "defaults", "TEXT");
+  ensureColumn(db, "channels", "deleted_at", "INTEGER");
+  backfillLegacySlackInstancesToChannels(db);
 
   const contextColumns = db.prepare("PRAGMA table_info(contexts)").all() as Array<{ name: string }>;
   if (contextColumns.length > 0 && !contextColumns.some((c) => c.name === "context_id")) {
@@ -2379,7 +2653,13 @@ function getDb(): Database {
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_contexts_key ON contexts(context_key)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_agent ON contexts(agent_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_session ON contexts(session_key)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_agent_kind ON contexts(agent_id, kind, created_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_session_kind ON contexts(session_key, kind, created_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_created ON contexts(created_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_kind_created ON contexts(kind, created_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_expires ON contexts(expires_at)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_expires_created ON contexts(expires_at, created_at)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_revoked_created ON contexts(revoked_at, created_at)");
   db.exec(`
     CREATE TABLE IF NOT EXISTS audit_log (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2400,17 +2680,24 @@ function getDb(): Database {
     );
   `);
 
+  ensureCostEventMigrations(db);
   ensureIdentityChatMigrations(db);
+  ensureAgentVisibilityMigration(db);
   backfillChatModelOnce(db);
+  ensureSessionGoalBlockedMigration(db);
 
   // Create default agent if none exist
-  const count = db.prepare("SELECT COUNT(*) as count FROM agents").get() as { count: number };
+  const count = db.prepare("SELECT COUNT(*) as count FROM agents").get() as {
+    count: number;
+  };
   if (count.count === 0) {
     const now = Date.now();
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO agents (id, name, cwd, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?)
-    `).run("main", "Ravi", join(RAVI_DIR, "main"), now, now);
+    `,
+    ).run("main", "Ravi", join(RAVI_DIR, "main"), now, now);
     log.info("Created default agent: main");
   }
 
@@ -2424,7 +2711,9 @@ function getDb(): Database {
     db.prepare("DELETE FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?").run(
       Date.now(),
     );
-    log.info("Cleaned up expired ephemeral sessions at startup", { count: expiredCount });
+    log.info("Cleaned up expired ephemeral sessions at startup", {
+      count: expiredCount,
+    });
   }
 
   log.debug("Database initialized", { path: nextDbPath });
@@ -2436,7 +2725,9 @@ function getDb(): Database {
  * Uses SQLite's changes() function since bun:sqlite doesn't expose db.changes.
  */
 function getDbChanges(): number {
-  const row = getDb().prepare("SELECT changes() AS c").get() as { c: number } | null;
+  const row = getDb().prepare("SELECT changes() AS c").get() as {
+    c: number;
+  } | null;
   return row?.c ?? 0;
 }
 
@@ -2461,14 +2752,198 @@ function tableHasColumn(database: Database, table: string, column: string): bool
   return columns.some((c) => c.name === column);
 }
 
+const CHANNEL_OUTBOUND_RECEIPT_COLUMNS = [
+  "idempotency_key",
+  "request_fingerprint",
+  "job_id",
+  "request_id",
+  "session_name",
+  "state",
+  "provider",
+  "delivery_message_id",
+  "platform_message_id",
+  "provider_timestamp",
+  "canonical_message_id",
+  "claim_owner",
+  "claim_expires_at",
+  "sent_at",
+  "persisted_at",
+  "trace_recorded_at",
+  "completed_at",
+  "last_error_phase",
+  "last_error_message",
+  "last_error_at",
+  "created_at",
+  "updated_at",
+] as const;
+
+type ChannelOutboundReceiptTable = "channel_outbound_receipts" | "channel_outbound_receipts_next";
+
+function createChannelOutboundReceiptTable(database: Database, table: ChannelOutboundReceiptTable): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS ${table} (
+      idempotency_key       TEXT PRIMARY KEY,
+      request_fingerprint   TEXT NOT NULL,
+      job_id                TEXT NOT NULL,
+      request_id            TEXT NOT NULL,
+      session_name          TEXT NOT NULL,
+      state                 TEXT NOT NULL CHECK(state IN ('claimed','sent','persisted','complete')),
+      provider              TEXT NOT NULL,
+      delivery_message_id   TEXT,
+      platform_message_id   TEXT,
+      provider_timestamp    INTEGER,
+      canonical_message_id  TEXT,
+      claim_owner           TEXT,
+      claim_expires_at      INTEGER,
+      sent_at               INTEGER,
+      persisted_at          INTEGER,
+      trace_recorded_at     INTEGER,
+      completed_at          INTEGER,
+      last_error_phase      TEXT,
+      last_error_message    TEXT,
+      last_error_at         INTEGER,
+      created_at            INTEGER NOT NULL,
+      updated_at            INTEGER NOT NULL
+    )
+  `);
+}
+
+function ensureChannelOutboundReceiptSchema(database: Database): void {
+  // Acquire the write lock before inspecting the schema. A daemon and CLI can
+  // initialize the same database concurrently; reading metadata before this
+  // lock would let the loser rebuild from stale PRAGMA results after the winner
+  // has already committed the migration.
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const tableRow = database
+      .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'channel_outbound_receipts'")
+      .get() as { sql: string | null } | undefined;
+
+    if (!tableRow) {
+      createChannelOutboundReceiptTable(database, "channel_outbound_receipts");
+    } else {
+      const columns = new Set(
+        (database.prepare("PRAGMA table_info(channel_outbound_receipts)").all() as Array<{ name: string }>).map(
+          ({ name }) => name,
+        ),
+      );
+      const missingColumns = CHANNEL_OUTBOUND_RECEIPT_COLUMNS.filter((column) => !columns.has(column));
+      const legacyColumns = ["provider_raw_json", "telemetry_emitted_at"].filter((column) => columns.has(column));
+      const acceptsClaimedState = tableRow.sql?.includes("'claimed'") === true;
+
+      if (missingColumns.length > 0 || legacyColumns.length > 0 || !acceptsClaimedState) {
+        migrateChannelOutboundReceiptSchema(database, columns, missingColumns, legacyColumns);
+      }
+    }
+
+    // Indexes are deliberately installed only after every referenced column has
+    // been reconciled. CREATE TABLE IF NOT EXISTS does not update old tables.
+    database.exec(`
+      CREATE INDEX IF NOT EXISTS idx_channel_outbound_receipts_state
+        ON channel_outbound_receipts(state, updated_at);
+      CREATE INDEX IF NOT EXISTS idx_channel_outbound_receipts_updated
+        ON channel_outbound_receipts(updated_at);
+      CREATE INDEX IF NOT EXISTS idx_channel_outbound_receipts_claim
+        ON channel_outbound_receipts(state, claim_expires_at);
+      CREATE INDEX IF NOT EXISTS idx_channel_outbound_receipts_job
+        ON channel_outbound_receipts(job_id)
+    `);
+    database.exec("COMMIT");
+  } catch (error) {
+    try {
+      database.exec("ROLLBACK");
+    } catch {
+      // SQLite may already have rolled the transaction back. Preserve the
+      // migration error because it is the actionable failure.
+    }
+    throw error;
+  }
+}
+
+function migrateChannelOutboundReceiptSchema(
+  database: Database,
+  columns: ReadonlySet<string>,
+  missingColumns: readonly string[],
+  legacyColumns: readonly string[],
+): void {
+  if (!columns.has("idempotency_key")) {
+    throw new Error("Cannot migrate channel_outbound_receipts without idempotency_key");
+  }
+
+  const nullable = (column: string): string => (columns.has(column) ? column : "NULL");
+  const nonEmptyText = (column: string, fallback: string): string =>
+    columns.has(column) ? `COALESCE(NULLIF(TRIM(CAST(${column} AS TEXT)), ''), ${fallback})` : fallback;
+  const coalesce = (candidates: string[], fallback: string): string => {
+    const present = candidates.filter((column) => columns.has(column));
+    return present.length > 0 ? `COALESCE(${present.join(", ")}, ${fallback})` : fallback;
+  };
+  const now = Date.now();
+  const idempotencyKey = "CAST(idempotency_key AS TEXT)";
+  const legacyFingerprint = `'legacy:' || ${idempotencyKey}`;
+  const state = columns.has("state")
+    ? "CASE WHEN state IN ('claimed','sent','persisted','complete') THEN state ELSE 'sent' END"
+    : "'sent'";
+  const createdAt = coalesce(["created_at", "sent_at", "updated_at"], String(now));
+  const updatedAt = coalesce(["updated_at", "created_at", "sent_at"], String(now));
+
+  database.exec("DROP TABLE IF EXISTS channel_outbound_receipts_next");
+  createChannelOutboundReceiptTable(database, "channel_outbound_receipts_next");
+  const migratedRows = database
+    .prepare(
+      `INSERT INTO channel_outbound_receipts_next (
+           idempotency_key, request_fingerprint, job_id, request_id, session_name,
+           state, provider, delivery_message_id, platform_message_id, provider_timestamp,
+           canonical_message_id, claim_owner, claim_expires_at, sent_at, persisted_at,
+           trace_recorded_at, completed_at, last_error_phase, last_error_message,
+           last_error_at, created_at, updated_at
+         )
+         SELECT
+           ${idempotencyKey},
+           ${nonEmptyText("request_fingerprint", legacyFingerprint)},
+           ${nonEmptyText("job_id", idempotencyKey)},
+           ${nonEmptyText("request_id", idempotencyKey)},
+           ${nonEmptyText("session_name", "'legacy'")},
+           ${state},
+           ${nonEmptyText("provider", "'unknown'")},
+           ${nullable("delivery_message_id")},
+           ${nullable("platform_message_id")},
+           ${nullable("provider_timestamp")},
+           ${nullable("canonical_message_id")},
+           ${nullable("claim_owner")},
+           ${nullable("claim_expires_at")},
+           ${nullable("sent_at")},
+           ${nullable("persisted_at")},
+           ${nullable("trace_recorded_at")},
+           ${nullable("completed_at")},
+           ${nullable("last_error_phase")},
+           ${nullable("last_error_message")},
+           ${nullable("last_error_at")},
+           ${createdAt},
+           ${updatedAt}
+         FROM channel_outbound_receipts`,
+    )
+    .run().changes;
+  database.exec("DROP TABLE channel_outbound_receipts");
+  database.exec("ALTER TABLE channel_outbound_receipts_next RENAME TO channel_outbound_receipts");
+
+  log.info("Migrated channel outbound receipt schema", {
+    rows: migratedRows,
+    missingColumns,
+    removedLegacyColumns: legacyColumns,
+  });
+}
+
 function ensureColumn(database: Database, table: string, column: string, definition: string): void {
   if (!tableHasColumn(database, table, column)) {
     try {
       database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-      log.info("Added identity/chat schema column", { table, column });
+      log.info("Added schema column", { table, column });
     } catch (error) {
       if (isDuplicateColumnRace(error) && tableHasColumn(database, table, column)) {
-        log.debug("Identity/chat schema column already added by another process", { table, column });
+        log.debug("Schema column already added by another process", {
+          table,
+          column,
+        });
         return;
       }
       throw error;
@@ -2476,8 +2951,198 @@ function ensureColumn(database: Database, table: string, column: string, definit
   }
 }
 
+function backfillLegacySlackInstancesToChannels(database: Database): void {
+  const legacyInstances = database
+    .prepare(
+      `SELECT name, enabled, defaults, created_at, updated_at
+       FROM instances
+       WHERE LOWER(TRIM(channel)) = 'slack'
+         AND deleted_at IS NULL
+       ORDER BY name`,
+    )
+    .all() as Array<{
+    name: string;
+    enabled: number | null;
+    defaults: string | null;
+    created_at: number;
+    updated_at: number;
+  }>;
+
+  if (legacyInstances.length === 0) return;
+
+  const insertChannel = database.prepare(
+    `INSERT OR IGNORE INTO channels (
+       name, provider, enabled, credential_connection, defaults,
+       created_at, updated_at, deleted_at
+     )
+     VALUES (?, 'slack', ?, ?, NULL, ?, ?, NULL)`,
+  );
+
+  let migrated = 0;
+  database.transaction(() => {
+    for (const instance of legacyInstances) {
+      migrated += insertChannel.run(
+        instance.name,
+        instance.enabled === 0 ? 0 : 1,
+        legacySlackCredentialConnection(instance.name, instance.defaults),
+        instance.created_at,
+        instance.updated_at,
+      ).changes;
+    }
+  })();
+
+  if (migrated > 0) {
+    log.info("Backfilled Slack channel configs from legacy instances", { count: migrated });
+  }
+}
+
+function legacySlackCredentialConnection(instanceName: string, defaultsJson: string | null): string {
+  if (!defaultsJson) return instanceName;
+
+  try {
+    const parsed = JSON.parse(defaultsJson) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return instanceName;
+    const defaults = parsed as Record<string, unknown>;
+    const credentials = asStringRecord(defaults.credentials);
+    return (
+      firstNonEmptyString(defaults, "slackCredentialConnection", "credentialConnection") ??
+      firstNonEmptyString(credentials, "slackConnection", "slackCredentialConnection", "connection") ??
+      instanceName
+    );
+  } catch {
+    return instanceName;
+  }
+}
+
+function asStringRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function firstNonEmptyString(record: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
 function isDuplicateColumnRace(error: unknown): boolean {
   return error instanceof Error && /duplicate column name/i.test(error.message);
+}
+
+function ensureCostEventMigrations(database: Database): void {
+  ensureColumn(database, "cost_events", "pricing_status", "TEXT NOT NULL DEFAULT 'legacy'");
+  ensureColumn(database, "cost_events", "pricing_source", "TEXT");
+  ensureColumn(database, "cost_events", "pricing_source_url", "TEXT");
+  ensureColumn(database, "cost_events", "pricing_source_version", "TEXT");
+  ensureColumn(database, "cost_events", "pricing_fetched_at", "INTEGER");
+  ensureColumn(database, "cost_events", "pricing_model", "TEXT");
+  ensureColumn(database, "cost_events", "pricing_error", "TEXT");
+  database.exec("CREATE INDEX IF NOT EXISTS idx_cost_events_pricing_status ON cost_events(pricing_status, created_at)");
+}
+
+function ensureSessionGoalBlockedMigration(database: Database): void {
+  ensureColumn(database, "session_goals", "blocked_reason", "TEXT");
+}
+
+function ensureAgentVisibilityMigration(database: Database): void {
+  const defaultAgentId = getDefaultAgentIdFromDatabase(database);
+  if (!defaultAgentId) return;
+  ensureAgentDefaultsCapability(database, defaultAgentId, {
+    permission: "view",
+    objectType: "agent",
+    objectId: "*",
+  });
+}
+
+function getDefaultAgentIdFromDatabase(database: Database): string {
+  const row = database.prepare("SELECT value FROM settings WHERE key = 'defaultAgent'").get() as
+    | { value: string }
+    | undefined;
+  return row?.value?.trim() || "main";
+}
+
+function ensureAgentDefaultsCapability(
+  database: Database,
+  agentId: string,
+  capability: { permission: string; objectType: string; objectId: string },
+): boolean {
+  const row = database.prepare("SELECT defaults FROM agents WHERE id = ?").get(agentId) as
+    | { defaults: string | null }
+    | undefined;
+  if (!row) return false;
+
+  const defaults = parseAgentDefaultsRecord(row.defaults);
+  const runtimePermissions = parseAgentRuntimePermissionsRecord(defaults.runtimePermissions);
+  const capabilities = Array.isArray(runtimePermissions.capabilities) ? [...runtimePermissions.capabilities] : [];
+  if (capabilities.some((entry) => capabilityInputCovers(entry, capability))) {
+    return false;
+  }
+
+  capabilities.push({ ...capability });
+  runtimePermissions.capabilities = capabilities;
+  defaults.runtimePermissions = runtimePermissions;
+  database
+    .prepare("UPDATE agents SET defaults = ?, updated_at = ? WHERE id = ?")
+    .run(JSON.stringify(defaults), Date.now(), agentId);
+  log.info("Backfilled provider-runtime agent visibility", { agentId, capability });
+  return true;
+}
+
+function parseAgentDefaultsRecord(value: string | null): Record<string, unknown> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function parseAgentRuntimePermissionsRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? { ...(value as Record<string, unknown>) } : {};
+}
+
+function capabilityInputCovers(
+  value: unknown,
+  requested: { permission: string; objectType: string; objectId: string },
+): boolean {
+  const capability = normalizeAgentDefaultsCapability(value);
+  if (!capability) return false;
+  if (capability.permission === "admin" && capability.objectType === "system" && capability.objectId === "*") {
+    return true;
+  }
+  if (capability.permission !== requested.permission || capability.objectType !== requested.objectType) {
+    return false;
+  }
+  return capability.objectId === requested.objectId || capability.objectId === "*";
+}
+
+function normalizeAgentDefaultsCapability(value: unknown): {
+  permission: string;
+  objectType: string;
+  objectId: string;
+} | null {
+  if (typeof value === "string") {
+    const [permission, objectType, ...objectIdParts] = value.split(":");
+    const objectId = objectIdParts.join(":");
+    if (!permission || !objectType || !objectId) return null;
+    return { permission, objectType, objectId };
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.permission !== "string" ||
+    typeof record.objectType !== "string" ||
+    typeof record.objectId !== "string"
+  ) {
+    return null;
+  }
+  return {
+    permission: record.permission,
+    objectType: record.objectType,
+    objectId: record.objectId,
+  };
 }
 
 function ensureIdentityChatMigrations(database: Database): void {
@@ -2715,7 +3380,9 @@ function backfillSessionSpeechModes(database: Database): void {
     )
     .run(now, now);
   if (result.changes > 0) {
-    log.info("Backfilled session subscription speech modes", { rows: result.changes });
+    log.info("Backfilled session subscription speech modes", {
+      rows: result.changes,
+    });
   }
 }
 
@@ -3201,7 +3868,9 @@ function mergeChatParticipantsIntoTarget(
       role: row.role,
       status: row.status,
       source: row.source,
-      metadata: mergeJsonRecords(parseJsonRecord(row.metadata_json), { canonicalizedFromChatId: sourceChatId }),
+      metadata: mergeJsonRecords(parseJsonRecord(row.metadata_json), {
+        canonicalizedFromChatId: sourceChatId,
+      }),
       seenAt: Math.max(row.last_seen_at, now),
     });
     database.prepare("DELETE FROM chat_participants WHERE id = ?").run(row.id);
@@ -3236,7 +3905,11 @@ function mergeSessionChatSubscriptionsIntoTarget(
 ): void {
   const rows = database
     .prepare("SELECT id, session_key, detached_at FROM session_chat_subscriptions WHERE chat_id = ?")
-    .all(sourceChatId) as Array<{ id: number; session_key: string; detached_at: number | null }>;
+    .all(sourceChatId) as Array<{
+    id: number;
+    session_key: string;
+    detached_at: number | null;
+  }>;
   for (const row of rows) {
     const activeTarget = database
       .prepare("SELECT 1 FROM session_chat_subscriptions WHERE chat_id = ? AND detached_at IS NULL")
@@ -3264,7 +3937,11 @@ function mergeReadingListMembersIntoTarget(
 ): void {
   const rows = database
     .prepare("SELECT id, list_id, removed_at FROM chat_reading_list_members WHERE chat_id = ?")
-    .all(sourceChatId) as Array<{ id: string; list_id: string; removed_at: number | null }>;
+    .all(sourceChatId) as Array<{
+    id: string;
+    list_id: string;
+    removed_at: number | null;
+  }>;
   for (const row of rows) {
     const activeTarget = database
       .prepare("SELECT 1 FROM chat_reading_list_members WHERE list_id = ? AND chat_id = ? AND removed_at IS NULL")
@@ -3693,7 +4370,14 @@ function upsertChatMessage(database: Database, input: UpsertChatMessageInput): U
     );
 
   const row = database.prepare("SELECT * FROM chat_messages WHERE id = ?").get(id) as ChatMessageRow;
-  return { message: rowToChatMessage(row), created: !existing };
+  const message = rowToChatMessage(row);
+  return {
+    message,
+    created: !existing,
+    canonicalMessageId: message.id,
+    providerMessageId: message.providerMessageId,
+    ...(message.providerTimestamp !== undefined ? { providerTimestamp: message.providerTimestamp } : {}),
+  };
 }
 
 function bindSessionToChat(
@@ -4018,7 +4702,10 @@ function backfillChatModel(database: Database): void {
           instanceId: "",
           platformChatId: row.chat_id,
           chatType: inferChatType(row.chat_id),
-          rawProvenance: { sourceTable: "message_metadata", chatId: row.chat_id },
+          rawProvenance: {
+            sourceTable: "message_metadata",
+            chatId: row.chat_id,
+          },
           seenAt: now,
         });
       }
@@ -4114,6 +4801,14 @@ interface PreparedStatements {
   getSkillGateRule: Statement;
   deleteSkillGateRule: Statement;
   listSkillGateRules: Statement;
+  // Skill grants (per-agent skill visibility)
+  upsertSkillGrant: Statement;
+  deleteSkillGrant: Statement;
+  listSkillGrants: Statement;
+  listSkillGrantsForAgent: Statement;
+  listAgentsForSkill: Statement;
+  deleteSkillGrantsForAgent: Statement;
+  deleteSkillGrantsForSkill: Statement;
   // Matrix accounts
   upsertMatrixAccount: Statement;
   getMatrixAccount: Statement;
@@ -4145,6 +4840,12 @@ interface PreparedStatements {
   listInstances: Statement;
   deleteInstance: Statement;
   updateInstance: Statement;
+  // Channels
+  upsertChannel: Statement;
+  getChannelByName: Statement;
+  listChannels: Statement;
+  updateChannel: Statement;
+  softDeleteChannel: Statement;
   // Contexts
   insertContext: Statement;
   getContextById: Statement;
@@ -4170,21 +4871,23 @@ function getStatements(): PreparedStatements {
   routerDbState.stmts = {
     // Agents
     insertAgent: database.prepare(`
-      INSERT INTO agents (id, name, cwd, model, provider, remote, remote_user, dm_scope, system_prompt_append, debounce_ms, group_debounce_ms, matrix_account, setting_sources,
+      INSERT INTO agents (id, name, cwd, model, effort, provider, model_preset_id, remote, remote_user, dm_scope, system_prompt_append, debounce_ms, group_debounce_ms, matrix_account, setting_sources,
         heartbeat_enabled, heartbeat_interval_ms, heartbeat_model, heartbeat_active_start, heartbeat_active_end, heartbeat_account_id,
         spec_mode,
         contact_scope, allowed_sessions,
         agent_mode,
         defaults,
         created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     updateAgent: database.prepare(`
       UPDATE agents SET
         name = ?,
         cwd = ?,
         model = ?,
+        effort = ?,
         provider = ?,
+        model_preset_id = ?,
         remote = ?,
         remote_user = ?,
         dm_scope = ?,
@@ -4271,6 +4974,21 @@ function getStatements(): PreparedStatements {
     deleteSkillGateRule: database.prepare("DELETE FROM skill_gate_rules WHERE id = ?"),
     listSkillGateRules: database.prepare("SELECT * FROM skill_gate_rules ORDER BY id"),
 
+    // Skill grants (per-agent skill visibility)
+    upsertSkillGrant: database.prepare(`
+      INSERT INTO skill_grants (agent_id, skill_name, note, granted_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(agent_id, skill_name) DO UPDATE SET
+        note = excluded.note,
+        granted_at = excluded.granted_at
+    `),
+    deleteSkillGrant: database.prepare("DELETE FROM skill_grants WHERE agent_id = ? AND skill_name = ?"),
+    listSkillGrants: database.prepare("SELECT * FROM skill_grants ORDER BY agent_id, skill_name"),
+    listSkillGrantsForAgent: database.prepare("SELECT * FROM skill_grants WHERE agent_id = ? ORDER BY skill_name"),
+    listAgentsForSkill: database.prepare("SELECT * FROM skill_grants WHERE skill_name = ? ORDER BY agent_id"),
+    deleteSkillGrantsForAgent: database.prepare("DELETE FROM skill_grants WHERE agent_id = ?"),
+    deleteSkillGrantsForSkill: database.prepare("DELETE FROM skill_grants WHERE skill_name = ?"),
+
     // Matrix accounts
     upsertMatrixAccount: database.prepare(`
       INSERT INTO matrix_accounts (username, user_id, homeserver, access_token, device_id, created_at, last_used_at)
@@ -4339,8 +5057,9 @@ function getStatements(): PreparedStatements {
     insertCostEvent: database.prepare(`
       INSERT INTO cost_events (session_key, agent_id, model, input_tokens, output_tokens,
         cache_read_tokens, cache_creation_tokens, input_cost_usd, output_cost_usd, cache_cost_usd,
-        total_cost_usd, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        total_cost_usd, pricing_status, pricing_source, pricing_source_url, pricing_source_version,
+        pricing_fetched_at, pricing_model, pricing_error, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     // Instances
     upsertInstance: database.prepare(`
@@ -4381,6 +5100,32 @@ function getStatements(): PreparedStatements {
         updated_at   = ?
       WHERE name = ?
     `),
+    // Channels
+    upsertChannel: database.prepare(`
+      INSERT INTO channels (
+        name, provider, enabled, credential_connection, defaults, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(name) DO UPDATE SET
+        provider = excluded.provider,
+        enabled = excluded.enabled,
+        credential_connection = excluded.credential_connection,
+        defaults = excluded.defaults,
+        updated_at = excluded.updated_at,
+        deleted_at = NULL
+    `),
+    getChannelByName: database.prepare("SELECT * FROM channels WHERE name = ? AND deleted_at IS NULL"),
+    listChannels: database.prepare("SELECT * FROM channels WHERE deleted_at IS NULL ORDER BY name"),
+    updateChannel: database.prepare(`
+      UPDATE channels SET
+        provider = ?,
+        enabled = ?,
+        credential_connection = ?,
+        defaults = ?,
+        updated_at = ?
+      WHERE name = ? AND deleted_at IS NULL
+    `),
+    softDeleteChannel: database.prepare("UPDATE channels SET deleted_at = ? WHERE name = ? AND deleted_at IS NULL"),
     // Contexts
     insertContext: database.prepare(`
       INSERT INTO contexts (
@@ -4426,7 +5171,11 @@ function rowToAgent(row: AgentRow): AgentConfig {
 
   if (row.name !== null) result.name = row.name;
   if (row.model !== null) result.model = row.model;
+  if (row.effort !== null && (RUNTIME_EFFORT_LEVELS as readonly string[]).includes(row.effort)) {
+    result.effort = row.effort as AgentConfig["effort"];
+  }
   if (row.provider !== null) result.provider = row.provider;
+  if (row.model_preset_id !== null) result.modelPresetId = row.model_preset_id;
   if (row.remote !== null) result.remote = row.remote;
   if (row.remote_user !== null) result.remoteUser = row.remote_user;
   if (row.dm_scope !== null) {
@@ -4556,6 +5305,26 @@ function rowToInstance(row: InstanceRow): InstanceConfig {
       }
     } catch {
       // Ignore invalid tag payload to avoid breaking instance listing.
+    }
+  }
+  if (row.deleted_at) result.deletedAt = row.deleted_at;
+  return result;
+}
+
+function rowToChannel(row: ChannelRow): ChannelConfig {
+  const result: ChannelConfig = {
+    name: row.name,
+    provider: row.provider,
+    enabled: row.enabled !== 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+  if (row.credential_connection) result.credentialConnection = row.credential_connection;
+  if (row.defaults) {
+    try {
+      result.defaults = JSON.parse(row.defaults);
+    } catch {
+      // Ignore invalid JSON so a bad defaults blob does not break channel listing.
     }
   }
   if (row.deleted_at) result.deletedAt = row.deleted_at;
@@ -4903,7 +5672,11 @@ export function dbListChats(
     offset?: number | string | null;
   } = {},
 ): ListPage<ChatListItem> {
-  const { limit, offset } = normalizeLimitOffsetPage(input, { defaultLimit: 25, maxLimit: 500, minLimit: 1 });
+  const { limit, offset } = normalizeLimitOffsetPage(input, {
+    defaultLimit: 25,
+    maxLimit: 500,
+    minLimit: 1,
+  });
   const where: string[] = [];
   const params: Array<string | number> = [];
   if (input.channel?.trim()) {
@@ -4965,7 +5738,11 @@ export function dbListChats(
     `,
     )
     .all(...params, limit, offset) as Array<
-    ChatRow & { message_count: number; participant_count: number; last_message_id: string | null }
+    ChatRow & {
+      message_count: number;
+      participant_count: number;
+      last_message_id: string | null;
+    }
   >;
   return {
     total: count?.total ?? 0,
@@ -5040,7 +5817,10 @@ export function dbListChatIdsByContactIds(input: {
         ORDER BY contact_id ASC, rank ASC
       `,
       )
-      .all(...chunk, ...chunk, limitPerContact) as Array<{ contact_id: string; chat_id: string }>;
+      .all(...chunk, ...chunk, limitPerContact) as Array<{
+      contact_id: string;
+      chat_id: string;
+    }>;
 
     for (const row of rows) {
       const chats = result.get(row.contact_id);
@@ -5148,7 +5928,11 @@ export function dbListAgentChatMessagesPage(input: {
     return { total: 0, limit: 0, offset: 0, items: [] };
   }
 
-  const { limit, offset } = normalizeLimitOffsetPage(input, { defaultLimit: 10, maxLimit: 100, minLimit: 1 });
+  const { limit, offset } = normalizeLimitOffsetPage(input, {
+    defaultLimit: 10,
+    maxLimit: 100,
+    minLimit: 1,
+  });
   const order = input.order === "asc" ? "ASC" : "DESC";
   const whereClauses = ["m.actor_type = 'agent'", "m.agent_id = ?"];
   const params: SQLQueryBindings[] = [agentId];
@@ -5246,7 +6030,11 @@ export function dbListChatMessagesPage(input: {
   offset?: number | string | null;
   order?: "asc" | "desc";
 }): ListPage<ChatMessageWithSortKey> {
-  const { limit, offset } = normalizeLimitOffsetPage(input, { defaultLimit: 50, maxLimit: 500, minLimit: 1 });
+  const { limit, offset } = normalizeLimitOffsetPage(input, {
+    defaultLimit: 50,
+    maxLimit: 500,
+    minLimit: 1,
+  });
   const order = input.order === "desc" ? "DESC" : "ASC";
   const database = getDb();
   const count = database.prepare("SELECT COUNT(*) AS total FROM chat_messages WHERE chat_id = ?").get(input.chatId) as
@@ -5278,7 +6066,11 @@ export function dbListChatMessagesPageByContactId(input: {
   offset?: number | string | null;
   order?: "asc" | "desc";
 }): ListPage<ChatMessageWithSortKey> & { contactId: string } {
-  const { limit, offset } = normalizeLimitOffsetPage(input, { defaultLimit: 50, maxLimit: 500, minLimit: 1 });
+  const { limit, offset } = normalizeLimitOffsetPage(input, {
+    defaultLimit: 50,
+    maxLimit: 500,
+    minLimit: 1,
+  });
   const order = input.order === "asc" ? "ASC" : "DESC";
   const database = getDb();
   const whereClauses = ["m.contact_id = ?"];
@@ -5515,7 +6307,11 @@ export function dbListChatReadingLists(
     offset?: number | string | null;
   } = {},
 ): ListPage<ChatReadingListRecord> {
-  const { limit, offset } = normalizeLimitOffsetPage(input, { defaultLimit: 50, maxLimit: 500, minLimit: 1 });
+  const { limit, offset } = normalizeLimitOffsetPage(input, {
+    defaultLimit: 50,
+    maxLimit: 500,
+    minLimit: 1,
+  });
   const where: string[] = [];
   const params: Array<string | number> = [];
   if (input.ownerType?.trim()) {
@@ -5542,7 +6338,12 @@ export function dbListChatReadingLists(
     `,
     )
     .all(...params, limit, offset) as ChatReadingListRow[];
-  return { total: count?.total ?? 0, limit, offset, items: rows.map(rowToChatReadingList) };
+  return {
+    total: count?.total ?? 0,
+    limit,
+    offset,
+    items: rows.map(rowToChatReadingList),
+  };
 }
 
 export function dbFindChatReadingList(input: {
@@ -5587,6 +6388,24 @@ export function dbFindChatReadingList(input: {
     throw new Error(`Reading list name is ambiguous: ${ref}. Pass --owner <type:id> or use the list id.`);
   }
   return rows[0] ? rowToChatReadingList(rows[0]) : null;
+}
+
+export function dbGetChatReadingList(input: {
+  id: string;
+  ownerType?: string | null;
+  ownerId?: string | null;
+}): ChatReadingListRecord | null {
+  const id = input.id.trim();
+  if (!id) return null;
+  const ownerType = input.ownerType?.trim();
+  const ownerId = input.ownerId?.trim();
+  const row = getDb().prepare("SELECT * FROM chat_reading_lists WHERE id = ? AND archived_at IS NULL").get(id) as
+    | ChatReadingListRow
+    | undefined;
+  if (!row) return null;
+  if (ownerType && row.owner_type !== ownerType) return null;
+  if (ownerId && row.owner_id !== ownerId) return null;
+  return rowToChatReadingList(row);
 }
 
 export function dbAddChatToReadingList(input: {
@@ -5736,7 +6555,11 @@ export function dbListChatReadingListMembers(input: {
   limit?: number | string | null;
   offset?: number | string | null;
 }): ListPage<ChatReadingListMemberItem> {
-  const { limit, offset } = normalizeLimitOffsetPage(input, { defaultLimit: 50, maxLimit: 500, minLimit: 1 });
+  const { limit, offset } = normalizeLimitOffsetPage(input, {
+    defaultLimit: 50,
+    maxLimit: 500,
+    minLimit: 1,
+  });
   const { readerType, readerId } = normalizeReadingCursorReader(input);
   const database = getDb();
   const count = database
@@ -5756,7 +6579,12 @@ export function dbListChatReadingListMembers(input: {
   const items = rows.flatMap((memberRow): ChatReadingListMemberItem[] => {
     const chat = dbGetChat(memberRow.chat_id);
     if (!chat) return [];
-    const cursor = dbGetChatReadingCursor({ listId: input.listId, chatId: chat.id, readerType, readerId });
+    const cursor = dbGetChatReadingCursor({
+      listId: input.listId,
+      chatId: chat.id,
+      readerType,
+      readerId,
+    });
     const messageCount = database
       .prepare("SELECT COUNT(*) AS total FROM chat_messages WHERE chat_id = ?")
       .get(chat.id) as { total: number } | undefined;
@@ -5786,7 +6614,12 @@ export function dbGetChatReadingDelta(input: {
   if (!list || !chat) return null;
   requireActiveChatReadingListMember(list.id, chat.id);
   const { readerType, readerId } = normalizeReadingCursorReader(input);
-  const previousCursor = dbGetChatReadingCursor({ listId: list.id, chatId: chat.id, readerType, readerId });
+  const previousCursor = dbGetChatReadingCursor({
+    listId: list.id,
+    chatId: chat.id,
+    readerType,
+    readerId,
+  });
   const messages = listChatMessagesAfterCursor({
     chatId: chat.id,
     afterSortKey: previousCursor?.lastReadMessageSortKey,
@@ -5841,7 +6674,12 @@ export function dbMarkChatReadingCursor(input: {
   if (!chat) throw new Error(`Chat not found: ${input.chatId}`);
   requireActiveChatReadingListMember(list.id, chat.id);
   const { readerType, readerId } = normalizeReadingCursorReader(input);
-  const previous = dbGetChatReadingCursor({ listId: list.id, chatId: chat.id, readerType, readerId });
+  const previous = dbGetChatReadingCursor({
+    listId: list.id,
+    chatId: chat.id,
+    readerType,
+    readerId,
+  });
   const requestedMessageId = input.messageId?.trim();
   const message = requestedMessageId ? dbGetChatMessageWithSortKey(requestedMessageId) : latestChatMessage(chat.id);
   if (requestedMessageId && !message) {
@@ -6367,7 +7205,9 @@ export function dbCreateAgent(input: z.input<typeof AgentInputSchema>): AgentCon
       validated.name ?? null,
       validated.cwd,
       validated.model ?? null,
+      validated.effort ?? null,
       validated.provider ?? null,
+      validated.modelPresetId ?? null,
       validated.remote ?? null,
       validated.remoteUser ?? null,
       validated.dmScope ?? null,
@@ -6393,6 +7233,7 @@ export function dbCreateAgent(input: z.input<typeof AgentInputSchema>): AgentCon
     );
 
     log.info("Created agent", { id: validated.id });
+    ensureAgentVisibilityMigration(getDb());
     return dbGetAgent(validated.id)!;
   } catch (err) {
     if ((err as Error).message.includes("UNIQUE constraint failed")) {
@@ -6423,7 +7264,7 @@ export function dbListAgents(): AgentConfig[] {
 /**
  * Update an existing agent
  */
-export function dbUpdateAgent(id: string, updates: Partial<AgentConfig>): AgentConfig {
+export function dbUpdateAgent(id: string, updates: AgentUpdateInput): AgentConfig {
   const s = getStatements();
   const row = s.getAgent.get(id) as AgentRow | undefined;
 
@@ -6450,7 +7291,9 @@ export function dbUpdateAgent(id: string, updates: Partial<AgentConfig>): AgentC
     updates.name !== undefined ? (updates.name ?? null) : row.name,
     updates.cwd ?? row.cwd,
     updates.model !== undefined ? (updates.model ?? null) : row.model,
+    updates.effort !== undefined ? (updates.effort ?? null) : row.effort,
     updates.provider !== undefined ? (updates.provider ?? null) : row.provider,
+    updates.modelPresetId !== undefined ? (updates.modelPresetId ?? null) : row.model_preset_id,
     updates.remote !== undefined ? (updates.remote ?? null) : row.remote,
     updates.remoteUser !== undefined ? (updates.remoteUser ?? null) : row.remote_user,
     updates.dmScope !== undefined ? (updates.dmScope ?? null) : row.dm_scope,
@@ -6511,6 +7354,8 @@ export function dbDeleteAgent(id: string): boolean {
   }
 
   const s = getStatements();
+  // Clean up per-agent skill grants so a same-id recreation does not inherit orphans.
+  s.deleteSkillGrantsForAgent.run(id);
   s.deleteAgent.run(id);
   if (getDbChanges() > 0) {
     log.info("Deleted agent", { id });
@@ -6752,6 +7597,9 @@ export function dbSetSetting(key: string, value: string): void {
   const s = getStatements();
   const now = Date.now();
   s.upsertSetting.run(key, value, now);
+  if (key === "defaultAgent") {
+    ensureAgentVisibilityMigration(getDb());
+  }
   log.info("Set setting", { key, value });
 }
 
@@ -6839,7 +7687,10 @@ export function dbUpsertSkillGateRule(input: DbSkillGateRuleInput): DbSkillGateR
     existing?.createdAt ?? now,
     now,
   );
-  log.info("Upserted skill gate rule", { id, disabled: input.disabled === true });
+  log.info("Upserted skill gate rule", {
+    id,
+    disabled: input.disabled === true,
+  });
   return dbGetSkillGateRule(id)!;
 }
 
@@ -6852,6 +7703,81 @@ export function dbDeleteSkillGateRule(id: string): boolean {
   const s = getStatements();
   s.deleteSkillGateRule.run(cleanId);
   return getDbChanges() > 0;
+}
+
+// ============================================================================
+// Skill Grant CRUD
+// ============================================================================
+
+function rowToSkillGrant(row: SkillGrantRow): DbSkillGrant {
+  return {
+    agentId: row.agent_id,
+    skillName: row.skill_name,
+    ...(row.note !== null ? { note: row.note } : {}),
+    grantedAt: row.granted_at,
+  };
+}
+
+export function dbListSkillGrants(): DbSkillGrant[] {
+  const s = getStatements();
+  return (s.listSkillGrants.all() as SkillGrantRow[]).map(rowToSkillGrant);
+}
+
+export function dbListSkillGrantsForAgent(agentId: string): DbSkillGrant[] {
+  const cleanAgentId = cleanOptionalText(agentId);
+  if (!cleanAgentId) return [];
+  const s = getStatements();
+  return (s.listSkillGrantsForAgent.all(cleanAgentId) as SkillGrantRow[]).map(rowToSkillGrant);
+}
+
+export function dbListAgentsForSkill(skillName: string): DbSkillGrant[] {
+  const cleanSkill = cleanOptionalText(skillName);
+  if (!cleanSkill) return [];
+  const s = getStatements();
+  return (s.listAgentsForSkill.all(cleanSkill) as SkillGrantRow[]).map(rowToSkillGrant);
+}
+
+export function dbUpsertSkillGrant(input: { agentId: string; skillName: string; note?: string }): DbSkillGrant {
+  const agentId = cleanOptionalText(input.agentId);
+  const skillName = cleanOptionalText(input.skillName);
+  if (!agentId) throw new Error("Skill grant agent id is required.");
+  if (!skillName) throw new Error("Skill grant skill name is required.");
+
+  const s = getStatements();
+  const now = Date.now();
+  s.upsertSkillGrant.run(agentId, skillName, cleanOptionalText(input.note), now);
+  log.info("Upserted skill grant", { agentId, skillName });
+  return {
+    agentId,
+    skillName,
+    ...(cleanOptionalText(input.note) ? { note: cleanOptionalText(input.note)! } : {}),
+    grantedAt: now,
+  };
+}
+
+export function dbDeleteSkillGrant(agentId: string, skillName: string): boolean {
+  const cleanAgentId = cleanOptionalText(agentId);
+  const cleanSkill = cleanOptionalText(skillName);
+  if (!cleanAgentId || !cleanSkill) return false;
+  const s = getStatements();
+  s.deleteSkillGrant.run(cleanAgentId, cleanSkill);
+  return getDbChanges() > 0;
+}
+
+export function dbDeleteSkillGrantsForAgent(agentId: string): number {
+  const cleanAgentId = cleanOptionalText(agentId);
+  if (!cleanAgentId) return 0;
+  const s = getStatements();
+  s.deleteSkillGrantsForAgent.run(cleanAgentId);
+  return getDbChanges();
+}
+
+export function dbDeleteSkillGrantsForSkill(skillName: string): number {
+  const cleanSkill = cleanOptionalText(skillName);
+  if (!cleanSkill) return 0;
+  const s = getStatements();
+  s.deleteSkillGrantsForSkill.run(cleanSkill);
+  return getDbChanges();
 }
 
 // ============================================================================
@@ -6952,6 +7878,83 @@ export function dbUpdateInstance(
   );
   log.info("Updated instance", { name, ...updates });
   return dbGetInstance(name)!;
+}
+
+// ============================================================================
+// Channel CRUD
+// ============================================================================
+
+export function dbUpsertChannel(input: z.input<typeof ChannelInputSchema>): ChannelConfig {
+  const validated = ChannelInputSchema.parse(input);
+  const s = getStatements();
+  const now = Date.now();
+  s.upsertChannel.run(
+    validated.name,
+    validated.provider,
+    validated.enabled ? 1 : 0,
+    validated.credentialConnection ?? null,
+    validated.defaults ? JSON.stringify(validated.defaults) : null,
+    now,
+    now,
+  );
+  log.info("Upserted channel", { name: validated.name, provider: validated.provider });
+  return dbGetChannel(validated.name)!;
+}
+
+export function dbGetChannel(name: string): ChannelConfig | null {
+  const s = getStatements();
+  const row = s.getChannelByName.get(name) as ChannelRow | undefined;
+  return row ? rowToChannel(row) : null;
+}
+
+export function dbListChannels(): ChannelConfig[] {
+  const s = getStatements();
+  const rows = s.listChannels.all() as ChannelRow[];
+  return rows.map(rowToChannel);
+}
+
+export function dbUpdateChannel(
+  name: string,
+  updates: Partial<Omit<ChannelConfig, "name" | "createdAt" | "updatedAt" | "credentialConnection" | "defaults">> & {
+    credentialConnection?: string | null;
+    defaults?: Record<string, unknown> | null;
+  },
+): ChannelConfig {
+  const s = getStatements();
+  const row = s.getChannelByName.get(name) as ChannelRow | undefined;
+  if (!row) throw new Error(`Channel not found: ${name}`);
+  const now = Date.now();
+  s.updateChannel.run(
+    updates.provider ?? row.provider,
+    updates.enabled !== undefined ? (updates.enabled ? 1 : 0) : (row.enabled ?? 1),
+    updates.credentialConnection !== undefined ? (updates.credentialConnection ?? null) : row.credential_connection,
+    updates.defaults !== undefined ? (updates.defaults ? JSON.stringify(updates.defaults) : null) : row.defaults,
+    now,
+    name,
+  );
+  log.info("Updated channel", { name, ...updates });
+  return dbGetChannel(name)!;
+}
+
+export function dbDeleteChannel(name: string): boolean {
+  const s = getStatements();
+  const channel = dbGetChannel(name);
+  if (!channel) return false;
+  const now = Date.now();
+  s.softDeleteChannel.run(now, name);
+  if (getDbChanges() > 0) {
+    s.insertAuditLog.run(
+      "channel.deleted",
+      "channel",
+      name,
+      JSON.stringify(channel),
+      process.env.USER ?? "daemon",
+      now,
+    );
+    log.info("Soft-deleted channel", { name });
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -7065,24 +8068,35 @@ export function dbGetContextByKeyReadOnly(contextKey: string): ContextRecord | n
 }
 
 export function dbListContexts(options: ListContextsOptions = {}): ContextRecord[] {
-  const s = getStatements();
   const now = Date.now();
-  const rows = s.listContexts.all() as ContextRow[];
+  const where: string[] = [];
+  const params: Array<number | string> = [];
 
-  return rows
-    .map((row) => rowToContext(row))
-    .filter((context) => {
-      if (options.agentId && context.agentId !== options.agentId) return false;
-      if (options.sessionKey && context.sessionKey !== options.sessionKey) return false;
-      if (options.kind && context.kind !== options.kind) return false;
+  if (options.agentId) {
+    where.push("agent_id = ?");
+    params.push(options.agentId);
+  }
+  if (options.sessionKey) {
+    where.push("session_key = ?");
+    params.push(options.sessionKey);
+  }
+  if (options.kind) {
+    where.push("kind = ?");
+    params.push(options.kind);
+  }
 
-      if (!options.includeInactive) {
-        if (context.revokedAt && context.revokedAt <= now) return false;
-        if (context.expiresAt && context.expiresAt <= now) return false;
-      }
+  if (!options.includeInactive) {
+    where.push("(revoked_at IS NULL OR revoked_at = 0 OR revoked_at > ?)");
+    params.push(now);
+    where.push("(expires_at IS NULL OR expires_at = 0 OR expires_at > ?)");
+    params.push(now);
+  }
 
-      return true;
-    });
+  const sql = `SELECT * FROM contexts${where.length > 0 ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY created_at DESC`;
+  const rows = getDb()
+    .prepare(sql)
+    .all(...params) as ContextRow[];
+  return rows.map((row) => rowToContext(row));
 }
 
 export function dbTouchContext(contextId: string, lastUsedAt = Date.now()): void {
@@ -7187,7 +8201,9 @@ export function dbRevokeContextCascade(contextId: string, options: RevokeContext
         if (target.revokedAt && target.revokedAt <= revokedAt) {
           // Still update metadata if a reason or cascade flag should be set.
         }
-        const metadata: Record<string, unknown> = { ...(target.metadata ?? {}) };
+        const metadata: Record<string, unknown> = {
+          ...(target.metadata ?? {}),
+        };
         if (reasonNote) {
           metadata[reasonKey] = reasonNote;
         }
@@ -7220,7 +8236,10 @@ export function dbRevokeContextCascade(contextId: string, options: RevokeContext
 }
 
 export function dbRevokeContext(contextId: string, revokedAt = Date.now()): ContextRecord {
-  const result = dbRevokeContextCascade(contextId, { revokedAt, cascade: false });
+  const result = dbRevokeContextCascade(contextId, {
+    revokedAt,
+    cascade: false,
+  });
   return result.context;
 }
 
@@ -7238,6 +8257,40 @@ export function dbDeleteContext(contextId: string): boolean {
   const s = getStatements();
   s.deleteContext.run(contextId);
   return getDbChanges() > 0;
+}
+
+export interface PruneContextsResult {
+  matched: number;
+  pruned: number;
+}
+
+/**
+ * Compact the context store by deleting inactive (revoked or expired) runtime
+ * contexts older than the retention cutoff. Active contexts are never removed,
+ * so pruning cannot drop live authority. Timestamps are epoch milliseconds.
+ */
+export function dbPruneContexts(options: { apply?: boolean; olderThanMs?: number } = {}): PruneContextsResult {
+  const db = getDb();
+  const now = Date.now();
+  const cutoff = options.olderThanMs != null ? now - Math.max(0, options.olderThanMs) : now;
+  const where = `
+    created_at <= ?
+    AND (
+      (revoked_at IS NOT NULL AND revoked_at != 0 AND revoked_at <= ?)
+      OR (expires_at IS NOT NULL AND expires_at != 0 AND expires_at <= ?)
+    )
+  `;
+  const params = [cutoff, now, now];
+  const matched =
+    (db.prepare(`SELECT COUNT(*) AS c FROM contexts WHERE ${where}`).get(...params) as { c?: number } | undefined)?.c ??
+    0;
+
+  if (options.apply === true) {
+    db.prepare(`DELETE FROM contexts WHERE ${where}`).run(...params);
+    return { matched, pruned: getDbChanges() };
+  }
+
+  return { matched, pruned: 0 };
 }
 
 // ============================================================================
@@ -7370,7 +8423,10 @@ export function dbUpsertMatrixAccount(account: Omit<MatrixAccount, "createdAt" |
     now,
   );
 
-  log.info("Upserted matrix account", { username: account.username, userId: account.userId });
+  log.info("Upserted matrix account", {
+    username: account.username,
+    userId: account.userId,
+  });
   return dbGetMatrixAccount(account.username)!;
 }
 
@@ -7552,9 +8608,15 @@ export function dbListMessageMetaByChatId(chatId: string, limit = 50): MessageMe
 
 export function dbListMessageMetaByContactId(
   contactId: string,
-  options: { limit?: number | string | null; offset?: number | string | null } = {},
+  options: {
+    limit?: number | string | null;
+    offset?: number | string | null;
+  } = {},
 ): MessageMetadataPage {
-  const { limit, offset } = normalizeLimitOffsetPage(options, { defaultLimit: 50, maxLimit: 500 });
+  const { limit, offset } = normalizeLimitOffsetPage(options, {
+    defaultLimit: 50,
+    maxLimit: 500,
+  });
   const db = getDb();
   const total =
     (
@@ -7589,6 +8651,13 @@ function getTraceExportSessionEventsCursor(db: Database): number | null {
   if (!row?.cursor_value) return null;
   const cursor = Number(row.cursor_value);
   return Number.isFinite(cursor) && cursor >= 0 ? cursor : null;
+}
+
+function hasSessionEventsAtOrBeforeCursor(db: Database, cursor: number): boolean {
+  const row = db.prepare("SELECT 1 AS found FROM session_events WHERE id <= ? LIMIT 1").get(cursor) as
+    | { found: number }
+    | undefined;
+  return Boolean(row);
 }
 
 /**
@@ -7663,11 +8732,16 @@ export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
       if (traceExportCursor === null) {
         return count("SELECT COUNT(*) AS c FROM session_events WHERE timestamp < ?", now - SESSION_EVENTS_TTL_MS);
       }
+      if (!hasSessionEventsAtOrBeforeCursor(db, traceExportCursor)) {
+        return 0;
+      }
       return Number(
         (
           db
             .prepare("SELECT COUNT(*) AS c FROM session_events WHERE timestamp < ? AND id <= ?")
-            .get(now - SESSION_EVENTS_TTL_MS, traceExportCursor) as { c: number }
+            .get(now - SESSION_EVENTS_TTL_MS, traceExportCursor) as {
+            c: number;
+          }
         ).c ?? 0,
       );
     };
@@ -7699,6 +8773,9 @@ export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
   const deleteSessionEvents = (): number => {
     if (traceExportCursor === null) {
       return runDelete("DELETE FROM session_events WHERE timestamp < ?", now - SESSION_EVENTS_TTL_MS);
+    }
+    if (!hasSessionEventsAtOrBeforeCursor(db, traceExportCursor)) {
+      return 0;
     }
     db.prepare("DELETE FROM session_events WHERE timestamp < ? AND id <= ?").run(
       now - SESSION_EVENTS_TTL_MS,
@@ -7765,6 +8842,13 @@ export interface CostEvent {
   outputCostUsd: number;
   cacheCostUsd: number;
   totalCostUsd: number;
+  pricingStatus?: string | null;
+  pricingSource?: string | null;
+  pricingSourceUrl?: string | null;
+  pricingSourceVersion?: string | null;
+  pricingFetchedAt?: number | null;
+  pricingModel?: string | null;
+  pricingError?: string | null;
   createdAt: number;
 }
 
@@ -7785,6 +8869,13 @@ export function dbInsertCostEvent(event: Omit<CostEvent, "id">): void {
     event.outputCostUsd,
     event.cacheCostUsd,
     event.totalCostUsd,
+    event.pricingStatus ?? "legacy",
+    event.pricingSource ?? null,
+    event.pricingSourceUrl ?? null,
+    event.pricingSourceVersion ?? null,
+    event.pricingFetchedAt ?? null,
+    event.pricingModel ?? null,
+    event.pricingError ?? null,
     event.createdAt,
   );
 }
@@ -7805,6 +8896,46 @@ interface AgentCostRow extends CostSummaryRow {
 
 interface SessionCostRow extends CostSummaryRow {
   session_key: string;
+}
+
+export interface CostPricingCoverageRow {
+  pricing_status: string;
+  model: string;
+  pricing_model: string | null;
+  pricing_source: string | null;
+  events: number;
+  total_cost: number;
+  total_input: number;
+  total_output: number;
+  total_cache_read: number;
+  total_cache_creation: number;
+  last_created_at: number | null;
+}
+
+export interface CostEventPricingRecomputeRow {
+  id: number;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
+  pricing_status: string;
+  created_at: number;
+}
+
+export interface CostEventPricingUpdate {
+  id: number;
+  inputCostUsd: number;
+  outputCostUsd: number;
+  cacheCostUsd: number;
+  totalCostUsd: number;
+  pricingStatus: string;
+  pricingSource?: string | null;
+  pricingSourceUrl?: string | null;
+  pricingSourceVersion?: string | null;
+  pricingFetchedAt?: number | null;
+  pricingModel?: string | null;
+  pricingError?: string | null;
 }
 
 /**
@@ -7931,6 +9062,116 @@ export function dbGetCostReport(fromMs: number, toMs: number): AgentCostRow[] {
     ORDER BY total_cost DESC`,
     )
     .all(fromMs, toMs) as AgentCostRow[];
+}
+
+/**
+ * Audit pricing coverage for recent cost events.
+ */
+export function dbGetCostPricingCoverage(sinceMs: number): CostPricingCoverageRow[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `WITH coverage AS (
+      SELECT
+        CASE
+          WHEN pricing_status = 'priced' AND pricing_source IS NULL AND pricing_model IS NULL THEN 'legacy'
+          ELSE pricing_status
+        END as pricing_status,
+        model,
+        pricing_model,
+        pricing_source,
+        input_tokens,
+        output_tokens,
+        cache_read_tokens,
+        cache_creation_tokens,
+        total_cost_usd,
+        created_at
+      FROM cost_events
+      WHERE created_at >= ?
+    )
+    SELECT
+      pricing_status,
+      model,
+      pricing_model,
+      pricing_source,
+      COUNT(*) as events,
+      COALESCE(SUM(total_cost_usd), 0) as total_cost,
+      COALESCE(SUM(input_tokens), 0) as total_input,
+      COALESCE(SUM(output_tokens), 0) as total_output,
+      COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
+      COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation,
+      MAX(created_at) as last_created_at
+    FROM coverage
+    GROUP BY pricing_status, model, pricing_model, pricing_source
+    ORDER BY
+      CASE pricing_status WHEN 'unpriced' THEN 0 ELSE 1 END,
+      events DESC,
+      last_created_at DESC`,
+    )
+    .all(sinceMs) as CostPricingCoverageRow[];
+}
+
+export function dbListCostEventsForPricingRecompute(options: {
+  sinceMs: number;
+  limit: number;
+  includePriced?: boolean;
+}): CostEventPricingRecomputeRow[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT
+        id,
+        model,
+        input_tokens,
+        output_tokens,
+        cache_read_tokens,
+        cache_creation_tokens,
+        pricing_status,
+        created_at
+      FROM cost_events
+      WHERE created_at >= ?
+        AND (
+          ? = 1
+          OR pricing_status IS NULL
+          OR pricing_status != 'priced'
+          OR (pricing_status = 'priced' AND pricing_source IS NULL AND pricing_model IS NULL)
+        )
+      ORDER BY created_at ASC
+      LIMIT ?`,
+    )
+    .all(options.sinceMs, options.includePriced ? 1 : 0, options.limit) as CostEventPricingRecomputeRow[];
+}
+
+export function dbUpdateCostEventPricing(update: CostEventPricingUpdate): void {
+  const db = getDb();
+  db.prepare(
+    `UPDATE cost_events
+      SET input_cost_usd = ?,
+        output_cost_usd = ?,
+        cache_cost_usd = ?,
+        total_cost_usd = ?,
+        pricing_status = ?,
+        pricing_source = ?,
+        pricing_source_url = ?,
+        pricing_source_version = ?,
+        pricing_fetched_at = ?,
+        pricing_model = ?,
+        pricing_error = ?
+      WHERE id = ?`,
+  ).run(
+    update.inputCostUsd,
+    update.outputCostUsd,
+    update.cacheCostUsd,
+    update.totalCostUsd,
+    update.pricingStatus,
+    update.pricingSource ?? null,
+    update.pricingSourceUrl ?? null,
+    update.pricingSourceVersion ?? null,
+    update.pricingFetchedAt ?? null,
+    update.pricingModel ?? null,
+    update.pricingError ?? null,
+    update.id,
+  );
 }
 
 /**

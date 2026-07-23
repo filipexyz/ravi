@@ -30,6 +30,7 @@ import {
   type TaskReportEvent,
   type TaskTerminalInput,
   type TaskUnarchiveInput,
+  type TaskUpdateInput,
   type TaskWorktreeConfig,
 } from "./types.js";
 import { requireTaskProgressMessage } from "./progress-contract.js";
@@ -478,6 +479,8 @@ function ensureTaskSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_task_dependencies_task ON task_dependencies(task_id, satisfied_at, created_at);
   `);
   applyTaskWorktreeSchemaMigrations();
+  db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_updated_id ON tasks(updated_at DESC, id DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_status_updated_id ON tasks(status, updated_at DESC, id DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id, updated_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_archived_updated ON tasks(archived_at, updated_at DESC)");
   db.exec(
@@ -1857,6 +1860,62 @@ export function dbUnarchiveTask(
     progress: unarchivedTask.progress,
   });
   return { task: unarchivedTask, event };
+}
+
+export function dbUpdateTask(
+  taskId: string,
+  input: TaskUpdateInput,
+): { task: TaskRecord; event: TaskEvent; wasNoop?: boolean } {
+  ensureTaskSchema();
+  const db = getDb();
+  const task = getTaskOrThrow(taskId);
+  const fields: string[] = [];
+  const values: Array<string | number> = [];
+
+  if (input.title !== undefined && input.title !== task.title) {
+    fields.push("title = ?");
+    values.push(input.title);
+  }
+  if (input.instructions !== undefined && input.instructions !== task.instructions) {
+    fields.push("instructions = ?");
+    values.push(input.instructions);
+  }
+  if (input.priority !== undefined && input.priority !== task.priority) {
+    fields.push("priority = ?");
+    values.push(input.priority);
+  }
+
+  if (fields.length === 0) {
+    return {
+      task,
+      event: getLatestTaskEvent(taskId, "task.updated") ?? getLatestTaskEvent(taskId)!,
+      wasNoop: true,
+    };
+  }
+
+  const now = Date.now();
+  db.prepare(`
+    UPDATE tasks
+    SET ${fields.join(", ")},
+        updated_at = ?
+    WHERE id = ?
+  `).run(...values, now, taskId);
+
+  const updatedTask = getTaskOrThrow(taskId);
+  const changedFields = [
+    input.title !== undefined && input.title !== task.title ? "title" : null,
+    input.instructions !== undefined && input.instructions !== task.instructions ? "instructions" : null,
+    input.priority !== undefined && input.priority !== task.priority ? "priority" : null,
+  ].filter((field): field is string => Boolean(field));
+
+  const event = appendTaskEvent(taskId, "task.updated", {
+    actor: input.actor,
+    agentId: input.agentId,
+    sessionName: input.sessionName,
+    message: input.message ?? `Updated task fields: ${changedFields.join(", ")}.`,
+    progress: updatedTask.progress,
+  });
+  return { task: updatedTask, event };
 }
 
 export function dbBlockTask(

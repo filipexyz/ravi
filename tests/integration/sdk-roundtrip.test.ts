@@ -8,7 +8,7 @@
  *   - 2xx JSON response surfaced unchanged to the caller
  *   - 4xx ValidationError mapped through `errors.ts`
  *
- * `artifacts.show` is the open-route piloto and matches the existing gateway
+ * `artifacts.show` is the gateway piloto and matches the existing gateway
  * smoke test, so any drift here also bubbles in the gateway test.
  */
 
@@ -16,23 +16,55 @@ import "reflect-metadata";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import { ArtifactsCommands } from "../../src/cli/commands/artifacts.js";
+import { SessionCommands } from "../../src/cli/commands/sessions.js";
 import { buildRegistry } from "../../src/cli/registry-snapshot.js";
 import { createArtifact } from "../../src/artifacts/store.js";
-import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../src/test/ravi-state.js";
+import { saveMessage } from "../../src/db.js";
+import { getOrCreateSession } from "../../src/router/sessions.js";
+import {
+  cleanupIsolatedRaviState,
+  createIsolatedRaviState,
+  RAVI_RUNTIME_CONTEXT_ENV_KEYS,
+} from "../../src/test/ravi-state.js";
+import type { ContextRecord } from "../../src/router/router-db.js";
 import { startGateway, type GatewayHandle } from "../../src/sdk/gateway/server.js";
 
 import { RaviClient } from "../../packages/ravi-os-sdk/src/index.js";
 import { createHttpTransport } from "../../packages/ravi-os-sdk/src/transport/http.js";
 import { RaviValidationError } from "../../packages/ravi-os-sdk/src/errors.js";
 
-const registry = buildRegistry([ArtifactsCommands]);
+const registry = buildRegistry([ArtifactsCommands, SessionCommands]);
+const allowedContext: ContextRecord = {
+  contextId: "ctx_sdk_roundtrip",
+  contextKey: "rctx_sdk_roundtrip",
+  kind: "test-runtime",
+  agentId: "sdk-roundtrip-agent",
+  capabilities: [
+    { permission: "execute", objectType: "group", objectId: "artifacts", source: "test" },
+    { permission: "execute", objectType: "group", objectId: "sessions", source: "test" },
+    { permission: "access", objectType: "session", objectId: "managed-sdk-roundtrip", source: "test" },
+  ],
+  metadata: { authorityMode: "delegated" },
+  createdAt: Date.now(),
+};
 
 let stateDir: string | null = null;
 let handle: GatewayHandle | null = null;
+const originalRuntimeContextEnv = new Map(RAVI_RUNTIME_CONTEXT_ENV_KEYS.map((key) => [key, process.env[key]]));
 
 beforeEach(async () => {
+  for (const key of RAVI_RUNTIME_CONTEXT_ENV_KEYS) delete process.env[key];
   stateDir = await createIsolatedRaviState("ravi-sdk-roundtrip-");
-  handle = startGateway({ host: "127.0.0.1", port: 0, registry });
+  handle = startGateway({
+    host: "127.0.0.1",
+    port: 0,
+    registry,
+    auth: {
+      resolveContext(token) {
+        return token === allowedContext.contextKey ? { ...allowedContext } : null;
+      },
+    },
+  });
 });
 
 afterEach(async () => {
@@ -42,18 +74,23 @@ afterEach(async () => {
   }
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
+  for (const key of RAVI_RUNTIME_CONTEXT_ENV_KEYS) {
+    const value = originalRuntimeContextEnv.get(key);
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
 });
 
 function buildClient(): RaviClient {
   const transport = createHttpTransport({
     baseUrl: handle!.url,
-    contextKey: "rctx_test_open_route",
+    contextKey: allowedContext.contextKey,
   });
   return new RaviClient(transport);
 }
 
 describe("SDK round-trip — RaviClient over http transport", () => {
-  it("artifacts.show returns the artifact payload (open route, no auth required)", async () => {
+  it("artifacts.show returns the artifact payload with an authorized runtime context", async () => {
     const artifact = createArtifact({
       kind: "report",
       title: "SDK round-trip smoke",
@@ -74,6 +111,22 @@ describe("SDK round-trip — RaviClient over http transport", () => {
     expect(Array.isArray(result.events)).toBe(true);
   });
 
+  it("sessions.read returns normalized history instead of an empty gateway envelope", async () => {
+    const sessionName = "managed-sdk-roundtrip";
+    getOrCreateSession("agent:sdk-roundtrip-agent:managed", allowedContext.agentId!, stateDir!, {
+      name: sessionName,
+    });
+    saveMessage(sessionName, "user", "pergunta remota");
+    saveMessage(sessionName, "assistant", "resposta remota");
+
+    const result = await buildClient().sessions.read(sessionName, { count: "10" });
+
+    expect("messages" in result).toBe(true);
+    if (!("messages" in result)) throw new Error("sessions.read did not return history");
+    expect(result.transcript.source).toBe("chat-db");
+    expect(result.messages.map((message) => message.text)).toEqual(["pergunta remota", "resposta remota"]);
+  });
+
   it("maps 4xx validation errors to RaviValidationError", async () => {
     // Hit the transport directly with a body that violates the input schema
     // (missing required `id`). The typed RaviClient method would never let us
@@ -81,7 +134,7 @@ describe("SDK round-trip — RaviClient over http transport", () => {
     // error mapping lives, and that's what we're verifying.
     const transport = createHttpTransport({
       baseUrl: handle!.url,
-      contextKey: "rctx_test_open_route",
+      contextKey: allowedContext.contextKey,
     });
     let caught: unknown;
     try {

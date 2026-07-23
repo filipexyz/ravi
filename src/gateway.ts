@@ -9,25 +9,31 @@
  *   ravi.session.*.claude      → typing heartbeat (Claude compatibility)
  *   ravi.session.*.runtime     → typing heartbeat (provider-neutral)
  *   ravi.session.*.stream      → typing heartbeat renewal on streamed chunks
+ *   ravi.session.*.delivery    → native delivery observation for presence renewal
  *   ravi.outbound.deliver      → direct channel delivery
  *   ravi.outbound.reaction     → emoji reactions
  *   ravi.outbound.message.delete → delete own channel messages
  *   ravi.outbound.message.edit → edit own channel messages
  *   ravi.media.send            → media files
+ *   ravi.tts                   → generate extension-playback TTS audio
  *   ravi.stickers.send         → WhatsApp stickers
- *   ravi.config.changed        → reload router config + REBAC sync
+ *   ravi.channel.presence.*    → native channel presence indicators
+ *   ravi.config.changed        -> reload router config
  */
 
 import { nats } from "./nats.js";
 import type { ResponseMessage } from "./runtime/message-types.js";
 import { configStore } from "./config-store.js";
-import { recordDeliveryTrace, recordResponseEmittedTrace } from "./session-trace/channel-trace.js";
+import { recordDeliveryTrace, recordPresenceTrace, recordResponseEmittedTrace } from "./session-trace/channel-trace.js";
+import { listRecentSessionEventsByType } from "./session-trace/session-trace-db.js";
 import { logger } from "./utils/logger.js";
 import type { OmniSender } from "./omni/sender.js";
 import type { OmniConsumer } from "./omni/consumer.js";
 import { getAgentPlatformIdentity, recordOutbound } from "./contacts.js";
-import { SessionTypingTracker } from "./gateway-typing.js";
 import { assertChannelSupportsStickers } from "./channels/capabilities.js";
+import { publishChannelOutboundJobDurably } from "./channels/outbound-publish-outbox.js";
+import { buildChannelOutboundJobFromResponse } from "./channels/outbound-stream.js";
+import { subjectForChannelPresence } from "./channels/presence-consumer.js";
 import type { StickerSendEvent } from "./stickers/send.js";
 import { getSessionByName } from "./router/index.js";
 import {
@@ -41,11 +47,15 @@ import {
 import { prepareOmniMentionMessage, type OmniUserMention } from "./omni/mentions.js";
 import { resolveOmniConnection } from "./omni-config.js";
 import { resolveOmniGroupMetadata } from "./omni/group-metadata-cache.js";
+import { buildRaviTtsRequest, handleRaviTtsRequest, RAVI_TTS_TOPIC, shouldAutoTtsForAgent } from "./audio/tts.js";
 
 const log = logger.child("gateway");
 const PRESENCE_RENEW_THROTTLE_MS = 4_000;
 const POST_DELIVERY_RENEW_DELAY_MS = 1_000;
 const INTERRUPTED_PRESENCE_GRACE_MS = 15_000;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const NATIVE_OUTBOUND_CHANNELS = new Set(["slack"]);
+const NATIVE_PRESENCE_CHANNELS = new Set(["slack"]);
 
 /**
  * Normalize a chatId to a valid WhatsApp JID for the omni API.
@@ -78,6 +88,61 @@ function mergeMentions(...lists: Array<readonly OmniUserMention[] | undefined>):
   return mentions.length ? mentions : undefined;
 }
 
+function parsePresenceTarget(value: unknown): PresenceTarget | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.channel !== "string" || typeof record.accountId !== "string" || typeof record.chatId !== "string") {
+    return null;
+  }
+
+  return {
+    channel: record.channel,
+    accountId: record.accountId,
+    chatId: record.chatId,
+    ...(typeof record.instanceId === "string" ? { instanceId: record.instanceId } : {}),
+    ...(typeof record.threadId === "string" ? { threadId: record.threadId } : {}),
+    ...(typeof record.sourceMessageId === "string" ? { sourceMessageId: record.sourceMessageId } : {}),
+    ...(typeof record.statusAnchorMessageId === "string"
+      ? { statusAnchorMessageId: record.statusAnchorMessageId }
+      : {}),
+    ...(isStatusAnchorKind(record.statusAnchorKind) ? { statusAnchorKind: record.statusAnchorKind } : {}),
+    ...(typeof record.canonicalChatId === "string" ? { canonicalChatId: record.canonicalChatId } : {}),
+    ...(record.suppressPresence === true ? { suppressPresence: true } : {}),
+  };
+}
+
+function isStatusAnchorKind(value: unknown): value is NonNullable<PresenceTarget["statusAnchorKind"]> {
+  return (
+    value === "last_outbound_message" ||
+    value === "chat_thread_transient" ||
+    value === "draft_outbound_message" ||
+    value === "none"
+  );
+}
+
+function deliveryAnchorMessageId(data: Record<string, unknown>): string | undefined {
+  if (typeof data.platformMessageId === "string" && data.platformMessageId) return data.platformMessageId;
+  if (typeof data.messageId === "string" && data.messageId) return data.messageId;
+  if (typeof data.deliveryMessageId === "string" && data.deliveryMessageId) return data.deliveryMessageId;
+  return undefined;
+}
+
+function slackMessageTs(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const ts = Number(value);
+  return Number.isFinite(ts) ? ts : undefined;
+}
+
+function withOutboundStatusAnchor(target: PresenceTarget, data: Record<string, unknown>): PresenceTarget {
+  const anchorMessageId = deliveryAnchorMessageId(data);
+  if (!anchorMessageId) return target;
+  return {
+    ...target,
+    statusAnchorMessageId: anchorMessageId,
+    statusAnchorKind: "last_outbound_message",
+  };
+}
+
 /** Silent reply token — when response contains this, don't send to channel */
 export const SILENT_TOKEN = "@@SILENT@@";
 
@@ -88,7 +153,26 @@ export interface GatewayOptions {
   emitEvent?: typeof nats.emit;
 }
 
-type PresenceTarget = { channel: string; accountId: string; chatId: string; threadId?: string };
+type PresenceTarget = {
+  channel: string;
+  accountId: string;
+  instanceId?: string;
+  chatId: string;
+  threadId?: string;
+  sourceMessageId?: string;
+  statusAnchorMessageId?: string;
+  statusAnchorKind?: "last_outbound_message" | "chat_thread_transient" | "draft_outbound_message" | "none";
+  canonicalChatId?: string;
+  suppressPresence?: boolean;
+};
+
+type NativePresenceTurnState = {
+  inboundTarget?: PresenceTarget;
+  outboundTarget?: PresenceTarget;
+  activeTarget?: PresenceTarget;
+  terminal: boolean;
+};
+
 type MessageDeleteRequest = {
   channel?: string;
   accountId: string;
@@ -114,10 +198,14 @@ export class Gateway {
   private omniConsumer: OmniConsumer;
   private emitEvent: typeof nats.emit;
   private activeSubscriptions = new Set<string>();
-  private typingTracker = new SessionTypingTracker();
   private presenceRenewedAt = new Map<string, number>();
   private activeRuntimeSessions = new Set<string>();
+  private runtimeActivitySequences = new Map<string, number>();
   private terminalRuntimeSessions = new Set<string>();
+  private nativePresenceTargets = new Map<string, PresenceTarget>();
+  private nativeStatusAnchors = new Map<string, PresenceTarget>();
+  private nativePresenceTurns = new Map<string, NativePresenceTurnState>();
+  private terminalPresenceStopped = new Set<string>();
   private postDeliveryRenewals = new Map<string, ReturnType<typeof setTimeout>>();
   private interruptedPresenceStops = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -136,11 +224,13 @@ export class Gateway {
 
     this.subscribeToResponses();
     this.subscribeToRuntimeEvents();
+    this.subscribeToDeliveryObservations();
     this.subscribeToDirectSend();
     this.subscribeToReactions();
     this.subscribeToMessageDelete();
     this.subscribeToMessageEdit();
     this.subscribeToMediaSend();
+    this.subscribeToTts();
     this.subscribeToStickerSend();
     this.subscribeToConfigChanges();
 
@@ -150,25 +240,146 @@ export class Gateway {
   async stop(): Promise<void> {
     log.info("Stopping gateway...");
     this.running = false;
-    this.typingTracker = new SessionTypingTracker();
     this.presenceRenewedAt.clear();
     this.activeRuntimeSessions.clear();
+    this.runtimeActivitySequences.clear();
     this.terminalRuntimeSessions.clear();
+    this.nativePresenceTargets.clear();
+    this.nativeStatusAnchors.clear();
+    this.nativePresenceTurns.clear();
+    this.terminalPresenceStopped.clear();
     this.clearPostDeliveryRenewals();
     this.clearInterruptedPresenceStops();
     log.info("Gateway stopped");
   }
 
-  private async sendTypingIfChanged(sessionName: string, target: PresenceTarget, active: boolean): Promise<void> {
-    if (!this.typingTracker.shouldEmit(sessionName, active)) return;
-    await this.sendTyping(target, active);
+  private async sendTyping(
+    target: PresenceTarget,
+    active: boolean,
+    metadata?: { sessionName?: string; reason?: string },
+  ): Promise<void> {
+    if (active && this.isPresenceSuppressed(target)) return;
+    const sessionName = metadata?.sessionName;
+    const reason = metadata?.reason ?? "direct-send";
+
+    if (this.shouldUseNativePresence(target)) {
+      await this.sendNativePresence(target, active, { sessionName, reason });
+      return;
+    }
+
+    const iid = configStore.resolveInstanceId(target.accountId);
+    if (!iid) {
+      if (sessionName) {
+        await this.emitPresenceDiagnostic(sessionName, {
+          active,
+          status: "skipped",
+          reason: `${reason}:missing-instance`,
+          target,
+        });
+      }
+      return;
+    }
+    try {
+      await this.omniSender.sendTyping(iid, normalizeOutboundJid(target.chatId), active);
+      if (sessionName) {
+        await this.emitPresenceDiagnostic(sessionName, {
+          active,
+          status: active ? "active" : "inactive",
+          reason,
+          target: { ...target, instanceId: target.instanceId ?? iid },
+        });
+      }
+    } catch (error) {
+      if (sessionName) {
+        await this.emitPresenceDiagnostic(sessionName, {
+          active,
+          status: "failed",
+          reason,
+          target: { ...target, instanceId: target.instanceId ?? iid },
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      throw error;
+    }
   }
 
-  private async sendTyping(target: PresenceTarget, active: boolean): Promise<void> {
-    const iid = configStore.resolveInstanceId(target.accountId);
-    if (iid) {
-      await this.omniSender.sendTyping(iid, normalizeOutboundJid(target.chatId), active);
+  private async sendNativePresence(
+    target: PresenceTarget,
+    active: boolean,
+    metadata: { sessionName?: string; reason: string },
+  ): Promise<void> {
+    const sessionName = metadata.sessionName;
+    const payload = {
+      channelId: target.channel,
+      sessionName: sessionName ?? "unknown",
+      target,
+      active,
+      reason: metadata.reason,
+      timestamp: Date.now(),
+    };
+
+    try {
+      await this.emitEvent(subjectForChannelPresence(target.channel), payload);
+      if (sessionName) {
+        this.rememberNativePresenceTarget(sessionName, target, active);
+        await this.emitPresenceDiagnostic(sessionName, {
+          active,
+          status: active ? "active" : "inactive",
+          reason: `native:${metadata.reason}`,
+          target,
+        });
+      }
+    } catch (error) {
+      if (sessionName) {
+        await this.emitPresenceDiagnostic(sessionName, {
+          active,
+          status: "failed",
+          reason: `native:${metadata.reason}`,
+          target,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      throw error;
     }
+  }
+
+  private async emitPresenceDiagnostic(
+    sessionName: string,
+    input: {
+      active: boolean;
+      status: "active" | "inactive" | "skipped" | "failed";
+      reason: string;
+      target: PresenceTarget;
+      error?: string;
+    },
+  ): Promise<void> {
+    const payload = {
+      sessionName,
+      active: input.active,
+      status: input.status,
+      reason: input.reason,
+      source: "gateway.presence",
+      target: input.target,
+      timestamp: Date.now(),
+      ...(input.error ? { error: input.error } : {}),
+    };
+
+    try {
+      recordPresenceTrace({
+        sessionName,
+        status: input.status,
+        reason: input.reason,
+        target: input.target,
+        error: input.error,
+        payloadJson: payload,
+      });
+    } catch (error) {
+      log.debug("Failed to record gateway presence trace", { sessionName, error });
+    }
+
+    await this.emitEvent("ravi.presence.typing", payload).catch((error) => {
+      log.debug("Failed to emit gateway presence event", { sessionName, error });
+    });
   }
 
   private async prepareOutboundMentionMessage(input: {
@@ -200,6 +411,8 @@ export class Gateway {
     const prepared = prepareOmniMentionMessage({
       text: input.text,
       participants: metadata?.participants,
+      autoResolvePhoneNumbers: true,
+      placeholderMode: "native",
     });
 
     return {
@@ -208,9 +421,43 @@ export class Gateway {
     };
   }
 
+  private resolvePresenceInstanceId(target: PresenceTarget): string | undefined {
+    if (target.instanceId) return target.instanceId;
+    if (!target.accountId) return undefined;
+
+    const config = configStore.getConfig();
+    if (UUID_RE.test(target.accountId)) return target.accountId;
+
+    for (const [instanceId, accountName] of Object.entries(config.instanceToAccount)) {
+      if (accountName === target.accountId) return instanceId;
+    }
+    return undefined;
+  }
+
+  private normalizePresenceChannel(channel: string): string {
+    return channel === "whatsapp-baileys" ? "whatsapp" : channel;
+  }
+
   private presenceTargetKey(target: PresenceTarget | undefined): string | undefined {
     if (!target) return undefined;
-    return [target.channel, target.accountId, normalizeOutboundJid(target.chatId), target.threadId ?? ""].join(":");
+    const instanceId = this.resolvePresenceInstanceId(target);
+    const channel = this.normalizePresenceChannel(target.channel);
+    const accountKey = instanceId ? `instance:${instanceId}` : `account:${target.accountId}`;
+    return [
+      channel,
+      accountKey,
+      normalizeOutboundJid(target.chatId),
+      target.threadId ?? "",
+      target.statusAnchorMessageId ?? "",
+    ].join(":");
+  }
+
+  private presenceSurfaceKey(target: PresenceTarget | undefined): string | undefined {
+    if (!target) return undefined;
+    const instanceId = this.resolvePresenceInstanceId(target);
+    const channel = this.normalizePresenceChannel(target.channel);
+    const accountKey = instanceId ? `instance:${instanceId}` : `account:${target.accountId}`;
+    return [channel, accountKey, normalizeOutboundJid(target.chatId), target.threadId ?? ""].join(":");
   }
 
   private targetsMatch(left: PresenceTarget | undefined, right: PresenceTarget | undefined): boolean {
@@ -219,10 +466,153 @@ export class Gateway {
     return !!leftKey && leftKey === rightKey;
   }
 
+  private presenceSurfacesMatch(left: PresenceTarget | undefined, right: PresenceTarget | undefined): boolean {
+    const leftKey = this.presenceSurfaceKey(left);
+    const rightKey = this.presenceSurfaceKey(right);
+    return !!leftKey && leftKey === rightKey;
+  }
+
+  private markRuntimeActivity(sessionName: string): void {
+    this.runtimeActivitySequences.set(sessionName, (this.runtimeActivitySequences.get(sessionName) ?? 0) + 1);
+  }
+
+  private rememberNativePresenceTarget(sessionName: string, target: PresenceTarget, active: boolean): void {
+    if (active) {
+      this.nativePresenceTargets.set(sessionName, target);
+      this.activateNativePresenceTurnTarget(sessionName, target);
+      this.rememberNativeStatusAnchor(sessionName, target);
+      return;
+    }
+
+    const currentTarget = this.nativePresenceTargets.get(sessionName);
+    if (!currentTarget || this.presenceSurfacesMatch(currentTarget, target)) {
+      this.nativePresenceTargets.delete(sessionName);
+    }
+    const state = this.nativePresenceTurns.get(sessionName);
+    if (state?.activeTarget && this.presenceSurfacesMatch(state.activeTarget, target)) {
+      state.activeTarget = undefined;
+    }
+  }
+
+  private rememberNativeStatusAnchor(sessionName: string, target: PresenceTarget): void {
+    if (target.statusAnchorKind !== "last_outbound_message" || !target.statusAnchorMessageId) return;
+    this.nativeStatusAnchors.set(sessionName, target);
+  }
+
+  private nativePresenceTurn(sessionName: string): NativePresenceTurnState {
+    let state = this.nativePresenceTurns.get(sessionName);
+    if (!state) {
+      state = { terminal: false };
+      this.nativePresenceTurns.set(sessionName, state);
+    }
+    return state;
+  }
+
+  private beginNativePresenceTurn(sessionName: string, target: PresenceTarget): void {
+    if (!this.shouldUseNativePresence(target)) return;
+    const state = this.nativePresenceTurn(sessionName);
+    state.inboundTarget = target;
+    state.outboundTarget = undefined;
+    state.activeTarget = target;
+    state.terminal = false;
+    this.nativePresenceTargets.set(sessionName, target);
+  }
+
+  private activateNativePresenceTurnTarget(sessionName: string, target: PresenceTarget): void {
+    if (!this.shouldUseNativePresence(target)) return;
+    const state = this.nativePresenceTurn(sessionName);
+    if (!state.inboundTarget || this.presenceSurfacesMatch(state.inboundTarget, target)) {
+      state.activeTarget = target;
+    }
+  }
+
+  private rememberNativeOutboundTurnAnchor(sessionName: string, target: PresenceTarget): void {
+    if (!this.shouldUseNativePresence(target)) return;
+    this.rememberNativeStatusAnchor(sessionName, target);
+    const state = this.nativePresenceTurn(sessionName);
+    state.outboundTarget = target;
+    if (!state.terminal && this.activeRuntimeSessions.has(sessionName)) {
+      state.activeTarget = target;
+      this.nativePresenceTargets.set(sessionName, target);
+    }
+  }
+
+  private nativeStatusAnchorTarget(sessionName: string, sourceTarget: PresenceTarget): PresenceTarget | undefined {
+    const anchorTarget = this.nativeStatusAnchors.get(sessionName);
+    if (!anchorTarget || !this.presenceSurfacesMatch(anchorTarget, sourceTarget)) return undefined;
+    return {
+      ...sourceTarget,
+      statusAnchorKind: anchorTarget.statusAnchorKind,
+      statusAnchorMessageId: anchorTarget.statusAnchorMessageId,
+    };
+  }
+
+  private restoreNativeOutboundAnchorFromTrace(
+    sessionName: string,
+    sourceTarget: PresenceTarget,
+  ): PresenceTarget | undefined {
+    if (this.normalizePresenceChannel(sourceTarget.channel) !== "slack") return undefined;
+    const inboundTs = slackMessageTs(sourceTarget.sourceMessageId);
+    if (inboundTs === undefined) return undefined;
+
+    const session = getSessionByName(sessionName);
+    if (!session) return undefined;
+
+    for (const event of listRecentSessionEventsByType(session.sessionKey, "delivery.delivered")) {
+      const payload = event.payloadJson;
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) continue;
+
+      const payloadRecord = payload as Record<string, unknown>;
+      const anchorMessageId = deliveryAnchorMessageId(payloadRecord);
+      const deliveryTs = slackMessageTs(anchorMessageId);
+      if (deliveryTs === undefined || deliveryTs <= inboundTs) continue;
+
+      const target = parsePresenceTarget(payloadRecord.target);
+      const candidate = target ? withOutboundStatusAnchor(target, payloadRecord) : undefined;
+      if (candidate && !this.presenceSurfacesMatch(candidate, sourceTarget)) continue;
+
+      const restoredTarget: PresenceTarget = {
+        ...sourceTarget,
+        statusAnchorKind: "last_outbound_message",
+        statusAnchorMessageId: anchorMessageId,
+      };
+      this.rememberNativeOutboundTurnAnchor(sessionName, restoredTarget);
+      return restoredTarget;
+    }
+
+    return undefined;
+  }
+
+  private runtimePresenceTarget(
+    sessionName: string,
+    sourceTarget: PresenceTarget | undefined,
+  ): PresenceTarget | undefined {
+    if (!sourceTarget || !this.shouldUseNativePresence(sourceTarget)) return sourceTarget;
+    const turnState = this.nativePresenceTurns.get(sessionName);
+    if (turnState?.activeTarget && this.presenceSurfacesMatch(turnState.activeTarget, sourceTarget)) {
+      return turnState.activeTarget;
+    }
+    const activeTarget = this.nativePresenceTargets.get(sessionName);
+    if (activeTarget && this.presenceSurfacesMatch(activeTarget, sourceTarget)) return activeTarget;
+    if (sourceTarget.statusAnchorKind === "last_outbound_message" && sourceTarget.statusAnchorMessageId) {
+      return sourceTarget;
+    }
+    if (sourceTarget.sourceMessageId) {
+      const restoredTarget = this.restoreNativeOutboundAnchorFromTrace(sessionName, sourceTarget);
+      return restoredTarget ?? sourceTarget;
+    }
+    const anchorTarget = this.nativeStatusAnchorTarget(sessionName, sourceTarget);
+    if (anchorTarget) return anchorTarget;
+    return sourceTarget;
+  }
+
   private async renewActiveTargetIfCurrent(sessionName: string, expectedTarget: PresenceTarget): Promise<boolean> {
     const activeTarget = this.omniConsumer.getActiveTarget(sessionName) as PresenceTarget | undefined;
     if (!activeTarget) return false;
     if (!this.targetsMatch(activeTarget, expectedTarget)) {
+      if (this.shouldUseNativePresence(expectedTarget) && this.presenceSurfacesMatch(activeTarget, expectedTarget)) {
+        return false;
+      }
       log.warn("Presence active target mismatch; using event target", {
         sessionName,
         activeTarget: this.presenceTargetKey(activeTarget),
@@ -233,11 +623,11 @@ export class Gateway {
     return this.omniConsumer.renewActiveTarget(sessionName);
   }
 
-  private async forceRenewTyping(sessionName: string, target: PresenceTarget) {
+  private async forceRenewTyping(sessionName: string, target: PresenceTarget, reason = "fallback-renew") {
     if (this.terminalRuntimeSessions.has(sessionName)) return;
     const renewed = await this.renewActiveTargetIfCurrent(sessionName, target);
     if (!renewed) {
-      await this.sendTyping(target, true);
+      await this.sendTyping(target, true, { sessionName, reason });
     }
     this.presenceRenewedAt.set(sessionName, Date.now());
   }
@@ -284,35 +674,69 @@ export class Gateway {
   }
 
   private async stopPresenceForSession(sessionName: string, target?: PresenceTarget): Promise<void> {
+    const alreadyStopped = this.terminalPresenceStopped.has(sessionName);
     this.activeRuntimeSessions.delete(sessionName);
     this.terminalRuntimeSessions.add(sessionName);
     this.presenceRenewedAt.delete(sessionName);
+    this.runtimeActivitySequences.delete(sessionName);
     this.clearPostDeliveryRenewal(sessionName);
     this.clearInterruptedPresenceStop(sessionName);
 
+    const turnState = this.nativePresenceTurns.get(sessionName);
+    const preferredTarget =
+      turnState?.activeTarget ?? (target ? (this.runtimePresenceTarget(sessionName, target) ?? target) : undefined);
+    if (turnState) {
+      turnState.activeTarget = undefined;
+      turnState.terminal = true;
+    }
     const localTarget = this.omniConsumer.getActiveTarget(sessionName) as PresenceTarget | undefined;
+    if (alreadyStopped && !localTarget) return;
+
     if (localTarget) {
-      this.omniConsumer.clearActiveTarget(sessionName);
-      if (target && !this.targetsMatch(localTarget, target)) {
-        await this.sendTyping(target, false);
+      const localStopTarget = this.shouldUseNativePresence(localTarget)
+        ? (this.runtimePresenceTarget(sessionName, localTarget) ?? localTarget)
+        : localTarget;
+      if (this.shouldUseNativePresence(localStopTarget)) {
+        await this.sendTyping(localStopTarget, false, { sessionName, reason: "terminal-clear-active-target" });
+      } else {
+        await this.sendTyping(localStopTarget, false, { sessionName, reason: "terminal-clear-active-target" });
+      }
+      await this.omniConsumer.clearActiveTarget(sessionName);
+      this.terminalPresenceStopped.add(sessionName);
+      if (preferredTarget && !this.targetsMatch(localStopTarget, preferredTarget)) {
+        await this.sendTyping(preferredTarget, false, { sessionName, reason: "terminal-fallback-stop" });
       }
       return;
     }
 
-    if (target) {
-      await this.sendTypingIfChanged(sessionName, target, false);
+    if (alreadyStopped) return;
+
+    if (preferredTarget) {
+      if (this.shouldUseNativePresence(preferredTarget)) {
+        await this.sendTyping(preferredTarget, false, { sessionName, reason: "terminal-stop" });
+      } else {
+        await this.sendTyping(preferredTarget, false, { sessionName, reason: "terminal-stop" });
+      }
+      this.terminalPresenceStopped.add(sessionName);
     }
   }
 
-  private schedulePostDeliveryPresenceRenewal(sessionName: string, target: PresenceTarget): void {
+  private schedulePostDeliveryPresenceRenewal(
+    sessionName: string,
+    target: PresenceTarget,
+    reason = "post-delivery-renew",
+  ): void {
+    if (this.isPresenceSuppressed(target)) return;
     if (!this.activeRuntimeSessions.has(sessionName)) return;
     if (this.terminalRuntimeSessions.has(sessionName)) return;
     this.clearPostDeliveryRenewal(sessionName);
+    const scheduledAfterActivity = this.runtimeActivitySequences.get(sessionName) ?? 0;
     const timer = setTimeout(() => {
       this.postDeliveryRenewals.delete(sessionName);
       if (!this.running || !this.activeRuntimeSessions.has(sessionName)) return;
       if (this.terminalRuntimeSessions.has(sessionName)) return;
-      this.forceRenewTyping(sessionName, target).catch((error) => {
+      if ((this.runtimeActivitySequences.get(sessionName) ?? 0) <= scheduledAfterActivity) return;
+      this.forceRenewTyping(sessionName, target, reason).catch((error) => {
         log.debug("Post-delivery presence renewal failed", { sessionName, error });
       });
     }, POST_DELIVERY_RENEW_DELAY_MS);
@@ -320,38 +744,63 @@ export class Gateway {
     this.postDeliveryRenewals.set(sessionName, timer);
   }
 
-  private async renewTypingForRuntimeActivity(sessionName: string, data: { _source?: PresenceTarget }): Promise<void> {
+  private async renewTypingForRuntimeActivity(
+    sessionName: string,
+    data: { type?: string; _source?: PresenceTarget },
+  ): Promise<void> {
+    if (this.isPresenceSuppressed(data._source)) return;
     if (this.terminalRuntimeSessions.has(sessionName)) return;
     const now = Date.now();
     const lastRenewedAt = this.presenceRenewedAt.get(sessionName) ?? 0;
     if (now - lastRenewedAt < PRESENCE_RENEW_THROTTLE_MS) return;
 
-    const renewed = data._source
-      ? await this.renewActiveTargetIfCurrent(sessionName, data._source)
+    const target = this.runtimePresenceTarget(sessionName, data._source);
+    const renewed = target
+      ? await this.renewActiveTargetIfCurrent(sessionName, target)
       : await this.omniConsumer.renewActiveTarget(sessionName);
-    if (!renewed && data._source) {
-      await this.sendTyping(data._source, true);
+    if (!renewed && target) {
+      await this.sendTyping(target, true, { sessionName, reason: `runtime-${data.type ?? "activity"}` });
     }
 
-    if (renewed || data._source) {
+    if (renewed || target) {
       this.presenceRenewedAt.set(sessionName, now);
     }
   }
 
-  private isTerminalRuntimeEvent(type: string | undefined): boolean {
+  private async handleDeliveryObservationEvent(sessionName: string, data: Record<string, unknown>): Promise<void> {
+    if (data.status !== "delivered") return;
+
+    const target = parsePresenceTarget(data.target);
+    if (!target) return;
+    if (!this.shouldUseNativePresence(target)) return;
+    if (this.isPresenceSuppressed(target)) return;
+    const outboundTarget = withOutboundStatusAnchor(target, data);
+    this.rememberNativeOutboundTurnAnchor(sessionName, outboundTarget);
+    this.schedulePostDeliveryPresenceRenewal(sessionName, outboundTarget, "native-delivery-renew");
+  }
+
+  private isTerminalRuntimeEvent(type: string | undefined, _status?: string, nativeEvent?: string): boolean {
+    if (type === "provider.raw" || type === "status") return false;
     return (
       type === "result" ||
       type === "silent" ||
       type === "turn.complete" ||
       type === "turn.completed" ||
       type === "turn.failed" ||
-      type === "session.timeout"
+      type === "session.timeout" ||
+      (!type &&
+        (nativeEvent === "turn.complete" ||
+          nativeEvent === "turn.completed" ||
+          nativeEvent === "turn.failed" ||
+          nativeEvent === "turn/completed" ||
+          nativeEvent === "turn/failed"))
     );
   }
 
-  private isPresenceActivityEvent(type: string | undefined, status?: string): boolean {
-    if (!type || this.isTerminalRuntimeEvent(type)) return false;
-    if (type === "status" && status === "idle") return false;
+  private isPresenceActivityEvent(type: string | undefined, status?: string, nativeEvent?: string): boolean {
+    if (!type || this.isTerminalRuntimeEvent(type, status, nativeEvent)) return false;
+    if (type === "provider.raw") return false;
+    if (type === "status") return status === "queued" || status === "thinking" || status === "compacting";
     return true;
   }
 
@@ -359,6 +808,10 @@ export class Gateway {
     if (type === "turn.started" || type === "thread.started") return true;
     if (nativeEvent === "turn.started" || nativeEvent === "thread.started") return true;
     return false;
+  }
+
+  private isPresenceSuppressed(target: PresenceTarget | undefined): boolean {
+    return target?.suppressPresence === true;
   }
 
   private recordResponseTrace(sessionName: string, response: ResponseMessage): void {
@@ -401,13 +854,6 @@ export class Gateway {
       return;
     }
 
-    const instanceId = configStore.resolveInstanceId(target.accountId);
-    if (!instanceId) {
-      await emitDelivery({ status: "dropped", reason: "missing_instance", target });
-      return;
-    }
-    const chatId = normalizeOutboundJid(target.chatId);
-
     const text = response.error ? `Error: ${response.error}` : response.response;
 
     if (text && text.trim() === SILENT_TOKEN) {
@@ -430,6 +876,55 @@ export class Gateway {
       await emitDelivery({ status: "dropped", reason: "missing_emit_id", target, textLen: text.length });
       return;
     }
+
+    if (this.shouldQueueNativeOutbound(target)) {
+      const built = buildChannelOutboundJobFromResponse(sessionName, response);
+      if (!built.ok) {
+        await emitDelivery({ status: "dropped", reason: built.reason, target, textLen: text.length });
+        return;
+      }
+      try {
+        const published = await publishChannelOutboundJobDurably(built.job);
+        if (published.ok) {
+          await emitDelivery({
+            status: "queued",
+            reason: "native_channel_outbound",
+            jobId: built.job.jobId,
+            target,
+            textLen: text.length,
+          });
+        } else {
+          await emitDelivery({
+            status: "failed",
+            reason: "queue_error",
+            jobId: built.job.jobId,
+            target,
+            textLen: text.length,
+            error: published.error instanceof Error ? published.error.message : String(published.error),
+            retryable: true,
+            nextAttemptAt: published.nextAttemptAt,
+          });
+        }
+      } catch (error) {
+        await emitDelivery({
+          status: "failed",
+          reason: "local_outbox_error",
+          jobId: built.job.jobId,
+          target,
+          textLen: text.length,
+          error: error instanceof Error ? error.message : String(error),
+          retryable: false,
+        });
+      }
+      return;
+    }
+
+    const instanceId = configStore.resolveInstanceId(target.accountId);
+    if (!instanceId) {
+      await emitDelivery({ status: "dropped", reason: "missing_instance", target });
+      return;
+    }
+    const chatId = normalizeOutboundJid(target.chatId);
 
     const t0 = Date.now();
     log.info("Sending response", {
@@ -472,6 +967,9 @@ export class Gateway {
         durationMs: Date.now() - t0,
         textLen: prepared.text.length,
       });
+      this.emitTtsForResponse(sessionName, response, prepared.text, target).catch((error) => {
+        log.warn("Failed to emit response TTS event", { sessionName, emitId: response._emitId, error });
+      });
       log.info("Response delivered", { sessionName, durationMs: Date.now() - t0 });
     } catch (err) {
       log.error("Failed to send response", { instanceId, chatId, error: err });
@@ -486,6 +984,41 @@ export class Gateway {
         durationMs: Date.now() - t0,
       });
     }
+  }
+
+  private shouldQueueNativeOutbound(target: NonNullable<ResponseMessage["target"]>): boolean {
+    return NATIVE_OUTBOUND_CHANNELS.has(target.channel.toLowerCase());
+  }
+
+  private shouldUseNativePresence(target: PresenceTarget): boolean {
+    return NATIVE_PRESENCE_CHANNELS.has(target.channel.toLowerCase());
+  }
+
+  private async emitTtsForResponse(
+    sessionName: string,
+    response: ResponseMessage,
+    text: string,
+    target: NonNullable<ResponseMessage["target"]>,
+  ): Promise<void> {
+    if (response.error) return;
+    const session = getSessionByName(sessionName);
+    const agentId = session?.agentId;
+    const agent = agentId ? configStore.getConfig().agents[agentId] : null;
+    if (!shouldAutoTtsForAgent(agent)) return;
+    const request = buildRaviTtsRequest({
+      text,
+      ...(agent ? { agent } : {}),
+      ...(agentId ? { agentId } : {}),
+      sessionName,
+      ...(session?.sessionKey ? { sessionKey: session.sessionKey } : {}),
+      ...(response._emitId ? { emitId: response._emitId } : {}),
+      target,
+      metadata: {
+        origin: "gateway.response",
+        ...(response.metadata ? { responseMetadata: response.metadata } : {}),
+      },
+    });
+    await this.emitEvent(RAVI_TTS_TOPIC, request as unknown as Record<string, unknown>);
   }
 
   private saveOutboundMessageActorMetadata(
@@ -661,6 +1194,18 @@ export class Gateway {
     );
   }
 
+  private subscribeToDeliveryObservations(): void {
+    this.subscribe("deliveryPresence", ["ravi.session.*.delivery"], async (event) => {
+      const sessionName = event.topic.split(".")[2];
+      if (!sessionName) return;
+      const data =
+        event.data && typeof event.data === "object" && !Array.isArray(event.data)
+          ? (event.data as Record<string, unknown>)
+          : {};
+      await this.handleDeliveryObservationEvent(sessionName, data);
+    });
+  }
+
   private async handleRuntimePresenceEvent(
     sessionName: string,
     data: {
@@ -672,8 +1217,12 @@ export class Gateway {
   ): Promise<void> {
     if (data.type === "turn.interrupted") {
       if (this.terminalRuntimeSessions.has(sessionName)) return;
+      if (this.isPresenceSuppressed(data._source)) {
+        await this.stopPresenceForSession(sessionName, data._source);
+        return;
+      }
       if (data._source) {
-        await this.forceRenewTyping(sessionName, data._source);
+        await this.forceRenewTyping(sessionName, this.runtimePresenceTarget(sessionName, data._source) ?? data._source);
       } else {
         await this.omniConsumer.renewActiveTarget(sessionName);
       }
@@ -681,20 +1230,33 @@ export class Gateway {
       return;
     }
 
-    if (this.isTerminalRuntimeEvent(data.type)) {
+    if (this.isTerminalRuntimeEvent(data.type, data.status, data.nativeEvent)) {
       await this.stopPresenceForSession(sessionName, data._source);
       return;
     }
 
-    if (!this.isPresenceActivityEvent(data.type, data.status)) return;
+    if (!this.isPresenceActivityEvent(data.type, data.status, data.nativeEvent)) return;
+
+    if (this.isPresenceSuppressed(data._source)) {
+      this.activeRuntimeSessions.delete(sessionName);
+      this.presenceRenewedAt.delete(sessionName);
+      this.runtimeActivitySequences.delete(sessionName);
+      return;
+    }
 
     if (this.terminalRuntimeSessions.has(sessionName)) {
       if (!this.isPresenceStartEvent(data.type, data.nativeEvent)) return;
       this.terminalRuntimeSessions.delete(sessionName);
+      this.terminalPresenceStopped.delete(sessionName);
+    }
+
+    if (data._source && this.isPresenceStartEvent(data.type, data.nativeEvent)) {
+      this.beginNativePresenceTurn(sessionName, data._source);
     }
 
     this.clearInterruptedPresenceStop(sessionName);
     this.activeRuntimeSessions.add(sessionName);
+    this.markRuntimeActivity(sessionName);
     await this.renewTypingForRuntimeActivity(sessionName, data);
   }
 
@@ -1008,6 +1570,23 @@ export class Gateway {
     );
   }
 
+  /**
+   * Subscribe to extension-playback TTS requests.
+   * Queue group: only one gateway daemon should generate each audio file.
+   */
+  private subscribeToTts(): void {
+    this.subscribe(
+      "tts",
+      [RAVI_TTS_TOPIC],
+      async (event) => {
+        await handleRaviTtsRequest(event.data, (topic, payload) =>
+          this.emitEvent(topic, payload as Record<string, unknown>),
+        );
+      },
+      { queue: "ravi-tts" },
+    );
+  }
+
   private async handleStickerSendEvent(data: StickerSendEvent): Promise<void> {
     assertChannelSupportsStickers({
       channelId: data.channel,
@@ -1051,14 +1630,12 @@ export class Gateway {
   }
 
   /**
-   * Subscribe to config changes for cache invalidation and REBAC sync.
+   * Subscribe to config changes for cache invalidation.
    * Fan-out intentional: all daemons must sync their own config cache.
    */
   private subscribeToConfigChanges(): void {
     this.subscribe("config", ["ravi.config.changed"], async () => {
-      const { syncRelationsFromConfig } = await import("./permissions/relations.js");
-      syncRelationsFromConfig();
-      log.info("REBAC relations synced");
+      log.info("Runtime config change observed");
     });
   }
 }

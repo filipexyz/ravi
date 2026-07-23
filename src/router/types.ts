@@ -2,6 +2,7 @@
  * Session Router Types
  */
 
+import type { RuntimeEffort } from "../runtime/effort.js";
 import type { RuntimeProviderId } from "../runtime/types.js";
 
 // ============================================================================
@@ -59,8 +60,18 @@ export interface AgentConfig {
   /** Model override for this agent */
   model?: string;
 
-  /** Runtime provider for this agent (defaults to Claude when unset) */
+  /** Default reasoning effort for this agent */
+  effort?: RuntimeEffort;
+
+  /** Runtime provider for this agent (defaults to Codex when unset) */
   provider?: RuntimeProviderId;
+
+  /**
+   * Indirect reference to a centrally managed runtime model preset. Mutually
+   * exclusive with a direct `model`; the preset model selector is never copied
+   * into the agent row.
+   */
+  modelPresetId?: string;
 
   /** Default DM scope for this agent */
   dmScope?: DmScope;
@@ -105,8 +116,17 @@ export interface AgentConfig {
   remoteUser?: string;
 
   /** Generic key-value defaults for CLI tools and agent-scoped extensions (e.g., context guardians) */
-  defaults?: Record<string, unknown>;
+  defaults?: Record<string, unknown> | null;
 }
+
+/**
+ * Update payload for an agent. `model` and `modelPresetId` accept `null` to
+ * clear the stored value (they are mutually exclusive on the agent row).
+ */
+export type AgentUpdateInput = Omit<Partial<AgentConfig>, "model" | "modelPresetId"> & {
+  model?: string | null;
+  modelPresetId?: string | null;
+};
 
 // ============================================================================
 // Route Configuration
@@ -164,6 +184,9 @@ export interface RouterConfig {
   /** Instance configs keyed by name */
   instances: Record<string, import("./router-db.js").InstanceConfig>;
 
+  /** Native channel configs keyed by name */
+  channels?: Record<string, import("./router-db.js").ChannelConfig>;
+
   /** Unknown omni instanceIds that Ravi should ignore completely */
   ignoredOmniInstanceIds?: string[];
 }
@@ -195,6 +218,7 @@ export interface SessionEntry {
   /** Human-readable unique session name (used in NATS topics) */
   name?: string;
   runtimeProvider?: RuntimeProviderId;
+  runtimeProviderOverride?: RuntimeProviderId;
   runtimeSessionParams?: Record<string, unknown>;
   runtimeSessionDisplayId?: string;
   providerSessionId?: string;
@@ -230,6 +254,7 @@ export interface SessionEntry {
   // Overrides
   thinkingLevel?: "off" | "normal" | "verbose";
   modelOverride?: string;
+  effortOverride?: RuntimeEffort;
   ttsAuto?: "on" | "off" | "voice";
 
   // Queue mode
@@ -274,5 +299,7 @@ export interface ResolvedRoute {
   sessionKey: string;
   /** Human-readable session name (used in NATS topics) */
   sessionName: string;
+  /** True when committing this route created the underlying session row. */
+  createdSession?: boolean;
   route?: RouteConfig;
 }

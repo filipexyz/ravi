@@ -46,6 +46,7 @@ The incident that motivated this capability: PR #131 passed GitHub CI but failed
 
 The following source paths are considered runtime/consumer paths that require focused test coverage:
 
+- `src/channels/**`
 - `src/omni/**`
 - `src/router/**`
 - `src/runtime/**`
@@ -53,6 +54,10 @@ The following source paths are considered runtime/consumer paths that require fo
 - `src/triggers/**`
 - `src/approval/**`
 - `src/devin/**`
+
+High-risk channel lifecycle files MUST also map to their own focused health,
+runner, or Socket Mode test so an unrelated channel test cannot satisfy their
+coverage requirement.
 
 ## Validation
 

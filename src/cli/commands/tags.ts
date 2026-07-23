@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import {
   declareCommandReturns,
@@ -324,6 +324,7 @@ function printJson(payload: unknown): void {
 })
 export class TagCommands {
   @Command({ name: "create", description: "Create a new tag definition" })
+  @CommandAccess({ kind: "mutate", resource: "tags", action: "create", risk: "medium" })
   create(
     @Arg("slug", { description: "Stable tag slug" }) slug: string,
     @Option({ flags: "--label <text>", description: "Display label" })
@@ -378,6 +379,7 @@ export class TagCommands {
   }
 
   @Command({ name: "list", description: "List tag definitions" })
+  @CommandAccess({ kind: "read", resource: "tags", action: "list", risk: "low" })
   list(
     @Option({ flags: "--kind <kind>", description: "Filter by kind: system|user" })
     kind?: string,
@@ -484,6 +486,7 @@ export class TagCommands {
   }
 
   @Command({ name: "set", description: "Set tag definition metadata" })
+  @CommandAccess({ kind: "mutate", resource: "tags", action: "set", risk: "medium" })
   set(
     @Arg("slug", { description: "Tag slug" }) slug: string,
     @Arg("key", { description: "Property: label, description, kind, source, metadata" }) key: string,
@@ -529,6 +532,7 @@ export class TagCommands {
   }
 
   @Command({ name: "show", description: "Show one tag and its bindings" })
+  @CommandAccess({ kind: "read", resource: "tags", action: "show", risk: "low" })
   show(
     @Arg("slug", { description: "Tag slug" }) slug: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
@@ -564,6 +568,7 @@ export class TagCommands {
     name: "attach",
     description: "Attach a tag to a Ravi asset",
   })
+  @CommandAccess({ kind: "mutate", resource: "tags", action: "attach", risk: "medium" })
   attach(
     @Arg("slug", { description: "Tag slug" }) slug: string,
     @Option({ flags: "--agent <id>", description: "Target agent id" })
@@ -704,6 +709,7 @@ export class TagCommands {
     name: "detach",
     description: "Detach a tag from a Ravi asset",
   })
+  @CommandAccess({ kind: "mutate", resource: "tags", action: "detach", risk: "medium" })
   detach(
     @Arg("slug", { description: "Tag slug" }) slug: string,
     @Option({ flags: "--agent <id>", description: "Target agent id" })
@@ -833,6 +839,7 @@ export class TagCommands {
   }
 
   @Command({ name: "search", description: "Search bindings by tag or asset" })
+  @CommandAccess({ kind: "read", resource: "tags", action: "search", risk: "low" })
   search(
     @Option({ flags: "--tag <slug>", description: "Filter by tag slug" })
     slug?: string,

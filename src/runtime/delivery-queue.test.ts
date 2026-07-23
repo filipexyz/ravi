@@ -4,6 +4,7 @@ import {
   createRuntimeMessageGenerator,
   shouldInterruptRuntimeForIncoming,
 } from "./delivery-queue.js";
+import { shutdownRuntimeStreamingSession } from "./host-session.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { RuntimeSessionHandle } from "./types.js";
 
@@ -65,6 +66,40 @@ describe("runtime delivery queue", () => {
     session.done = true;
     session.onTurnComplete?.();
     await generator.return(undefined);
+  });
+
+  it("cancels idle session eviction when a new turn starts", async () => {
+    const idleTimer = setTimeout(() => {}, 60_000);
+    const queuedMessage = createQueuedRuntimeUserMessage({ prompt: "voltei" });
+    const session = makeStreamingSession({
+      pendingMessages: [queuedMessage],
+      idleSessionEvictionTimer: idleTimer,
+    });
+    const generator = createRuntimeMessageGenerator({
+      sessionName: "dev",
+      session,
+      stashedMessages: new Map(),
+    });
+
+    await generator.next();
+
+    expect(session.idleSessionEvictionTimer).toBeUndefined();
+
+    session.done = true;
+    session.onTurnComplete?.();
+    await generator.return(undefined);
+  });
+
+  it("clears idle session eviction timer during runtime shutdown", () => {
+    const idleTimer = setTimeout(() => {}, 60_000);
+    const session = makeStreamingSession({
+      idleSessionEvictionTimer: idleTimer,
+    });
+
+    shutdownRuntimeStreamingSession(session, "test");
+
+    expect(session.idleSessionEvictionTimer).toBeUndefined();
+    expect(session.done).toBe(true);
   });
 
   it("keeps the original launch prompt envelope on queued messages", () => {

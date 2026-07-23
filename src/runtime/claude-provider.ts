@@ -7,6 +7,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import { accessSync, chmodSync, constants, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import type {
   RuntimeEvent,
@@ -28,6 +29,62 @@ import { createRuntimeTerminalEventTracker } from "./terminality.js";
 const nodeRequire = createRequire(import.meta.url);
 const CLAUDE_CODE_EXECUTABLE_ENV_KEYS = ["RAVI_CLAUDE_CODE_EXECUTABLE", "CLAUDE_CODE_EXECUTABLE"] as const;
 const CLAUDE_CODE_AUTH_ENV_KEYS = ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"] as const;
+
+/**
+ * Discover the agent's own local skills (its curated arsenal) from the setting
+ * source directories the Claude runtime loads via `settingSources`:
+ * `<cwd>/.claude/skills` for "project" and `~/.claude/skills` for "user".
+ *
+ * spec: skills/scoping/per-agent-visibility (Invariant F/B — no-break).
+ *
+ * `Options.skills`, when set, filters EVERY discovered skill — plugins AND
+ * these local ones. `resolveAgentSkills` is provider-agnostic and cannot know
+ * these filesystem sources, so the Claude adapter unions them back in: an agent
+ * must never lose the skills placed directly in its own workspace.
+ */
+function listLocalSkillNames(cwd: string | undefined, settingSources: ("user" | "project")[] | undefined): string[] {
+  const sources = settingSources ?? ["project"];
+  const dirs: string[] = [];
+  if (sources.includes("project") && cwd) {
+    dirs.push(join(cwd, ".claude", "skills"));
+  }
+  if (sources.includes("user")) {
+    dirs.push(join(homedir(), ".claude", "skills"));
+  }
+  const names = new Set<string>();
+  for (const dir of dirs) {
+    if (!existsSync(dir)) {
+      continue;
+    }
+    try {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory() && existsSync(join(dir, entry.name, "SKILL.md"))) {
+          names.add(entry.name);
+        }
+      }
+    } catch {
+      // An unreadable skill dir contributes nothing; it must never throw into session start.
+    }
+  }
+  return [...names];
+}
+
+/**
+ * When a per-agent skill allowlist is active, ensure the agent's own local
+ * skills survive the `Options.skills` filter. No-op when no allowlist is set
+ * (Invariant F — grandfather / full visibility) or when there are no local
+ * skills to add.
+ */
+export function withLocalSkillsPreserved(input: RuntimeStartRequest): RuntimeStartRequest {
+  if (!input.allowedSkills || input.allowedSkills.length === 0) {
+    return input;
+  }
+  const localSkills = listLocalSkillNames(input.cwd, input.settingSources);
+  if (localSkills.length === 0) {
+    return input;
+  }
+  return { ...input, allowedSkills: [...new Set([...input.allowedSkills, ...localSkills])] };
+}
 
 export interface ClaudeRuntimeProvider extends SessionRuntimeProvider {
   startSession(input: RuntimeStartRequest): RuntimeSessionHandle;
@@ -90,26 +147,28 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
       };
     },
     startSession(input) {
-      const resumeSessionId = readRuntimeSessionId(input.resumeSession) ?? input.resume;
-      const env = buildClaudeCodeEnvironment(input.env);
-      const pathToClaudeCodeExecutable = resolveClaudeCodeExecutable(env);
+      // Invariant F/B (spec: skills/scoping/per-agent-visibility): when a
+      // per-agent allowlist is active, the agent's own local skills
+      // (<cwd>/.claude/skills, ~/.claude/skills) must survive the Options.skills
+      // filter — they are its curated arsenal, invisible to the agnostic core.
+      const request = withLocalSkillsPreserved(input);
+      const resumeSessionId = readRuntimeSessionId(request.resumeSession) ?? request.resume;
       const skillVisibility = buildPluginSkillVisibilitySnapshot({
         provider: "claude",
-        plugins: input.plugins,
+        plugins: request.plugins,
         state: "advertised",
         confidence: "declared",
         evidenceKind: "plugin-bootstrap",
+        ...(request.allowedSkills && request.allowedSkills.length > 0 ? { allowedSkills: request.allowedSkills } : {}),
       });
       let activeQuery: Query | null = null;
-      let currentModel = input.model;
+      let currentModel = request.model;
 
       return {
         provider: "claude",
         skillVisibility,
-        events: runClaudeTurns(input, {
+        events: runClaudeTurns(request, {
           initialResumeSessionId: resumeSessionId,
-          env,
-          pathToClaudeCodeExecutable,
           skillVisibility,
           getModel: () => currentModel,
           setActiveQuery: (queryResult) => {
@@ -118,6 +177,11 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
         }),
         interrupt: async () => {
           await activeQuery?.interrupt();
+        },
+        close: async () => {
+          const queryResult = activeQuery;
+          activeQuery = null;
+          queryResult?.close();
         },
         setModel: async (model: string) => {
           currentModel = model;
@@ -139,8 +203,6 @@ async function* runClaudeTurns(
   input: RuntimeStartRequest,
   runtime: {
     initialResumeSessionId?: string;
-    env: Record<string, string>;
-    pathToClaudeCodeExecutable?: string;
     skillVisibility?: RuntimeSkillVisibilitySnapshot;
     getModel(): string;
     setActiveQuery(queryResult: Query | null): void;
@@ -159,12 +221,15 @@ async function* runClaudeTurns(
       continue;
     }
 
+    // The host rotates `input.env` before yielding each turn. Snapshot it here
+    // so authority changes apply between queries, never during an active one.
+    const env = buildClaudeCodeEnvironment(input.env);
     const queryResult = query({
       prompt,
-      options: buildClaudeQueryOptions({ ...input, model: runtime.getModel() }, runtime.env, {
+      options: buildClaudeQueryOptions({ ...input, model: runtime.getModel() }, env, {
         resumeSessionId,
         forkSession: useForkSession,
-        pathToClaudeCodeExecutable: runtime.pathToClaudeCodeExecutable,
+        pathToClaudeCodeExecutable: resolveClaudeCodeExecutable(env),
       }),
     });
     runtime.setActiveQuery(queryResult);
@@ -234,7 +299,7 @@ function buildClaudeQueryOptions(
     pathToClaudeCodeExecutable?: string;
   },
 ): Options {
-  const thinking = resolveClaudeThinkingConfig(input.thinking);
+  const thinking = resolveClaudeThinkingConfig(input.thinking, input.model);
   const effort = toStrongestCompatibleRuntimeEffort(input.effort);
   return {
     model: input.model,
@@ -274,13 +339,17 @@ function buildClaudeQueryOptions(
     settingSources: input.settingSources ?? ["project"],
     ...(input.hooks ? { hooks: input.hooks } : {}),
     ...(input.plugins && input.plugins.length > 0 ? { plugins: input.plugins } : {}),
+    ...(input.allowedSkills && input.allowedSkills.length > 0 ? { skills: input.allowedSkills } : {}),
     ...(input.remoteSpawn ? { spawnClaudeCodeProcess: input.remoteSpawn as Options["spawnClaudeCodeProcess"] } : {}),
   };
 }
 
-function resolveClaudeThinkingConfig(thinking?: RuntimeThinking): Options["thinking"] | undefined {
+function resolveClaudeThinkingConfig(thinking?: RuntimeThinking, model?: string): Options["thinking"] | undefined {
   switch (thinking) {
     case "off":
+      if (isAdaptiveThinkingOnlyClaudeModel(model)) {
+        return undefined;
+      }
       return { type: "disabled" };
     case "verbose":
       return { type: "adaptive", display: "summarized" };
@@ -289,6 +358,14 @@ function resolveClaudeThinkingConfig(thinking?: RuntimeThinking): Options["think
     default:
       return undefined;
   }
+}
+
+function isAdaptiveThinkingOnlyClaudeModel(model?: string): boolean {
+  const normalized = model?.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return normalized === "claude-fable-5" || normalized === "fable" || normalized === "claude-mythos-5";
 }
 
 function stringifyUserPrompt(content: unknown): string {

@@ -24,6 +24,7 @@ const runtimeContext = {
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
+  CommandAccess: () => () => {},
   Scope: () => () => {},
   Returns: Object.assign(() => () => {}, { binary: () => () => {} }),
   Arg: () => () => {},

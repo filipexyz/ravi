@@ -55,10 +55,10 @@ function basePrompts(): RaviAppsGuidePrompt[] {
     },
     {
       id: "operate",
-      title: "Operate through declared interfaces",
+      title: "Operate through the app alias",
       prompt:
-        "Never guess app commands. Read manifest.operations and use only declared operations. CLI-backed operations should support --json. Mutating operations require permission checks.",
-      commands: ["ravi apps show <app-id> --json"],
+        "Never guess app commands. Read manifest.operations and use only declared operations. For normal app use, call ravi <app-id> <operation> --json. Keep ravi apps run for router debugging or static command collisions only.",
+      commands: ["ravi apps show <app-id> --json", "ravi <app-id> <operation> --json"],
     },
     {
       id: "ui",
@@ -78,7 +78,7 @@ function basePrompts(): RaviAppsGuidePrompt[] {
       id: "skill-gate",
       title: "Skill gate",
       prompt:
-        "The apps command group is gated by ravi-system-apps. If a tool call asks for that skill, load it and retry the original ravi apps command.",
+        "The apps command group is gated by ravi-system-apps. If a tool call asks for that skill, load it and retry the registry/manifest command. App operation should still prefer ravi <app-id> <operation>.",
       commands: ["ravi skill-gates show apps --json", "ravi skills show ravi-system-apps --json"],
     },
   ];
@@ -87,6 +87,7 @@ function basePrompts(): RaviAppsGuidePrompt[] {
 function buildAppSpecificPrompts(app: RaviAppManifestRecord): RaviAppsGuidePrompt[] {
   const manifest = app.manifest;
   const operations = isObject(manifest?.operations) ? Object.keys(manifest.operations).sort() : [];
+  const appCommand = `ravi ${app.id.split("/").join(" ")}`;
   const skills = Array.isArray(manifest?.skills)
     ? manifest.skills.filter((skill): skill is string => typeof skill === "string")
     : [];
@@ -100,9 +101,9 @@ function buildAppSpecificPrompts(app: RaviAppManifestRecord): RaviAppsGuidePromp
         `Interfaces: ${app.interfaceNames.join(", ") || "none"}.`,
         `Operations: ${operations.join(", ") || "none"}.`,
         `Skills: ${skills.join(", ") || "none"}.`,
-        "Check validity and warnings before using any operation.",
+        `Check validity and warnings before using any operation. Operate through ${appCommand} <operation>.`,
       ].join(" "),
-      commands: [`ravi apps show ${app.id} --json`, `ravi apps check ${app.id} --json`],
+      commands: [`ravi apps show ${app.id} --json`, `ravi apps check ${app.id} --json`, `${appCommand} check --json`],
     },
   ];
 }
@@ -111,7 +112,8 @@ function buildNextCommands(app: RaviAppManifestRecord | null): string[] {
   if (!app) {
     return ["ravi apps list --json", "ravi apps scaffold <app-id> --dry-run --json"];
   }
-  return [`ravi apps show ${app.id} --json`, `ravi apps check ${app.id} --json`, `ravi apps guide ${app.id} --json`];
+  const appCommand = `ravi ${app.id.split("/").join(" ")}`;
+  return [`ravi apps show ${app.id} --json`, `ravi apps check ${app.id} --json`, `${appCommand} check --json`];
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

@@ -56,7 +56,7 @@ This capability does NOT own:
 - provider session state (`runtime/session-continuity`);
 - thread/subject context (`threads`);
 - identity resolution (`contacts/identity-graph`);
-- permission system (REBAC);
+- permission system (Permission Provider Runtime);
 - arbitrary broadcast to many chats. This feature selects one outbound surface per response, not fan-out.
 
 ## Definitions

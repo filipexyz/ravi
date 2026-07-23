@@ -39,3 +39,19 @@ Also run:
 bun run typecheck
 bun run build
 ```
+
+## Weak-Baseline Quality Gate
+
+The weak-baseline test ensures that `newlyWeak` is empty and
+`strengthenedButStillListed` is empty:
+
+```bash
+ravi sdk returns status --json
+ravi sdk returns validate --json
+bun test src/sdk/client-codegen/return-schema-coverage.test.ts
+```
+
+- `newlyWeak` MUST be empty. Fix by adding concrete `@Returns` schemas.
+- `strengthenedButStillListed` MUST be empty. Fix by removing the command
+  from `WEAK_PUBLIC_RETURN_COMMANDS_BASELINE`.
+- See `RUNBOOK.md` for step-by-step diagnosis.

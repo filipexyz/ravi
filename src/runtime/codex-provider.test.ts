@@ -13,6 +13,7 @@ type TransportRequest = {
   effort?: string;
   prompt: string;
   resume?: string;
+  forkFrom?: string;
   systemPromptAppend: string;
 };
 
@@ -95,6 +96,27 @@ function findEventsByType<T extends RuntimeEvent["type"]>(
 const CODEX_DYNAMIC_TOOL_DISABLED_TEXT = "No Ravi dynamic tool handler is available for this Codex request.";
 
 describe("createCodexRuntimeProvider", () => {
+  it("exposes explicit transport cleanup on the runtime session handle", async () => {
+    let closeCalls = 0;
+    const provider = createCodexRuntimeProvider({
+      transport: {
+        startTurn() {
+          throw new Error("turn should not start");
+        },
+        close: async () => {
+          closeCalls++;
+        },
+      } as any,
+      defaultModel: "gpt-5",
+    });
+
+    const runtimeSession = provider.startSession(makeStartRequest([]));
+    await runtimeSession.close?.();
+    await runtimeSession.close?.();
+
+    expect(closeCalls).toBe(1);
+  });
+
   it("synchronizes plugin-backed skills during provider bootstrap", () => {
     const synced: Array<{ type: "local"; path: string }> = [];
     const provider = createCodexRuntimeProvider({
@@ -114,7 +136,7 @@ describe("createCodexRuntimeProvider", () => {
     expect(synced).toEqual([{ type: "local", path: "/tmp/ravi/plugins/ravi-system" }]);
   });
 
-  it("materializes the global Codex bash hook in ~/.codex/hooks.json", () => {
+  it("materializes the global Codex native tool hook in ~/.codex/hooks.json", () => {
     const home = mkdtempSync(join(tmpdir(), "ravi-codex-home-"));
     const originalHome = process.env.HOME;
     process.env.HOME = home;
@@ -134,14 +156,17 @@ describe("createCodexRuntimeProvider", () => {
       const preToolUse = Array.isArray(payload?.hooks?.PreToolUse) ? payload.hooks.PreToolUse : [];
       const raviHookGroup = preToolUse.find(
         (group: any) =>
-          group?.matcher === "^(Bash|shell)$" &&
+          typeof group?.matcher === "string" &&
+          group.matcher.includes("Bash") &&
+          group.matcher.includes("shell") &&
+          group.matcher.includes("Read") &&
           Array.isArray(group?.hooks) &&
-          group.hooks.some((handler: any) => handler?.statusMessage === "ravi codex bash permission gate"),
+          group.hooks.some((handler: any) => handler?.statusMessage === "ravi codex native tool permission gate"),
       );
 
       expect(raviHookGroup).toBeDefined();
       expect(raviHookGroup.hooks[0]?.command).toContain("context");
-      expect(raviHookGroup.hooks[0]?.command).toContain("codex-bash-hook");
+      expect(raviHookGroup.hooks[0]?.command).toContain("codex-tool-hook");
       expect(raviHookGroup.hooks[0]?.command).not.toContain(".test.");
     } finally {
       if (originalHome === undefined) {
@@ -287,6 +312,240 @@ rl.on("line", (line) => {
     expect(threadRequests[0]?.params.dynamicTools).toBeNull();
   });
 
+  it("recovers a resumed multi-agent sub-agent thread into a fresh top-level thread", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-sub-agent-resume-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && message.method === "thread/resume") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({ id: message.id, result: { thread: { id: message.params.threadId }, model: "gpt-5", modelProvider: "openai" } });
+    return;
+  }
+  if (message.id && message.method === "thread/start") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({ id: message.id, result: { thread: { id: "thread_top_level" }, model: "gpt-5", modelProvider: "openai" } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    if (message.params.threadId === "thread_sub_agent") {
+      send({
+        id: message.id,
+        error: { code: -32600, message: "direct app-server input is not allowed for multi-agent v2 sub-agents" },
+      });
+      return;
+    }
+    send({ id: message.id, result: {} });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/started",
+      params: { threadId: "thread_top_level", turn: { id: "turn_recovered", status: "inProgress" } },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/completed",
+      params: { threadId: "thread_top_level", turn: { id: "turn_recovered", status: "completed" } },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest(["recover"], {
+        cwd,
+        resume: "thread_sub_agent",
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const requests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(requests.map((request) => request.method)).toEqual([
+      "thread/resume",
+      "turn/start",
+      "thread/start",
+      "turn/start",
+    ]);
+    expect(requests[1]?.params.threadId).toBe("thread_sub_agent");
+    expect(requests[3]?.params.threadId).toBe("thread_top_level");
+    expect(findEventsByType(events, "turn.complete")).toEqual([
+      expect.objectContaining({ providerSessionId: "thread_top_level" }),
+    ]);
+    expect(
+      findEventsByType(events, "provider.raw").some(
+        (event) => (event.rawEvent as { type?: string })?.type === "thread.resume_recovered",
+      ),
+    ).toBe(true);
+  });
+
+  it("forks an app-server thread before the first turn when forkSession is requested", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-fork-appserver-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && ["thread/fork", "thread/resume", "thread/start", "turn/start"].includes(message.method)) {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+  }
+  if (message.id && message.method === "thread/fork") {
+    send({ id: message.id, result: { thread: { id: "thread_child" }, model: "gpt-5", modelProvider: "openai" } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/started",
+      params: { threadId: message.params.threadId, turn: { id: "turn_child", status: "inProgress" } },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/completed",
+      params: { threadId: message.params.threadId, turn: { id: "turn_child", status: "completed" } },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest(["child turn"], {
+        cwd,
+        resume: "thread_parent",
+        forkSession: true,
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const requests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(requests.map((request) => request.method)).toEqual(["thread/fork", "turn/start"]);
+    expect(requests[0]?.params).toMatchObject({
+      threadId: "thread_parent",
+      cwd,
+      persistExtendedHistory: true,
+    });
+    expect(requests[1]?.params.threadId).toBe("thread_child");
+    expect(findEventsByType(events, "turn.complete")).toEqual([
+      expect.objectContaining({
+        providerSessionId: "thread_child",
+        session: expect.objectContaining({
+          params: expect.objectContaining({ sessionId: "thread_child", cwd }),
+          displayId: "thread_child",
+        }),
+      }),
+    ]);
+  });
+
+  it("passes max/ultra effort as model_reasoning_effort in app-server thread/start and thread/resume", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-effort-appserver-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "thread-requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => {
+  process.stdout.write(JSON.stringify(message) + "\\n");
+};
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && (message.method === "thread/start" || message.method === "thread/resume")) {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({
+      id: message.id,
+      result: { thread: { id: message.params.threadId ?? "thread_effort" }, model: "gpt-5.6-sol", modelProvider: "openai" },
+    });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({ jsonrpc: "2.0", method: "turn/started", params: { threadId: "thread_effort", turn: { id: "turn_effort", status: "inProgress" } } });
+    send({ jsonrpc: "2.0", method: "turn/completed", params: { threadId: "thread_effort", turn: { id: "turn_effort", status: "completed" } } });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+
+    const started = provider.startSession(makeStartRequest(["start"], { cwd, model: "gpt-5.6-sol", effort: "max" }));
+    await collectEvents(started.events);
+
+    const resumed = provider.startSession(
+      makeStartRequest(["resume"], { cwd, model: "gpt-5.6-sol", effort: "ultra", resume: "thread_prev" }),
+    );
+    await collectEvents(resumed.events);
+
+    const threadRequests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    const startRequest = threadRequests.find((request) => request.method === "thread/start");
+    const resumeRequest = threadRequests.find((request) => request.method === "thread/resume");
+
+    expect(startRequest?.params.config.model_reasoning_effort).toBe("max");
+    expect(resumeRequest?.params.config.model_reasoning_effort).toBe("ultra");
+  });
+
   it("passes Ravi runtime env to the Codex app-server process", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-env-"));
     const command = join(cwd, "fake-codex-app-server.mjs");
@@ -367,36 +626,45 @@ rl.on("line", (line) => {
     const envPath = join(cwd, "env.jsonl");
     writeFileSync(
       command,
-      `#!/usr/bin/env node
+      `#!/usr/bin/env bun
 import { appendFileSync } from "node:fs";
-import { createInterface } from "node:readline";
 
 appendFileSync(${JSON.stringify(envPath)}, JSON.stringify({
   RAVI_CONTEXT_KEY: process.env.RAVI_CONTEXT_KEY,
   RAVI_SESSION_NAME: process.env.RAVI_SESSION_NAME,
 }) + "\\n");
 
-const rl = createInterface({ input: process.stdin });
-const send = (message) => {
-  process.stdout.write(JSON.stringify(message) + "\\n");
-};
-
-rl.on("line", (line) => {
-  const message = JSON.parse(line);
-  if (message.id && message.method === "initialize") {
-    send({ id: message.id, result: {} });
-    return;
-  }
-  if (message.method === "initialized") return;
-  if (message.id && (message.method === "thread/start" || message.method === "thread/resume")) {
-    send({ id: message.id, result: { thread: { id: "thread_env_refresh" }, model: "gpt-5.4", modelProvider: "openai" } });
-    return;
-  }
-  if (message.id && message.method === "turn/start") {
-    send({ id: message.id, result: {} });
-    send({ jsonrpc: "2.0", method: "turn/started", params: { threadId: "thread_env_refresh", turn: { id: "turn_env_refresh", status: "inProgress" } } });
-    send({ jsonrpc: "2.0", method: "turn/completed", params: { threadId: "thread_env_refresh", turn: { id: "turn_env_refresh", status: "completed" } } });
-  }
+const send = (ws, message) => ws.send(JSON.stringify(message));
+const server = Bun.serve({
+  port: 0,
+  fetch(request, server) {
+    if (server.upgrade(request)) return;
+    return new Response("upgrade required", { status: 426 });
+  },
+  websocket: {
+    message(ws, payload) {
+      const message = JSON.parse(String(payload));
+      if (message.id && message.method === "initialize") {
+        send(ws, { id: message.id, result: {} });
+        return;
+      }
+      if (message.method === "initialized") return;
+      if (message.id && (message.method === "thread/start" || message.method === "thread/resume")) {
+        send(ws, { id: message.id, result: { thread: { id: "thread_env_refresh" }, model: "gpt-5.4", modelProvider: "openai" } });
+        return;
+      }
+      if (message.id && message.method === "turn/start") {
+        send(ws, { id: message.id, result: {} });
+        send(ws, { jsonrpc: "2.0", method: "turn/started", params: { threadId: "thread_env_refresh", turn: { id: "turn_env_refresh", status: "inProgress" } } });
+        send(ws, { jsonrpc: "2.0", method: "turn/completed", params: { threadId: "thread_env_refresh", turn: { id: "turn_env_refresh", status: "completed" } } });
+      }
+    },
+  },
+});
+process.stderr.write("listening on: ws://127.0.0.1:" + server.port + "\\n");
+process.on("SIGTERM", () => {
+  server.stop(true);
+  process.exit(0);
 });
 `,
     );
@@ -404,7 +672,7 @@ rl.on("line", (line) => {
 
     const env = {
       PATH: process.env.PATH ?? "",
-      RAVI_CODEX_TRANSPORT: "stdio",
+      RAVI_CODEX_TRANSPORT: "websocket",
       RAVI_CONTEXT_KEY: "rctx_first",
       RAVI_SESSION_NAME: "dev",
     };
@@ -573,6 +841,29 @@ rl.on("line", (line) => {
     await collectEvents(session.events);
 
     expect(calls[0]?.effort).toBe("xhigh");
+  });
+
+  it.each([
+    "max",
+    "ultra",
+  ] as const)("propagates the %s effort to the mocked exec transport without renaming the model", async (effort) => {
+    const { calls, transport } = createMockTransport([
+      () => ({
+        events: (async function* () {
+          yield { type: "thread.started", thread_id: `thread_${effort}` };
+          yield { type: "turn.started" };
+          yield { type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } };
+        })(),
+      }),
+    ]);
+
+    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["hello"], { model: "gpt-5.6-sol", effort }));
+
+    await collectEvents(session.events);
+
+    expect(calls[0]?.effort).toBe(effort);
+    expect(calls[0]?.model).toBe("gpt-5.6-sol");
   });
 
   it("loads workspace instructions from AGENTS.md into the Codex system prompt", async () => {

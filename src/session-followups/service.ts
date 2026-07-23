@@ -17,6 +17,7 @@ import { findSessionByAttachedChat, findSessionByChatId, getSession, resolveSess
 import { calculateNextRun, formatDurationMs } from "../cron/schedule.js";
 import { resolveTemplate } from "../triggers/template.js";
 import { logger } from "../utils/logger.js";
+import type { MessageTarget } from "../runtime/message-types.js";
 import {
   createSessionFollowupRun,
   getDueSessionFollowupCadences,
@@ -359,6 +360,7 @@ async function executeSessionFollowupRun(run: SessionFollowupRun, now: number): 
       data: eventPayload,
     });
     const prompt = formatFollowupPrompt(cadence, target, rendered, step);
+    const source = resolveFollowupSource(cadence, target);
 
     updateSessionFollowupRunResolution(run.id, {
       sessionName: target.sessionName,
@@ -371,7 +373,7 @@ async function executeSessionFollowupRun(run: SessionFollowupRun, now: number): 
     await publishFollowupEvent(DUE_TOPIC, eventPayload);
     await promptPublisher(target.sessionName, {
       prompt,
-      source: target.chat ? sourceFromChat(target.chat) : undefined,
+      source,
       deliveryBarrier: cadence.deliveryBarrier,
       deliveryBarrierSource: "default",
       _sessionFollowup: true,
@@ -689,9 +691,51 @@ function getLatestExternalChatActivityAt(chatId: string): number | undefined {
   return Number.isFinite(value) && value ? value : undefined;
 }
 
-function sourceFromChat(chat: ChatRecord): Record<string, unknown> {
+function resolveFollowupSource(
+  cadence: SessionFollowupCadence,
+  target: ResolvedFollowupTarget,
+): MessageTarget | undefined {
+  const base = target.chat ? sourceFromChat(target.chat) : sourceFromSessionTarget(target);
+  if (!base) return undefined;
+  return {
+    ...base,
+    actorType: "automation",
+    automationId: `session-followup:${cadence.id}`,
+    identityProvenance: {
+      source: "session-followup",
+      cadenceId: cadence.id,
+      targetType: target.type,
+      targetRef: target.ref,
+    },
+  };
+}
+
+function sourceFromSessionTarget(target: ResolvedFollowupTarget): MessageTarget | undefined {
+  const sessionKey = target.sessionKey;
+  if (sessionKey) {
+    const output = dbGetSessionOutputAttachment(sessionKey);
+    if (output) {
+      const chat = dbGetChat(output.chatId);
+      if (chat) return sourceFromChat(chat);
+    }
+  }
+
+  const session = (sessionKey ? getSession(sessionKey) : null) ?? resolveSession(target.sessionName ?? target.ref);
+  if (!session?.lastChannel || !session.lastAccountId || !session.lastTo) {
+    return undefined;
+  }
+  return {
+    channel: session.lastChannel,
+    accountId: session.lastAccountId,
+    chatId: session.lastTo,
+    ...(session.lastThreadId ? { threadId: session.lastThreadId } : {}),
+  };
+}
+
+function sourceFromChat(chat: ChatRecord): MessageTarget {
   const instance = dbGetInstanceByInstanceId(chat.instanceId);
   return {
+    canonicalChatId: chat.id,
     channel: chat.channel,
     accountId: instance?.name ?? chat.instanceId,
     chatId: chat.platformChatId ?? chat.normalizedChatId ?? chat.id,

@@ -261,12 +261,7 @@ async function exchangeUntilComplete(input: {
 
   while (true) {
     try {
-      const providerToken = await input.client.pollDeviceToken(input.config, input.deviceCode);
-      const credentials = await input.client.exchange({
-        installationId: input.installationId,
-        workosAccessToken: providerToken.accessToken,
-        installation: input.installation,
-      });
+      const credentials = await exchangeDeviceCredentials(input);
       return {
         ...credentials,
         createdAt: input.existing?.createdAt ?? credentials.createdAt,
@@ -278,6 +273,29 @@ async function exchangeUntilComplete(input: {
       await input.sleep(input.intervalSeconds * 1000);
     }
   }
+}
+
+async function exchangeDeviceCredentials(input: {
+  client: ConsoleApiClient;
+  installationId: string;
+  config: ConsoleAuthConfig;
+  deviceCode: string;
+  installation: NonNullable<Parameters<ConsoleApiClient["exchange"]>[0]["installation"]>;
+}) {
+  if (input.config.mode === "console_device" || !input.config.endpoints?.token) {
+    return input.client.exchange({
+      installationId: input.installationId,
+      deviceCode: input.deviceCode,
+      installation: input.installation,
+    });
+  }
+
+  const providerToken = await input.client.pollDeviceToken(input.config, input.deviceCode);
+  return input.client.exchange({
+    installationId: input.installationId,
+    workosAccessToken: providerToken.accessToken,
+    installation: input.installation,
+  });
 }
 
 function mergeMeIntoSession(credentials: CloudCredentials, me: ConsoleMeResponse) {

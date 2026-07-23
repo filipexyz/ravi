@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { z } from "zod";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { CloudAuthError, cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
@@ -32,6 +32,7 @@ export class BridgesCommands {
   constructor(private readonly deps: BridgesCommandDeps = defaultBridgesDeps()) {}
 
   @Command({ name: "list", description: "List Ravi MCP bridges for a Console project" })
+  @CommandAccess({ kind: "read", resource: "bridges", action: "list", risk: "low" })
   async list(
     @Option({ flags: "--project <ref>", description: "Console project id or slug; defaults to RAVI_PROJECT" })
     projectRef?: string,
@@ -64,6 +65,7 @@ export class BridgesCommands {
   }
 
   @Command({ name: "create", description: "Create a Ravi MCP bridge URL for a Console project" })
+  @CommandAccess({ kind: "mutate", resource: "bridges", action: "create", risk: "medium" })
   async create(
     @Option({ flags: "--project <ref>", description: "Console project id or slug; defaults to RAVI_PROJECT" })
     projectRef?: string,
@@ -102,6 +104,7 @@ export class BridgesCommands {
   }
 
   @Command({ name: "revoke", description: "Revoke a Ravi MCP bridge and its client tokens" })
+  @CommandAccess({ kind: "mutate", resource: "bridges", action: "revoke", risk: "destructive" })
   async revoke(
     @Arg("id", { description: "Bridge id" }) id: string,
     @Option({ flags: "--yes", description: "Skip confirmation prompt" }) yes?: boolean,

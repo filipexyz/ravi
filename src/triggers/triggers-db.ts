@@ -22,6 +22,11 @@ interface TriggerRow {
   account_id: string | null;
   topic: string;
   message: string;
+  execution_type: string | null;
+  shell_command: string | null;
+  shell_timeout_ms: number | null;
+  shell_env_file: string | null;
+  on_error: string | null;
   message_source: string | null;
   message_template_id: string | null;
   session: string;
@@ -83,6 +88,7 @@ function rowToTrigger(row: TriggerRow): Trigger {
     name: row.name,
     topic: row.topic,
     message: row.message,
+    executionType: row.execution_type === "shell" ? "shell" : "agent",
     messageSource: row.message_source === "catalog" ? "catalog" : "manual",
     session: row.session as SessionTarget,
     enabled: row.enabled === 1,
@@ -94,6 +100,10 @@ function rowToTrigger(row: TriggerRow): Trigger {
 
   if (row.agent_id !== null) trigger.agentId = row.agent_id;
   if (row.account_id !== null) trigger.accountId = row.account_id;
+  if (row.shell_command !== null) trigger.shellCommand = row.shell_command;
+  if (row.shell_timeout_ms !== null) trigger.shellTimeoutMs = row.shell_timeout_ms;
+  if (row.shell_env_file !== null) trigger.shellEnvFile = row.shell_env_file;
+  if (row.on_error !== null) trigger.onError = row.on_error;
   if (row.message_template_id !== null) trigger.messageTemplateId = row.message_template_id;
   if (row.reply_session !== null) trigger.replySession = row.reply_session;
   const replySource = parseReplySource(row.reply_source);
@@ -118,9 +128,10 @@ export function dbCreateTrigger(input: TriggerInput): Trigger {
 
   const stmt = db.prepare(`
     INSERT INTO triggers (
-      id, name, agent_id, account_id, topic, message, message_source, message_template_id, session, reply_session,
+      id, name, agent_id, account_id, topic, message, execution_type, shell_command, shell_timeout_ms,
+      shell_env_file, on_error, message_source, message_template_id, session, reply_session,
       reply_source, enabled, cooldown_ms, filter, fire_count, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -130,6 +141,11 @@ export function dbCreateTrigger(input: TriggerInput): Trigger {
     input.accountId ?? null,
     input.topic,
     input.message,
+    input.executionType ?? "agent",
+    input.shellCommand ?? null,
+    input.shellTimeoutMs ?? null,
+    input.shellEnvFile ?? null,
+    input.onError ?? null,
     input.messageSource ?? "manual",
     input.messageTemplateId ?? null,
     input.session ?? "isolated",
@@ -175,7 +191,17 @@ export function dbListTriggers(opts?: { enabledOnly?: boolean }): Trigger[] {
  */
 export function dbUpdateTrigger(
   id: string,
-  updates: Partial<Trigger> & { messageTemplateId?: string | null },
+  updates: Omit<
+    Partial<Trigger>,
+    "replySession" | "messageTemplateId" | "shellCommand" | "shellTimeoutMs" | "shellEnvFile" | "onError"
+  > & {
+    messageTemplateId?: string | null;
+    replySession?: string | null;
+    shellCommand?: string | null;
+    shellTimeoutMs?: number | null;
+    shellEnvFile?: string | null;
+    onError?: string | null;
+  },
 ): Trigger {
   const db = getDb();
   const existing = dbGetTrigger(id);
@@ -209,6 +235,26 @@ export function dbUpdateTrigger(
   if (updates.message !== undefined) {
     fields.push("message = ?");
     values.push(updates.message);
+  }
+  if (updates.executionType !== undefined) {
+    fields.push("execution_type = ?");
+    values.push(updates.executionType ?? "agent");
+  }
+  if (updates.shellCommand !== undefined) {
+    fields.push("shell_command = ?");
+    values.push(updates.shellCommand ?? null);
+  }
+  if (updates.shellTimeoutMs !== undefined) {
+    fields.push("shell_timeout_ms = ?");
+    values.push(updates.shellTimeoutMs ?? null);
+  }
+  if (updates.shellEnvFile !== undefined) {
+    fields.push("shell_env_file = ?");
+    values.push(updates.shellEnvFile ?? null);
+  }
+  if (updates.onError !== undefined) {
+    fields.push("on_error = ?");
+    values.push(updates.onError ?? null);
   }
   if (updates.messageSource !== undefined) {
     fields.push("message_source = ?");

@@ -1,8 +1,18 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option, Scope } from "../decorators.js";
+import { z } from "zod";
+import { Arg, Command, CommandAccess, Group, Option, Scope } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
 import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
+import {
+  inspectChatReadingList,
+  previewChatReadingListMembers,
+  recomputeChatReadingListMembers,
+  type ChatReadingListInspectionResult,
+  type ChatReadingListMembershipDiff,
+  type ChatReadingListPreviewResult,
+  type ChatReadingListRecomputeResult,
+} from "../../chats/reading-lists.js";
 import {
   dbAddChatToReadingList,
   dbBackfillChatMessageProviderTimestamps,
@@ -10,6 +20,7 @@ import {
   dbFindChatByRef,
   dbFindChatReadingList,
   dbGetChat,
+  dbGetChatReadingList,
   dbGetInstance,
   dbGetChatReadingDelta,
   dbListChatMessagesPage,
@@ -29,6 +40,151 @@ import { getContact } from "../../contacts.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+const jsonValueReturnSchema: z.ZodType<unknown> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(jsonValueReturnSchema),
+    z.record(z.string(), jsonValueReturnSchema),
+  ]),
+);
+
+const chatReadingListReturnSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  ownerType: z.string(),
+  ownerId: z.string(),
+  visibility: z.string(),
+  mode: z.string(),
+  selector: z.record(z.string(), jsonValueReturnSchema).optional(),
+  metadata: z.record(z.string(), jsonValueReturnSchema).optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  archivedAt: z.number().optional(),
+});
+
+const chatReadingListPublicReturnSchema = chatReadingListReturnSchema.omit({
+  selector: true,
+  metadata: true,
+});
+
+const READING_LIST_ID_PATTERN_SOURCE = "^crl_[0-9a-f]{24}$";
+const readingListIdArgSchema = z
+  .string()
+  .regex(new RegExp(READING_LIST_ID_PATTERN_SOURCE), "Reading-list id must use the canonical crl_<24 hex> form");
+
+const chatReadingListRecomputeReturnSchema = z.object({
+  list: chatReadingListPublicReturnSchema,
+  recompute: z.object({
+    list: chatReadingListPublicReturnSchema,
+    added: z.number(),
+    removed: z.number(),
+    kept: z.number(),
+    preserved: z.number(),
+    eligible: z.number(),
+  }),
+});
+
+const chatReadingListSelectorIssueSchema = z.object({
+  code: z.string(),
+  severity: z.enum(["error", "warning"]),
+  message: z.string(),
+  path: z.string().optional(),
+});
+
+const chatReadingListSelectorValidationSchema = z.object({
+  valid: z.boolean(),
+  canApply: z.boolean(),
+  riskLevel: z.enum(["low", "high"]),
+  scope: z.enum(["contact", "chat"]),
+  match: z.enum(["all", "any"]),
+  conditions: z.object({
+    total: z.number(),
+    supported: z.number(),
+    positive: z.number(),
+    negative: z.number(),
+  }),
+  issues: z.array(chatReadingListSelectorIssueSchema),
+});
+
+const chatReadingListCurrentMembersSchema = z.object({
+  total: z.number(),
+  selector: z.number(),
+  preserved: z.number(),
+});
+
+const chatReadingListMembershipDiffSchema = z.object({
+  added: z.number(),
+  removed: z.number(),
+  kept: z.number(),
+  preserved: z.number(),
+  eligible: z.number(),
+});
+
+const chatReadingListShowReturnSchema = z.object({
+  list: chatReadingListPublicReturnSchema,
+  validation: chatReadingListSelectorValidationSchema,
+  current: chatReadingListCurrentMembersSchema,
+});
+
+const chatReadingListPreviewReturnSchema = z.object({
+  list: chatReadingListPublicReturnSchema,
+  preview: z.object({
+    list: chatReadingListPublicReturnSchema,
+    dryRun: z.literal(true),
+    validation: chatReadingListSelectorValidationSchema,
+    current: chatReadingListCurrentMembersSchema,
+    diff: chatReadingListMembershipDiffSchema.nullable(),
+  }),
+});
+
+function summarizeCurrent(current: ChatReadingListInspectionResult["current"]) {
+  return { total: current.total, selector: current.selector, preserved: current.preserved };
+}
+
+function summarizeMembershipDiff(diff: ChatReadingListMembershipDiff) {
+  return {
+    added: diff.added,
+    removed: diff.removed,
+    kept: diff.kept,
+    preserved: diff.preserved,
+    eligible: diff.eligible,
+  };
+}
+
+function publicReadingList(list: ChatReadingListRecord) {
+  const { selector: _selector, metadata: _metadata, ...safeList } = list;
+  return safeList;
+}
+
+function publicInspection(inspection: ChatReadingListInspectionResult) {
+  return {
+    list: publicReadingList(inspection.list),
+    validation: inspection.validation,
+    current: summarizeCurrent(inspection.current),
+  };
+}
+
+function publicPreview(preview: ChatReadingListPreviewResult) {
+  return {
+    list: publicReadingList(preview.list),
+    dryRun: preview.dryRun,
+    validation: preview.validation,
+    current: summarizeCurrent(preview.current),
+    diff: preview.diff ? summarizeMembershipDiff(preview.diff) : null,
+  };
+}
+
+function publicRecompute(recompute: ChatReadingListRecomputeResult) {
+  return {
+    list: publicReadingList(recompute.list),
+    ...summarizeMembershipDiff(recompute),
+  };
 }
 
 function parseScopedRef(
@@ -80,6 +236,26 @@ function resolveReadingList(listRef: string, owner?: string): ChatReadingListRec
   } catch (err) {
     fail(err instanceof Error ? err.message : String(err));
   }
+}
+
+function resolveReadingListById(listId: string, owner?: string): ChatReadingListRecord {
+  const parsed = readingListIdArgSchema.safeParse(listId.trim());
+  if (!parsed.success) {
+    fail(
+      "Reading-list show, preview, and recompute require the canonical crl_<24 hex> id from `ravi chats lists list`.",
+    );
+  }
+  const parsedOwner = owner ? parseScopedRef(owner, defaultOwner()) : undefined;
+  const list = dbGetChatReadingList({
+    id: parsed.data,
+    ownerType: parsedOwner?.type,
+    ownerId: parsedOwner?.id,
+  });
+  if (!list) {
+    const ownerSuffix = parsedOwner ? ` (${parsedOwner.type}:${parsedOwner.id})` : "";
+    fail(`Reading list not found: ${parsed.data}${ownerSuffix}`);
+  }
+  return list;
 }
 
 function resolveInstanceId(instance?: string): string | undefined {
@@ -241,6 +417,7 @@ function serializeReadingDelta(delta: ChatReadingDelta, includeRaw?: boolean): R
 export class ChatsCommands {
   @Scope("admin")
   @Command({ name: "list", aliases: ["recent"], description: "List recent canonical chats" })
+  @CommandAccess({ kind: "read", resource: "chats", action: "list", risk: "low" })
   list(
     @Option({ flags: "--instance <name-or-id>", description: "Filter by instance name or Omni instance id" })
     instance?: string,
@@ -313,6 +490,7 @@ export class ChatsCommands {
 
   @Scope("admin")
   @Command({ name: "read", aliases: ["messages"], description: "Read messages from one chat" })
+  @CommandAccess({ kind: "read", resource: "chats", action: "read", risk: "low" })
   read(
     @Arg("chat", { description: "Chat id, platform chat id, phone, group id, or normalized chat id" }) chatRef: string,
     @Option({ flags: "--instance <name-or-id>", description: "Resolve chat within an instance" }) instance?: string,
@@ -375,6 +553,7 @@ export class ChatsCommands {
     name: "backfill-provider-timestamps",
     description: "Backfill message provider timestamps from raw provenance",
   })
+  @CommandAccess({ kind: "mutate", resource: "chats", action: "backfill-provider-timestamps", risk: "medium" })
   backfillProviderTimestamps(
     @Option({ flags: "--limit <n>", description: "Maximum matching messages to inspect/apply" }) limit?: string,
     @Option({ flags: "--apply", description: "Write corrected provider timestamps. Without this, runs dry-run." })
@@ -434,6 +613,7 @@ export class ChatsCommands {
 export class ChatReadingListCommands {
   @Scope("admin")
   @Command({ name: "list", description: "List chat reading lists" })
+  @CommandAccess({ kind: "read", resource: "chats.lists", action: "list", risk: "low" })
   list(
     @Option({ flags: "--owner <type:id>", description: "Filter by owner, e.g. agent:ravi-crm" }) owner?: string,
     @Option({ flags: "--include-archived", description: "Include archived lists" }) includeArchived?: boolean,
@@ -476,7 +656,142 @@ export class ChatReadingListCommands {
   }
 
   @Scope("admin")
+  @Command({
+    name: "show",
+    description: "Show one reading list and explain whether its selector is safe",
+    helpAfter: `
+USE
+  Inspect one list's selector and safety gate without changing membership.
+
+DO NOT USE
+  This command does not calculate the prospective diff. Use:
+  ravi chats lists preview <list-id> --json
+
+EXAMPLES
+  ravi chats lists show crl_86244e77d183316cb5034a6a --json
+
+OUTPUT
+  Returns safe list metadata, deterministic selector validation, and current member counts. Selector, metadata, and chat/contact ids are omitted. Read-only; exit 0 even when canApply=false.
+
+ON ERROR
+  Non-canonical ref -> obtain the crl_... id with ravi chats lists list and retry.
+
+FONTES
+  .ravi/specs/channels/chats/reading-lists/SPEC.md
+  src/chats/reading-lists.ts
+`,
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "chats.lists",
+    action: "show",
+    risk: "low",
+    resourceId: "listId",
+    requireConcreteResource: true,
+    resourceIdPattern: READING_LIST_ID_PATTERN_SOURCE,
+    input: ["listId", "owner"],
+  })
+  show(
+    @Arg("listId", { description: "Canonical reading-list id (crl_<24 hex>)", schema: readingListIdArgSchema })
+    listId: string,
+    @Option({ flags: "--owner <type:id>", description: "Optional owner assertion for the canonical list id" })
+    owner?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const list = resolveReadingListById(listId, owner);
+    const inspection = inspectChatReadingList(list);
+    const publicResult = publicInspection(inspection);
+    const payload = { list: publicResult.list, validation: publicResult.validation, current: publicResult.current };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(`Reading list: ${list.name} (${list.id})`);
+    console.log(`Mode: ${list.mode}; owner: ${list.ownerType}:${list.ownerId}`);
+    console.log(
+      `Selector summary: scope=${inspection.validation.scope} match=${inspection.validation.match} conditions=${inspection.validation.conditions.total}`,
+    );
+    console.log(
+      `Safety: ${inspection.validation.canApply ? "SAFE" : "BLOCKED"} (${inspection.validation.riskLevel}); current=${inspection.current.total}`,
+    );
+    for (const issue of inspection.validation.issues) {
+      console.log(`- ${issue.severity.toUpperCase()} ${issue.code}: ${issue.message}`);
+    }
+    return payload;
+  }
+
+  @Scope("admin")
+  @Command({
+    name: "preview",
+    description: "Validate a dynamic selector and preview membership diff without writes",
+    helpAfter: `
+USE
+  Run before recompute to inspect eligible, added, removed, kept and preserved chats.
+
+DO NOT USE
+  This command never applies the diff. Apply only after reviewing canApply=true with:
+  ravi chats lists recompute <list-id> --owner <type:id> --json
+
+RULES HARD
+  match:any + any not-has-tag condition is BLOCKED because it can match almost the entire scope.
+  Invalid selectors return canApply=false and diff=null without changing membership.
+
+EXAMPLES
+  ravi chats lists preview crl_86244e77d183316cb5034a6a --json
+
+OUTPUT
+  JSON includes dryRun=true, validation, current membership counts, and a nullable count-only diff. Chat ids are omitted to avoid cross-resource disclosure. This command is read-only.
+
+ON ERROR
+  canApply=false -> inspect validation.issues, correct the selector through an approved write path, then preview again.
+
+FONTES
+  .ravi/specs/channels/chats/reading-lists/SPEC.md
+  src/chats/reading-lists.ts
+`,
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "chats.lists",
+    action: "preview",
+    risk: "low",
+    resourceId: "listId",
+    requireConcreteResource: true,
+    resourceIdPattern: READING_LIST_ID_PATTERN_SOURCE,
+    input: ["listId", "owner"],
+  })
+  preview(
+    @Arg("listId", { description: "Canonical reading-list id (crl_<24 hex>)", schema: readingListIdArgSchema })
+    listId: string,
+    @Option({ flags: "--owner <type:id>", description: "Optional owner assertion for the canonical list id" })
+    owner?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const list = resolveReadingListById(listId, owner);
+    const preview = previewChatReadingListMembers(list);
+    const payload = { list: publicReadingList(list), preview: publicPreview(preview) };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(`Reading-list preview: ${list.name} (${list.id})`);
+    console.log(`Safety: ${preview.validation.canApply ? "SAFE" : "BLOCKED"}; dry-run: yes`);
+    for (const issue of preview.validation.issues) {
+      console.log(`- ${issue.severity.toUpperCase()} ${issue.code}: ${issue.message}`);
+    }
+    if (preview.diff) {
+      console.log(
+        `Diff: eligible=${preview.diff.eligible} add=${preview.diff.added} remove=${preview.diff.removed} keep=${preview.diff.kept} preserve=${preview.diff.preserved}`,
+      );
+    } else {
+      console.log("Diff: not evaluated because the selector is unsafe or invalid.");
+    }
+    return payload;
+  }
+
+  @Scope("admin")
   @Command({ name: "create", description: "Create or restore a chat reading list" })
+  @CommandAccess({ kind: "mutate", resource: "chats.lists", action: "create", risk: "medium" })
   create(
     @Arg("name", { description: "Reading list name" }) name: string,
     @Option({ flags: "--owner <type:id>", description: "Owner scope (default: current agent or system:ravi)" })
@@ -507,6 +822,7 @@ export class ChatReadingListCommands {
 
   @Scope("admin")
   @Command({ name: "add", description: "Add a chat to a reading list" })
+  @CommandAccess({ kind: "mutate", resource: "chats.lists", action: "add", risk: "medium" })
   add(
     @Arg("list", { description: "List id or name" }) listRef: string,
     @Arg("chat", { description: "Chat id, phone, group id, or normalized chat id" }) chatRef: string,
@@ -534,6 +850,7 @@ export class ChatReadingListCommands {
 
   @Scope("admin")
   @Command({ name: "remove", description: "Remove a chat from a reading list without deleting cursor history" })
+  @CommandAccess({ kind: "mutate", resource: "chats.lists", action: "remove", risk: "destructive" })
   remove(
     @Arg("list", { description: "List id or name" }) listRef: string,
     @Arg("chat", { description: "Chat id, phone, group id, or normalized chat id" }) chatRef: string,
@@ -558,6 +875,7 @@ export class ChatReadingListCommands {
 
   @Scope("admin")
   @Command({ name: "members", description: "List chats in a reading list with unread counts" })
+  @CommandAccess({ kind: "read", resource: "chats.lists", action: "members", risk: "low" })
   members(
     @Arg("list", { description: "List id or name" }) listRef: string,
     @Option({ flags: "--reader <type:id>", description: "Reader cursor scope (default: current agent)" })
@@ -606,7 +924,58 @@ export class ChatReadingListCommands {
   }
 
   @Scope("admin")
+  @Command({
+    name: "recompute",
+    description: "Materialize dynamic reading-list selector membership",
+    helpAfter: `
+RULES HARD
+  Unsafe or invalid selectors are blocked before writes. Always review the read-only diff first.
+
+EXAMPLES
+  ravi chats lists preview <list-id> --owner <type:id> --json
+  ravi chats lists recompute <list-id> --owner <type:id> --json
+
+ON ERROR
+  Unsafe reading-list selector -> run the preview command, inspect validation.issues, and correct the selector through an approved write path.
+
+FONTES
+  .ravi/specs/channels/chats/reading-lists/SPEC.md
+  src/chats/reading-lists.ts
+`,
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "chats.lists",
+    action: "recompute",
+    risk: "medium",
+    resourceId: "listId",
+    requireConcreteResource: true,
+    resourceIdPattern: READING_LIST_ID_PATTERN_SOURCE,
+    input: ["listId", "owner"],
+  })
+  recompute(
+    @Arg("listId", { description: "Canonical reading-list id (crl_<24 hex>)", schema: readingListIdArgSchema })
+    listId: string,
+    @Option({ flags: "--owner <type:id>", description: "Optional owner assertion for the canonical list id" })
+    owner?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const list = resolveReadingListById(listId, owner);
+    const recompute = recomputeChatReadingListMembers(list);
+    const payload = { list: publicReadingList(recompute.list), recompute: publicRecompute(recompute) };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(
+      `Recomputed ${list.name}: eligible=${recompute.eligible} added=${recompute.added} removed=${recompute.removed} kept=${recompute.kept} preserved=${recompute.preserved}`,
+    );
+    return payload;
+  }
+
+  @Scope("admin")
   @Command({ name: "delta", description: "Read what changed in a chat since this list reader cursor" })
+  @CommandAccess({ kind: "read", resource: "chats.lists", action: "delta", risk: "low" })
   delta(
     @Arg("list", { description: "List id or name" }) listRef: string,
     @Arg("chat", { description: "Chat id, phone, group id, or normalized chat id" }) chatRef: string,
@@ -659,6 +1028,7 @@ export class ChatReadingListCommands {
 
   @Scope("admin")
   @Command({ name: "mark-read", description: "Explicitly advance one reading-list cursor" })
+  @CommandAccess({ kind: "mutate", resource: "chats.lists", action: "mark-read", risk: "medium" })
   markRead(
     @Arg("list", { description: "List id or name" }) listRef: string,
     @Arg("chat", { description: "Chat id, phone, group id, or normalized chat id" }) chatRef: string,
@@ -712,5 +1082,8 @@ declareCommandReturns(ChatReadingListCommands, {
   list: commandEnvelopeReturnSchema,
   markRead: commandEnvelopeReturnSchema,
   members: commandEnvelopeReturnSchema,
+  preview: chatReadingListPreviewReturnSchema,
+  recompute: chatReadingListRecomputeReturnSchema,
   remove: commandEnvelopeReturnSchema,
+  show: chatReadingListShowReturnSchema,
 });

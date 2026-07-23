@@ -5,6 +5,7 @@ import {
   createSessionFollowupRun,
   listSessionFollowupCadences,
   listSessionFollowupRuns,
+  updateSessionFollowupCadence,
 } from "./db.js";
 
 let stateDir: string | null = null;
@@ -65,5 +66,38 @@ describe("session followups db", () => {
     expect(second.created).toBe(false);
     expect(second.run.id).toBe(first.run.id);
     expect(listSessionFollowupRuns({ cadenceId: cadence.id }).items).toHaveLength(1);
+  });
+
+  it("updates cadence steps without recreating the cadence or moving next run by default", () => {
+    const cadence = createSessionFollowupCadence({
+      name: "Editable check",
+      targetType: "session",
+      targetRef: "main",
+      schedule: { type: "every", every: 60_000 },
+      messageTemplate: "Check.",
+      now: 1_000,
+    });
+
+    const updated = updateSessionFollowupCadence(cadence.id, {
+      schedule: {
+        type: "every",
+        every: 120_000,
+        steps: [
+          { afterMs: 120_000, messageTemplate: "First." },
+          { afterMs: 300_000, messageTemplate: "Second." },
+        ],
+      },
+      messageTemplate: "First.",
+      now: 2_000,
+    });
+
+    expect(updated?.id).toBe(cadence.id);
+    expect(updated?.createdAt).toBe(cadence.createdAt);
+    expect(updated?.updatedAt).toBe(2_000);
+    expect(updated?.nextRunAt).toBe(cadence.nextRunAt);
+    expect(updated?.schedule.steps).toEqual([
+      { afterMs: 120_000, messageTemplate: "First." },
+      { afterMs: 300_000, messageTemplate: "Second." },
+    ]);
   });
 });

@@ -113,6 +113,8 @@ export type AgentsCreateInput = {
   allowRuntimeMismatch?: boolean;
   cwd: string;
   id: string;
+  model?: string;
+  modelPreset?: string;
   provider?: string;
 };
 
@@ -203,6 +205,52 @@ export type AgentsListReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `agents.permissions`. */
+export type AgentsPermissionsInput = {
+  capabilities?: string;
+  clearCapabilities?: boolean;
+  id: string;
+  profile?: string;
+};
+
+/** Return shape for `agents.permissions`. */
+export type AgentsPermissionsReturn = {
+  action: "permissions";
+  after?: ({
+    capabilities?: Array<string | ({
+      objectId?: string;
+      objectType?: string;
+      permission?: string;
+      source?: string;
+    })>;
+    profile?: "bootstrap" | "full-access";
+  }) | null;
+  agent?: Record<string, unknown>;
+  agentId: string;
+  before?: ({
+    capabilities?: Array<string | ({
+      objectId?: string;
+      objectType?: string;
+      permission?: string;
+      source?: string;
+    })>;
+    profile?: "bootstrap" | "full-access";
+  }) | null;
+  changed: boolean;
+  command?: string;
+  defaults?: (Record<string, unknown>) | null;
+  profile?: string;
+  runtimePermissions?: ({
+    capabilities?: Array<string | ({
+      objectId?: string;
+      objectType?: string;
+      permission?: string;
+      source?: string;
+    })>;
+    profile?: "bootstrap" | "full-access";
+  }) | null;
+};
+
 /** Input shape for `agents.reset`. */
 export type AgentsResetInput = {
   id: string;
@@ -250,6 +298,12 @@ export type AgentsSetReturn = {
   agentId: string;
   changed: boolean;
   key: string;
+  sessionOverrides: Array<{
+    effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+    model?: string;
+    sessionName: string;
+    thinking?: "off" | "normal" | "verbose";
+  }>;
   value: unknown;
   [k: string]: unknown;
 };
@@ -318,6 +372,25 @@ export type AppsCheckReturn = {
   }>;
 };
 
+/** Input shape for `apps.delete`. */
+export type AppsDeleteInput = {
+  dryRun?: boolean;
+  id: string;
+};
+
+/** Return shape for `apps.delete`. */
+export type AppsDeleteReturn = {
+  dryRun: boolean;
+  files: Array<{
+    action: "planned" | "deleted" | "not_found";
+    kind: "manifest" | "spec" | "skill";
+    path: string;
+  }>;
+  id: string;
+  nextCommands: string[];
+  removedDirs: string[];
+};
+
 /** Input shape for `apps.guide`. */
 export type AppsGuideInput = {
   id?: string;
@@ -336,6 +409,28 @@ export type AppsGuideReturn = {
     permissions: {
       mutating: string[];
       optional: string[];
+      provider: ({
+        cacheTtlSec?: number;
+        decisionSchema: {
+          kind: "ref" | "inline" | "unknown";
+          ref: string | null;
+          schema: string | null;
+          type: string | null;
+        };
+        failClosed: true;
+        id: string;
+        interface: "builtin" | "cli" | "sdk" | "tool";
+        operation: string;
+        requestSchema: {
+          kind: "ref" | "inline" | "unknown";
+          ref: string | null;
+          schema: string | null;
+          type: string | null;
+        };
+        scope?: string[];
+        timeoutMs?: number;
+        version: string;
+      }) | null;
       required: string[];
     };
     relativePath: string;
@@ -361,6 +456,72 @@ export type AppsGuideReturn = {
   };
 };
 
+/** Input shape for `apps.import-cli`. */
+export type AppsImportCliInput = {
+  command: string;
+  description?: string;
+  dryRun?: boolean;
+  force?: boolean;
+  id?: string;
+  name?: string;
+  skipSkill?: boolean;
+  skipSpec?: boolean;
+  skipUi?: boolean;
+  source?: string;
+};
+
+/** Return shape for `apps.import-cli`. */
+export type AppsImportCliReturn = {
+  command: string;
+  confidence: "high" | "medium" | "low";
+  debugCandidates: Array<{
+    command: string;
+    confidence: "high" | "medium" | "low";
+    description: string | null;
+    destructive: boolean;
+    id: string;
+    interactive: boolean;
+    json: boolean;
+    mutating: boolean;
+    name: string;
+    reviewRequired: string[];
+    streaming: boolean;
+  }>;
+  description: string;
+  dryRun: boolean;
+  files: Array<{
+    action: "planned" | "created" | "overwritten";
+    kind: "manifest" | "spec" | "skill";
+    path: string;
+  }>;
+  force: boolean;
+  id: string;
+  manifest: Record<string, unknown>;
+  manifestPath: string;
+  name: string;
+  nextCommands: string[];
+  operationCandidates: Array<{
+    command: string;
+    confidence: "high" | "medium" | "low";
+    description: string | null;
+    destructive: boolean;
+    id: string;
+    interactive: boolean;
+    json: boolean;
+    mutating: boolean;
+    name: string;
+    reviewRequired: string[];
+    streaming: boolean;
+  }>;
+  reviewRequired: string[];
+  skill: string | null;
+  skillPath: string | null;
+  source: "manifest" | "registry" | "help";
+  sourceCommand: string;
+  specPath: string | null;
+  warnings: string[];
+};
+
 /** Input shape for `apps.list`. */
 export type AppsListInput = {
   limit?: string;
@@ -380,6 +541,28 @@ export type AppsListReturn = {
     permissions: {
       mutating: string[];
       optional: string[];
+      provider: ({
+        cacheTtlSec?: number;
+        decisionSchema: {
+          kind: "ref" | "inline" | "unknown";
+          ref: string | null;
+          schema: string | null;
+          type: string | null;
+        };
+        failClosed: true;
+        id: string;
+        interface: "builtin" | "cli" | "sdk" | "tool";
+        operation: string;
+        requestSchema: {
+          kind: "ref" | "inline" | "unknown";
+          ref: string | null;
+          schema: string | null;
+          type: string | null;
+        };
+        scope?: string[];
+        timeoutMs?: number;
+        version: string;
+      }) | null;
       required: string[];
     };
     relativePath: string;
@@ -400,6 +583,28 @@ export type AppsListReturn = {
     permissions: {
       mutating: string[];
       optional: string[];
+      provider: ({
+        cacheTtlSec?: number;
+        decisionSchema: {
+          kind: "ref" | "inline" | "unknown";
+          ref: string | null;
+          schema: string | null;
+          type: string | null;
+        };
+        failClosed: true;
+        id: string;
+        interface: "builtin" | "cli" | "sdk" | "tool";
+        operation: string;
+        requestSchema: {
+          kind: "ref" | "inline" | "unknown";
+          ref: string | null;
+          schema: string | null;
+          type: string | null;
+        };
+        scope?: string[];
+        timeoutMs?: number;
+        version: string;
+      }) | null;
       required: string[];
     };
     relativePath: string;
@@ -440,6 +645,28 @@ export type AppsPromptsReturn = {
     permissions: {
       mutating: string[];
       optional: string[];
+      provider: ({
+        cacheTtlSec?: number;
+        decisionSchema: {
+          kind: "ref" | "inline" | "unknown";
+          ref: string | null;
+          schema: string | null;
+          type: string | null;
+        };
+        failClosed: true;
+        id: string;
+        interface: "builtin" | "cli" | "sdk" | "tool";
+        operation: string;
+        requestSchema: {
+          kind: "ref" | "inline" | "unknown";
+          ref: string | null;
+          schema: string | null;
+          type: string | null;
+        };
+        scope?: string[];
+        timeoutMs?: number;
+        version: string;
+      }) | null;
       required: string[];
     };
     relativePath: string;
@@ -486,6 +713,24 @@ export type AppsRunReturn = {
   ok: boolean;
   operation: string | null;
   operationId: string | null;
+  permissionProvider?: {
+    audit?: unknown;
+    cache: {
+      hit: boolean;
+      ttlSec?: number;
+    };
+    decision: "allow" | "deny" | "needs_grant" | "not_applicable" | "error" | "invalid";
+    durationMs: number;
+    error?: string;
+    grantSuggestion?: unknown;
+    interface: "builtin" | "cli" | "sdk" | "tool";
+    providerId: string;
+    providerOperationId: string;
+    providerVersion: string;
+    reason?: string;
+    reasonCode: string | null;
+    requestId: string;
+  };
   result?: unknown;
   status: "completed" | "failed";
   stderr?: string;
@@ -517,7 +762,7 @@ export type AppsScaffoldReturn = {
   }>;
   force: boolean;
   id: string;
-  manifest: unknown;
+  manifest: Record<string, unknown>;
   manifestPath: string;
   name: string;
   nextCommands: string[];
@@ -544,6 +789,28 @@ export type AppsShowReturn = {
     permissions: {
       mutating: string[];
       optional: string[];
+      provider: ({
+        cacheTtlSec?: number;
+        decisionSchema: {
+          kind: "ref" | "inline" | "unknown";
+          ref: string | null;
+          schema: string | null;
+          type: string | null;
+        };
+        failClosed: true;
+        id: string;
+        interface: "builtin" | "cli" | "sdk" | "tool";
+        operation: string;
+        requestSchema: {
+          kind: "ref" | "inline" | "unknown";
+          ref: string | null;
+          schema: string | null;
+          type: string | null;
+        };
+        scope?: string[];
+        timeoutMs?: number;
+        version: string;
+      }) | null;
       required: string[];
     };
     relativePath: string;
@@ -669,6 +936,7 @@ export type ArtifactsListInput = {
   lifecycle?: string;
   limit?: string;
   offset?: string;
+  orderBy?: string;
   rich?: boolean;
   session?: string;
   tag?: string;
@@ -736,13 +1004,35 @@ export type ArtifactsPublishInput = {
 export type ArtifactsPublishReturn = {
   artifact: unknown;
   artifactVersion: unknown;
-  localSync?: Record<string, unknown>;
+  authenticated: true;
+  consoleUrl: string;
+  localSync: ({
+    reason: "package_source";
+    status: "skipped";
+  }) | ({
+    artifactId: string;
+    eventType: "published";
+    status: "recorded";
+    versionId: string;
+    versionNumber: number;
+  }) | ({
+    artifactId: string;
+    error: string;
+    status: "failed";
+    versionId: string;
+    versionNumber: number;
+  });
   publish: unknown;
   release: unknown;
-  routes: unknown[];
-  upload: Record<string, unknown>;
+  routes: Array<Record<string, unknown>>;
+  site: unknown;
+  success: true;
+  upload: {
+    attempted: number;
+    skipped: number;
+  };
+  uploadSession: (Record<string, unknown>) | null;
   url: string | null;
-  [k: string]: unknown;
 };
 
 /** Input shape for `artifacts.release.activate`. */
@@ -873,6 +1163,14 @@ export type ArtifactsVersionsReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `audio.blob`. */
+export type AudioBlobInput = {
+  id: string;
+};
+
+/** Return shape for `audio.blob`. (binary — raw HTTP Response) */
+export type AudioBlobReturn = Response;
+
 /** Input shape for `audio.generate`. */
 export type AudioGenerateInput = {
   caption?: string;
@@ -882,7 +1180,8 @@ export type AudioGenerateInput = {
   output?: string;
   send?: boolean;
   speed?: string;
-  text: string;
+  text?: string;
+  textFile?: string;
   voice?: string;
 };
 
@@ -912,6 +1211,207 @@ export type AudioGenerateReturn = {
   };
   success: true;
   [k: string]: unknown;
+};
+
+/** Input shape for `audio.pending`. */
+export type AudioPendingInput = {
+  agent?: string;
+  chat?: string;
+  clientId?: string;
+  id?: string;
+  includeFailed?: boolean;
+  limit?: string;
+  requestId?: string;
+  session?: string;
+  sessionKey?: string;
+  since?: string;
+};
+
+/** Return shape for `audio.pending`. */
+export type AudioPendingReturn = {
+  generatedAt: number;
+  items: Array<{
+    agentId?: string;
+    audio?: {
+      filePath: string;
+      filename: string;
+      id: string;
+      mimeType: string;
+      modelId: string;
+      outputFormat: string;
+      provider: "elevenlabs";
+      sizeBytes: number;
+      voiceId: string;
+    };
+    createdAt: number;
+    emitId?: string;
+    error?: string;
+    failedAt?: number;
+    id: string;
+    metadata?: Record<string, unknown>;
+    playback: {
+      autoplay: boolean;
+      clientId?: string;
+      target: "extension" | "channel" | "none";
+    };
+    readyAt?: number;
+    requestId: string;
+    sessionKey?: string;
+    sessionName?: string;
+    status: "ready" | "failed";
+    target?: {
+      accountId?: string;
+      canonicalChatId?: string;
+      channel?: string;
+      chatId?: string;
+      instanceId?: string;
+      threadId?: string;
+    };
+    text: string;
+    textPreview: string;
+    voice: {
+      elevenlabs?: {
+        applyLanguageTextNormalization?: boolean;
+        applyTextNormalization?: "auto" | "on" | "off";
+        enableLogging?: boolean;
+        nextRequestIds?: string[];
+        nextText?: string;
+        optimizeStreamingLatency?: number;
+        previousRequestIds?: string[];
+        previousText?: string;
+        pronunciationDictionaryLocators?: unknown[];
+        seed?: number;
+        usePvcAsIvc?: boolean;
+      };
+      lang: string;
+      modelId: string;
+      outputFormat: string;
+      provider: "elevenlabs";
+      voiceId?: string;
+      voiceSettings?: {
+        similarityBoost?: number;
+        speed?: number;
+        stability?: number;
+        style?: number;
+        useSpeakerBoost?: boolean;
+      };
+    };
+  }>;
+  ok: true;
+};
+
+/** Input shape for `audio.tts`. */
+export type AudioTtsInput = {
+  account?: string;
+  agent?: string;
+  channel?: string;
+  chat?: string;
+  clientId?: string;
+  elevenlabs?: string;
+  format?: string;
+  id?: string;
+  lang?: string;
+  model?: string;
+  noAutoplay?: boolean;
+  session?: string;
+  sessionKey?: string;
+  speed?: string;
+  text: string;
+  voice?: string;
+  voiceSettings?: string;
+};
+
+/** Return shape for `audio.tts`. */
+export type AudioTtsReturn = {
+  ok: true;
+  request: {
+    agentId?: string;
+    createdAt?: number;
+    emitId?: string;
+    id?: string;
+    metadata?: Record<string, unknown>;
+    playback?: {
+      autoplay: boolean;
+      clientId?: string;
+      target: "extension" | "channel" | "none";
+    };
+    requestId?: string;
+    sessionKey?: string;
+    sessionName?: string;
+    source?: Record<string, unknown>;
+    target?: {
+      accountId?: string;
+      canonicalChatId?: string;
+      channel?: string;
+      chatId?: string;
+      instanceId?: string;
+      threadId?: string;
+    };
+    text: string;
+    voice?: {
+      elevenlabs?: {
+        applyLanguageTextNormalization?: boolean;
+        applyTextNormalization?: "auto" | "on" | "off";
+        enableLogging?: boolean;
+        nextRequestIds?: string[];
+        nextText?: string;
+        optimizeStreamingLatency?: number;
+        previousRequestIds?: string[];
+        previousText?: string;
+        pronunciationDictionaryLocators?: unknown[];
+        seed?: number;
+        usePvcAsIvc?: boolean;
+      };
+      lang: string;
+      modelId: string;
+      outputFormat: string;
+      provider: "elevenlabs";
+      voiceId?: string;
+      voiceSettings?: {
+        similarityBoost?: number;
+        speed?: number;
+        stability?: number;
+        style?: number;
+        useSpeakerBoost?: boolean;
+      };
+    };
+  };
+  topic: "ravi.tts";
+};
+
+/** Input shape for `audio.voices`. */
+export type AudioVoicesInput = {
+  category?: string;
+  limit?: string;
+  search?: string;
+  voiceType?: string;
+};
+
+/** Return shape for `audio.voices`. */
+export type AudioVoicesReturn = {
+  generatedAt: number;
+  hasMore: boolean;
+  nextPageToken?: string;
+  ok: true;
+  provider: "elevenlabs";
+  totalCount?: number;
+  voices: Array<{
+    category?: string;
+    description?: string;
+    highQualityBaseModelIds?: string[];
+    isLegacy?: boolean;
+    isOwner?: boolean;
+    labels?: Record<string, string>;
+    name: string;
+    previewUrl?: string;
+    verifiedLanguages?: Array<{
+      accent?: string;
+      language?: string;
+      locale?: string;
+      previewUrl?: string;
+    }>;
+    voiceId: string;
+  }>;
 };
 
 /** Input shape for `bridges.create`. */
@@ -976,105 +1476,16 @@ export type BridgesRevokeReturn = {
   success: true;
 };
 
-/** Input shape for `calendar.accounts.create`. */
-export type CalendarAccountsCreateInput = {
-  credentialsRef?: string;
-  id?: string;
-  name?: string;
-  provider?: string;
-};
-
-/** Return shape for `calendar.accounts.create`. */
-export type CalendarAccountsCreateReturn = {
-  account: {
-    capabilities: Record<string, unknown>;
-    createdAt: number;
-    credentialsRef: string | null;
-    defaultCalendarId: string | null;
-    displayName: string;
-    id: string;
-    provider: string;
-    settings: Record<string, unknown>;
-    status: "active" | "paused" | "auth_required" | "disabled";
-    updatedAt: number;
-  };
-};
-
-/** Input shape for `calendar.accounts.list`. */
-export type CalendarAccountsListInput = {
-  limit?: string;
-  offset?: string;
-  provider?: string;
-  status?: string;
-};
-
-/** Return shape for `calendar.accounts.list`. */
-export type CalendarAccountsListReturn = {
-  accounts: Array<{
-    capabilities: Record<string, unknown>;
-    createdAt: number;
-    credentialsRef: string | null;
-    defaultCalendarId: string | null;
-    displayName: string;
-    id: string;
-    provider: string;
-    settings: Record<string, unknown>;
-    status: "active" | "paused" | "auth_required" | "disabled";
-    updatedAt: number;
-  }>;
-};
-
-/** Input shape for `calendar.accounts.sync`. */
-export type CalendarAccountsSyncInput = {
-  account: string;
-  once?: boolean;
-};
-
-/** Return shape for `calendar.accounts.sync`. */
-export type CalendarAccountsSyncReturn = ({
-  account: {
-    capabilities: Record<string, unknown>;
-    createdAt: number;
-    credentialsRef: string | null;
-    defaultCalendarId: string | null;
-    displayName: string;
-    id: string;
-    provider: string;
-    settings: Record<string, unknown>;
-    status: "active" | "paused" | "auth_required" | "disabled";
-    updatedAt: number;
-  };
-  localFirst: true;
-  ok: true;
-  status: "adapter_not_required";
-}) | ({
-  account: {
-    capabilities: Record<string, unknown>;
-    createdAt: number;
-    credentialsRef: string | null;
-    defaultCalendarId: string | null;
-    displayName: string;
-    id: string;
-    provider: string;
-    settings: Record<string, unknown>;
-    status: "active" | "paused" | "auth_required" | "disabled";
-    updatedAt: number;
-  };
-  message: string;
-  ok: false;
-  status: "adapter_not_started";
-});
-
-/** Input shape for `calendar.availability`. */
-export type CalendarAvailabilityInput = {
+/** Input shape for `calendars.availability`. */
+export type CalendarsAvailabilityInput = {
   calendar?: string;
   from?: string;
   limit?: string;
   to?: string;
 };
 
-/** Return shape for `calendar.availability`. */
-export type CalendarAvailabilityReturn = {
+/** Return shape for `calendars.availability`. */
+export type CalendarsAvailabilityReturn = {
   busy: Array<{
     busyStatus: "busy" | "free" | "tentative" | "out_of_office" | "unknown";
     calendarId: string;
@@ -1090,8 +1501,8 @@ export type CalendarAvailabilityReturn = {
   };
 };
 
-/** Input shape for `calendar.calendars.create`. */
-export type CalendarCalendarsCreateInput = {
+/** Input shape for `calendars.create`. */
+export type CalendarsCreateInput = {
   account?: string;
   color?: string;
   default?: boolean;
@@ -1104,8 +1515,8 @@ export type CalendarCalendarsCreateInput = {
   visibility?: string;
 };
 
-/** Return shape for `calendar.calendars.create`. */
-export type CalendarCalendarsCreateReturn = {
+/** Return shape for `calendars.create`. */
+export type CalendarsCreateReturn = {
   calendar: {
     accountId: string;
     color: string | null;
@@ -1127,13 +1538,13 @@ export type CalendarCalendarsCreateReturn = {
   };
 };
 
-/** Input shape for `calendar.calendars.disable`. */
-export type CalendarCalendarsDisableInput = {
+/** Input shape for `calendars.disable`. */
+export type CalendarsDisableInput = {
   calendar: string;
 };
 
-/** Return shape for `calendar.calendars.disable`. */
-export type CalendarCalendarsDisableReturn = {
+/** Return shape for `calendars.disable`. */
+export type CalendarsDisableReturn = {
   calendar: {
     accountId: string;
     color: string | null;
@@ -1155,125 +1566,14 @@ export type CalendarCalendarsDisableReturn = {
   };
 };
 
-/** Input shape for `calendar.calendars.list`. */
-export type CalendarCalendarsListInput = {
-  account?: string;
-  limit?: string;
-  offset?: string;
-  status?: string;
-};
-
-/** Return shape for `calendar.calendars.list`. */
-export type CalendarCalendarsListReturn = {
-  calendars: Array<{
-    accountId: string;
-    color: string | null;
-    createdAt: number;
-    description: string | null;
-    id: string;
-    isDefault: boolean;
-    lastSyncedAt: number | null;
-    metadata: Record<string, unknown>;
-    name: string;
-    ownerId: string;
-    ownerType: string;
-    providerCalendarId: string | null;
-    role: string;
-    status: "active" | "paused" | "disabled" | "deleted";
-    timezone: string | null;
-    updatedAt: number;
-    visibility: "private" | "shared" | "public" | "local_only";
-  }>;
-};
-
-/** Input shape for `calendar.calendars.share`. */
-export type CalendarCalendarsShareInput = {
-  calendar: string;
-  expiresAt?: string;
-  relation?: string;
-  with?: string;
-};
-
-/** Return shape for `calendar.calendars.share`. */
-export type CalendarCalendarsShareReturn = {
-  calendar: {
-    accountId: string;
-    color: string | null;
-    createdAt: number;
-    description: string | null;
-    id: string;
-    isDefault: boolean;
-    lastSyncedAt: number | null;
-    metadata: Record<string, unknown>;
-    name: string;
-    ownerId: string;
-    ownerType: string;
-    providerCalendarId: string | null;
-    role: string;
-    status: "active" | "paused" | "disabled" | "deleted";
-    timezone: string | null;
-    updatedAt: number;
-    visibility: "private" | "shared" | "public" | "local_only";
-  };
-  member: {
-    calendarId: string;
-    createdAt: number;
-    expiresAt: number | null;
-    id: string;
-    memberId: string;
-    memberType: string;
-    relation: "owner" | "reader" | "writer" | "manager" | "free_busy";
-    updatedAt: number;
-  };
-};
-
-/** Input shape for `calendar.calendars.show`. */
-export type CalendarCalendarsShowInput = {
-  calendar: string;
-  members?: boolean;
-};
-
-/** Return shape for `calendar.calendars.show`. */
-export type CalendarCalendarsShowReturn = {
-  calendar: {
-    accountId: string;
-    color: string | null;
-    createdAt: number;
-    description: string | null;
-    id: string;
-    isDefault: boolean;
-    lastSyncedAt: number | null;
-    metadata: Record<string, unknown>;
-    name: string;
-    ownerId: string;
-    ownerType: string;
-    providerCalendarId: string | null;
-    role: string;
-    status: "active" | "paused" | "disabled" | "deleted";
-    timezone: string | null;
-    updatedAt: number;
-    visibility: "private" | "shared" | "public" | "local_only";
-  };
-  members?: Array<{
-    calendarId: string;
-    createdAt: number;
-    expiresAt: number | null;
-    id: string;
-    memberId: string;
-    memberType: string;
-    relation: "owner" | "reader" | "writer" | "manager" | "free_busy";
-    updatedAt: number;
-  }>;
-};
-
-/** Input shape for `calendar.events.cancel`. */
-export type CalendarEventsCancelInput = {
+/** Input shape for `calendars.events.cancel`. */
+export type CalendarsEventsCancelInput = {
   event: string;
   idempotencyKey?: string;
 };
 
-/** Return shape for `calendar.events.cancel`. */
-export type CalendarEventsCancelReturn = {
+/** Return shape for `calendars.events.cancel`. */
+export type CalendarsEventsCancelReturn = {
   event: ({
     accountId: string;
     allDay: boolean;
@@ -1357,8 +1657,8 @@ export type CalendarEventsCancelReturn = {
   }) | null;
 };
 
-/** Input shape for `calendar.events.create`. */
-export type CalendarEventsCreateInput = {
+/** Input shape for `calendars.events.create`. */
+export type CalendarsEventsCreateInput = {
   attendee?: string;
   calendar?: string;
   description?: string;
@@ -1370,8 +1670,8 @@ export type CalendarEventsCreateInput = {
   title?: string;
 };
 
-/** Return shape for `calendar.events.create`. */
-export type CalendarEventsCreateReturn = {
+/** Return shape for `calendars.events.create`. */
+export type CalendarsEventsCreateReturn = {
   event: ({
     accountId: string;
     allDay: boolean;
@@ -1455,8 +1755,8 @@ export type CalendarEventsCreateReturn = {
   }) | null;
 };
 
-/** Input shape for `calendar.events.list`. */
-export type CalendarEventsListInput = {
+/** Input shape for `calendars.events.list`. */
+export type CalendarsEventsListInput = {
   calendar?: string;
   from?: string;
   includeCancelled?: boolean;
@@ -1467,8 +1767,8 @@ export type CalendarEventsListInput = {
   to?: string;
 };
 
-/** Return shape for `calendar.events.list`. */
-export type CalendarEventsListReturn = {
+/** Return shape for `calendars.events.list`. */
+export type CalendarsEventsListReturn = {
   events: Array<({
     accountId: string;
     allDay: boolean;
@@ -1540,13 +1840,13 @@ export type CalendarEventsListReturn = {
   };
 };
 
-/** Input shape for `calendar.events.read`. */
-export type CalendarEventsReadInput = {
+/** Input shape for `calendars.events.read`. */
+export type CalendarsEventsReadInput = {
   event: string;
 };
 
-/** Return shape for `calendar.events.read`. */
-export type CalendarEventsReadReturn = {
+/** Return shape for `calendars.events.read`. */
+export type CalendarsEventsReadReturn = {
   event: ({
     accountId: string;
     allDay: boolean;
@@ -1614,8 +1914,8 @@ export type CalendarEventsReadReturn = {
   });
 };
 
-/** Input shape for `calendar.events.respond`. */
-export type CalendarEventsRespondInput = {
+/** Input shape for `calendars.events.respond`. */
+export type CalendarsEventsRespondInput = {
   attendeeAgent?: string;
   attendeeEmail?: string;
   event: string;
@@ -1623,8 +1923,8 @@ export type CalendarEventsRespondInput = {
   status?: string;
 };
 
-/** Return shape for `calendar.events.respond`. */
-export type CalendarEventsRespondReturn = {
+/** Return shape for `calendars.events.respond`. */
+export type CalendarsEventsRespondReturn = {
   event: ({
     accountId: string;
     allDay: boolean;
@@ -1708,8 +2008,8 @@ export type CalendarEventsRespondReturn = {
   };
 };
 
-/** Input shape for `calendar.events.update`. */
-export type CalendarEventsUpdateInput = {
+/** Input shape for `calendars.events.update`. */
+export type CalendarsEventsUpdateInput = {
   busy?: string;
   description?: string;
   end?: string;
@@ -1722,8 +2022,8 @@ export type CalendarEventsUpdateInput = {
   visibility?: string;
 };
 
-/** Return shape for `calendar.events.update`. */
-export type CalendarEventsUpdateReturn = {
+/** Return shape for `calendars.events.update`. */
+export type CalendarsEventsUpdateReturn = {
   event: ({
     accountId: string;
     allDay: boolean;
@@ -1807,91 +2107,584 @@ export type CalendarEventsUpdateReturn = {
   }) | null;
 };
 
-/** Input shape for `calendar.outbox.inspect`. */
-export type CalendarOutboxInspectInput = {
-  outbox: string;
-};
-
-/** Return shape for `calendar.outbox.inspect`. */
-export type CalendarOutboxInspectReturn = {
-  outbox: {
-    accountId: string;
-    attemptCount: number;
-    calendarId: string;
-    createdAt: number;
-    eventId: string;
-    id: string;
-    idempotencyKey: string;
-    lastErrorCode: string | null;
-    nextAttemptAt: number;
-    operation: "create" | "update" | "cancel" | "delete" | "respond";
-    payload: Record<string, unknown>;
-    providerResult: (Record<string, unknown>) | null;
-    status: "pending" | "leased" | "sending" | "sent" | "acked" | "failed" | "dead";
-    updatedAt: number;
-  };
-};
-
-/** Input shape for `calendar.outbox.list`. */
-export type CalendarOutboxListInput = {
-  calendar?: string;
+/** Input shape for `calendars.list`. */
+export type CalendarsListInput = {
+  account?: string;
   limit?: string;
   offset?: string;
   status?: string;
 };
 
-/** Return shape for `calendar.outbox.list`. */
-export type CalendarOutboxListReturn = {
-  outbox: Array<{
+/** Return shape for `calendars.list`. */
+export type CalendarsListReturn = {
+  calendars: Array<{
     accountId: string;
-    attemptCount: number;
-    calendarId: string;
+    color: string | null;
     createdAt: number;
-    eventId: string;
+    description: string | null;
     id: string;
-    idempotencyKey: string;
-    lastErrorCode: string | null;
-    nextAttemptAt: number;
-    operation: "create" | "update" | "cancel" | "delete" | "respond";
-    payload: Record<string, unknown>;
-    providerResult: (Record<string, unknown>) | null;
-    status: "pending" | "leased" | "sending" | "sent" | "acked" | "failed" | "dead";
+    isDefault: boolean;
+    lastSyncedAt: number | null;
+    metadata: Record<string, unknown>;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    providerCalendarId: string | null;
+    role: string;
+    status: "active" | "paused" | "disabled" | "deleted";
+    timezone: string | null;
     updatedAt: number;
+    visibility: "private" | "shared" | "public" | "local_only";
   }>;
 };
 
-/** Input shape for `calendar.outbox.retry`. */
-export type CalendarOutboxRetryInput = {
-  outbox: string;
+/** Input shape for `calendars.share`. */
+export type CalendarsShareInput = {
+  calendar: string;
+  expiresAt?: string;
+  relation?: string;
+  with?: string;
 };
 
-/** Return shape for `calendar.outbox.retry`. */
-export type CalendarOutboxRetryReturn = {
-  outbox: {
+/** Return shape for `calendars.share`. */
+export type CalendarsShareReturn = {
+  calendar: {
     accountId: string;
-    attemptCount: number;
+    color: string | null;
+    createdAt: number;
+    description: string | null;
+    id: string;
+    isDefault: boolean;
+    lastSyncedAt: number | null;
+    metadata: Record<string, unknown>;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    providerCalendarId: string | null;
+    role: string;
+    status: "active" | "paused" | "disabled" | "deleted";
+    timezone: string | null;
+    updatedAt: number;
+    visibility: "private" | "shared" | "public" | "local_only";
+  };
+  member: {
     calendarId: string;
     createdAt: number;
-    eventId: string;
+    expiresAt: number | null;
     id: string;
-    idempotencyKey: string;
-    lastErrorCode: string | null;
-    nextAttemptAt: number;
-    operation: "create" | "update" | "cancel" | "delete" | "respond";
-    payload: Record<string, unknown>;
-    providerResult: (Record<string, unknown>) | null;
-    status: "pending" | "leased" | "sending" | "sent" | "acked" | "failed" | "dead";
+    memberId: string;
+    memberType: string;
+    relation: "owner" | "reader" | "writer" | "manager" | "free_busy";
     updatedAt: number;
   };
 };
 
-/** Input shape for `calendar.outbox.status`. */
-export type CalendarOutboxStatusInput = Record<string, never>;
+/** Input shape for `calendars.show`. */
+export type CalendarsShowInput = {
+  calendar: string;
+  members?: boolean;
+};
 
-/** Return shape for `calendar.outbox.status`. */
-export type CalendarOutboxStatusReturn = {
-  counts: Record<string, number>;
+/** Return shape for `calendars.show`. */
+export type CalendarsShowReturn = {
+  calendar: {
+    accountId: string;
+    color: string | null;
+    createdAt: number;
+    description: string | null;
+    id: string;
+    isDefault: boolean;
+    lastSyncedAt: number | null;
+    metadata: Record<string, unknown>;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    providerCalendarId: string | null;
+    role: string;
+    status: "active" | "paused" | "disabled" | "deleted";
+    timezone: string | null;
+    updatedAt: number;
+    visibility: "private" | "shared" | "public" | "local_only";
+  };
+  members?: Array<{
+    calendarId: string;
+    createdAt: number;
+    expiresAt: number | null;
+    id: string;
+    memberId: string;
+    memberType: string;
+    relation: "owner" | "reader" | "writer" | "manager" | "free_busy";
+    updatedAt: number;
+  }>;
+};
+
+/** Input shape for `channels.create`. */
+export type ChannelsCreateInput = {
+  credentialConnection?: string;
+  name: string;
+  provider?: string;
+};
+
+/** Return shape for `channels.create`. */
+export type ChannelsCreateReturn = {
+  changedCount: number;
+  channel: {
+    createdAt: number;
+    credentialConnection?: string;
+    defaults?: Record<string, unknown>;
+    deletedAt?: number;
+    enabled?: boolean;
+    name: string;
+    provider: string;
+    updatedAt: number;
+  };
+  status: string;
+};
+
+/** Input shape for `channels.list`. */
+export type ChannelsListInput = {
+  limit?: string;
+  offset?: string;
+  provider?: string;
+};
+
+/** Return shape for `channels.list`. */
+export type ChannelsListReturn = {
+  channels: Array<{
+    createdAt: number;
+    credentialConnection?: string;
+    defaults?: Record<string, unknown>;
+    deletedAt?: number;
+    enabled?: boolean;
+    name: string;
+    provider: string;
+    updatedAt: number;
+  }>;
+  items: Array<{
+    createdAt: number;
+    credentialConnection?: string;
+    defaults?: Record<string, unknown>;
+    deletedAt?: number;
+    enabled?: boolean;
+    name: string;
+    provider: string;
+    updatedAt: number;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
   total: number;
+};
+
+/** Input shape for `channels.probe`. */
+export type ChannelsProbeInput = Record<string, never>;
+
+/** Return shape for `channels.probe`. */
+export type ChannelsProbeReturn = {
+  adapters: Array<Record<string, unknown>>;
+  outbound: Record<string, unknown>;
+  pid: number;
+  running: boolean;
+  startedAt: number | null;
+};
+
+/** Input shape for `channels.restart`. */
+export type ChannelsRestartInput = {
+  build?: boolean;
+};
+
+/** Return shape for `channels.restart`. */
+export type ChannelsRestartReturn = {
+  action: string;
+  changed: boolean;
+  pm2Status?: number | null;
+  reason?: string;
+  runnerEnv?: {
+    consumeOutbound: string;
+    slackSocketMode: boolean;
+  };
+  status?: {
+    channels: {
+      cpu: number | null;
+      managed: boolean;
+      memoryBytes: number | null;
+      memoryMb: number | null;
+      name: string;
+      pid: number | null;
+      pmId: number | null;
+      running: boolean;
+      status: string;
+    };
+    health?: {
+      checkedAt: number;
+      reachable: boolean;
+      reason?: string;
+      status: "ready" | "starting" | "degraded" | "unreachable" | "stopped";
+    };
+    pm2Available: boolean;
+    processName: string;
+    processes: Array<{
+      cpu: number | null;
+      managed: boolean;
+      memoryBytes: number | null;
+      memoryMb: number | null;
+      name: string;
+      pid: number | null;
+      pmId: number | null;
+      running: boolean;
+      status: string;
+    }>;
+    runner?: ({
+      adapters: Array<{
+        channelId: string;
+        connectedAt?: number;
+        id: string;
+        lastPongAt?: number;
+        reason?: string;
+        reconnectCount?: number;
+        status: "disabled" | "starting" | "connected" | "degraded" | "reconnecting" | "disconnected" | "failed";
+      }>;
+      observedAt: number;
+      outbound: {
+        consumer: string;
+        consuming: boolean;
+        enabled: boolean;
+        infrastructureReady: boolean;
+        lastError?: {
+          at: number;
+          message: string;
+          phase: "consume_loop";
+        };
+        lastMessageAt?: number;
+        publishOutbox?: {
+          lastError?: {
+            at: number;
+            message: string;
+          };
+          lastPublishedAt?: number;
+          nextAttemptAt?: number;
+          oldestPendingAt?: number;
+          pendingCount: number;
+        };
+        stream: string;
+      };
+      pid: number;
+      running: boolean;
+      schemaVersion: 1;
+      startedAt: number | null;
+    }) | null;
+  };
+  target?: {
+    bundlePath: string;
+    cwd: string;
+    sourceProjectRoot?: string;
+  };
+};
+
+/** Input shape for `channels.set`. */
+export type ChannelsSetInput = {
+  key: string;
+  name: string;
+  value: string;
+};
+
+/** Return shape for `channels.set`. */
+export type ChannelsSetReturn = {
+  changedCount: number;
+  channel: {
+    createdAt: number;
+    credentialConnection?: string;
+    defaults?: Record<string, unknown>;
+    deletedAt?: number;
+    enabled?: boolean;
+    name: string;
+    provider: string;
+    updatedAt: number;
+  };
+  status: string;
+};
+
+/** Input shape for `channels.show`. */
+export type ChannelsShowInput = {
+  name: string;
+};
+
+/** Return shape for `channels.show`. */
+export type ChannelsShowReturn = {
+  createdAt: number;
+  credentialConnection?: string;
+  defaults?: Record<string, unknown>;
+  deletedAt?: number;
+  enabled?: boolean;
+  name: string;
+  provider: string;
+  updatedAt: number;
+};
+
+/** Input shape for `channels.start`. */
+export type ChannelsStartInput = {
+  build?: boolean;
+};
+
+/** Return shape for `channels.start`. */
+export type ChannelsStartReturn = {
+  action: string;
+  changed: boolean;
+  pm2Status?: number | null;
+  reason?: string;
+  runnerEnv?: {
+    consumeOutbound: string;
+    slackSocketMode: boolean;
+  };
+  status?: {
+    channels: {
+      cpu: number | null;
+      managed: boolean;
+      memoryBytes: number | null;
+      memoryMb: number | null;
+      name: string;
+      pid: number | null;
+      pmId: number | null;
+      running: boolean;
+      status: string;
+    };
+    health?: {
+      checkedAt: number;
+      reachable: boolean;
+      reason?: string;
+      status: "ready" | "starting" | "degraded" | "unreachable" | "stopped";
+    };
+    pm2Available: boolean;
+    processName: string;
+    processes: Array<{
+      cpu: number | null;
+      managed: boolean;
+      memoryBytes: number | null;
+      memoryMb: number | null;
+      name: string;
+      pid: number | null;
+      pmId: number | null;
+      running: boolean;
+      status: string;
+    }>;
+    runner?: ({
+      adapters: Array<{
+        channelId: string;
+        connectedAt?: number;
+        id: string;
+        lastPongAt?: number;
+        reason?: string;
+        reconnectCount?: number;
+        status: "disabled" | "starting" | "connected" | "degraded" | "reconnecting" | "disconnected" | "failed";
+      }>;
+      observedAt: number;
+      outbound: {
+        consumer: string;
+        consuming: boolean;
+        enabled: boolean;
+        infrastructureReady: boolean;
+        lastError?: {
+          at: number;
+          message: string;
+          phase: "consume_loop";
+        };
+        lastMessageAt?: number;
+        publishOutbox?: {
+          lastError?: {
+            at: number;
+            message: string;
+          };
+          lastPublishedAt?: number;
+          nextAttemptAt?: number;
+          oldestPendingAt?: number;
+          pendingCount: number;
+        };
+        stream: string;
+      };
+      pid: number;
+      running: boolean;
+      schemaVersion: 1;
+      startedAt: number | null;
+    }) | null;
+  };
+  target?: {
+    bundlePath: string;
+    cwd: string;
+    sourceProjectRoot?: string;
+  };
+};
+
+/** Input shape for `channels.status`. */
+export type ChannelsStatusInput = Record<string, never>;
+
+/** Return shape for `channels.status`. */
+export type ChannelsStatusReturn = {
+  channels: {
+    cpu: number | null;
+    managed: boolean;
+    memoryBytes: number | null;
+    memoryMb: number | null;
+    name: string;
+    pid: number | null;
+    pmId: number | null;
+    running: boolean;
+    status: string;
+  };
+  health?: {
+    checkedAt: number;
+    reachable: boolean;
+    reason?: string;
+    status: "ready" | "starting" | "degraded" | "unreachable" | "stopped";
+  };
+  pm2Available: boolean;
+  processName: string;
+  processes: Array<{
+    cpu: number | null;
+    managed: boolean;
+    memoryBytes: number | null;
+    memoryMb: number | null;
+    name: string;
+    pid: number | null;
+    pmId: number | null;
+    running: boolean;
+    status: string;
+  }>;
+  runner?: ({
+    adapters: Array<{
+      channelId: string;
+      connectedAt?: number;
+      id: string;
+      lastPongAt?: number;
+      reason?: string;
+      reconnectCount?: number;
+      status: "disabled" | "starting" | "connected" | "degraded" | "reconnecting" | "disconnected" | "failed";
+    }>;
+    observedAt: number;
+    outbound: {
+      consumer: string;
+      consuming: boolean;
+      enabled: boolean;
+      infrastructureReady: boolean;
+      lastError?: {
+        at: number;
+        message: string;
+        phase: "consume_loop";
+      };
+      lastMessageAt?: number;
+      publishOutbox?: {
+        lastError?: {
+          at: number;
+          message: string;
+        };
+        lastPublishedAt?: number;
+        nextAttemptAt?: number;
+        oldestPendingAt?: number;
+        pendingCount: number;
+      };
+      stream: string;
+    };
+    pid: number;
+    running: boolean;
+    schemaVersion: 1;
+    startedAt: number | null;
+  }) | null;
+};
+
+/** Input shape for `channels.stop`. */
+export type ChannelsStopInput = Record<string, never>;
+
+/** Return shape for `channels.stop`. */
+export type ChannelsStopReturn = {
+  action: string;
+  changed: boolean;
+  pm2Status?: number | null;
+  reason?: string;
+  runnerEnv?: {
+    consumeOutbound: string;
+    slackSocketMode: boolean;
+  };
+  status?: {
+    channels: {
+      cpu: number | null;
+      managed: boolean;
+      memoryBytes: number | null;
+      memoryMb: number | null;
+      name: string;
+      pid: number | null;
+      pmId: number | null;
+      running: boolean;
+      status: string;
+    };
+    health?: {
+      checkedAt: number;
+      reachable: boolean;
+      reason?: string;
+      status: "ready" | "starting" | "degraded" | "unreachable" | "stopped";
+    };
+    pm2Available: boolean;
+    processName: string;
+    processes: Array<{
+      cpu: number | null;
+      managed: boolean;
+      memoryBytes: number | null;
+      memoryMb: number | null;
+      name: string;
+      pid: number | null;
+      pmId: number | null;
+      running: boolean;
+      status: string;
+    }>;
+    runner?: ({
+      adapters: Array<{
+        channelId: string;
+        connectedAt?: number;
+        id: string;
+        lastPongAt?: number;
+        reason?: string;
+        reconnectCount?: number;
+        status: "disabled" | "starting" | "connected" | "degraded" | "reconnecting" | "disconnected" | "failed";
+      }>;
+      observedAt: number;
+      outbound: {
+        consumer: string;
+        consuming: boolean;
+        enabled: boolean;
+        infrastructureReady: boolean;
+        lastError?: {
+          at: number;
+          message: string;
+          phase: "consume_loop";
+        };
+        lastMessageAt?: number;
+        publishOutbox?: {
+          lastError?: {
+            at: number;
+            message: string;
+          };
+          lastPublishedAt?: number;
+          nextAttemptAt?: number;
+          oldestPendingAt?: number;
+          pendingCount: number;
+        };
+        stream: string;
+      };
+      pid: number;
+      running: boolean;
+      schemaVersion: 1;
+      startedAt: number | null;
+    }) | null;
+  };
+  target?: {
+    bundlePath: string;
+    cwd: string;
+    sourceProjectRoot?: string;
+  };
 };
 
 /** Input shape for `chats.backfill-provider-timestamps`. */
@@ -2003,6 +2796,115 @@ export type ChatsListsMembersInput = {
 /** Return shape for `chats.lists.members`. */
 export type ChatsListsMembersReturn = Record<string, unknown>;
 
+/** Input shape for `chats.lists.preview`. */
+export type ChatsListsPreviewInput = {
+  listId: string;
+  owner?: string;
+};
+
+/** Return shape for `chats.lists.preview`. */
+export type ChatsListsPreviewReturn = {
+  list: {
+    archivedAt?: number;
+    createdAt: number;
+    description?: string;
+    id: string;
+    mode: string;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    updatedAt: number;
+    visibility: string;
+  };
+  preview: {
+    current: {
+      preserved: number;
+      selector: number;
+      total: number;
+    };
+    diff: ({
+      added: number;
+      eligible: number;
+      kept: number;
+      preserved: number;
+      removed: number;
+    }) | null;
+    dryRun: true;
+    list: {
+      archivedAt?: number;
+      createdAt: number;
+      description?: string;
+      id: string;
+      mode: string;
+      name: string;
+      ownerId: string;
+      ownerType: string;
+      updatedAt: number;
+      visibility: string;
+    };
+    validation: {
+      canApply: boolean;
+      conditions: {
+        negative: number;
+        positive: number;
+        supported: number;
+        total: number;
+      };
+      issues: Array<{
+        code: string;
+        message: string;
+        path?: string;
+        severity: "error" | "warning";
+      }>;
+      match: "all" | "any";
+      riskLevel: "low" | "high";
+      scope: "contact" | "chat";
+      valid: boolean;
+    };
+  };
+};
+
+/** Input shape for `chats.lists.recompute`. */
+export type ChatsListsRecomputeInput = {
+  listId: string;
+  owner?: string;
+};
+
+/** Return shape for `chats.lists.recompute`. */
+export type ChatsListsRecomputeReturn = {
+  list: {
+    archivedAt?: number;
+    createdAt: number;
+    description?: string;
+    id: string;
+    mode: string;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    updatedAt: number;
+    visibility: string;
+  };
+  recompute: {
+    added: number;
+    eligible: number;
+    kept: number;
+    list: {
+      archivedAt?: number;
+      createdAt: number;
+      description?: string;
+      id: string;
+      mode: string;
+      name: string;
+      ownerId: string;
+      ownerType: string;
+      updatedAt: number;
+      visibility: string;
+    };
+    preserved: number;
+    removed: number;
+  };
+};
+
 /** Input shape for `chats.lists.remove`. */
 export type ChatsListsRemoveInput = {
   channel?: string;
@@ -2014,6 +2916,52 @@ export type ChatsListsRemoveInput = {
 
 /** Return shape for `chats.lists.remove`. */
 export type ChatsListsRemoveReturn = Record<string, unknown>;
+
+/** Input shape for `chats.lists.show`. */
+export type ChatsListsShowInput = {
+  listId: string;
+  owner?: string;
+};
+
+/** Return shape for `chats.lists.show`. */
+export type ChatsListsShowReturn = {
+  current: {
+    preserved: number;
+    selector: number;
+    total: number;
+  };
+  list: {
+    archivedAt?: number;
+    createdAt: number;
+    description?: string;
+    id: string;
+    mode: string;
+    name: string;
+    ownerId: string;
+    ownerType: string;
+    updatedAt: number;
+    visibility: string;
+  };
+  validation: {
+    canApply: boolean;
+    conditions: {
+      negative: number;
+      positive: number;
+      supported: number;
+      total: number;
+    };
+    issues: Array<{
+      code: string;
+      message: string;
+      path?: string;
+      severity: "error" | "warning";
+    }>;
+    match: "all" | "any";
+    riskLevel: "low" | "high";
+    scope: "contact" | "chat";
+    valid: boolean;
+  };
+};
 
 /** Input shape for `chats.read`. */
 export type ChatsReadInput = {
@@ -2071,6 +3019,140 @@ export type CloudProjectsListReturn = {
   projects: Array<Record<string, unknown>>;
   success: true;
   total: number;
+};
+
+/** Input shape for `cloud.scope.clear`. */
+export type CloudScopeClearInput = {
+  agent?: string;
+  console?: string;
+  global?: boolean;
+  session?: string;
+  workspace?: string;
+};
+
+/** Return shape for `cloud.scope.clear`. */
+export type CloudScopeClearReturn = {
+  action: "clear";
+  cleared: boolean;
+  success: true;
+  target: {
+    scopeKey: string;
+    scopeKind: "session" | "agent" | "workspace" | "global";
+  };
+};
+
+/** Input shape for `cloud.scope.explain`. */
+export type CloudScopeExplainInput = {
+  console?: string;
+  project?: string;
+};
+
+/** Return shape for `cloud.scope.explain`. */
+export type CloudScopeExplainReturn = {
+  candidates: Array<{
+    available: boolean;
+    consoleUrl?: string;
+    label: string;
+    organization?: ({
+      id?: string | null;
+      name?: string | null;
+      slug?: string | null;
+    }) | null;
+    project?: ({
+      id?: string | null;
+      name?: string | null;
+      ref: string;
+      slug?: string | null;
+    }) | null;
+    reason?: string;
+    scopeKey?: string;
+    scopeKind?: "session" | "agent" | "workspace" | "global";
+    selected: boolean;
+    source: "explicit" | "runtime_context" | "local_project_mapping" | "session_default" | "agent_default" | "workspace_default" | "global_default" | "cloud_credentials" | "env_compat" | "single_remote_project";
+  }>;
+  consoleUrl: string;
+  missingProjectCommand?: string | null;
+  organization?: ({
+    id?: string | null;
+    name?: string | null;
+    slug?: string | null;
+  }) | null;
+  resolved: ({
+    consoleUrl: string;
+    organization?: ({
+      id?: string | null;
+      name?: string | null;
+      slug?: string | null;
+    }) | null;
+    project?: ({
+      id?: string | null;
+      name?: string | null;
+      ref: string;
+      slug?: string | null;
+    }) | null;
+    source: "explicit" | "runtime_context" | "local_project_mapping" | "session_default" | "agent_default" | "workspace_default" | "global_default" | "cloud_credentials" | "env_compat" | "single_remote_project";
+  }) | null;
+  success: true;
+};
+
+/** Input shape for `cloud.scope.set`. */
+export type CloudScopeSetInput = {
+  agent?: string;
+  console?: string;
+  global?: boolean;
+  project?: string;
+  session?: string;
+  workspace?: string;
+};
+
+/** Return shape for `cloud.scope.set`. */
+export type CloudScopeSetReturn = {
+  action: "set";
+  scope: {
+    consoleUrl: string;
+    organization?: ({
+      id?: string | null;
+      name?: string | null;
+      slug?: string | null;
+    }) | null;
+    project?: ({
+      id?: string | null;
+      name?: string | null;
+      ref: string;
+      slug?: string | null;
+    }) | null;
+    source: "explicit" | "runtime_context" | "local_project_mapping" | "session_default" | "agent_default" | "workspace_default" | "global_default" | "cloud_credentials" | "env_compat" | "single_remote_project";
+  };
+  success: true;
+  target: {
+    scopeKey: string;
+    scopeKind: "session" | "agent" | "workspace" | "global";
+  };
+};
+
+/** Input shape for `cloud.scope.show`. */
+export type CloudScopeShowInput = {
+  console?: string;
+};
+
+/** Return shape for `cloud.scope.show`. */
+export type CloudScopeShowReturn = {
+  scope: {
+    consoleUrl: string;
+    organization?: ({
+      id?: string | null;
+      name?: string | null;
+      slug?: string | null;
+    }) | null;
+    project?: ({
+      id?: string | null;
+      name?: string | null;
+      ref: string;
+      slug?: string | null;
+    }) | null;
+    source: "explicit" | "runtime_context" | "local_project_mapping" | "session_default" | "agent_default" | "workspace_default" | "global_default" | "cloud_credentials" | "env_compat" | "single_remote_project";
+  };
+  success: true;
 };
 
 /** Input shape for `commands.list`. */
@@ -2587,13 +3669,36 @@ export type ContextAuthorizeInput = {
 };
 
 /** Return shape for `context.authorize`. */
-export type ContextAuthorizeReturn = Record<string, unknown>;
+export type ContextAuthorizeReturn = {
+  agentId: string | null;
+  allowed: boolean;
+  approved: boolean;
+  capabilitiesCount: number;
+  contextId: string;
+  inherited: boolean;
+  objectId: string;
+  objectType: string;
+  permission: string;
+  reason: string | null;
+};
 
 /** Input shape for `context.capabilities`. */
 export type ContextCapabilitiesInput = Record<string, never>;
 
 /** Return shape for `context.capabilities`. */
-export type ContextCapabilitiesReturn = Record<string, unknown>;
+export type ContextCapabilitiesReturn = {
+  agentId: string | null;
+  capabilities: Array<{
+    objectId: string;
+    objectType: string;
+    permission: string;
+    source?: string;
+  }>;
+  contextId: string;
+  kind: string;
+  sessionKey: string | null;
+  sessionName: string | null;
+};
 
 /** Input shape for `context.check`. */
 export type ContextCheckInput = {
@@ -2603,7 +3708,15 @@ export type ContextCheckInput = {
 };
 
 /** Return shape for `context.check`. */
-export type ContextCheckReturn = Record<string, unknown>;
+export type ContextCheckReturn = {
+  agentId: string | null;
+  allowed: boolean;
+  capabilitiesCount: number;
+  contextId: string;
+  objectId: string;
+  objectType: string;
+  permission: string;
+};
 
 /** Input shape for `context.cleanup-agent-runtime`. */
 export type ContextCleanupAgentRuntimeInput = {
@@ -2615,13 +3728,108 @@ export type ContextCleanupAgentRuntimeInput = {
 };
 
 /** Return shape for `context.cleanup-agent-runtime`. */
-export type ContextCleanupAgentRuntimeReturn = Record<string, unknown>;
+export type ContextCleanupAgentRuntimeReturn = {
+  candidates: Array<{
+    context: {
+      agentId: string | null;
+      capabilitiesCount: number;
+      contextId: string;
+      createdAt: number;
+      expiresAt: number | null;
+      issuanceMode: string | null;
+      issuedFor: string | null;
+      kind: string;
+      lastUsedAt: number | null;
+      parentContextId: string | null;
+      revokedAt: number | null;
+      sessionKey: string | null;
+      sessionName: string | null;
+      status: "active" | "expired" | "revoked";
+    };
+    lastSeenAt: number;
+    sessionExists: boolean;
+  }>;
+  candidatesCount: number;
+  cutoffAt: number;
+  dryRun: boolean;
+  olderThan: string;
+  olderThanMs: number;
+  reason: string | null;
+  revoked: Array<{
+    cascaded: Array<{
+      agentId: string | null;
+      capabilitiesCount: number;
+      contextId: string;
+      createdAt: number;
+      expiresAt: number | null;
+      issuanceMode: string | null;
+      issuedFor: string | null;
+      kind: string;
+      lastUsedAt: number | null;
+      parentContextId: string | null;
+      revokedAt: number | null;
+      sessionKey: string | null;
+      sessionName: string | null;
+      status: "active" | "expired" | "revoked";
+    }>;
+    context: {
+      agentId: string | null;
+      capabilities: Array<{
+        objectId: string;
+        objectType: string;
+        permission: string;
+        source?: string;
+      }>;
+      capabilitiesCount: number;
+      contextId: string;
+      createdAt: number;
+      expiresAt: number | null;
+      issuanceMode: string | null;
+      issuedFor: string | null;
+      kind: string;
+      lastUsedAt: number | null;
+      lineage: {
+        approvalSource: unknown | null;
+        issuanceMode: string | null;
+        issuedAt: number | null;
+        issuedFor: string | null;
+        parentContextId: string | null;
+        parentContextKind: string | null;
+      };
+      metadata: (Record<string, unknown>) | null;
+      parentContextId: string | null;
+      revokedAt: number | null;
+      sessionKey: string | null;
+      sessionName: string | null;
+      source: ({
+        accountId: string;
+        channel: string;
+        chatId: string;
+        threadId?: string;
+      }) | null;
+      status: "active" | "expired" | "revoked";
+    };
+    revokedAt: number;
+  }>;
+  revokedCount: number;
+  scanned: {
+    agentId: string | null;
+    kind: "agent-runtime";
+    sessionKey: string | null;
+  };
+};
 
 /** Input shape for `context.codex-bash-hook`. */
 export type ContextCodexBashHookInput = Record<string, never>;
 
 /** Return shape for `context.codex-bash-hook`. */
-export type ContextCodexBashHookReturn = Record<string, unknown>;
+export type ContextCodexBashHookReturn = {
+  hookSpecificOutput?: {
+    hookEventName: "PreToolUse";
+    permissionDecision: "deny";
+    permissionDecisionReason: string;
+  };
+};
 
 /** Input shape for `context.credentials.add`. */
 export type ContextCredentialsAddInput = {
@@ -2631,7 +3839,11 @@ export type ContextCredentialsAddInput = {
 };
 
 /** Return shape for `context.credentials.add`. */
-export type ContextCredentialsAddReturn = Record<string, unknown>;
+export type ContextCredentialsAddReturn = {
+  added: string;
+  default: string | null;
+  path: string;
+};
 
 /** Input shape for `context.credentials.list`. */
 export type ContextCredentialsListInput = {
@@ -2640,7 +3852,41 @@ export type ContextCredentialsListInput = {
 };
 
 /** Return shape for `context.credentials.list`. */
-export type ContextCredentialsListReturn = Record<string, unknown>;
+export type ContextCredentialsListReturn = {
+  default: string | null;
+  entries: Array<{
+    agentId: string | null;
+    contextId: string;
+    contextKey: string;
+    expiresAt: number | null;
+    isDefault: boolean;
+    issuedAt: number;
+    kind: string | null;
+    label: string | null;
+  }>;
+  exists: boolean;
+  items: Array<{
+    agentId: string | null;
+    contextId: string;
+    contextKey: string;
+    expiresAt: number | null;
+    isDefault: boolean;
+    issuedAt: number;
+    kind: string | null;
+    label: string | null;
+  }>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  path: string;
+  total: number;
+};
 
 /** Input shape for `context.credentials.remove`. */
 export type ContextCredentialsRemoveInput = {
@@ -2648,7 +3894,11 @@ export type ContextCredentialsRemoveInput = {
 };
 
 /** Return shape for `context.credentials.remove`. */
-export type ContextCredentialsRemoveReturn = Record<string, unknown>;
+export type ContextCredentialsRemoveReturn = {
+  default: string | null;
+  path: string;
+  removed: string;
+};
 
 /** Input shape for `context.credentials.set-default`. */
 export type ContextCredentialsSetDefaultInput = {
@@ -2656,7 +3906,10 @@ export type ContextCredentialsSetDefaultInput = {
 };
 
 /** Return shape for `context.credentials.set-default`. */
-export type ContextCredentialsSetDefaultReturn = Record<string, unknown>;
+export type ContextCredentialsSetDefaultReturn = {
+  default: string | null;
+  path: string;
+};
 
 /** Input shape for `context.info`. */
 export type ContextInfoInput = {
@@ -2664,7 +3917,43 @@ export type ContextInfoInput = {
 };
 
 /** Return shape for `context.info`. */
-export type ContextInfoReturn = Record<string, unknown>;
+export type ContextInfoReturn = {
+  agentId: string | null;
+  capabilities: Array<{
+    objectId: string;
+    objectType: string;
+    permission: string;
+    source?: string;
+  }>;
+  capabilitiesCount: number;
+  contextId: string;
+  createdAt: number;
+  expiresAt: number | null;
+  issuanceMode: string | null;
+  issuedFor: string | null;
+  kind: string;
+  lastUsedAt: number | null;
+  lineage: {
+    approvalSource: unknown | null;
+    issuanceMode: string | null;
+    issuedAt: number | null;
+    issuedFor: string | null;
+    parentContextId: string | null;
+    parentContextKind: string | null;
+  };
+  metadata: (Record<string, unknown>) | null;
+  parentContextId: string | null;
+  revokedAt: number | null;
+  sessionKey: string | null;
+  sessionName: string | null;
+  source: ({
+    accountId: string;
+    channel: string;
+    chatId: string;
+    threadId?: string;
+  }) | null;
+  status: "active" | "expired" | "revoked";
+};
 
 /** Input shape for `context.issue`. */
 export type ContextIssueInput = {
@@ -2675,7 +3964,33 @@ export type ContextIssueInput = {
 };
 
 /** Return shape for `context.issue`. */
-export type ContextIssueReturn = Record<string, unknown>;
+export type ContextIssueReturn = {
+  agentId: string | null;
+  capabilities: Array<{
+    objectId: string;
+    objectType: string;
+    permission: string;
+    source?: string;
+  }>;
+  capabilitiesCount: number;
+  cliName: string;
+  contextId: string;
+  contextKey: string;
+  createdAt: number;
+  env: Record<string, string>;
+  expiresAt: number | null;
+  kind: string;
+  metadata: (Record<string, unknown>) | null;
+  parentContextId: string;
+  sessionKey: string | null;
+  sessionName: string | null;
+  source: ({
+    accountId: string;
+    channel: string;
+    chatId: string;
+    threadId?: string;
+  }) | null;
+};
 
 /** Input shape for `context.lineage`. */
 export type ContextLineageInput = {
@@ -2683,7 +3998,77 @@ export type ContextLineageInput = {
 };
 
 /** Return shape for `context.lineage`. */
-export type ContextLineageReturn = Record<string, unknown>;
+export type ContextLineageReturn = {
+  ancestors: Array<{
+    agentId: string | null;
+    capabilitiesCount: number;
+    contextId: string;
+    createdAt: number;
+    expiresAt: number | null;
+    issuanceMode: string | null;
+    issuedFor: string | null;
+    kind: string;
+    lastUsedAt: number | null;
+    parentContextId: string | null;
+    revokedAt: number | null;
+    sessionKey: string | null;
+    sessionName: string | null;
+    status: "active" | "expired" | "revoked";
+  }>;
+  context: {
+    agentId: string | null;
+    capabilities: Array<{
+      objectId: string;
+      objectType: string;
+      permission: string;
+      source?: string;
+    }>;
+    capabilitiesCount: number;
+    contextId: string;
+    createdAt: number;
+    expiresAt: number | null;
+    issuanceMode: string | null;
+    issuedFor: string | null;
+    kind: string;
+    lastUsedAt: number | null;
+    lineage: {
+      approvalSource: unknown | null;
+      issuanceMode: string | null;
+      issuedAt: number | null;
+      issuedFor: string | null;
+      parentContextId: string | null;
+      parentContextKind: string | null;
+    };
+    metadata: (Record<string, unknown>) | null;
+    parentContextId: string | null;
+    revokedAt: number | null;
+    sessionKey: string | null;
+    sessionName: string | null;
+    source: ({
+      accountId: string;
+      channel: string;
+      chatId: string;
+      threadId?: string;
+    }) | null;
+    status: "active" | "expired" | "revoked";
+  };
+  descendants: Array<{
+    agentId: string | null;
+    capabilitiesCount: number;
+    contextId: string;
+    createdAt: number;
+    expiresAt: number | null;
+    issuanceMode: string | null;
+    issuedFor: string | null;
+    kind: string;
+    lastUsedAt: number | null;
+    parentContextId: string | null;
+    revokedAt: number | null;
+    sessionKey: string | null;
+    sessionName: string | null;
+    status: "active" | "expired" | "revoked";
+  }>;
+};
 
 /** Input shape for `context.list`. */
 export type ContextListInput = {
@@ -2696,7 +4081,67 @@ export type ContextListInput = {
 };
 
 /** Return shape for `context.list`. */
-export type ContextListReturn = Record<string, unknown>;
+export type ContextListReturn = {
+  contexts: Array<{
+    agentId: string | null;
+    capabilitiesCount: number;
+    contextId: string;
+    createdAt: number;
+    expiresAt: number | null;
+    issuanceMode: string | null;
+    issuedFor: string | null;
+    kind: string;
+    lastUsedAt: number | null;
+    parentContextId: string | null;
+    revokedAt: number | null;
+    sessionKey: string | null;
+    sessionName: string | null;
+    status: "active" | "expired" | "revoked";
+  }>;
+  count: number;
+  items: Array<{
+    agentId: string | null;
+    capabilitiesCount: number;
+    contextId: string;
+    createdAt: number;
+    expiresAt: number | null;
+    issuanceMode: string | null;
+    issuedFor: string | null;
+    kind: string;
+    lastUsedAt: number | null;
+    parentContextId: string | null;
+    revokedAt: number | null;
+    sessionKey: string | null;
+    sessionName: string | null;
+    status: "active" | "expired" | "revoked";
+  }>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  total: number;
+};
+
+/** Input shape for `context.prune`. */
+export type ContextPruneInput = {
+  apply?: boolean;
+  confirm?: string;
+  olderThan?: string;
+};
+
+/** Return shape for `context.prune`. */
+export type ContextPruneReturn = {
+  changedCount: number;
+  dryRun: boolean;
+  matchedCount: number;
+  olderThan: string;
+  status: "pruned" | "planned";
+};
 
 /** Input shape for `context.revoke`. */
 export type ContextRevokeInput = {
@@ -2706,19 +4151,141 @@ export type ContextRevokeInput = {
 };
 
 /** Return shape for `context.revoke`. */
-export type ContextRevokeReturn = Record<string, unknown>;
+export type ContextRevokeReturn = {
+  cascaded: Array<{
+    agentId: string | null;
+    capabilitiesCount: number;
+    contextId: string;
+    createdAt: number;
+    expiresAt: number | null;
+    issuanceMode: string | null;
+    issuedFor: string | null;
+    kind: string;
+    lastUsedAt: number | null;
+    parentContextId: string | null;
+    revokedAt: number | null;
+    sessionKey: string | null;
+    sessionName: string | null;
+    status: "active" | "expired" | "revoked";
+  }>;
+  context: {
+    agentId: string | null;
+    capabilities: Array<{
+      objectId: string;
+      objectType: string;
+      permission: string;
+      source?: string;
+    }>;
+    capabilitiesCount: number;
+    contextId: string;
+    createdAt: number;
+    expiresAt: number | null;
+    issuanceMode: string | null;
+    issuedFor: string | null;
+    kind: string;
+    lastUsedAt: number | null;
+    lineage: {
+      approvalSource: unknown | null;
+      issuanceMode: string | null;
+      issuedAt: number | null;
+      issuedFor: string | null;
+      parentContextId: string | null;
+      parentContextKind: string | null;
+    };
+    metadata: (Record<string, unknown>) | null;
+    parentContextId: string | null;
+    revokedAt: number | null;
+    sessionKey: string | null;
+    sessionName: string | null;
+    source: ({
+      accountId: string;
+      channel: string;
+      chatId: string;
+      threadId?: string;
+    }) | null;
+    status: "active" | "expired" | "revoked";
+  };
+  revokedAt: number;
+};
 
 /** Input shape for `context.visibility`. */
 export type ContextVisibilityInput = Record<string, never>;
 
 /** Return shape for `context.visibility`. */
-export type ContextVisibilityReturn = Record<string, unknown>;
+export type ContextVisibilityReturn = {
+  agentId: string;
+  compact: {
+    count: number;
+    lastCompactedAt: number | null;
+    threshold: number | null;
+    willCompactAt: number | null;
+  };
+  lastUpdatedAt: number;
+  loadedSkills: string[];
+  provider: string | null;
+  sessionKey: string;
+  skills: Array<{
+    confidence: string;
+    evidence?: Array<{
+      detail?: string;
+      itemId?: string;
+      kind: string;
+    }>;
+    id: string;
+    lastSeenAt: number;
+    loadedAt?: number | null;
+    provider: string;
+    source?: string;
+    state: string;
+  }>;
+  tokens: {
+    limit: number | null;
+    remaining: number | null;
+    used: number | null;
+  };
+};
 
 /** Input shape for `context.whoami`. */
 export type ContextWhoamiInput = Record<string, never>;
 
 /** Return shape for `context.whoami`. */
-export type ContextWhoamiReturn = Record<string, unknown>;
+export type ContextWhoamiReturn = {
+  agentId: string | null;
+  capabilities: Array<{
+    objectId: string;
+    objectType: string;
+    permission: string;
+    source?: string;
+  }>;
+  capabilitiesCount: number;
+  contextId: string;
+  createdAt: number;
+  expiresAt: number | null;
+  issuanceMode: string | null;
+  issuedFor: string | null;
+  kind: string;
+  lastUsedAt: number | null;
+  lineage: {
+    approvalSource: unknown | null;
+    issuanceMode: string | null;
+    issuedAt: number | null;
+    issuedFor: string | null;
+    parentContextId: string | null;
+    parentContextKind: string | null;
+  };
+  metadata: (Record<string, unknown>) | null;
+  parentContextId: string | null;
+  revokedAt: number | null;
+  sessionKey: string | null;
+  sessionName: string | null;
+  source: ({
+    accountId: string;
+    channel: string;
+    chatId: string;
+    threadId?: string;
+  }) | null;
+  status: "active" | "expired" | "revoked";
+};
 
 /** Input shape for `costs.agent`. */
 export type CostsAgentInput = {
@@ -2768,6 +4335,54 @@ export type CostsAgentsReturn = {
   }>;
   limit: number;
   totalAgents: number;
+  window: {
+    effectiveHours: number;
+    requestedHours: string | null;
+    sinceMs: number;
+    untilMs: number;
+  };
+};
+
+/** Input shape for `costs.pricing`. */
+export type CostsPricingInput = {
+  dryRun?: boolean;
+  hours?: string;
+  includePriced?: boolean;
+  limit?: string;
+  recompute?: boolean;
+};
+
+/** Return shape for `costs.pricing`. */
+export type CostsPricingReturn = {
+  recompute?: {
+    attempted: number;
+    dryRun: boolean;
+    includePriced: boolean;
+    limit: number;
+    priced: number;
+    rows: Array<{
+      id: number;
+      model: string;
+      previousPricingStatus: string;
+      pricingError: string | null;
+      pricingModel: string | null;
+      pricingSource: string | null;
+      pricingStatus: string;
+      totalCost: number;
+    }>;
+    unpriced: number;
+    updated: number;
+  };
+  rows: Array<{
+    events: number;
+    lastCreatedAt: number | null;
+    model: string;
+    pricingModel: string | null;
+    pricingSource: string | null;
+    pricingStatus: string;
+    totalCost: number;
+    totalTokens: number;
+  }>;
   window: {
     effectiveHours: number;
     requestedHours: string | null;
@@ -2850,6 +4465,126 @@ export type CostsTopSessionsReturn = {
     sinceMs: number;
     untilMs: number;
   };
+};
+
+/** Input shape for `credentials.connections.disable`. */
+export type CredentialsConnectionsDisableInput = {
+  connection?: string;
+  provider?: string;
+};
+
+/** Return shape for `credentials.connections.disable`. */
+export type CredentialsConnectionsDisableReturn = {
+  connection: ({
+    backend: "keychain" | "vault";
+    connection: string;
+    createdAt: number;
+    id: string;
+    label: string | null;
+    provider: string;
+    scopes: string[];
+    secretRef: string;
+    status: "active" | "disabled";
+    updatedAt: number;
+  }) | null;
+};
+
+/** Input shape for `credentials.connections.enable`. */
+export type CredentialsConnectionsEnableInput = {
+  connection?: string;
+  provider?: string;
+};
+
+/** Return shape for `credentials.connections.enable`. */
+export type CredentialsConnectionsEnableReturn = {
+  connection: ({
+    backend: "keychain" | "vault";
+    connection: string;
+    createdAt: number;
+    id: string;
+    label: string | null;
+    provider: string;
+    scopes: string[];
+    secretRef: string;
+    status: "active" | "disabled";
+    updatedAt: number;
+  }) | null;
+};
+
+/** Input shape for `credentials.connections.list`. */
+export type CredentialsConnectionsListInput = {
+  all?: boolean;
+  limit?: string;
+  offset?: string;
+  provider?: string;
+  status?: string;
+};
+
+/** Return shape for `credentials.connections.list`. */
+export type CredentialsConnectionsListReturn = {
+  items: Array<{
+    backend: "keychain" | "vault";
+    connection: string;
+    createdAt: number;
+    id: string;
+    label: string | null;
+    provider: string;
+    scopes: string[];
+    secretRef: string;
+    status: "active" | "disabled";
+    updatedAt: number;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  total: number;
+};
+
+/** Input shape for `credentials.connections.show`. */
+export type CredentialsConnectionsShowInput = {
+  connection?: string;
+  provider?: string;
+};
+
+/** Return shape for `credentials.connections.show`. */
+export type CredentialsConnectionsShowReturn = {
+  connection: {
+    backend: "keychain" | "vault";
+    connection: string;
+    createdAt: number;
+    id: string;
+    label: string | null;
+    provider: string;
+    scopes: string[];
+    secretRef: string;
+    status: "active" | "disabled";
+    updatedAt: number;
+  };
+};
+
+/** Input shape for `credentials.policies.explain`. */
+export type CredentialsPoliciesExplainInput = {
+  action?: string;
+  connection?: string;
+  provider?: string;
+};
+
+/** Return shape for `credentials.policies.explain`. */
+export type CredentialsPoliciesExplainReturn = {
+  action: string;
+  approval: {
+    reason: string;
+    required: boolean;
+  };
+  connection: string;
+  provider: string;
+  requiredCapabilities: string[];
 };
 
 /** Input shape for `crm.account`. */
@@ -3122,6 +4857,7 @@ export type CrmOpportunityCreateInput = {
   currency?: string;
   idempotencyKey?: string;
   owner?: string;
+  pipeline?: string;
   stage?: string;
   title: string;
   value?: string;
@@ -3178,11 +4914,30 @@ export type CrmOpportunityShowReturn = {
 
 /** Input shape for `crm.pipeline.create`. */
 export type CrmPipelineCreateInput = {
+  analystAvoid?: string;
+  analystMentions?: string;
+  analystTone?: string;
+  consumer?: string;
   default?: boolean;
   entityType?: string;
+  hitlRequiredWhen?: string;
   idempotencyKey?: string;
+  messagePrefix?: string;
+  messageSuffix?: string;
   metadata?: string;
   name: string;
+  objetivo?: string;
+  priorityGlobal?: string;
+  producer?: string;
+  readingListId?: string;
+  reguaTag?: string[];
+  relatedCron?: string;
+  relatedTrigger?: string;
+  sendWindow?: string;
+  versao?: string;
+  vipGuardAction?: string;
+  vipGuardLtv?: string;
+  vipGuardTag?: string;
 };
 
 /** Return shape for `crm.pipeline.create`. */
@@ -3217,11 +4972,110 @@ export type CrmPipelineListReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `crm.pipeline.policy.hitl-check`. */
+export type CrmPipelinePolicyHitlCheckInput = {
+  context?: string;
+  pipeline: string;
+};
+
+/** Return shape for `crm.pipeline.policy.hitl-check`. */
+export type CrmPipelinePolicyHitlCheckReturn = {
+  decision: {
+    hitlRequired: boolean;
+    matchedConditions: number;
+    reasons: string[];
+  };
+  errors: Array<{
+    code?: string;
+    message: string;
+    path: string;
+    severity: "warning" | "error";
+  }>;
+  ok: boolean;
+  pipelineId: string;
+  warnings: Array<{
+    code?: string;
+    message: string;
+    path: string;
+    severity: "warning" | "error";
+  }>;
+};
+
+/** Input shape for `crm.pipeline.policy.send-window-check`. */
+export type CrmPipelinePolicySendWindowCheckInput = {
+  at?: string;
+  pipeline: string;
+};
+
+/** Return shape for `crm.pipeline.policy.send-window-check`. */
+export type CrmPipelinePolicySendWindowCheckReturn = {
+  decision: {
+    allowed: boolean;
+    evaluatedAtIso: string;
+    reason: string;
+    releaseAtIso?: string;
+    timezone: string;
+  };
+  errors: Array<{
+    code?: string;
+    message: string;
+    path: string;
+    severity: "warning" | "error";
+  }>;
+  ok: boolean;
+  pipelineId: string;
+  warnings: Array<{
+    code?: string;
+    message: string;
+    path: string;
+    severity: "warning" | "error";
+  }>;
+};
+
+/** Input shape for `crm.pipeline.review`. */
+export type CrmPipelineReviewInput = {
+  pipeline: string;
+};
+
+/** Return shape for `crm.pipeline.review`. */
+export type CrmPipelineReviewReturn = {
+  fields: Array<{
+    detail: string;
+    field: string;
+    group: "identidade" | "estrutura" | "politicas" | "tags" | "comunicacao" | "integracoes";
+    present: "present" | "absent" | "partial";
+    suggestion?: string;
+  }>;
+  highSeverityGaps: number;
+  pipelineId: string;
+  pipelineName: string;
+  totalGaps: number;
+};
+
 /** Input shape for `crm.pipeline.set`. */
 export type CrmPipelineSetInput = {
+  analystAvoid?: string;
+  analystMentions?: string;
+  analystTone?: string;
+  consumer?: string;
   field: string;
+  hitlRequiredWhen?: string;
+  messagePrefix?: string;
+  messageSuffix?: string;
+  objetivo?: string;
   pipeline: string;
+  priorityGlobal?: string;
+  producer?: string;
+  readingListId?: string;
+  reguaTag?: string[];
+  relatedCron?: string;
+  relatedTrigger?: string;
+  sendWindow?: string;
   value: string;
+  versao?: string;
+  vipGuardAction?: string;
+  vipGuardLtv?: string;
+  vipGuardTag?: string;
 };
 
 /** Return shape for `crm.pipeline.set`. */
@@ -3233,6 +5087,7 @@ export type CrmPipelineSetReturn = {
 
 /** Input shape for `crm.pipeline.show`. */
 export type CrmPipelineShowInput = {
+  explain?: boolean;
   pipeline: string;
 };
 
@@ -3397,6 +5252,31 @@ export type CrmPipelineStageTopicsReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `crm.pipeline.validate`. */
+export type CrmPipelineValidateInput = {
+  pipeline?: string;
+  schemaJson?: boolean;
+};
+
+/** Return shape for `crm.pipeline.validate`. */
+export type CrmPipelineValidateReturn = {
+  errors: Array<{
+    code?: string;
+    message: string;
+    path: string;
+    severity: "warning" | "error";
+  }>;
+  ok: boolean;
+  pipelineId: string;
+  schema?: Record<string, unknown>;
+  warnings: Array<{
+    code?: string;
+    message: string;
+    path: string;
+    severity: "warning" | "error";
+  }>;
+};
+
 /** Input shape for `crm.task.cancel`. */
 export type CrmTaskCancelInput = {
   reason?: string;
@@ -3516,6 +5396,7 @@ export type CronAddInput = {
   envFile?: string;
   every?: string;
   exec?: string;
+  idempotencyKey?: string;
   isolated?: boolean;
   message?: string;
   name: string;
@@ -3778,7 +5659,13 @@ export type DevinAuthCheckReturn = {
   baseUrl: string;
   configuredOrgId?: string;
   ok: boolean;
-  self: Record<string, unknown>;
+  self: {
+    org_id?: string;
+    principal_type?: string;
+    service_user_id?: string;
+    service_user_name?: string;
+    [k: string]: unknown;
+  };
   [k: string]: unknown;
 };
 
@@ -3789,7 +5676,34 @@ export type DevinSessionsArchiveInput = {
 
 /** Return shape for `devin.sessions.archive`. */
 export type DevinSessionsArchiveReturn = {
-  session: Record<string, unknown>;
+  session: {
+    acusConsumed?: number;
+    devinId: string;
+    devinMode?: string | null;
+    effectiveCreateAsUserId?: string | null;
+    id?: string;
+    isArchived?: boolean;
+    lastSyncedAt?: number | null;
+    maxAcuLimit?: number | null;
+    maxAcuLimitSource?: string | null;
+    origin?: string | null;
+    originId?: string | null;
+    originType?: string | null;
+    platform?: string | null;
+    projectId?: string | null;
+    proxRunId?: string | null;
+    resumable?: boolean | null;
+    serviceUserId?: string | null;
+    status: string;
+    statusDetail: string | null;
+    tags: string[];
+    taskId?: string | null;
+    title: string | null;
+    updatedAt: number;
+    url: string;
+    userId?: string | null;
+    [k: string]: unknown;
+  };
   status: "archived";
   [k: string]: unknown;
 };
@@ -3802,7 +5716,14 @@ export type DevinSessionsAttachmentsInput = {
 
 /** Return shape for `devin.sessions.attachments`. */
 export type DevinSessionsAttachmentsReturn = {
-  attachments: Array<Record<string, unknown>>;
+  attachments: Array<{
+    attachmentId: string;
+    contentType?: string | null;
+    name: string;
+    source: string;
+    url: string;
+    [k: string]: unknown;
+  }>;
   devinId: string;
   total: number;
   [k: string]: unknown;
@@ -3815,17 +5736,24 @@ export type DevinSessionsCreateInput = {
   attachmentUrl?: string[];
   bypassApproval?: boolean;
   childPlaybook?: string;
+  devinId?: string;
+  devinMode?: string;
   knowledge?: string[];
   maxAcu?: string;
   noMaxAcuLimit?: boolean;
+  noResumable?: boolean;
+  platform?: string;
   playbook?: string;
   project?: string;
   prompt?: string;
   promptFile?: string;
   proxRun?: string;
   repo?: string[];
+  resumable?: boolean;
   secret?: string[];
   sessionLink?: string[];
+  sessionSecret?: string[];
+  structuredOutputRequired?: boolean;
   structuredOutputSchema?: string;
   tag?: string[];
   task?: string;
@@ -3834,9 +5762,39 @@ export type DevinSessionsCreateInput = {
 
 /** Return shape for `devin.sessions.create`. */
 export type DevinSessionsCreateReturn = {
+  devinMode?: string | null;
   maxAcuLimit: number | null;
   maxAcuLimitSource: string;
-  session: Record<string, unknown>;
+  platform?: string | null;
+  resumable?: boolean | null;
+  session: {
+    acusConsumed?: number;
+    devinId: string;
+    devinMode?: string | null;
+    effectiveCreateAsUserId?: string | null;
+    id?: string;
+    isArchived?: boolean;
+    lastSyncedAt?: number | null;
+    maxAcuLimit?: number | null;
+    maxAcuLimitSource?: string | null;
+    origin?: string | null;
+    originId?: string | null;
+    originType?: string | null;
+    platform?: string | null;
+    projectId?: string | null;
+    proxRunId?: string | null;
+    resumable?: boolean | null;
+    serviceUserId?: string | null;
+    status: string;
+    statusDetail: string | null;
+    tags: string[];
+    taskId?: string | null;
+    title: string | null;
+    updatedAt: number;
+    url: string;
+    userId?: string | null;
+    [k: string]: unknown;
+  };
   status: "created";
   [k: string]: unknown;
 };
@@ -3849,8 +5807,41 @@ export type DevinSessionsInsightsInput = {
 
 /** Return shape for `devin.sessions.insights`. */
 export type DevinSessionsInsightsReturn = {
-  insights: Record<string, unknown>;
-  session: Record<string, unknown>;
+  insights: {
+    analysis?: (Record<string, unknown>) | null;
+    numDevinMessages?: number;
+    numUserMessages?: number;
+    sessionSize?: string | null;
+    [k: string]: unknown;
+  };
+  session: {
+    acusConsumed?: number;
+    devinId: string;
+    devinMode?: string | null;
+    effectiveCreateAsUserId?: string | null;
+    id?: string;
+    isArchived?: boolean;
+    lastSyncedAt?: number | null;
+    maxAcuLimit?: number | null;
+    maxAcuLimitSource?: string | null;
+    origin?: string | null;
+    originId?: string | null;
+    originType?: string | null;
+    platform?: string | null;
+    projectId?: string | null;
+    proxRunId?: string | null;
+    resumable?: boolean | null;
+    serviceUserId?: string | null;
+    status: string;
+    statusDetail: string | null;
+    tags: string[];
+    taskId?: string | null;
+    title: string | null;
+    updatedAt: number;
+    url: string;
+    userId?: string | null;
+    [k: string]: unknown;
+  };
   summary: (Record<string, unknown>) | null;
   [k: string]: unknown;
 };
@@ -3878,7 +5869,34 @@ export type DevinSessionsListReturn = {
     total: number;
     [k: string]: unknown;
   };
-  sessions: Array<Record<string, unknown>>;
+  sessions: Array<{
+    acusConsumed?: number;
+    devinId: string;
+    devinMode?: string | null;
+    effectiveCreateAsUserId?: string | null;
+    id?: string;
+    isArchived?: boolean;
+    lastSyncedAt?: number | null;
+    maxAcuLimit?: number | null;
+    maxAcuLimitSource?: string | null;
+    origin?: string | null;
+    originId?: string | null;
+    originType?: string | null;
+    platform?: string | null;
+    projectId?: string | null;
+    proxRunId?: string | null;
+    resumable?: boolean | null;
+    serviceUserId?: string | null;
+    status: string;
+    statusDetail: string | null;
+    tags: string[];
+    taskId?: string | null;
+    title: string | null;
+    updatedAt: number;
+    url: string;
+    userId?: string | null;
+    [k: string]: unknown;
+  }>;
   source: string;
   total: number;
   [k: string]: unknown;
@@ -3893,7 +5911,13 @@ export type DevinSessionsMessagesInput = {
 /** Return shape for `devin.sessions.messages`. */
 export type DevinSessionsMessagesReturn = {
   devinId: string;
-  messages: Array<Record<string, unknown>>;
+  messages: Array<{
+    createdAt: number;
+    eventId: string;
+    message: string;
+    source: string;
+    [k: string]: unknown;
+  }>;
   total: number;
   [k: string]: unknown;
 };
@@ -3907,7 +5931,34 @@ export type DevinSessionsSendInput = {
 
 /** Return shape for `devin.sessions.send`. */
 export type DevinSessionsSendReturn = {
-  session: Record<string, unknown>;
+  session: {
+    acusConsumed?: number;
+    devinId: string;
+    devinMode?: string | null;
+    effectiveCreateAsUserId?: string | null;
+    id?: string;
+    isArchived?: boolean;
+    lastSyncedAt?: number | null;
+    maxAcuLimit?: number | null;
+    maxAcuLimitSource?: string | null;
+    origin?: string | null;
+    originId?: string | null;
+    originType?: string | null;
+    platform?: string | null;
+    projectId?: string | null;
+    proxRunId?: string | null;
+    resumable?: boolean | null;
+    serviceUserId?: string | null;
+    status: string;
+    statusDetail: string | null;
+    tags: string[];
+    taskId?: string | null;
+    title: string | null;
+    updatedAt: number;
+    url: string;
+    userId?: string | null;
+    [k: string]: unknown;
+  };
   status: "sent";
   [k: string]: unknown;
 };
@@ -3920,7 +5971,34 @@ export type DevinSessionsShowInput = {
 
 /** Return shape for `devin.sessions.show`. */
 export type DevinSessionsShowReturn = {
-  session: Record<string, unknown>;
+  session: {
+    acusConsumed?: number;
+    devinId: string;
+    devinMode?: string | null;
+    effectiveCreateAsUserId?: string | null;
+    id?: string;
+    isArchived?: boolean;
+    lastSyncedAt?: number | null;
+    maxAcuLimit?: number | null;
+    maxAcuLimitSource?: string | null;
+    origin?: string | null;
+    originId?: string | null;
+    originType?: string | null;
+    platform?: string | null;
+    projectId?: string | null;
+    proxRunId?: string | null;
+    resumable?: boolean | null;
+    serviceUserId?: string | null;
+    status: string;
+    statusDetail: string | null;
+    tags: string[];
+    taskId?: string | null;
+    title: string | null;
+    updatedAt: number;
+    url: string;
+    userId?: string | null;
+    [k: string]: unknown;
+  };
   [k: string]: unknown;
 };
 
@@ -3937,7 +6015,34 @@ export type DevinSessionsSyncReturn = {
   attachments: number;
   insights: (Record<string, unknown>) | null;
   messages: number;
-  session: Record<string, unknown>;
+  session: {
+    acusConsumed?: number;
+    devinId: string;
+    devinMode?: string | null;
+    effectiveCreateAsUserId?: string | null;
+    id?: string;
+    isArchived?: boolean;
+    lastSyncedAt?: number | null;
+    maxAcuLimit?: number | null;
+    maxAcuLimitSource?: string | null;
+    origin?: string | null;
+    originId?: string | null;
+    originType?: string | null;
+    platform?: string | null;
+    projectId?: string | null;
+    proxRunId?: string | null;
+    resumable?: boolean | null;
+    serviceUserId?: string | null;
+    status: string;
+    statusDetail: string | null;
+    tags: string[];
+    taskId?: string | null;
+    title: string | null;
+    updatedAt: number;
+    url: string;
+    userId?: string | null;
+    [k: string]: unknown;
+  };
   [k: string]: unknown;
 };
 
@@ -3950,7 +6055,34 @@ export type DevinSessionsTerminateInput = {
 /** Return shape for `devin.sessions.terminate`. */
 export type DevinSessionsTerminateReturn = {
   archive: boolean;
-  session: Record<string, unknown>;
+  session: {
+    acusConsumed?: number;
+    devinId: string;
+    devinMode?: string | null;
+    effectiveCreateAsUserId?: string | null;
+    id?: string;
+    isArchived?: boolean;
+    lastSyncedAt?: number | null;
+    maxAcuLimit?: number | null;
+    maxAcuLimitSource?: string | null;
+    origin?: string | null;
+    originId?: string | null;
+    originType?: string | null;
+    platform?: string | null;
+    projectId?: string | null;
+    proxRunId?: string | null;
+    resumable?: boolean | null;
+    serviceUserId?: string | null;
+    status: string;
+    statusDetail: string | null;
+    tags: string[];
+    taskId?: string | null;
+    title: string | null;
+    updatedAt: number;
+    url: string;
+    userId?: string | null;
+    [k: string]: unknown;
+  };
   status: "terminated";
   [k: string]: unknown;
 };
@@ -3969,6 +6101,28 @@ export type EvalRunReturn = {
   runId: string;
   session: Record<string, unknown>;
   [k: string]: unknown;
+};
+
+/** Input shape for `feedback.send`. */
+export type FeedbackSendInput = {
+  console?: string;
+  kind?: string;
+  message: string[];
+  metadataJson?: string;
+  project?: string;
+  severity?: string;
+  surface?: string;
+  tag?: string;
+  title?: string;
+  url?: string;
+};
+
+/** Return shape for `feedback.send`. */
+export type FeedbackSendReturn = {
+  consoleUrl: string;
+  feedback: Record<string, unknown>;
+  success: true;
+  url: string;
 };
 
 /** Input shape for `gmail.list`. */
@@ -5944,6 +8098,204 @@ export type MediaSendReturn = {
   };
 };
 
+/** Input shape for `meetings.finalize`. */
+export type MeetingsFinalizeInput = {
+  noPostTranscribe?: boolean;
+  runDir?: string;
+  title?: string;
+};
+
+/** Return shape for `meetings.finalize`. */
+export type MeetingsFinalizeReturn = {
+  artifactId: string;
+  artifactPath: string;
+  diagnosticCount: number;
+  handoffMessage: string;
+  mediaRefCount: number;
+  session: {
+    endedAt: string | null;
+    id: string;
+    provider: string;
+    providerMeetingId: string | null;
+    startedAt: string | null;
+    title: string | null;
+  };
+  transcriptSegmentCount: number;
+};
+
+/** Input shape for `meetings.profiles.init`. */
+export type MeetingsProfilesInitInput = {
+  profileId: string;
+  source?: string;
+};
+
+/** Return shape for `meetings.profiles.init`. */
+export type MeetingsProfilesInitReturn = {
+  profileDir: string;
+  profilePath: string;
+  sourceKind: string;
+};
+
+/** Input shape for `meetings.profiles.list`. */
+export type MeetingsProfilesListInput = {
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `meetings.profiles.list`. */
+export type MeetingsProfilesListReturn = {
+  items: Array<{
+    chrome: {
+      browserChannel: string | null;
+      profileDir: string | null;
+    };
+    defaults: {
+      capture?: string;
+      duration?: string;
+      emptyGrace?: string;
+      maxDuration?: string;
+      name?: string;
+      out?: string;
+    };
+    id: string;
+    label: string;
+    live: {
+      agentId: string | null;
+      contextChars: number;
+      enabled: boolean;
+      includeSessionContext: boolean;
+      initialPromptChars: number;
+      initialPromptDelay: string | null;
+      tools: string[];
+    };
+    provider: string;
+    source: string;
+    sourceKind: string;
+    version: string;
+    voice: {
+      runtime: string;
+    };
+  }>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  profiles: Array<{
+    chrome: {
+      browserChannel: string | null;
+      profileDir: string | null;
+    };
+    defaults: {
+      capture?: string;
+      duration?: string;
+      emptyGrace?: string;
+      maxDuration?: string;
+      name?: string;
+      out?: string;
+    };
+    id: string;
+    label: string;
+    live: {
+      agentId: string | null;
+      contextChars: number;
+      enabled: boolean;
+      includeSessionContext: boolean;
+      initialPromptChars: number;
+      initialPromptDelay: string | null;
+      tools: string[];
+    };
+    provider: string;
+    source: string;
+    sourceKind: string;
+    version: string;
+    voice: {
+      runtime: string;
+    };
+  }>;
+  total: number;
+};
+
+/** Input shape for `meetings.profiles.show`. */
+export type MeetingsProfilesShowInput = {
+  profileId: string;
+};
+
+/** Return shape for `meetings.profiles.show`. */
+export type MeetingsProfilesShowReturn = {
+  chrome: {
+    browserChannel: string | null;
+    profileDir: string | null;
+  };
+  defaults: {
+    capture?: string;
+    duration?: string;
+    emptyGrace?: string;
+    maxDuration?: string;
+    name?: string;
+    out?: string;
+  };
+  id: string;
+  label: string;
+  live: {
+    agentId: string | null;
+    contextChars: number;
+    enabled: boolean;
+    includeSessionContext: boolean;
+    initialPromptChars: number;
+    initialPromptDelay: string | null;
+    tools: string[];
+  };
+  provider: string;
+  source: string;
+  sourceKind: string;
+  version: string;
+  voice: {
+    runtime: string;
+  };
+};
+
+/** Input shape for `meetings.profiles.validate`. */
+export type MeetingsProfilesValidateInput = {
+  profileId?: string;
+};
+
+/** Return shape for `meetings.profiles.validate`. */
+export type MeetingsProfilesValidateReturn = {
+  results: Array<{
+    error?: string;
+    id: string;
+    source: string;
+    sourceKind: string;
+    valid: boolean;
+  }>;
+  valid: boolean;
+};
+
+/** Input shape for `meetings.voice-runtimes`. */
+export type MeetingsVoiceRuntimesInput = Record<string, never>;
+
+/** Return shape for `meetings.voice-runtimes`. */
+export type MeetingsVoiceRuntimesReturn = {
+  candidates: Array<{
+    availability: string;
+    constraints: string[];
+    defaultModel?: string;
+    docsUrl: string;
+    id: string;
+    kind: string;
+    label: string;
+    providerRuntime?: string;
+    strengths: string[];
+  }>;
+  defaultRuntimeId: string;
+  recommendation: string;
+};
+
 /** Input shape for `metrics.dates`. */
 export type MetricsDatesInput = Record<string, never>;
 
@@ -6098,6 +8450,7 @@ export type ObserversProfilesValidateReturn = {
 
 /** Input shape for `observers.refresh`. */
 export type ObserversRefreshInput = {
+  reconcile?: string;
   session: string;
 };
 
@@ -6105,8 +8458,11 @@ export type ObserversRefreshInput = {
 export type ObserversRefreshReturn = {
   bindings: Array<Record<string, unknown>>;
   created: Array<Record<string, unknown>>;
+  disabled: Array<Record<string, unknown>>;
+  mode: "attach-missing" | "detach-disabled" | "refresh-profile" | "full-reconcile";
+  refreshedProfiles: Array<Record<string, unknown>>;
   skipped: Array<Record<string, unknown>>;
-  source: Record<string, unknown>;
+  source: (Record<string, unknown>) | null;
   total: number;
   [k: string]: unknown;
 };
@@ -6200,6 +8556,7 @@ export type ObserversRulesSetInput = {
   provider?: string;
   role?: string;
   scope?: string;
+  selector?: string;
   sourceAgent?: string;
   sourceProfile?: string;
   sourceProject?: string;
@@ -6251,16 +8608,17 @@ export type ObserversShowReturn = {
 
 /** Input shape for `pages.create`. */
 export type PagesCreateInput = {
+  args: string[];
   console?: string;
   defaultSite?: boolean;
-  project: string;
-  slug: string;
+  project?: string;
   visibility?: string;
 };
 
 /** Return shape for `pages.create`. */
 export type PagesCreateReturn = {
   consoleUrl: string;
+  contentPublishCommand: string | null;
   projectRef: string;
   site: Record<string, unknown>;
   success: true;
@@ -6269,11 +8627,10 @@ export type PagesCreateReturn = {
 
 /** Input shape for `pages.domains`. */
 export type PagesDomainsInput = {
+  args: string[];
   check?: boolean;
   console?: string;
-  hostnames: string[];
-  project: string;
-  site: string;
+  project?: string;
 };
 
 /** Return shape for `pages.domains`. */
@@ -6293,7 +8650,7 @@ export type PagesListInput = {
   console?: string;
   limit?: string;
   offset?: string;
-  project: string;
+  project?: string;
 };
 
 /** Return shape for `pages.list`. */
@@ -6315,11 +8672,95 @@ export type PagesListReturn = {
   total: number;
 };
 
+/** Input shape for `pages.publish`. */
+export type PagesPublishInput = {
+  args: string[];
+  artifactSlug?: string;
+  artifactVersion?: string;
+  assetBase?: string;
+  basePath?: string;
+  console?: string;
+  description?: string;
+  entrypoint?: string;
+  idempotencyKey?: string;
+  noActivate?: boolean;
+  project?: string;
+  reason?: string;
+  replaceRelease?: boolean;
+  route?: string;
+  site?: string;
+  title?: string;
+  uploadSession?: string;
+  visibility?: string;
+};
+
+/** Return shape for `pages.publish`. */
+export type PagesPublishReturn = {
+  artifact: unknown;
+  artifactVersion: unknown;
+  authenticated: true;
+  consoleUrl: string;
+  localSync: ({
+    reason: "package_source";
+    status: "skipped";
+  }) | ({
+    artifactId: string;
+    eventType: "published";
+    status: "recorded";
+    versionId: string;
+    versionNumber: number;
+  }) | ({
+    artifactId: string;
+    error: string;
+    status: "failed";
+    versionId: string;
+    versionNumber: number;
+  });
+  publish: unknown;
+  release: unknown;
+  routes: Array<Record<string, unknown>>;
+  site: unknown;
+  success: true;
+  upload: {
+    attempted: number;
+    skipped: number;
+  };
+  uploadSession: (Record<string, unknown>) | null;
+  url: string | null;
+};
+
+/** Input shape for `pages.published`. */
+export type PagesPublishedInput = {
+  console?: string;
+  limit?: string;
+  offset?: string;
+  project?: string;
+};
+
+/** Return shape for `pages.published`. */
+export type PagesPublishedReturn = {
+  consoleUrl: string;
+  items: Array<Record<string, unknown>>;
+  pages: Array<Record<string, unknown>>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  projectRef: string;
+  success: true;
+  total: number;
+};
+
 /** Input shape for `pages.update`. */
 export type PagesUpdateInput = {
+  args: string[];
   console?: string;
-  project: string;
-  site: string;
+  project?: string;
   visibility?: string;
 };
 
@@ -6336,10 +8777,9 @@ export type PagesUpdateReturn = {
 
 /** Input shape for `pages.visibility`. */
 export type PagesVisibilityInput = {
+  args: string[];
   console?: string;
-  project: string;
-  site: string;
-  visibility: string;
+  project?: string;
 };
 
 /** Return shape for `pages.visibility`. */
@@ -6353,230 +8793,227 @@ export type PagesVisibilityReturn = {
   url: string | null;
 };
 
+/** Input shape for `permissions.allow`. */
+export type PermissionsAllowInput = {
+  agent?: string;
+  apply?: boolean;
+  capabilities?: string;
+  description?: string;
+  label?: string;
+  profile: string;
+  to?: string;
+};
+
+/** Return shape for `permissions.allow`. */
+export type PermissionsAllowReturn = {
+  agentCeilings: string[];
+  capabilities: Array<{
+    objectId: string;
+    objectType: string;
+    permission: string;
+  }>;
+  changedCount: number;
+  description?: string;
+  dryRun: boolean;
+  label: string;
+  nextCommand?: string;
+  operations: Array<{
+    capability?: string;
+    kind: string;
+    message: string;
+    status: "planned" | "applied" | "unchanged";
+    target?: string;
+  }>;
+  profile: string;
+  tagSlug: string;
+  targets: Array<{
+    id: string;
+    type: string;
+  }>;
+};
+
 /** Input shape for `permissions.check`. */
 export type PermissionsCheckInput = {
-  object: string;
-  permission: string;
-  subject: string;
+  localOperator?: boolean;
+  objectId?: string;
+  objectType?: string;
+  permission?: string;
 };
 
 /** Return shape for `permissions.check`. */
 export type PermissionsCheckReturn = {
   allowed: boolean;
-  object: {
-    id: string;
-    raw: string;
-    type: string;
+  decision: {
+    allowed: boolean;
+    contextId?: string;
+    decision: "allow" | "deny" | "needs_approval" | "not_applicable";
+    durationMs?: number;
+    evidence?: Array<{
+      kind?: string;
+      message?: string;
+      objectId?: string;
+      objectType?: string;
+      permission?: string;
+      providerId?: string;
+      source?: string;
+    }>;
+    objectId: string;
+    objectType: string;
+    permission: string;
+    providerId: string;
+    providerVersion: string;
+    reasonCode: string;
+    requestId?: string;
+    subject?: {
+      id: string;
+      type: string;
+    };
   };
-  permission: string;
+  guidance?: {
+    breakGlass: string;
+    canonicalCapability: string;
+    inspectCommands: string[];
+    nextSteps: string[];
+    preferredPath: {
+      kind: string;
+      message: string;
+      suggestedTags: Array<{
+        capabilities: string[];
+        description?: string;
+        label: string;
+        slug: string;
+      }>;
+    };
+    rawCapabilityFallback: string;
+    requestShape: {
+      profileOrTag: string;
+      reason: string;
+      scope: string;
+      subject?: string;
+      ttl: string;
+    };
+    scope: string;
+  };
+};
+
+/** Input shape for `permissions.materialize`. */
+export type PermissionsMaterializeInput = {
+  subjectId?: string;
+  subjectType?: string;
+};
+
+/** Return shape for `permissions.materialize`. */
+export type PermissionsMaterializeReturn = {
+  capabilities: Array<{
+    objectId: string;
+    objectType: string;
+    permission: string;
+    source?: string;
+  }>;
+  guidance: {
+    breakGlass: string;
+    recurringAccess: string;
+  };
   subject: {
     id: string;
-    raw: string;
     type: string;
   };
 };
 
-/** Input shape for `permissions.clear`. */
-export type PermissionsClearInput = {
-  all?: boolean;
+/** Input shape for `permissions.resolve`. */
+export type PermissionsResolveInput = {
+  apply?: boolean;
+  capabilities?: string;
+  denialId: string;
+  profile?: string;
 };
 
-/** Return shape for `permissions.clear`. */
-export type PermissionsClearReturn = {
-  changedCount: number;
-  status: "cleared";
-  target: {
-    type: string;
-    [k: string]: unknown;
-  };
-};
-
-/** Input shape for `permissions.grant`. */
-export type PermissionsGrantInput = {
-  object: string;
-  relation: string;
-  subject: string;
-};
-
-/** Return shape for `permissions.grant`. */
-export type PermissionsGrantReturn = {
-  changedCount: number;
-  relation: {
-    id?: string;
-    object: string;
+/** Return shape for `permissions.resolve`. */
+export type PermissionsResolveReturn = {
+  agentCeilings: string[];
+  capabilities: Array<{
     objectId: string;
-    objectMembers?: string[];
     objectType: string;
-    relation: string;
-    source?: string;
-    subject: string;
-    subjectId: string;
-    subjectType: string;
-    [k: string]: unknown;
-  };
-  status: "granted";
-  target: {
-    type: string;
-    [k: string]: unknown;
-  };
-  warnings: Array<Record<string, unknown>>;
-};
-
-/** Input shape for `permissions.init`. */
-export type PermissionsInitInput = {
-  subject: string;
-  template: string;
-};
-
-/** Return shape for `permissions.init`. */
-export type PermissionsInitReturn = {
-  changedCount: number;
-  relations: Array<{
-    id?: string;
-    object: string;
-    objectId: string;
-    objectMembers?: string[];
-    objectType: string;
-    relation: string;
-    source?: string;
-    subject: string;
-    subjectId: string;
-    subjectType: string;
-    [k: string]: unknown;
+    permission: string;
   }>;
-  status: "applied";
-  target: {
-    type: string;
-    [k: string]: unknown;
-  };
-};
-
-/** Input shape for `permissions.list`. */
-export type PermissionsListInput = {
-  limit?: string;
-  object?: string;
-  offset?: string;
-  relation?: string;
-  source?: string;
-  subject?: string;
-};
-
-/** Return shape for `permissions.list`. */
-export type PermissionsListReturn = {
-  filter: {
-    objectId?: string;
-    objectType?: string;
-    relation?: string;
-    source?: string;
-    subjectId?: string;
-    subjectType?: string;
-    [k: string]: unknown;
-  };
-  items: Array<{
-    id?: string;
-    object: string;
-    objectId: string;
-    objectMembers?: string[];
-    objectType: string;
-    relation: string;
-    source?: string;
-    subject: string;
-    subjectId: string;
-    subjectType: string;
-    [k: string]: unknown;
-  }>;
-  pagination: {
-    hasMore: boolean;
-    limit: number;
-    nextCommand: string | null;
-    nextOffset: number | null;
-    offset: number;
-    returned: number;
-    total: number;
-  };
-  relations: Array<{
-    id?: string;
-    object: string;
-    objectId: string;
-    objectMembers?: string[];
-    objectType: string;
-    relation: string;
-    source?: string;
-    subject: string;
-    subjectId: string;
-    subjectType: string;
-    [k: string]: unknown;
-  }>;
-  total: number;
-};
-
-/** Input shape for `permissions.revoke`. */
-export type PermissionsRevokeInput = {
-  object: string;
-  relation: string;
-  subject: string;
-};
-
-/** Return shape for `permissions.revoke`. */
-export type PermissionsRevokeReturn = {
   changedCount: number;
-  relation: {
-    id?: string;
-    object: string;
-    objectId: string;
-    objectMembers?: string[];
-    objectType: string;
-    relation: string;
-    source?: string;
+  denial: {
+    agentId: string | null;
+    contextId: string | null;
+    id: number;
+    missingCapability: string;
+    sessionName: string | null;
     subject: string;
-    subjectId: string;
-    subjectType: string;
-    [k: string]: unknown;
   };
-  remainingIndividualRelations: Array<{
-    id?: string;
-    object: string;
-    objectId: string;
-    objectMembers?: string[];
-    objectType: string;
-    relation: string;
-    source?: string;
-    subject: string;
-    subjectId: string;
-    subjectType: string;
-    [k: string]: unknown;
+  description?: string;
+  dryRun: boolean;
+  guidance?: {
+    breakGlass: string;
+    canonicalCapability: string;
+    inspectCommands: string[];
+    nextSteps: string[];
+    preferredPath: {
+      kind: string;
+      message: string;
+      suggestedTags: Array<{
+        capabilities: string[];
+        description?: string;
+        label: string;
+        slug: string;
+      }>;
+    };
+    rawCapabilityFallback: string;
+    requestShape: {
+      profileOrTag: string;
+      reason: string;
+      scope: string;
+      subject?: string;
+      ttl: string;
+    };
+    scope: string;
+  };
+  label: string;
+  nextCommand?: string;
+  operations: Array<{
+    capability?: string;
+    kind: string;
+    message: string;
+    status: "planned" | "applied" | "unchanged";
+    target?: string;
   }>;
-  status: "revoked";
-  target: {
+  profile: string;
+  tagSlug: string;
+  targets: Array<{
+    id: string;
     type: string;
-    [k: string]: unknown;
-  };
+  }>;
 };
 
-/** Input shape for `permissions.sync`. */
-export type PermissionsSyncInput = Record<string, never>;
+/** Input shape for `permissions.status`. */
+export type PermissionsStatusInput = Record<string, never>;
 
-/** Return shape for `permissions.sync`. */
-export type PermissionsSyncReturn = {
-  changedCount: number;
-  relations: Array<{
-    id?: string;
-    object: string;
-    objectId: string;
-    objectMembers?: string[];
-    objectType: string;
-    relation: string;
-    source?: string;
-    subject: string;
-    subjectId: string;
-    subjectType: string;
-    [k: string]: unknown;
+/** Return shape for `permissions.status`. */
+export type PermissionsStatusReturn = {
+  authorizationProviders: Array<{
+    id: string;
+    required: boolean;
+    version: string;
   }>;
-  status: "synced";
-  target: {
-    type: string;
-    [k: string]: unknown;
+  capabilityMaterializers: Array<{
+    id: string;
+    required: boolean;
+    version: string;
+  }>;
+  guidance: {
+    breakGlass: string;
+    inspect: string[];
+    recurringAccess: string;
   };
+  mutationCommands: {
+    enabled: boolean;
+    message: string;
+  };
+  status: "provider-runtime";
 };
 
 /** Input shape for `projects.create`. */
@@ -7517,6 +9954,218 @@ export type RuntimeCredentialsStatusReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `runtime.presets.create`. */
+export type RuntimePresetsCreateInput = {
+  description?: string;
+  disabled?: boolean;
+  id: string;
+  model?: string;
+  provider?: string;
+};
+
+/** Return shape for `runtime.presets.create`. */
+export type RuntimePresetsCreateReturn = {
+  action: "create" | "set-model" | "enable" | "disable" | "delete";
+  changed: boolean;
+  dryRun: boolean;
+  preset: {
+    createdAt: number;
+    description: string | null;
+    enabled: boolean;
+    id: string;
+    model: string;
+    provider: string;
+    updatedAt: number;
+    version: number;
+  };
+};
+
+/** Input shape for `runtime.presets.delete`. */
+export type RuntimePresetsDeleteInput = {
+  dryRun?: boolean;
+  id: string;
+};
+
+/** Return shape for `runtime.presets.delete`. */
+export type RuntimePresetsDeleteReturn = {
+  action: "create" | "set-model" | "enable" | "disable" | "delete";
+  changed: boolean;
+  dryRun: boolean;
+  preset: {
+    createdAt: number;
+    description: string | null;
+    enabled: boolean;
+    id: string;
+    model: string;
+    provider: string;
+    updatedAt: number;
+    version: number;
+  };
+};
+
+/** Input shape for `runtime.presets.disable`. */
+export type RuntimePresetsDisableInput = {
+  dryRun?: boolean;
+  id: string;
+};
+
+/** Return shape for `runtime.presets.disable`. */
+export type RuntimePresetsDisableReturn = {
+  action: "create" | "set-model" | "enable" | "disable" | "delete";
+  changed: boolean;
+  dryRun: boolean;
+  preset: {
+    createdAt: number;
+    description: string | null;
+    enabled: boolean;
+    id: string;
+    model: string;
+    provider: string;
+    updatedAt: number;
+    version: number;
+  };
+};
+
+/** Input shape for `runtime.presets.enable`. */
+export type RuntimePresetsEnableInput = {
+  dryRun?: boolean;
+  id: string;
+};
+
+/** Return shape for `runtime.presets.enable`. */
+export type RuntimePresetsEnableReturn = {
+  action: "create" | "set-model" | "enable" | "disable" | "delete";
+  changed: boolean;
+  dryRun: boolean;
+  preset: {
+    createdAt: number;
+    description: string | null;
+    enabled: boolean;
+    id: string;
+    model: string;
+    provider: string;
+    updatedAt: number;
+    version: number;
+  };
+};
+
+/** Input shape for `runtime.presets.impact`. */
+export type RuntimePresetsImpactInput = {
+  id: string;
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `runtime.presets.impact`. */
+export type RuntimePresetsImpactReturn = {
+  agents: Array<{
+    agentId: string;
+    effectiveModel: string;
+    modelSource: "agent_preset";
+    name: string | null;
+    provider: string;
+    shadowingSessions: number;
+  }>;
+  correctionCommand: string | null;
+  enabled: boolean;
+  limit: number;
+  model: string;
+  offset: number;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  presetId: string;
+  provider: string;
+  referenced: boolean;
+  referencingAgentsTotal: number;
+  shadowingSessionsTotal: number;
+  version: number;
+};
+
+/** Input shape for `runtime.presets.list`. */
+export type RuntimePresetsListInput = {
+  disabled?: boolean;
+  enabled?: boolean;
+  limit?: string;
+  offset?: string;
+  provider?: string;
+};
+
+/** Return shape for `runtime.presets.list`. */
+export type RuntimePresetsListReturn = {
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  presets: Array<{
+    createdAt: number;
+    description: string | null;
+    enabled: boolean;
+    id: string;
+    model: string;
+    provider: string;
+    updatedAt: number;
+    version: number;
+  }>;
+  total: number;
+};
+
+/** Input shape for `runtime.presets.set`. */
+export type RuntimePresetsSetInput = {
+  dryRun?: boolean;
+  field: string;
+  id: string;
+  value: string;
+};
+
+/** Return shape for `runtime.presets.set`. */
+export type RuntimePresetsSetReturn = {
+  action: "create" | "set-model" | "enable" | "disable" | "delete";
+  changed: boolean;
+  dryRun: boolean;
+  preset: {
+    createdAt: number;
+    description: string | null;
+    enabled: boolean;
+    id: string;
+    model: string;
+    provider: string;
+    updatedAt: number;
+    version: number;
+  };
+};
+
+/** Input shape for `runtime.presets.show`. */
+export type RuntimePresetsShowInput = {
+  id: string;
+};
+
+/** Return shape for `runtime.presets.show`. */
+export type RuntimePresetsShowReturn = {
+  preset: {
+    createdAt: number;
+    description: string | null;
+    enabled: boolean;
+    id: string;
+    model: string;
+    provider: string;
+    updatedAt: number;
+    version: number;
+  };
+  referencingAgentsTotal: number;
+};
+
 /** Input shape for `sdk.client.check`. */
 export type SdkClientCheckInput = {
   out?: string;
@@ -7635,6 +10284,12 @@ export type SelfContextInput = {
 
 /** Return shape for `self.context`. */
 export type SelfContextReturn = {
+  actor: {
+    data?: unknown;
+    reason?: string;
+    status: "ok" | "partial" | "missing" | "unavailable";
+    [k: string]: unknown;
+  };
   chat: {
     data?: unknown;
     reason?: string;
@@ -7742,6 +10397,12 @@ export type SelfWhoamiInput = Record<string, never>;
 
 /** Return shape for `self.whoami`. */
 export type SelfWhoamiReturn = {
+  actor: {
+    data?: unknown;
+    reason?: string;
+    status: "ok" | "partial" | "missing" | "unavailable";
+    [k: string]: unknown;
+  };
   chat: {
     data?: unknown;
     reason?: string;
@@ -7997,6 +10658,60 @@ export type SessionsFollowupsSnoozeInput = {
 /** Return shape for `sessions.followups.snooze`. */
 export type SessionsFollowupsSnoozeReturn = Record<string, unknown>;
 
+/** Input shape for `sessions.followups.update`. */
+export type SessionsFollowupsUpdateInput = {
+  barrier?: string;
+  description?: string;
+  id: string;
+  message?: string;
+  name?: string;
+  recalculateNext?: boolean;
+  step?: string[];
+};
+
+/** Return shape for `sessions.followups.update`. */
+export type SessionsFollowupsUpdateReturn = {
+  followup: {
+    createdAt: number;
+    deliveryBarrier: "immediate_interrupt" | "after_tool" | "after_response" | "after_task";
+    description?: string;
+    enabled: boolean;
+    id: string;
+    lastError?: string;
+    lastRunAt?: number;
+    lastRunAtIso: string | null;
+    lastStatus?: "ok" | "skipped" | "failed";
+    messageTemplate: string;
+    metadata?: Record<string, unknown>;
+    name: string;
+    nextRunAt?: number;
+    nextRunAtIso: string | null;
+    ownerId: string;
+    ownerType: string;
+    schedule: {
+      at?: number;
+      cron?: string;
+      every?: number;
+      steps?: Array<{
+        afterMs: number;
+        label?: string;
+        messageTemplate: string;
+      }>;
+      timezone?: string;
+      type: "every" | "at" | "cron";
+    };
+    scheduleDescription: string;
+    steps?: Array<{
+      afterMs: number;
+      label?: string;
+      messageTemplate: string;
+    }>;
+    targetRef: string;
+    targetType: "session" | "chat" | "reading_list";
+    updatedAt: number;
+  };
+};
+
 /** Input shape for `sessions.goal`. */
 export type SessionsGoalInput = {
   action: string;
@@ -8004,13 +10719,36 @@ export type SessionsGoalInput = {
   nameOrKey: string;
   objective?: string;
   project?: string;
+  reason?: string;
   seconds?: string;
   task?: string;
   tokens?: string;
 };
 
 /** Return shape for `sessions.goal`. */
-export type SessionsGoalReturn = Record<string, unknown>;
+export type SessionsGoalReturn = {
+  action: string;
+  changed: boolean;
+  goal: ({
+    blockedReason: string | null;
+    createdAt: number;
+    goalId: string;
+    objective: string;
+    projectId: string | null;
+    sessionKey: string;
+    status: "active" | "paused" | "budget_limited" | "blocked" | "complete";
+    taskId: string | null;
+    timeUsedSeconds: number;
+    tokenBudget: number | null;
+    tokensUsed: number;
+    updatedAt: number;
+  }) | null;
+  session: {
+    agentId: string;
+    label: string;
+    sessionKey: string;
+  };
+};
 
 /** Input shape for `sessions.info`. */
 export type SessionsInfoInput = {
@@ -8099,7 +10837,41 @@ export type SessionsReadInput = {
 };
 
 /** Return shape for `sessions.read`. */
-export type SessionsReadReturn = Record<string, unknown>;
+export type SessionsReadReturn = ({
+  count?: number;
+  messages: Array<({
+    role: "user" | "assistant";
+    text: string;
+    time: string;
+    [k: string]: unknown;
+  }) | ({
+    content: string;
+    createdAt: number;
+    id: string;
+    role: string;
+    source: string;
+    [k: string]: unknown;
+  })>;
+  session: {
+    agentId: string;
+    label: string;
+    name?: string;
+    sessionKey: string;
+    [k: string]: unknown;
+  };
+  totalMessages?: number;
+  transcript: {
+    available: boolean;
+    [k: string]: unknown;
+  };
+  [k: string]: unknown;
+}) | ({
+  error?: string;
+  messageId?: string;
+  meta?: unknown;
+  ok: boolean;
+  [k: string]: unknown;
+});
 
 /** Input shape for `sessions.rename`. */
 export type SessionsRenameInput = {
@@ -8258,7 +11030,27 @@ export type SessionsSendInput = {
 };
 
 /** Return shape for `sessions.send`. */
-export type SessionsSendReturn = Record<string, unknown>;
+export type SessionsSendReturn = {
+  action: "send";
+  createdSession: boolean;
+  delivery: Record<string, unknown>;
+  mode: "fire-and-forget" | "wait";
+  promptLength: number;
+  published: boolean;
+  response?: {
+    length: number;
+    text: string;
+  };
+  session: {
+    agentId: string;
+    label: string;
+    name?: string;
+    sessionKey: string;
+    [k: string]: unknown;
+  };
+  thread: (Record<string, unknown>) | null;
+  [k: string]: unknown;
+};
 
 /** Input shape for `sessions.set-display`. */
 export type SessionsSetDisplayInput = {
@@ -8269,6 +11061,82 @@ export type SessionsSetDisplayInput = {
 /** Return shape for `sessions.set-display`. */
 export type SessionsSetDisplayReturn = Record<string, unknown>;
 
+/** Input shape for `sessions.set-effort`. */
+export type SessionsSetEffortInput = {
+  level: string;
+  nameOrKey: string;
+};
+
+/** Return shape for `sessions.set-effort`. */
+export type SessionsSetEffortReturn = {
+  action: "set-effort";
+  after: ({
+    agentId: string;
+    effectiveModel: string;
+    effectiveProvider: string;
+    effortOverride?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+    ephemeral: boolean;
+    expiresAt: number | null;
+    label: string;
+    modelOverride?: string;
+    modelPresetId: string | null;
+    modelPresetVersion: number | null;
+    modelSource: string;
+    name?: string;
+    runtimeOptions: {
+      effort: {
+        source: "session_override" | "agent_default" | "runtime_default";
+        value: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+      };
+      model: {
+        source: string;
+        value: string;
+      };
+      thinking: {
+        source: string | null;
+        value: string | null;
+      };
+    };
+    sessionKey: string;
+  }) | null;
+  appliesOn: "next-turn-runtime-restart";
+  before: {
+    agentId: string;
+    effectiveModel: string;
+    effectiveProvider: string;
+    effortOverride?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+    ephemeral: boolean;
+    expiresAt: number | null;
+    label: string;
+    modelOverride?: string;
+    modelPresetId: string | null;
+    modelPresetVersion: number | null;
+    modelSource: string;
+    name?: string;
+    runtimeOptions: {
+      effort: {
+        source: "session_override" | "agent_default" | "runtime_default";
+        value: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+      };
+      model: {
+        source: string;
+        value: string;
+      };
+      thinking: {
+        source: string | null;
+        value: string | null;
+      };
+    };
+    sessionKey: string;
+  };
+  changed: boolean;
+  effectiveEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+  effectiveEffortSource: "session_override" | "agent_default" | "runtime_default";
+  effortOverride: ("none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra") | null;
+  sessionKey: string;
+  sessionName: string | null;
+};
+
 /** Input shape for `sessions.set-model`. */
 export type SessionsSetModelInput = {
   model: string;
@@ -8277,6 +11145,81 @@ export type SessionsSetModelInput = {
 
 /** Return shape for `sessions.set-model`. */
 export type SessionsSetModelReturn = Record<string, unknown>;
+
+/** Input shape for `sessions.set-provider`. */
+export type SessionsSetProviderInput = {
+  nameOrKey: string;
+  provider: string;
+};
+
+/** Return shape for `sessions.set-provider`. */
+export type SessionsSetProviderReturn = {
+  action: "set-provider";
+  after: ({
+    agentId: string;
+    effectiveModel: string;
+    effectiveProvider: string;
+    effortOverride?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+    ephemeral: boolean;
+    expiresAt: number | null;
+    label: string;
+    modelOverride?: string;
+    modelPresetId: string | null;
+    modelPresetVersion: number | null;
+    modelSource: string;
+    name?: string;
+    runtimeOptions: {
+      effort: {
+        source: "session_override" | "agent_default" | "runtime_default";
+        value: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+      };
+      model: {
+        source: string;
+        value: string;
+      };
+      thinking: {
+        source: string | null;
+        value: string | null;
+      };
+    };
+    sessionKey: string;
+  }) | null;
+  appliesOn: "next-turn-runtime-restart";
+  before: {
+    agentId: string;
+    effectiveModel: string;
+    effectiveProvider: string;
+    effortOverride?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+    ephemeral: boolean;
+    expiresAt: number | null;
+    label: string;
+    modelOverride?: string;
+    modelPresetId: string | null;
+    modelPresetVersion: number | null;
+    modelSource: string;
+    name?: string;
+    runtimeOptions: {
+      effort: {
+        source: "session_override" | "agent_default" | "runtime_default";
+        value: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+      };
+      model: {
+        source: string;
+        value: string;
+      };
+      thinking: {
+        source: string | null;
+        value: string | null;
+      };
+    };
+    sessionKey: string;
+  };
+  changed: boolean;
+  effectiveProvider: string;
+  runtimeProviderOverride: string | null;
+  sessionKey: string;
+  sessionName: string | null;
+};
 
 /** Input shape for `sessions.set-thinking`. */
 export type SessionsSetThinkingInput = {
@@ -8716,6 +11659,70 @@ export type SkillGatesShowReturn = {
   };
 };
 
+/** Input shape for `skills.grant`. */
+export type SkillsGrantInput = {
+  agent: string;
+  note?: string;
+  skill: string;
+};
+
+/** Return shape for `skills.grant`. */
+export type SkillsGrantReturn = {
+  agentId: string;
+  grant?: {
+    agentId: string;
+    grantedAt: number;
+    note?: string;
+    skillName: string;
+  };
+  skillName: string;
+  success: boolean;
+};
+
+/** Input shape for `skills.grant-batch`. */
+export type SkillsGrantBatchInput = {
+  agent?: string;
+  allAgents?: boolean;
+  allSkills?: boolean;
+  dryRun?: boolean;
+  note?: string;
+  skill?: string;
+};
+
+/** Return shape for `skills.grant-batch`. */
+export type SkillsGrantBatchReturn = {
+  agentsTargeted: number;
+  dryRun: boolean;
+  errors: Array<{
+    agentId: string;
+    error: string;
+    skillName: string;
+  }>;
+  op: "grant" | "revoke";
+  pairsAffected: number;
+  pairsSkipped: number;
+  sampleAgents: string[];
+  sampleSkills: string[];
+  skillsTargeted: number;
+};
+
+/** Input shape for `skills.inspect`. */
+export type SkillsInspectInput = {
+  agent: string;
+};
+
+/** Return shape for `skills.inspect`. */
+export type SkillsInspectReturn = {
+  agentId: string;
+  allowlist: string[];
+  hasConfiguration: boolean;
+  provenance: {
+    baseline: string[];
+    fromCapabilities: string[];
+    fromGrants: string[];
+  };
+};
+
 /** Input shape for `skills.install`. */
 export type SkillsInstallInput = {
   all?: boolean;
@@ -8781,6 +11788,51 @@ export type SkillsListReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `skills.revoke`. */
+export type SkillsRevokeInput = {
+  agent: string;
+  skill: string;
+};
+
+/** Return shape for `skills.revoke`. */
+export type SkillsRevokeReturn = {
+  agentId: string;
+  grant?: {
+    agentId: string;
+    grantedAt: number;
+    note?: string;
+    skillName: string;
+  };
+  skillName: string;
+  success: boolean;
+};
+
+/** Input shape for `skills.revoke-batch`. */
+export type SkillsRevokeBatchInput = {
+  agent?: string;
+  allAgents?: boolean;
+  allSkills?: boolean;
+  dryRun?: boolean;
+  skill?: string;
+};
+
+/** Return shape for `skills.revoke-batch`. */
+export type SkillsRevokeBatchReturn = {
+  agentsTargeted: number;
+  dryRun: boolean;
+  errors: Array<{
+    agentId: string;
+    error: string;
+    skillName: string;
+  }>;
+  op: "grant" | "revoke";
+  pairsAffected: number;
+  pairsSkipped: number;
+  sampleAgents: string[];
+  sampleSkills: string[];
+  skillsTargeted: number;
+};
+
 /** Input shape for `skills.show`. */
 export type SkillsShowInput = {
   installed?: boolean;
@@ -8812,6 +11864,791 @@ export type SkillsSyncReturn = {
   success: true;
   total: number;
   [k: string]: unknown;
+};
+
+/** Input shape for `skills.who`. */
+export type SkillsWhoInput = {
+  agent?: string;
+  skill?: string;
+};
+
+/** Return shape for `skills.who`. */
+export type SkillsWhoReturn = {
+  grants: Array<{
+    agentId: string;
+    grantedAt: number;
+    note?: string;
+    skillName: string;
+  }>;
+  skillName?: string;
+  total: number;
+};
+
+/** Input shape for `slack.blocks-send`. */
+export type SlackBlocksSendInput = {
+  channel: string;
+  connection?: string;
+  ephemeralUser?: string;
+  execute?: boolean;
+  file: string;
+  text?: string;
+  threadTs?: string;
+};
+
+/** Return shape for `slack.blocks-send`. */
+export type SlackBlocksSendReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.blocks-showcase`. */
+export type SlackBlocksShowcaseInput = {
+  channel: string;
+  execute?: boolean;
+  threadTs?: string;
+};
+
+/** Return shape for `slack.blocks-showcase`. */
+export type SlackBlocksShowcaseReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.blocks-update`. */
+export type SlackBlocksUpdateInput = {
+  channel: string;
+  execute?: boolean;
+  file: string;
+  text?: string;
+  ts: string;
+};
+
+/** Return shape for `slack.blocks-update`. */
+export type SlackBlocksUpdateReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.blocks-validate`. */
+export type SlackBlocksValidateInput = {
+  channel?: string;
+  file: string;
+  target?: string;
+};
+
+/** Return shape for `slack.blocks-validate`. */
+export type SlackBlocksValidateReturn = {
+  connection: string;
+  item?: unknown;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-access-delete`. */
+export type SlackCanvasAccessDeleteInput = {
+  canvas: string;
+  channel?: string;
+  channels?: string;
+  execute?: boolean;
+  users?: string;
+};
+
+/** Return shape for `slack.canvas-access-delete`. */
+export type SlackCanvasAccessDeleteReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-access-set`. */
+export type SlackCanvasAccessSetInput = {
+  access: string;
+  canvas: string;
+  channel?: string;
+  channels?: string;
+  execute?: boolean;
+  users?: string;
+};
+
+/** Return shape for `slack.canvas-access-set`. */
+export type SlackCanvasAccessSetReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-artifact-publish`. */
+export type SlackCanvasArtifactPublishInput = {
+  artifactOrFile: string;
+  canvas?: string;
+  channel?: string;
+  execute?: boolean;
+  skipRefresh?: boolean;
+  slackChannel?: string;
+  title?: string;
+};
+
+/** Return shape for `slack.canvas-artifact-publish`. */
+export type SlackCanvasArtifactPublishReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-artifact-status`. */
+export type SlackCanvasArtifactStatusInput = {
+  artifact: string;
+};
+
+/** Return shape for `slack.canvas-artifact-status`. */
+export type SlackCanvasArtifactStatusReturn = {
+  item: Record<string, unknown>;
+  ok: true;
+  provider: "slack";
+};
+
+/** Input shape for `slack.canvas-channel-create`. */
+export type SlackCanvasChannelCreateInput = {
+  artifact?: string;
+  channel: string;
+  ensure?: boolean;
+  execute?: boolean;
+  markdown?: string;
+  markdownFile?: string;
+  skipRefresh?: boolean;
+  title?: string;
+};
+
+/** Return shape for `slack.canvas-channel-create`. */
+export type SlackCanvasChannelCreateReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-channel-showcase`. */
+export type SlackCanvasChannelShowcaseInput = {
+  channel: string;
+  execute?: boolean;
+  title?: string;
+};
+
+/** Return shape for `slack.canvas-channel-showcase`. */
+export type SlackCanvasChannelShowcaseReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-create`. */
+export type SlackCanvasCreateInput = {
+  artifact?: string;
+  channel?: string;
+  execute?: boolean;
+  markdown?: string;
+  markdownFile?: string;
+  skipRefresh?: boolean;
+  slackChannel?: string;
+  title?: string;
+};
+
+/** Return shape for `slack.canvas-create`. */
+export type SlackCanvasCreateReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-delete`. */
+export type SlackCanvasDeleteInput = {
+  canvas: string;
+  channel?: string;
+  execute?: boolean;
+};
+
+/** Return shape for `slack.canvas-delete`. */
+export type SlackCanvasDeleteReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-edit`. */
+export type SlackCanvasEditInput = {
+  artifact?: string;
+  canvas: string;
+  channel?: string;
+  execute?: boolean;
+  markdown?: string;
+  markdownFile?: string;
+  operation: string;
+  sectionId?: string;
+  skipRefresh?: boolean;
+  title?: string;
+};
+
+/** Return shape for `slack.canvas-edit`. */
+export type SlackCanvasEditReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-sections-lookup`. */
+export type SlackCanvasSectionsLookupInput = {
+  canvas: string;
+  channel?: string;
+  containsText?: string;
+  sectionTypes?: string;
+};
+
+/** Return shape for `slack.canvas-sections-lookup`. */
+export type SlackCanvasSectionsLookupReturn = {
+  connection: string;
+  items: unknown[];
+  ok: boolean;
+  pagination: {
+    cursor: string | null;
+    hasMore: boolean;
+    limit: number;
+    nextCursor: string | null;
+  };
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.canvas-showcase`. */
+export type SlackCanvasShowcaseInput = {
+  canvas: string;
+  channel?: string;
+  execute?: boolean;
+  slackChannel?: string;
+  title?: string;
+};
+
+/** Return shape for `slack.canvas-showcase`. */
+export type SlackCanvasShowcaseReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.channels-create`. */
+export type SlackChannelsCreateInput = {
+  channel?: string;
+  execute?: boolean;
+  name: string;
+  private?: boolean;
+};
+
+/** Return shape for `slack.channels-create`. */
+export type SlackChannelsCreateReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.channels-history`. */
+export type SlackChannelsHistoryInput = {
+  channel: string;
+  cursor?: string;
+  inclusive?: boolean;
+  latest?: string;
+  limit?: string;
+  oldest?: string;
+};
+
+/** Return shape for `slack.channels-history`. */
+export type SlackChannelsHistoryReturn = {
+  connection: string;
+  items: unknown[];
+  ok: boolean;
+  pagination: {
+    cursor: string | null;
+    hasMore: boolean;
+    limit: number;
+    nextCursor: string | null;
+  };
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.channels-info`. */
+export type SlackChannelsInfoInput = {
+  channel: string;
+};
+
+/** Return shape for `slack.channels-info`. */
+export type SlackChannelsInfoReturn = {
+  connection: string;
+  item?: unknown;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.channels-invite`. */
+export type SlackChannelsInviteInput = {
+  channel: string;
+  connection?: string;
+  execute?: boolean;
+  users: string;
+};
+
+/** Return shape for `slack.channels-invite`. */
+export type SlackChannelsInviteReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.channels-list`. */
+export type SlackChannelsListInput = {
+  channel?: string;
+  cursor?: string;
+  includeArchived?: boolean;
+  limit?: string;
+  types?: string;
+};
+
+/** Return shape for `slack.channels-list`. */
+export type SlackChannelsListReturn = {
+  connection: string;
+  items: unknown[];
+  ok: boolean;
+  pagination: {
+    cursor: string | null;
+    hasMore: boolean;
+    limit: number;
+    nextCursor: string | null;
+  };
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.channels-rename`. */
+export type SlackChannelsRenameInput = {
+  channel: string;
+  execute?: boolean;
+  name: string;
+};
+
+/** Return shape for `slack.channels-rename`. */
+export type SlackChannelsRenameReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.files-list`. */
+export type SlackFilesListInput = {
+  channel?: string;
+  cursor?: string;
+  limit?: string;
+  slackChannel?: string;
+  user?: string;
+};
+
+/** Return shape for `slack.files-list`. */
+export type SlackFilesListReturn = {
+  connection: string;
+  items: unknown[];
+  ok: boolean;
+  pagination: {
+    cursor: string | null;
+    hasMore: boolean;
+    limit: number;
+    nextCursor: string | null;
+  };
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.interactions-respond`. */
+export type SlackInteractionsRespondInput = {
+  channel?: string;
+  execute?: boolean;
+  file: string;
+  responseUrlId: string;
+};
+
+/** Return shape for `slack.interactions-respond`. */
+export type SlackInteractionsRespondReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.members-list`. */
+export type SlackMembersListInput = {
+  channel: string;
+  cursor?: string;
+  limit?: string;
+};
+
+/** Return shape for `slack.members-list`. */
+export type SlackMembersListReturn = {
+  connection: string;
+  items: unknown[];
+  ok: boolean;
+  pagination: {
+    cursor: string | null;
+    hasMore: boolean;
+    limit: number;
+    nextCursor: string | null;
+  };
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.messages-inspect`. */
+export type SlackMessagesInspectInput = {
+  channel: string;
+  ts: string;
+};
+
+/** Return shape for `slack.messages-inspect`. */
+export type SlackMessagesInspectReturn = {
+  connection: string;
+  item?: unknown;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.messages-replay`. */
+export type SlackMessagesReplayInput = {
+  channel: string;
+  execute?: boolean;
+  force?: boolean;
+  ts: string;
+};
+
+/** Return shape for `slack.messages-replay`. */
+export type SlackMessagesReplayReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.messages-send`. */
+export type SlackMessagesSendInput = {
+  channel: string;
+  ephemeralUser?: string;
+  execute?: boolean;
+  text: string;
+  threadTs?: string;
+};
+
+/** Return shape for `slack.messages-send`. */
+export type SlackMessagesSendReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.modals-open`. */
+export type SlackModalsOpenInput = {
+  channel?: string;
+  execute?: boolean;
+  file: string;
+  triggerId: string;
+};
+
+/** Return shape for `slack.modals-open`. */
+export type SlackModalsOpenReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.modals-push`. */
+export type SlackModalsPushInput = {
+  channel?: string;
+  execute?: boolean;
+  file: string;
+  triggerId: string;
+};
+
+/** Return shape for `slack.modals-push`. */
+export type SlackModalsPushReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.modals-update`. */
+export type SlackModalsUpdateInput = {
+  channel?: string;
+  execute?: boolean;
+  externalId?: boolean;
+  file: string;
+  hash?: string;
+  view: string;
+};
+
+/** Return shape for `slack.modals-update`. */
+export type SlackModalsUpdateReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.permissions-list`. */
+export type SlackPermissionsListInput = {
+  channel?: string;
+};
+
+/** Return shape for `slack.permissions-list`. */
+export type SlackPermissionsListReturn = {
+  connection: string;
+  item?: unknown;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.topology`. */
+export type SlackTopologyInput = {
+  channel?: string;
+  cursor?: string;
+  includeArchived?: boolean;
+  limit?: string;
+  types?: string;
+};
+
+/** Return shape for `slack.topology`. */
+export type SlackTopologyReturn = {
+  accountId: string;
+  capabilities: Record<string, unknown>;
+  channels: unknown[];
+  connection: string;
+  ok: true;
+  provider: "slack";
+  source: string;
+  ungroupedChannelIds: string[];
+};
+
+/** Input shape for `slack.work-objects-present-details`. */
+export type SlackWorkObjectsPresentDetailsInput = {
+  channel?: string;
+  connection?: string;
+  execute?: boolean;
+  file: string;
+  triggerId: string;
+};
+
+/** Return shape for `slack.work-objects-present-details`. */
+export type SlackWorkObjectsPresentDetailsReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.work-objects-send`. */
+export type SlackWorkObjectsSendInput = {
+  channel: string;
+  connection?: string;
+  execute?: boolean;
+  file: string;
+  text?: string;
+  threadTs?: string;
+};
+
+/** Return shape for `slack.work-objects-send`. */
+export type SlackWorkObjectsSendReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.work-objects-unfurl`. */
+export type SlackWorkObjectsUnfurlInput = {
+  channel: string;
+  connection?: string;
+  execute?: boolean;
+  file: string;
+  ts: string;
+  url: string;
+};
+
+/** Return shape for `slack.work-objects-unfurl`. */
+export type SlackWorkObjectsUnfurlReturn = {
+  connection: string;
+  dryRun: boolean;
+  item?: unknown;
+  method: string;
+  ok: boolean;
+  provider: "slack";
+  raw?: Record<string, unknown>;
+  request: Record<string, unknown>;
+  source: string;
+};
+
+/** Input shape for `slack.work-objects-validate`. */
+export type SlackWorkObjectsValidateInput = {
+  file: string;
+  target?: string;
+};
+
+/** Return shape for `slack.work-objects-validate`. */
+export type SlackWorkObjectsValidateReturn = {
+  dryRun?: boolean;
+  item?: unknown;
+  ok: true;
+  outputFile?: string;
+  provider: "slack";
 };
 
 /** Input shape for `specs.get`. */
@@ -10131,6 +13968,48 @@ export type ThreadsShowReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `tools.invoke`. */
+export type ToolsInvokeInput = {
+  args?: string;
+  name: string;
+};
+
+/** Return shape for `tools.invoke`. */
+export type ToolsInvokeReturn = {
+  args: Record<string, unknown>;
+  executed: true;
+  mode: "executed";
+  result: {
+    content: Array<{
+      text: string;
+      type: "text";
+    }>;
+    isError: boolean;
+  };
+  tool: {
+    description: string;
+    metadata: {
+      access?: {
+        action: string;
+        kind: string;
+        resource: string;
+        risk: string;
+      };
+      args: Array<Record<string, unknown>>;
+      command: string;
+      group: string;
+      method: string;
+      options: Array<Record<string, unknown>>;
+      scope?: string;
+      skillGate?: {
+        skill: string;
+        source: string;
+      };
+    };
+    name: string;
+  };
+};
+
 /** Input shape for `tools.list`. */
 export type ToolsListInput = {
   limit?: string;
@@ -10179,6 +14058,29 @@ export type ToolsSchemaReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `tools.search`. */
+export type ToolsSearchInput = {
+  limit?: string;
+  query: string;
+};
+
+/** Return shape for `tools.search`. */
+export type ToolsSearchReturn = {
+  items: Array<{
+    command: string;
+    description: string;
+    group: string;
+    matchedFields: string[];
+    name: string;
+    rank: number;
+    score: number;
+  }>;
+  limit: number;
+  query: string;
+  returned: number;
+  total: number;
+};
+
 /** Input shape for `tools.show`. */
 export type ToolsShowInput = {
   name: string;
@@ -10198,14 +14100,39 @@ export type ToolsTestInput = {
 
 /** Return shape for `tools.test`. */
 export type ToolsTestReturn = {
+  access: ({
+    action: string;
+    kind: string;
+    resource: string;
+    risk: string;
+  }) | null;
   args: Record<string, unknown>;
-  result: {
-    content: unknown[];
-    isError: boolean;
-    [k: string]: unknown;
+  executed: false;
+  invokeCommand: string;
+  mode: "dry_run";
+  schema: (Record<string, unknown>) | null;
+  tool: {
+    description: string;
+    metadata: {
+      access?: {
+        action: string;
+        kind: string;
+        resource: string;
+        risk: string;
+      };
+      args: Array<Record<string, unknown>>;
+      command: string;
+      group: string;
+      method: string;
+      options: Array<Record<string, unknown>>;
+      scope?: string;
+      skillGate?: {
+        skill: string;
+        source: string;
+      };
+    };
+    name: string;
   };
-  tool: Record<string, unknown>;
-  [k: string]: unknown;
 };
 
 /** Input shape for `transcribe.file`. */
@@ -10229,6 +14156,9 @@ export type TranscribeFileReturn = {
   transcription: {
     chunks?: number;
     duration?: number;
+    model?: string;
+    provider?: string;
+    segments?: Array<Record<string, unknown>>;
     text: string;
     [k: string]: unknown;
   };
@@ -10239,10 +14169,16 @@ export type TriggersAddInput = {
   account?: string;
   agent?: string;
   cooldown?: string;
+  envFile?: string;
+  exec?: string;
   filter?: string;
   message?: string;
   name: string;
+  onError?: string;
+  replySession?: string;
   session?: string;
+  shell?: string;
+  timeout?: string;
   topic?: string;
 };
 
@@ -10392,8 +14328,10 @@ export type TriggersTopicsReturn = {
 
 /** Input shape for `video.analyze`. */
 export type VideoAnalyzeInput = {
+  forceAnalyze?: boolean;
   output?: string;
   prompt?: string;
+  strategy?: string;
   url: string;
 };
 
@@ -10403,8 +14341,11 @@ export type VideoAnalyzeReturn = {
   options: Record<string, unknown>;
   success: true;
   video: {
+    chapters?: Array<Record<string, unknown>>;
     duration: string;
     source: string;
+    strategy: "gemini" | "subtitles";
+    subtitleLanguage?: string | null;
     summary: string;
     title: string;
     topics: string[];
@@ -10602,10 +14543,11 @@ export type WhatsappGroupCreateInput = {
   admins?: string[];
   agent?: string;
   agentCwd?: string;
+  agentModel?: string;
   agentProvider?: string;
   createAgent?: boolean;
   name: string;
-  participants: string;
+  participants?: string;
   skipTaggedAdmins?: boolean;
 };
 
@@ -10737,6 +14679,254 @@ export type WhatsappGroupSettingsInput = {
 
 /** Return shape for `whatsapp.group.settings`. */
 export type WhatsappGroupSettingsReturn = Record<string, unknown>;
+
+/** Input shape for `work-objects.action`. */
+export type WorkObjectsActionInput = {
+  actionId: string;
+  id: string;
+  type: string;
+  value?: string;
+};
+
+/** Return shape for `work-objects.action`. */
+export type WorkObjectsActionReturn = {
+  providerId: string;
+  result: {
+    error?: string;
+    message?: string;
+    object?: {
+      actions?: {
+        overflowActions?: Array<{
+          accessibilityLabel?: string;
+          actionId?: string;
+          processingState?: {
+            enabled: boolean;
+            interstitialText?: string;
+          };
+          style?: "primary" | "danger";
+          text: string;
+          url?: string;
+          value?: string;
+        }>;
+        primaryActions?: Array<{
+          accessibilityLabel?: string;
+          actionId?: string;
+          processingState?: {
+            enabled: boolean;
+            interstitialText?: string;
+          };
+          style?: "primary" | "danger";
+          text: string;
+          url?: string;
+          value?: string;
+        }>;
+      };
+      attributes?: Record<string, unknown>;
+      customFields?: Array<{
+        edit?: Record<string, unknown>;
+        key: string;
+        label: string;
+        long?: boolean;
+        type?: string;
+        value: string | number | boolean;
+      }>;
+      description?: string;
+      displayId?: string;
+      displayOrder?: string[];
+      displayType?: string;
+      entityType?: string;
+      externalRef: {
+        id: string;
+        type?: string;
+      };
+      fields?: Record<string, {
+        edit?: Record<string, unknown>;
+        label?: string;
+        long?: boolean;
+        type?: string;
+        value?: unknown;
+      }>;
+      kind?: string;
+      metadataLastModified?: number;
+      productIconUrl?: string;
+      productName?: string;
+      revision?: string;
+      status?: string;
+      title: string;
+      url: string;
+    };
+  };
+};
+
+/** Input shape for `work-objects.resolve`. */
+export type WorkObjectsResolveInput = {
+  id?: string;
+  target?: string;
+  type?: string;
+  url?: string;
+};
+
+/** Return shape for `work-objects.resolve`. */
+export type WorkObjectsResolveReturn = {
+  providerId: string;
+  result: {
+    actions?: {
+      overflowActions?: Array<{
+        accessibilityLabel?: string;
+        actionId?: string;
+        processingState?: {
+          enabled: boolean;
+          interstitialText?: string;
+        };
+        style?: "primary" | "danger";
+        text: string;
+        url?: string;
+        value?: string;
+      }>;
+      primaryActions?: Array<{
+        accessibilityLabel?: string;
+        actionId?: string;
+        processingState?: {
+          enabled: boolean;
+          interstitialText?: string;
+        };
+        style?: "primary" | "danger";
+        text: string;
+        url?: string;
+        value?: string;
+      }>;
+    };
+    attributes?: Record<string, unknown>;
+    customFields?: Array<{
+      edit?: Record<string, unknown>;
+      key: string;
+      label: string;
+      long?: boolean;
+      type?: string;
+      value: string | number | boolean;
+    }>;
+    description?: string;
+    displayId?: string;
+    displayOrder?: string[];
+    displayType?: string;
+    entityType?: string;
+    externalRef: {
+      id: string;
+      type?: string;
+    };
+    fields?: Record<string, {
+      edit?: Record<string, unknown>;
+      label?: string;
+      long?: boolean;
+      type?: string;
+      value?: unknown;
+    }>;
+    kind?: string;
+    metadataLastModified?: number;
+    productIconUrl?: string;
+    productName?: string;
+    revision?: string;
+    status?: string;
+    title: string;
+    url: string;
+  };
+};
+
+/** Input shape for `work-objects.suggest`. */
+export type WorkObjectsSuggestInput = {
+  fieldId: string;
+  id: string;
+  query?: string;
+  type: string;
+};
+
+/** Return shape for `work-objects.suggest`. */
+export type WorkObjectsSuggestReturn = {
+  providerId: string;
+  result: Array<{
+    text: string;
+    value: string;
+  }>;
+};
+
+/** Input shape for `work-objects.update`. */
+export type WorkObjectsUpdateInput = {
+  id: string;
+  revision?: string;
+  type: string;
+  values?: string;
+};
+
+/** Return shape for `work-objects.update`. */
+export type WorkObjectsUpdateReturn = {
+  providerId: string;
+  result: {
+    fieldErrors?: Record<string, string>;
+    formError?: string;
+    object?: {
+      actions?: {
+        overflowActions?: Array<{
+          accessibilityLabel?: string;
+          actionId?: string;
+          processingState?: {
+            enabled: boolean;
+            interstitialText?: string;
+          };
+          style?: "primary" | "danger";
+          text: string;
+          url?: string;
+          value?: string;
+        }>;
+        primaryActions?: Array<{
+          accessibilityLabel?: string;
+          actionId?: string;
+          processingState?: {
+            enabled: boolean;
+            interstitialText?: string;
+          };
+          style?: "primary" | "danger";
+          text: string;
+          url?: string;
+          value?: string;
+        }>;
+      };
+      attributes?: Record<string, unknown>;
+      customFields?: Array<{
+        edit?: Record<string, unknown>;
+        key: string;
+        label: string;
+        long?: boolean;
+        type?: string;
+        value: string | number | boolean;
+      }>;
+      description?: string;
+      displayId?: string;
+      displayOrder?: string[];
+      displayType?: string;
+      entityType?: string;
+      externalRef: {
+        id: string;
+        type?: string;
+      };
+      fields?: Record<string, {
+        edit?: Record<string, unknown>;
+        label?: string;
+        long?: boolean;
+        type?: string;
+        value?: unknown;
+      }>;
+      kind?: string;
+      metadataLastModified?: number;
+      productIconUrl?: string;
+      productName?: string;
+      revision?: string;
+      status?: string;
+      title: string;
+      url: string;
+    };
+    revision?: string;
+  };
+};
 
 /** Input shape for `workflows.runs.archive-node`. */
 export type WorkflowsRunsArchiveNodeInput = {
@@ -10900,3 +15090,584 @@ export type WorkflowsSpecsShowInput = {
 
 /** Return shape for `workflows.specs.show`. */
 export type WorkflowsSpecsShowReturn = Record<string, unknown>;
+
+/** Input shape for `yt.analytics-countries`. */
+export type YtAnalyticsCountriesInput = {
+  connection?: string;
+  days?: string;
+  limit?: string;
+};
+
+/** Return shape for `yt.analytics-countries`. */
+export type YtAnalyticsCountriesReturn = {
+  countries: Array<{
+    country: string;
+    subscribersGained: number;
+    views: number;
+    watchTimeMinutes: number;
+  }>;
+  period: string;
+  success: true;
+};
+
+/** Input shape for `yt.analytics-demographics`. */
+export type YtAnalyticsDemographicsInput = {
+  connection?: string;
+  days?: string;
+};
+
+/** Return shape for `yt.analytics-demographics`. */
+export type YtAnalyticsDemographicsReturn = {
+  demographics: Array<{
+    ageGroup: string;
+    gender: string;
+    viewerPercentage: number;
+  }>;
+  period: string;
+  success: true;
+};
+
+/** Input shape for `yt.analytics-devices`. */
+export type YtAnalyticsDevicesInput = {
+  connection?: string;
+  days?: string;
+};
+
+/** Return shape for `yt.analytics-devices`. */
+export type YtAnalyticsDevicesReturn = {
+  devices: Array<{
+    device: string;
+    views: number;
+    watchTimeMinutes: number;
+  }>;
+  period: string;
+  success: true;
+};
+
+/** Input shape for `yt.analytics-overview`. */
+export type YtAnalyticsOverviewInput = {
+  connection?: string;
+  days?: string;
+};
+
+/** Return shape for `yt.analytics-overview`. */
+export type YtAnalyticsOverviewReturn = {
+  overview: {
+    avgViewDurationSec: number;
+    comments: number;
+    dislikes: number;
+    likes: number;
+    netSubscribers: number;
+    shares: number;
+    subscribersGained: number;
+    subscribersLost: number;
+    views: number;
+    watchTimeMinutes: number;
+  };
+  period: string;
+  success: true;
+};
+
+/** Input shape for `yt.analytics-series`. */
+export type YtAnalyticsSeriesInput = {
+  connection?: string;
+  days?: string;
+  metric?: "views" | "estimatedMinutesWatched" | "averageViewDuration" | "subscribersGained" | "likes" | "comments" | "shares";
+};
+
+/** Return shape for `yt.analytics-series`. */
+export type YtAnalyticsSeriesReturn = {
+  data: Array<Record<string, string | number | boolean | null>>;
+  metric: string;
+  period: string;
+  success: true;
+};
+
+/** Input shape for `yt.analytics-top`. */
+export type YtAnalyticsTopInput = {
+  connection?: string;
+  days?: string;
+  limit?: string;
+};
+
+/** Return shape for `yt.analytics-top`. */
+export type YtAnalyticsTopReturn = {
+  period: string;
+  success: true;
+  videos: Array<{
+    avgViewDurationSec: number;
+    comments: number;
+    likes: number;
+    title: string;
+    videoId: string;
+    views: number;
+    watchTimeMinutes: number;
+  }>;
+};
+
+/** Input shape for `yt.analytics-traffic`. */
+export type YtAnalyticsTrafficInput = {
+  connection?: string;
+  days?: string;
+};
+
+/** Return shape for `yt.analytics-traffic`. */
+export type YtAnalyticsTrafficReturn = {
+  period: string;
+  sources: Array<{
+    source: string;
+    views: number;
+    watchTimeMinutes: number;
+  }>;
+  success: true;
+};
+
+/** Input shape for `yt.caption-download`. */
+export type YtCaptionDownloadInput = {
+  captionId: string;
+  connection?: string;
+  format?: "srt" | "vtt" | "ttml";
+  language?: string;
+};
+
+/** Return shape for `yt.caption-download`. */
+export type YtCaptionDownloadReturn = {
+  captionId: string;
+  content: string;
+  format: string;
+  success: true;
+};
+
+/** Input shape for `yt.captions`. */
+export type YtCaptionsInput = {
+  connection?: string;
+  videoId: string;
+};
+
+/** Return shape for `yt.captions`. */
+export type YtCaptionsReturn = {
+  captions: Array<{
+    captionId: string;
+    isAutoSynced: boolean;
+    isDraft: boolean;
+    language: string;
+    lastUpdated: string;
+    name: string;
+    status: string;
+    trackKind: string;
+  }>;
+  success: true;
+  totalResults: number;
+  videoId: string;
+};
+
+/** Input shape for `yt.comments`. */
+export type YtCommentsInput = {
+  connection?: string;
+  limit?: string;
+  page?: string;
+  videoId: string;
+};
+
+/** Return shape for `yt.comments`. */
+export type YtCommentsReturn = {
+  comments: Array<{
+    author: string;
+    authorChannelUrl: string;
+    commentId: string;
+    likeCount: number;
+    publishedAt: string;
+    replyCount: number;
+    text: string;
+    threadId: string;
+  }>;
+  nextPageToken?: string;
+  success: true;
+  totalResults: number;
+  videoId: string;
+};
+
+/** Input shape for `yt.health`. */
+export type YtHealthInput = {
+  connection?: string;
+};
+
+/** Return shape for `yt.health`. */
+export type YtHealthReturn = {
+  app: "youtube";
+  authenticated: false;
+  connection: string;
+  credentialConfigured: boolean;
+  credentialStatus: string;
+  externalCheckPerformed: false;
+  message: string;
+  ready: boolean;
+  success: true;
+};
+
+/** Input shape for `yt.info`. */
+export type YtInfoInput = {
+  connection?: string;
+};
+
+/** Return shape for `yt.info`. */
+export type YtInfoReturn = {
+  channel: {
+    channelId: string;
+    description: string;
+    subscriberCount: number;
+    thumbnail: string;
+    title: string;
+    uploadsPlaylistId: string;
+    url: string;
+    videoCount: number;
+    viewCount: number;
+  };
+  success: true;
+};
+
+/** Input shape for `yt.playlist`. */
+export type YtPlaylistInput = {
+  connection?: string;
+  limit?: string;
+  page?: string;
+  playlistId: string;
+};
+
+/** Return shape for `yt.playlist`. */
+export type YtPlaylistReturn = {
+  nextPageToken?: string;
+  playlistId: string;
+  success: true;
+  totalResults: number;
+  videos: Array<{
+    commentCount: number;
+    description: string;
+    duration: string;
+    likeCount: number;
+    playlistItemId?: string;
+    privacyStatus: string;
+    publishedAt: string;
+    thumbnail: string;
+    title: string;
+    url: string;
+    videoId: string;
+    viewCount: number;
+  }>;
+};
+
+/** Input shape for `yt.playlist-add`. */
+export type YtPlaylistAddInput = {
+  connection?: string;
+  playlistId: string;
+  videoId: string;
+};
+
+/** Return shape for `yt.playlist-add`. */
+export type YtPlaylistAddReturn = {
+  item: {
+    playlistId: string;
+    playlistItemId: string;
+    title: string;
+    videoId: string;
+  };
+  success: true;
+};
+
+/** Input shape for `yt.playlist-create`. */
+export type YtPlaylistCreateInput = {
+  connection?: string;
+  description?: string;
+  privacy?: "public" | "private" | "unlisted";
+  title: string;
+};
+
+/** Return shape for `yt.playlist-create`. */
+export type YtPlaylistCreateReturn = {
+  playlist: {
+    description: string;
+    itemCount: number;
+    playlistId: string;
+    privacyStatus: string;
+    publishedAt: string;
+    thumbnail: string;
+    title: string;
+    url: string;
+  };
+  success: true;
+};
+
+/** Input shape for `yt.playlist-delete`. */
+export type YtPlaylistDeleteInput = {
+  connection?: string;
+  playlistId: string;
+};
+
+/** Return shape for `yt.playlist-delete`. */
+export type YtPlaylistDeleteReturn = {
+  deleted: string;
+  success: true;
+};
+
+/** Input shape for `yt.playlist-remove`. */
+export type YtPlaylistRemoveInput = {
+  connection?: string;
+  playlistItemId: string;
+};
+
+/** Return shape for `yt.playlist-remove`. */
+export type YtPlaylistRemoveReturn = {
+  removed: string;
+  success: true;
+};
+
+/** Input shape for `yt.playlists`. */
+export type YtPlaylistsInput = {
+  connection?: string;
+  limit?: string;
+  page?: string;
+};
+
+/** Return shape for `yt.playlists`. */
+export type YtPlaylistsReturn = {
+  nextPageToken?: string;
+  playlists: Array<{
+    description: string;
+    itemCount: number;
+    playlistId: string;
+    privacyStatus: string;
+    publishedAt: string;
+    thumbnail: string;
+    title: string;
+    url: string;
+  }>;
+  success: true;
+  totalResults: number;
+};
+
+/** Input shape for `yt.reply`. */
+export type YtReplyInput = {
+  commentId: string;
+  connection?: string;
+  text: string;
+};
+
+/** Return shape for `yt.reply`. */
+export type YtReplyReturn = {
+  replyId: string;
+  success: true;
+};
+
+/** Input shape for `yt.search`. */
+export type YtSearchInput = {
+  connection?: string;
+  limit?: string;
+  page?: string;
+  query: string;
+};
+
+/** Return shape for `yt.search`. */
+export type YtSearchReturn = {
+  nextPageToken?: string;
+  query: string;
+  success: true;
+  totalResults: number;
+  videos: Array<{
+    commentCount: number;
+    description: string;
+    duration: string;
+    likeCount: number;
+    playlistItemId?: string;
+    privacyStatus: string;
+    publishedAt: string;
+    thumbnail: string;
+    title: string;
+    url: string;
+    videoId: string;
+    viewCount: number;
+  }>;
+};
+
+/** Input shape for `yt.stats`. */
+export type YtStatsInput = {
+  connection?: string;
+  id: string;
+};
+
+/** Return shape for `yt.stats`. */
+export type YtStatsReturn = {
+  stats: {
+    commentCount: number;
+    daysSincePublish: number;
+    likeCount: number;
+    publishedAt: string;
+    title: string;
+    videoId: string;
+    viewCount: number;
+    viewsPerDay: number;
+  };
+  success: true;
+};
+
+/** Input shape for `yt.subscriptions`. */
+export type YtSubscriptionsInput = {
+  connection?: string;
+  limit?: string;
+  page?: string;
+};
+
+/** Return shape for `yt.subscriptions`. */
+export type YtSubscriptionsReturn = {
+  nextPageToken?: string;
+  subscriptions: Array<{
+    channelId: string;
+    description: string;
+    publishedAt: string;
+    subscriptionId: string;
+    thumbnail: string;
+    title: string;
+    totalItemCount: number;
+    url: string;
+  }>;
+  success: true;
+  totalResults: number;
+};
+
+/** Input shape for `yt.unanswered`. */
+export type YtUnansweredInput = {
+  connection?: string;
+  limit?: string;
+  page?: string;
+  videoId: string;
+};
+
+/** Return shape for `yt.unanswered`. */
+export type YtUnansweredReturn = {
+  comments: Array<{
+    author: string;
+    authorChannelUrl: string;
+    commentId: string;
+    likeCount: number;
+    publishedAt: string;
+    replyCount: number;
+    text: string;
+    threadId: string;
+  }>;
+  nextPageToken?: string;
+  success: true;
+  totalUnanswered: number;
+  videoId: string;
+};
+
+/** Input shape for `yt.video`. */
+export type YtVideoInput = {
+  connection?: string;
+  id: string;
+};
+
+/** Return shape for `yt.video`. */
+export type YtVideoReturn = {
+  success: true;
+  video: {
+    commentCount: number;
+    description: string;
+    duration: string;
+    likeCount: number;
+    playlistItemId?: string;
+    privacyStatus: string;
+    publishedAt: string;
+    thumbnail: string;
+    title: string;
+    url: string;
+    videoId: string;
+    viewCount: number;
+  };
+};
+
+/** Input shape for `yt.video-categories`. */
+export type YtVideoCategoriesInput = {
+  connection?: string;
+  region?: string;
+};
+
+/** Return shape for `yt.video-categories`. */
+export type YtVideoCategoriesReturn = {
+  categories: Array<{
+    assignable: boolean;
+    categoryId: string;
+    title: string;
+  }>;
+  region: string;
+  success: true;
+  totalResults: number;
+};
+
+/** Input shape for `yt.video-delete`. */
+export type YtVideoDeleteInput = {
+  connection?: string;
+  id: string;
+};
+
+/** Return shape for `yt.video-delete`. */
+export type YtVideoDeleteReturn = {
+  deleted: string;
+  success: true;
+};
+
+/** Input shape for `yt.video-update`. */
+export type YtVideoUpdateInput = {
+  category?: string;
+  connection?: string;
+  description?: string;
+  id: string;
+  privacy?: "public" | "private" | "unlisted";
+  tags?: string;
+  title?: string;
+};
+
+/** Return shape for `yt.video-update`. */
+export type YtVideoUpdateReturn = {
+  success: true;
+  video: {
+    commentCount: number;
+    description: string;
+    duration: string;
+    likeCount: number;
+    playlistItemId?: string;
+    privacyStatus: string;
+    publishedAt: string;
+    thumbnail: string;
+    title: string;
+    url: string;
+    videoId: string;
+    viewCount: number;
+  };
+};
+
+/** Input shape for `yt.videos`. */
+export type YtVideosInput = {
+  connection?: string;
+  limit?: string;
+  page?: string;
+};
+
+/** Return shape for `yt.videos`. */
+export type YtVideosReturn = {
+  nextPageToken?: string;
+  success: true;
+  totalResults: number;
+  videos: Array<{
+    commentCount: number;
+    description: string;
+    duration: string;
+    likeCount: number;
+    playlistItemId?: string;
+    privacyStatus: string;
+    publishedAt: string;
+    thumbnail: string;
+    title: string;
+    url: string;
+    videoId: string;
+    viewCount: number;
+  }>;
+};

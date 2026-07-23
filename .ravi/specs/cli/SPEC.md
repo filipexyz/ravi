@@ -8,9 +8,11 @@ capabilities:
   - machine-json
   - listing-contracts
   - cloud-auth
+  - console-scope
   - watch
   - inbox
   - calendar
+  - slack
 tags:
   - cli
   - agents

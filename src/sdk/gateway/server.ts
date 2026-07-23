@@ -17,7 +17,6 @@ import { buildRouteTable, buildMetaPayload, type RouteTable, API_PREFIX } from "
 import { resolveAuth, type AuthFailureReason, type GatewayAuthConfig } from "./auth.js";
 import { dispatch } from "./dispatcher.js";
 import { errorResponse, json, methodNotAllowed, notFound, unauthorized } from "./errors.js";
-import { hasLiveAdminContext } from "../../runtime/context-registry.js";
 import { handleStreamingRequest } from "./streaming/handler.js";
 import type { StreamingGatewayConfig } from "./streaming/types.js";
 
@@ -177,7 +176,6 @@ export function startGateway(config: GatewayConfig = {}): GatewayHandle {
 async function processGatewayRequest(request: Request, url: URL, ctx: GatewayHandlerContext): Promise<Response> {
   const streamResponse = await handleStreamingRequest(request, url, {
     auth: ctx.auth,
-    hasLiveAdminContext,
     authFailureMessage,
     streaming: ctx.streaming,
   });
@@ -214,11 +212,6 @@ async function processGatewayRequest(request: Request, url: URL, ctx: GatewayHan
   const isOpenRoute = cmd.scope === "open";
   const resolved = resolveAuth(request, ctx.auth);
   if (!isOpenRoute) {
-    if (!hasLiveAdminContext()) {
-      return unauthorized(
-        "no admin context configured; run 'ravi daemon init-admin-key' on the daemon host before issuing gateway requests",
-      );
-    }
     if (!resolved.authenticated) {
       return unauthorized(authFailureMessage(resolved.reason));
     }

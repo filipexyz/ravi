@@ -4,7 +4,7 @@
 
 import "reflect-metadata";
 import { z } from "zod";
-import { Group, Command, Arg, Option, Returns } from "../decorators.js";
+import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { commandTargetSchema } from "../return-schemas.js";
 import { existsSync, readFileSync } from "node:fs";
@@ -132,6 +132,7 @@ function serializeHeartbeatAgent(agent: AgentConfig) {
 })
 export class HeartbeatCommands {
   @Command({ name: "status", description: "Show heartbeat status for all agents" })
+  @CommandAccess({ kind: "read", resource: "heartbeat", action: "status", risk: "low" })
   @Returns(heartbeatStatusReturnSchema)
   status(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const agents = getAllAgents();
@@ -170,6 +171,7 @@ export class HeartbeatCommands {
   }
 
   @Command({ name: "show", description: "Show heartbeat config for an agent" })
+  @CommandAccess({ kind: "read", resource: "heartbeat", action: "show", risk: "low" })
   @Returns(heartbeatAgentReturnSchema)
   show(
     @Arg("id", { description: "Agent ID" }) id: string,
@@ -203,6 +205,7 @@ export class HeartbeatCommands {
   }
 
   @Command({ name: "enable", description: "Enable heartbeat for an agent" })
+  @CommandAccess({ kind: "mutate", resource: "heartbeat", action: "enable", risk: "medium" })
   @Returns(heartbeatMutationReturnSchema)
   async enable(
     @Arg("id", { description: "Agent ID" }) id: string,
@@ -246,6 +249,7 @@ export class HeartbeatCommands {
   }
 
   @Command({ name: "disable", description: "Disable heartbeat for an agent" })
+  @CommandAccess({ kind: "mutate", resource: "heartbeat", action: "disable", risk: "medium" })
   @Returns(heartbeatMutationReturnSchema)
   async disable(
     @Arg("id", { description: "Agent ID" }) id: string,
@@ -280,6 +284,7 @@ export class HeartbeatCommands {
   }
 
   @Command({ name: "set", description: "Set heartbeat property" })
+  @CommandAccess({ kind: "mutate", resource: "heartbeat", action: "set", risk: "medium" })
   @Returns(heartbeatMutationReturnSchema)
   async set(
     @Arg("id", { description: "Agent ID" }) id: string,
@@ -362,6 +367,7 @@ export class HeartbeatCommands {
   }
 
   @Command({ name: "trigger", description: "Manually trigger a heartbeat" })
+  @CommandAccess({ kind: "mutate", resource: "heartbeat", action: "trigger", risk: "medium" })
   @Returns(heartbeatTriggerReturnSchema)
   async trigger(
     @Arg("id", { description: "Agent ID" }) id: string,

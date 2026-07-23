@@ -2,7 +2,7 @@ import "reflect-metadata";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { z } from "zod";
 
-import { Arg, Command, Group, Option, Returns } from "../../cli/decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns } from "../../cli/decorators.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
 import { startGateway, type GatewayHandle } from "./server.js";
 import { ADMIN_BOOTSTRAP_KIND, createRuntimeContext } from "../../runtime/context-registry.js";
@@ -12,6 +12,7 @@ import type { StreamAuditEvent, StreamChannel } from "./streaming/types.js";
 @Group({ name: "demo", description: "Server demo", scope: "open" })
 class ServerDemoCommands {
   @Command({ name: "echo", description: "Echo" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "echo", risk: "low", input: ["name"] })
   @Returns(z.object({ ok: z.literal(true), name: z.string() }))
   echo(@Arg("name") name: string, @Option({ flags: "--shout" }) shout?: boolean) {
     void shout;
@@ -22,6 +23,7 @@ class ServerDemoCommands {
 @Group({ name: "tasks", description: "Server task reads", scope: "open" })
 class ServerTasksCommands {
   @Command({ name: "list", description: "List tasks" })
+  @CommandAccess({ kind: "read", resource: "tasks", action: "list", risk: "low" })
   list() {
     return { ok: true };
   }
@@ -36,9 +38,14 @@ const streamAudits: StreamAuditEvent[] = [];
 const allowedContext: ContextRecord = {
   contextId: "ctx_stream_allowed",
   contextKey: "rctx_stream_allowed",
-  kind: "test",
+  kind: "turn-runtime",
   agentId: "stream-agent",
-  capabilities: [{ permission: "view", objectType: "system", objectId: "events" }],
+  capabilities: [
+    { permission: "view", objectType: "system", objectId: "events" },
+    { permission: "execute", objectType: "group", objectId: "demo" },
+    { permission: "execute", objectType: "group", objectId: "tasks" },
+  ],
+  metadata: { authorityMode: "delegated" },
   createdAt: Date.now(),
 };
 
@@ -57,16 +64,34 @@ const testStreamChannels: StreamChannel[] = [
       pathPattern: "events",
       optionsTypeName: "EventsStreamOptions",
       payloadTypeName: "GatewayTopicEvent",
-      optionsSchema: { type: "object", additionalProperties: false, properties: {} },
-      payloadSchema: { type: "object", required: ["type"], properties: { type: { type: "string" } } },
+      optionsSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+      payloadSchema: {
+        type: "object",
+        required: ["type"],
+        properties: { type: { type: "string" } },
+      },
     },
     match(segments) {
       return segments.length === 1 && segments[0] === "events"
-        ? { channelPath: "events", scope: { permission: "view", objectType: "system", objectId: "events" } }
+        ? {
+            channelPath: "events",
+            scope: {
+              permission: "view",
+              objectType: "system",
+              objectId: "events",
+            },
+          }
         : null;
     },
     async *subscribe() {
-      yield { event: "message", data: { type: "event", topic: "ravi.test", data: { ok: true } } };
+      yield {
+        event: "message",
+        data: { type: "event", topic: "ravi.test", data: { ok: true } },
+      };
       yield { event: "end", data: { type: "stream.end", reason: "test" } };
     },
   },
@@ -115,7 +140,10 @@ describe("gateway server — meta + health", () => {
   it("/api/v1/_meta/version returns gateway+registryHash", async () => {
     const res = await fetch(`${handle.url}/api/v1/_meta/version`);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { gateway: string; registryHash: string };
+    const body = (await res.json()) as {
+      gateway: string;
+      registryHash: string;
+    };
     expect(typeof body.gateway).toBe("string");
     expect(body.registryHash).toBe(handle.registryHash);
   });
@@ -123,13 +151,18 @@ describe("gateway server — meta + health", () => {
   it("/api/v1/_meta/registry mirrors the registry command count", async () => {
     const res = await fetch(`${handle.url}/api/v1/_meta/registry`);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { commandCount: number; commands: { fullName: string }[] };
+    const body = (await res.json()) as {
+      commandCount: number;
+      commands: { fullName: string }[];
+    };
     expect(body.commandCount).toBe(registry.commands.length);
     expect(body.commands.find((c) => c.fullName === "demo.echo")).toBeDefined();
   });
 
   it("/api/v1/_meta/registry rejects POST", async () => {
-    const res = await fetch(`${handle.url}/api/v1/_meta/registry`, { method: "POST" });
+    const res = await fetch(`${handle.url}/api/v1/_meta/registry`, {
+      method: "POST",
+    });
     expect(res.status).toBe(405);
   });
 });
@@ -138,12 +171,27 @@ describe("gateway server — dispatch over HTTP", () => {
   it("POST to a real command returns 200 with the handler payload (flat body)", async () => {
     const res = await fetch(`${handle.url}/api/v1/demo/echo`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        authorization: `Bearer ${allowedContext.contextKey}`,
+        "content-type": "application/json",
+      },
       body: JSON.stringify({ name: "luis" }),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { ok: boolean; name: string };
     expect(body).toEqual({ ok: true, name: "luis" });
+  });
+
+  it("POST to a command without runtime context fails closed", async () => {
+    const res = await fetch(`${handle.url}/api/v1/demo/echo`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "luis" }),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string; reason: string };
+    expect(body.error).toBe("PermissionDenied");
+    expect(body.reason).toContain("runtime principal");
   });
 
   it("does not enforce runtime skill gates for API routes", async () => {
@@ -166,7 +214,10 @@ describe("gateway server — dispatch over HTTP", () => {
       body: "{}",
     });
     expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string; issues: { path: string[] }[] };
+    const body = (await res.json()) as {
+      error: string;
+      issues: { path: string[] }[];
+    };
     expect(body.error).toBe("ValidationError");
     expect(Array.isArray(body.issues)).toBe(true);
     expect(body.issues.some((i) => i.path[0] === "name")).toBe(true);
@@ -211,7 +262,10 @@ describe("gateway server — SSE streaming namespace", () => {
   it("streams registered channels under /api/v1/_stream", async () => {
     streamAudits.length = 0;
     const res = await fetch(`${handle.url}/api/v1/_stream/events`, {
-      headers: { authorization: `Bearer ${allowedContext.contextKey}`, accept: "text/event-stream" },
+      headers: {
+        authorization: `Bearer ${allowedContext.contextKey}`,
+        accept: "text/event-stream",
+      },
     });
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/event-stream");
@@ -225,7 +279,9 @@ describe("gateway server — SSE streaming namespace", () => {
   });
 
   it("requires bearer auth for streams", async () => {
-    const res = await fetch(`${handle.url}/api/v1/_stream/events`, { headers: { accept: "text/event-stream" } });
+    const res = await fetch(`${handle.url}/api/v1/_stream/events`, {
+      headers: { accept: "text/event-stream" },
+    });
     expect(res.status).toBe(401);
     const body = (await res.json()) as { error: string; reason: string };
     expect(body.error).toBe("Unauthorized");
@@ -235,7 +291,10 @@ describe("gateway server — SSE streaming namespace", () => {
   it("denies streams when context lacks the channel scope", async () => {
     streamAudits.length = 0;
     const res = await fetch(`${handle.url}/api/v1/_stream/events`, {
-      headers: { authorization: `Bearer ${deniedContext.contextKey}`, accept: "text/event-stream" },
+      headers: {
+        authorization: `Bearer ${deniedContext.contextKey}`,
+        accept: "text/event-stream",
+      },
     });
     expect(res.status).toBe(403);
     expect(streamAudits.some((event) => event.type === "sdk.gateway.stream.denied")).toBe(true);

@@ -60,6 +60,7 @@ import {
   dbSetTaskLaunchPlan,
   dbSetTaskProfileResolution,
   dbSetTaskProfileState,
+  dbUpdateTask,
 } from "./task-db.js";
 import {
   appendTaskDocumentSection,
@@ -102,6 +103,7 @@ import type {
   TaskStatus,
   TaskTerminalInput,
   TaskUnarchiveInput,
+  TaskUpdateInput,
   TaskWorktreeConfig,
   TaskWorktreeMode,
 } from "./types.js";
@@ -1021,11 +1023,14 @@ function buildTaskRuntimeStateDocSection(task: TaskRecord, event: TaskEvent): Ta
             ? "Task Archived"
             : event.type === "task.unarchived"
               ? "Task Restored"
-              : "Task Runtime Update";
+              : event.type === "task.updated"
+                ? "Task Updated"
+                : "Task Runtime Update";
 
   const lines = [
     `Event: \`${event.type}\``,
     `Current status: \`${task.status}\``,
+    `Current priority: \`${task.priority}\``,
     `Current progress: \`${task.progress}%\``,
   ];
 
@@ -1632,6 +1637,7 @@ export function resolveTaskRuntimeForRead(
     assignment?: TaskAssignment | null;
     launchPlan?: TaskLaunchPlan | null;
     sessionModelOverride?: string | null;
+    sessionEffortOverride?: string | null;
     sessionThinkingLevel?: string | null;
   } = {},
 ): TaskRuntimeResolution {
@@ -1639,11 +1645,15 @@ export function resolveTaskRuntimeForRead(
   const launchPlan = options.launchPlan === undefined ? dbGetTaskLaunchPlan(task.id) : options.launchPlan;
   const agentId =
     options.assignment?.agentId ?? launchPlan?.agentId ?? task.assigneeAgentId ?? task.createdByAgentId ?? undefined;
-  const agentModel = agentId ? getAgent(agentId)?.model : undefined;
+  const agent = agentId ? getAgent(agentId) : undefined;
+  const agentModel = agent?.model;
+  const agentEffort = agent?.effort;
   const runtimeSessionName = options.assignment?.sessionName ?? launchPlan?.sessionName ?? task.assigneeSessionName;
   const runtimeSession = runtimeSessionName ? getSessionByName(runtimeSessionName) : null;
   const sessionModelOverride =
     options.sessionModelOverride !== undefined ? options.sessionModelOverride : runtimeSession?.modelOverride;
+  const sessionEffortOverride =
+    options.sessionEffortOverride !== undefined ? options.sessionEffortOverride : runtimeSession?.effortOverride;
   const sessionThinkingLevel =
     options.sessionThinkingLevel !== undefined ? options.sessionThinkingLevel : runtimeSession?.thinkingLevel;
   return resolveTaskRuntimeOptions({
@@ -1652,8 +1662,10 @@ export function resolveTaskRuntimeForRead(
     assignment: options.assignment,
     launchPlan,
     sessionModelOverride,
+    sessionEffortOverride,
     sessionThinkingLevel,
     agentModel,
+    agentEffort,
     configModel: loadConfig().model,
   });
 }
@@ -2892,6 +2904,27 @@ export function unarchiveTask(
   const documentedTask = result.wasNoop
     ? result.task
     : syncRequiredTaskDocumentAfterRuntimeEvent(result.task, profile, result.event);
+  return { ...result, task: documentedTask };
+}
+
+export function updateTask(
+  taskId: string,
+  input: TaskUpdateInput,
+): {
+  task: TaskRecord;
+  event: TaskEvent;
+  wasNoop?: boolean;
+} {
+  const existingTask = dbGetTask(taskId);
+  if (!existingTask) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+  const { profile } = ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
+  const result = dbUpdateTask(taskId, input);
+  const documentedTask = result.wasNoop
+    ? result.task
+    : syncRequiredTaskDocumentAfterRuntimeEvent(result.task, profile, result.event);
+  syncWorkflowNodeRunForTask(taskId);
   return { ...result, task: documentedTask };
 }
 

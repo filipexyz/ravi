@@ -13,6 +13,7 @@ import {
   dbUpsertInstance,
 } from "./router/router-db.js";
 import { getOrCreateSession, updateSessionName } from "./router/sessions.js";
+import { recordDeliveryTrace } from "./session-trace/channel-trace.js";
 import { listSessionEvents } from "./session-trace/session-trace-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
 import type { ResponseMessage } from "./runtime/message-types.js";
@@ -49,6 +50,12 @@ type MessageDeleteEventData = {
 type MessageEditEventData = MessageDeleteEventData & {
   text: string;
 };
+type DeliveryObservationData = {
+  status?: string;
+  messageId?: string;
+  platformMessageId?: string;
+  target?: ResponseMessage["target"];
+};
 
 let stateDir: string | null = null;
 
@@ -81,7 +88,7 @@ function makeGateway(
   send: GatewaySend,
   overrides: {
     getActiveTarget?: () => ResponseMessage["target"] | undefined;
-    clearActiveTarget?: () => void;
+    clearActiveTarget?: () => void | Promise<void>;
     renewActiveTarget?: () => Promise<boolean>;
     sendTyping?: (instanceId: string, chatId: string, active?: boolean) => Promise<void>;
     deleteMessage?: (instanceId: string, chatId: string, messageId: string) => Promise<void>;
@@ -129,6 +136,18 @@ async function handleResponse(gateway: unknown, sessionName: string, response: R
   ).handleResponseEvent(sessionName, response);
 }
 
+async function handleDeliveryObservation(
+  gateway: unknown,
+  sessionName: string,
+  data: DeliveryObservationData,
+): Promise<void> {
+  await (
+    gateway as {
+      handleDeliveryObservationEvent(sessionName: string, data: Record<string, unknown>): Promise<void>;
+    }
+  ).handleDeliveryObservationEvent(sessionName, data as Record<string, unknown>);
+}
+
 async function handleMessageDelete(gateway: unknown, data: MessageDeleteEventData): Promise<void> {
   await (
     gateway as {
@@ -169,6 +188,27 @@ function makeOtherTarget(): NonNullable<ResponseMessage["target"]> {
     accountId: "main",
     chatId: "120363000000000000@g.us",
     sourceMessageId: "inbound-other",
+  };
+}
+
+function makeInstanceAliasTarget(): NonNullable<ResponseMessage["target"]> {
+  return {
+    channel: "whatsapp",
+    accountId: "11111111-1111-1111-1111-111111111111",
+    instanceId: "11111111-1111-1111-1111-111111111111",
+    chatId: "5511999999999@s.whatsapp.net",
+    sourceMessageId: "inbound-instance-alias",
+  };
+}
+
+function makeSlackTarget(): NonNullable<ResponseMessage["target"]> {
+  return {
+    channel: "slack",
+    accountId: "ravi-rbbt-slack",
+    instanceId: "slack-instance-1",
+    chatId: "C123",
+    threadId: "1783268187.075159",
+    sourceMessageId: "1783268187.075159",
   };
 }
 
@@ -496,7 +536,7 @@ describe("Gateway session trace instrumentation", () => {
         gateway,
         sessionName,
         makeResponse({
-          response: "oi @Luis @RaviBot @Luisalgo @12345678901234",
+          response: "oi @Luis @RaviBot @Luisalgo @12345",
           target: {
             channel: "whatsapp-baileys",
             accountId: "main",
@@ -508,7 +548,7 @@ describe("Gateway session trace instrumentation", () => {
 
       expect(send).toHaveBeenCalledTimes(1);
       const [, , text, options] = send.mock.calls[0] as Parameters<GatewaySend>;
-      expect(text).toBe("oi @5511947879044 @91015272759397 @Luisalgo @12345678901234");
+      expect(text).toBe("oi @5511947879044 @91015272759397 @Luisalgo @12345");
       expect(options).toMatchObject({
         mentions: expect.arrayContaining([
           { id: "5511947879044@s.whatsapp.net", type: "user" },
@@ -523,7 +563,112 @@ describe("Gateway session trace instrumentation", () => {
     }
   });
 
-  it("renews active presence one second after a delivered non-final response", async () => {
+  it("uses native LID mentions for inline phone placeholders when group metadata maps phone to LID", async () => {
+    const oldApiUrl = process.env.OMNI_API_URL;
+    const oldApiKey = process.env.OMNI_API_KEY;
+    process.env.OMNI_API_URL = "http://omni.local";
+    process.env.OMNI_API_KEY = "test-key";
+
+    try {
+      const { sessionName } = seedSession();
+      const groupJid = "120363000000000002@g.us";
+      upsertOmniGroupMetadata({
+        accountId: "main",
+        instanceId: "11111111-1111-1111-1111-111111111111",
+        chatId: groupJid,
+        channel: "whatsapp",
+        name: "Ravi - Dev",
+        participants: [
+          {
+            platformUserId: "178035101794451",
+            normalizedPlatformUserId: "5511947879044",
+            mentionUserId: "5511947879044@s.whatsapp.net",
+            displayName: "Luís Filipe",
+          },
+        ],
+        fetchedAt: Date.now(),
+      });
+      const send = mock(async (..._args: Parameters<GatewaySend>) => ({ messageId: "outbound-lid-mention" }));
+      const gateway = makeGateway(send);
+
+      await handleResponse(
+        gateway,
+        sessionName,
+        makeResponse({
+          response: "@5511947879044, testa agora",
+          target: {
+            channel: "whatsapp-baileys",
+            accountId: "main",
+            chatId: groupJid,
+            sourceMessageId: "inbound-group-lid-mention",
+          },
+        }),
+      );
+
+      expect(send).toHaveBeenCalledTimes(1);
+      const [, , text, options] = send.mock.calls[0] as Parameters<GatewaySend>;
+      expect(text).toBe("@178035101794451, testa agora");
+      expect(options).toMatchObject({
+        mentions: [{ id: "178035101794451@lid", type: "user" }],
+      });
+    } finally {
+      if (oldApiUrl === undefined) delete process.env.OMNI_API_URL;
+      else process.env.OMNI_API_URL = oldApiUrl;
+      if (oldApiKey === undefined) delete process.env.OMNI_API_KEY;
+      else process.env.OMNI_API_KEY = oldApiKey;
+    }
+  });
+
+  it("falls back to native WhatsApp mention metadata for inline phone placeholders", async () => {
+    const oldApiUrl = process.env.OMNI_API_URL;
+    const oldApiKey = process.env.OMNI_API_KEY;
+    process.env.OMNI_API_URL = "http://omni.local";
+    process.env.OMNI_API_KEY = "test-key";
+
+    try {
+      const { sessionName } = seedSession();
+      const groupJid = "120363000000000001@g.us";
+      upsertOmniGroupMetadata({
+        accountId: "main",
+        instanceId: "11111111-1111-1111-1111-111111111111",
+        chatId: groupJid,
+        channel: "whatsapp",
+        name: "Ravi - Dev",
+        participants: [],
+        fetchedAt: Date.now(),
+      });
+      const send = mock(async (..._args: Parameters<GatewaySend>) => ({ messageId: "outbound-phone-mention" }));
+      const gateway = makeGateway(send);
+
+      await handleResponse(
+        gateway,
+        sessionName,
+        makeResponse({
+          response: "@5511947879044, cola isso no terminal pra ver:",
+          target: {
+            channel: "whatsapp-baileys",
+            accountId: "main",
+            chatId: groupJid,
+            sourceMessageId: "inbound-group-phone-mention",
+          },
+        }),
+      );
+
+      expect(send).toHaveBeenCalledTimes(1);
+      const [, , text, options] = send.mock.calls[0] as Parameters<GatewaySend>;
+      expect(text).toBe("@5511947879044, cola isso no terminal pra ver:");
+      expect(options).toMatchObject({
+        mentions: [{ id: "5511947879044@s.whatsapp.net", type: "user" }],
+      });
+    } finally {
+      if (oldApiUrl === undefined) delete process.env.OMNI_API_URL;
+      else process.env.OMNI_API_URL = oldApiUrl;
+      if (oldApiKey === undefined) delete process.env.OMNI_API_KEY;
+      else process.env.OMNI_API_KEY = oldApiKey;
+    }
+  });
+
+  it("renews active presence one second after a delivered response when runtime activity continues", async () => {
     const { sessionName } = seedSession();
     const send = mock(async () => ({ messageId: "outbound-1" }));
     const renewActiveTarget = mock(async () => true);
@@ -536,12 +681,31 @@ describe("Gateway session trace instrumentation", () => {
     await handleResponse(gateway, sessionName, makeResponse({ target }));
 
     expect(renewActiveTarget).not.toHaveBeenCalled();
+    await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: target });
     await wait(1_050);
     expect(renewActiveTarget).toHaveBeenCalledTimes(1);
     expect(sendTyping).not.toHaveBeenCalled();
   });
 
-  it("forces delayed presence renewal from the response target for non-final cross-daemon delivery", async () => {
+  it("does not renew presence from delivery alone after the response is sent", async () => {
+    const { sessionName } = seedSession();
+    const send = mock(async () => ({ messageId: "outbound-1" }));
+    const renewActiveTarget = mock(async () => true);
+    const sendTyping = mock(async () => {});
+    const target = makeResponse().target!;
+    const gateway = makeGateway(send, { getActiveTarget: () => target, renewActiveTarget, sendTyping });
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    renewActiveTarget.mockClear();
+    sendTyping.mockClear();
+    await handleResponse(gateway, sessionName, makeResponse({ target }));
+
+    await wait(1_050);
+    expect(renewActiveTarget).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), true);
+  });
+
+  it("forces delayed presence renewal from the response target when runtime activity continues cross-daemon", async () => {
     const { sessionName } = seedSession();
     const send = mock(async () => ({ messageId: "outbound-1" }));
     const renewActiveTarget = mock(async () => false);
@@ -555,6 +719,7 @@ describe("Gateway session trace instrumentation", () => {
     await handleResponse(gateway, sessionName, makeResponse({ target }));
 
     expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), true);
+    await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: target });
     await wait(1_050);
     expect(renewActiveTarget).not.toHaveBeenCalled();
     expect(sendTyping).toHaveBeenCalledWith(
@@ -581,6 +746,7 @@ describe("Gateway session trace instrumentation", () => {
     sendTyping.mockClear();
     await handleResponse(gateway, sessionName, makeResponse({ target }));
 
+    await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: target });
     await wait(1_050);
     expect(renewActiveTarget).not.toHaveBeenCalled();
     expect(sendTyping).toHaveBeenCalledWith(
@@ -611,6 +777,306 @@ describe("Gateway session trace instrumentation", () => {
 
     expect(renewActiveTarget).not.toHaveBeenCalled();
     expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), true);
+  });
+
+  it("does not renew native Slack presence from delivery alone while the turn is active", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        renewActiveTarget: mock(async () => false),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    emitted.length = 0;
+
+    await handleDeliveryObservation(gateway, sessionName, {
+      status: "delivered",
+      platformMessageId: "1783269000.123456",
+      target,
+    });
+
+    await wait(1_050);
+    expect(emitted).not.toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        sessionName,
+        active: true,
+        reason: "native-delivery-renew",
+        target: expect.objectContaining({
+          channel: "slack",
+          chatId: "C123",
+          statusAnchorKind: "last_outbound_message",
+          statusAnchorMessageId: "1783269000.123456",
+          sourceMessageId: "1783268187.075159",
+        }),
+      }),
+    ]);
+  });
+
+  it("keeps native Slack presence on the delivered outbound anchor during later runtime activity", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    delete target.threadId;
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        renewActiveTarget: mock(async () => false),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    await handleDeliveryObservation(gateway, sessionName, {
+      status: "delivered",
+      platformMessageId: "1783269000.123456",
+      target,
+    });
+    emitted.length = 0;
+    (
+      gateway as unknown as {
+        presenceRenewedAt: Map<string, number>;
+      }
+    ).presenceRenewedAt.set(sessionName, Date.now() - 5_000);
+
+    await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: target });
+
+    expect(emitted).toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        sessionName,
+        active: true,
+        reason: "runtime-tool.started",
+        target: expect.objectContaining({
+          channel: "slack",
+          chatId: "C123",
+          statusAnchorKind: "last_outbound_message",
+          statusAnchorMessageId: "1783269000.123456",
+          sourceMessageId: "1783268187.075159",
+        }),
+      }),
+    ]);
+    expect(emitted).not.toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        sessionName,
+        active: true,
+        reason: "runtime-tool.started",
+        target: expect.not.objectContaining({
+          statusAnchorMessageId: "1783269000.123456",
+        }),
+      }),
+    ]);
+  });
+
+  it("restores native Slack outbound anchors from trace after gateway restart", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    delete target.threadId;
+    recordDeliveryTrace({
+      sessionName,
+      delivery: {
+        status: "delivered",
+        messageId: "1783269000.123456",
+        target,
+      },
+    });
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        renewActiveTarget: mock(async () => false),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: target });
+
+    expect(emitted).toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        sessionName,
+        active: true,
+        reason: "runtime-tool.started",
+        target: expect.objectContaining({
+          channel: "slack",
+          chatId: "C123",
+          statusAnchorKind: "last_outbound_message",
+          statusAnchorMessageId: "1783269000.123456",
+          sourceMessageId: "1783268187.075159",
+        }),
+      }),
+    ]);
+  });
+
+  it("clears the restored native Slack outbound anchor on terminal events after gateway restart", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    delete target.threadId;
+    recordDeliveryTrace({
+      sessionName,
+      delivery: {
+        status: "delivered",
+        messageId: "1783269000.123456",
+        target,
+      },
+    });
+    const gateway = makeGateway(mock(async () => ({ messageId: "outbound-1" })));
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
+
+    expect(emitted).toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        sessionName,
+        active: false,
+        reason: "terminal-stop",
+        target: expect.objectContaining({
+          channel: "slack",
+          chatId: "C123",
+          statusAnchorKind: "last_outbound_message",
+          statusAnchorMessageId: "1783269000.123456",
+          sourceMessageId: "1783268187.075159",
+        }),
+      }),
+    ]);
+  });
+
+  it("starts the next native Slack turn on the new inbound message even when an outbound anchor is remembered", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    delete target.threadId;
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        renewActiveTarget: mock(async () => false),
+        clearActiveTarget: mock(async () => {}),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
+    await handleDeliveryObservation(gateway, sessionName, {
+      status: "delivered",
+      platformMessageId: "1783269000.123456",
+      target,
+    });
+    emitted.length = 0;
+
+    await handleRuntimePresence(gateway, sessionName, {
+      type: "turn.started",
+      _source: { ...target, sourceMessageId: "1783269584.402329" },
+    });
+
+    const startPresence = emitted.find(
+      ([topic, payload]) =>
+        topic === "ravi.channel.presence.slack" && payload.active === true && payload.reason === "runtime-turn.started",
+    );
+    expect(startPresence?.[1]).toEqual(
+      expect.objectContaining({
+        sessionName,
+        active: true,
+        reason: "runtime-turn.started",
+        target: expect.objectContaining({
+          channel: "slack",
+          chatId: "C123",
+          sourceMessageId: "1783269584.402329",
+        }),
+      }),
+    );
+    expect((startPresence?.[1].target as Record<string, unknown> | undefined)?.statusAnchorMessageId).toBeUndefined();
+  });
+
+  it("clears the remembered native Slack outbound anchor on terminal events", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    delete target.threadId;
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        renewActiveTarget: mock(async () => false),
+        clearActiveTarget: mock(async () => {}),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    await handleDeliveryObservation(gateway, sessionName, {
+      status: "delivered",
+      platformMessageId: "1783269000.123456",
+      target,
+    });
+    emitted.length = 0;
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
+
+    expect(emitted).toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        sessionName,
+        active: false,
+        reason: "terminal-stop",
+        target: expect.objectContaining({
+          channel: "slack",
+          chatId: "C123",
+          statusAnchorKind: "last_outbound_message",
+          statusAnchorMessageId: "1783269000.123456",
+        }),
+      }),
+    ]);
+  });
+
+  it("forces native Slack presence clear on terminal events even when the boolean tracker was not primed", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        renewActiveTarget: mock(async () => false),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    emitted.length = 0;
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
+
+    expect(emitted).toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        sessionName,
+        active: false,
+        reason: "terminal-stop",
+        target: expect.objectContaining({
+          channel: "slack",
+          chatId: "C123",
+        }),
+      }),
+    ]);
+  });
+
+  it("does not reactivate native Slack presence after terminal turn delivery", async () => {
+    const { sessionName } = seedSession();
+    const target = makeSlackTarget();
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        renewActiveTarget: mock(async () => false),
+        clearActiveTarget: mock(async () => {}),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
+    emitted.length = 0;
+
+    await handleDeliveryObservation(gateway, sessionName, { status: "delivered", target });
+
+    expect(emitted).not.toContainEqual([
+      "ravi.channel.presence.slack",
+      expect.objectContaining({
+        active: true,
+        reason: "native-delivery-renew",
+      }),
+    ]);
   });
 
   it("keeps presence active on interrupted turns instead of pausing", async () => {
@@ -657,7 +1123,105 @@ describe("Gateway session trace instrumentation", () => {
     );
   });
 
-  it("does not renew presence from idle runtime status", async () => {
+  it("keeps active presence through idle runtime status", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const renewActiveTarget = mock(async () => true);
+    const clearActiveTarget = mock(async () => {});
+    const target = makeResponse().target!;
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        getActiveTarget: () => target,
+        renewActiveTarget,
+        clearActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    renewActiveTarget.mockClear();
+    sendTyping.mockClear();
+    await handleRuntimePresence(gateway, sessionName, { type: "status", status: "idle", _source: target });
+
+    expect(renewActiveTarget).not.toHaveBeenCalled();
+    expect(clearActiveTarget).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "5511999999999@s.whatsapp.net",
+      false,
+    );
+  });
+
+  it("ignores raw provider terminal native events until canonical turn completion", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const renewActiveTarget = mock(async () => true);
+    const clearActiveTarget = mock(async () => {});
+    const target = makeResponse().target!;
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        getActiveTarget: () => target,
+        renewActiveTarget,
+        clearActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    renewActiveTarget.mockClear();
+    sendTyping.mockClear();
+    await handleRuntimePresence(gateway, sessionName, {
+      type: "provider.raw",
+      nativeEvent: "turn.completed",
+      _source: target,
+    });
+
+    expect(renewActiveTarget).not.toHaveBeenCalled();
+    expect(clearActiveTarget).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "5511999999999@s.whatsapp.net",
+      false,
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
+
+    expect(clearActiveTarget).toHaveBeenCalledTimes(1);
+    expect(sendTyping).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "5511999999999@s.whatsapp.net",
+      false,
+    );
+  });
+
+  it("does not repeat terminal presence stop for duplicate terminal events", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const target = makeResponse().target!;
+    let activeTarget: typeof target | undefined = target;
+    const clearActiveTarget = mock(async () => {
+      activeTarget = undefined;
+    });
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        getActiveTarget: () => activeTarget,
+        clearActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
+    sendTyping.mockClear();
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.completed", _source: target });
+
+    expect(clearActiveTarget).toHaveBeenCalledTimes(1);
+    expect(sendTyping).not.toHaveBeenCalled();
+  });
+
+  it("does not renew presence from raw provider events", async () => {
     const { sessionName } = seedSession();
     const sendTyping = mock(async () => {});
     const renewActiveTarget = mock(async () => true);
@@ -671,10 +1235,54 @@ describe("Gateway session trace instrumentation", () => {
       },
     );
 
-    await handleRuntimePresence(gateway, sessionName, { type: "status", status: "idle", _source: target });
+    await handleRuntimePresence(gateway, sessionName, {
+      type: "provider.raw",
+      nativeEvent: "item.completed",
+      _source: target,
+    });
 
     expect(renewActiveTarget).not.toHaveBeenCalled();
     expect(sendTyping).not.toHaveBeenCalled();
+  });
+
+  it("does not expose typing for suppressed background runtime sources", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const renewActiveTarget = mock(async () => true);
+    const target = { ...makeResponse().target!, suppressPresence: true };
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        getActiveTarget: () => target,
+        renewActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.started", _source: target });
+    await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: target });
+
+    expect(renewActiveTarget).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), true);
+  });
+
+  it("does not force typing when a suppressed background turn is interrupted", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const renewActiveTarget = mock(async () => false);
+    const target = { ...makeResponse().target!, suppressPresence: true };
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        renewActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.interrupted", _source: target });
+
+    expect(renewActiveTarget).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), true);
   });
 
   it("renews active presence on runtime activity before the final response", async () => {
@@ -726,6 +1334,32 @@ describe("Gateway session trace instrumentation", () => {
     );
   });
 
+  it("treats account-name and instance-id presence targets as the same chat", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const renewActiveTarget = mock(async () => true);
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        getActiveTarget: () => makeResponse().target,
+        renewActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, {
+      type: "tool.started",
+      _source: makeInstanceAliasTarget(),
+    });
+
+    expect(renewActiveTarget).toHaveBeenCalledTimes(1);
+    expect(sendTyping).not.toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "5511999999999@s.whatsapp.net",
+      true,
+    );
+  });
+
   it("forces presence renewal from streamed activity when delivery runs outside the active consumer", async () => {
     const { sessionName } = seedSession();
     const sendTyping = mock(async () => {});
@@ -745,6 +1379,37 @@ describe("Gateway session trace instrumentation", () => {
       "5511999999999@s.whatsapp.net",
       true,
     );
+  });
+
+  it("records presence trace for fallback typing renewal", async () => {
+    const { sessionKey, sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        renewActiveTarget: mock(async () => false),
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "stream.chunk", _source: makeResponse().target });
+
+    const presenceEvents = listSessionEvents(sessionKey).filter((event) => event.eventGroup === "presence");
+    expect(presenceEvents).toHaveLength(1);
+    expect(presenceEvents[0]).toMatchObject({
+      eventType: "presence.typing",
+      status: "active",
+      preview: "runtime-stream.chunk active",
+    });
+    expect(emitted).toContainEqual([
+      "ravi.presence.typing",
+      expect.objectContaining({
+        sessionName,
+        active: true,
+        status: "active",
+        reason: "runtime-stream.chunk",
+      }),
+    ]);
   });
 
   it("throttles repeated runtime activity presence renewals", async () => {
@@ -782,6 +1447,57 @@ describe("Gateway session trace instrumentation", () => {
     await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
 
     expect(clearActiveTarget).toHaveBeenCalledTimes(1);
+  });
+
+  it("records presence trace when terminal events clear an active target", async () => {
+    const { sessionKey, sessionName } = seedSession();
+    const clearActiveTarget = mock(async () => {});
+    const target = makeResponse().target!;
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        getActiveTarget: () => target,
+        clearActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
+
+    const presenceEvents = listSessionEvents(sessionKey).filter((event) => event.eventGroup === "presence");
+    expect(clearActiveTarget).toHaveBeenCalledTimes(1);
+    expect(presenceEvents).toHaveLength(1);
+    expect(presenceEvents[0]).toMatchObject({
+      eventType: "presence.typing",
+      status: "inactive",
+      preview: "terminal-clear-active-target inactive",
+    });
+  });
+
+  it("clears equivalent account-name and instance-id targets without duplicate fallback pauses", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const clearActiveTarget = mock(() => {});
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        getActiveTarget: () => makeResponse().target,
+        clearActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, {
+      type: "turn.complete",
+      _source: makeInstanceAliasTarget(),
+    });
+
+    expect(clearActiveTarget).toHaveBeenCalledTimes(1);
+    expect(sendTyping).toHaveBeenCalledTimes(1);
+    expect(sendTyping).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "5511999999999@s.whatsapp.net",
+      false,
+    );
   });
 
   it("stops presence immediately when the response is silent", async () => {

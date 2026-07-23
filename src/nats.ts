@@ -110,6 +110,12 @@ export async function publish(topic: string, data: Record<string, unknown>): Pro
   conn.publish(topic, sc.encode(JSON.stringify(data)));
 }
 
+/** Wait until the server has processed everything published on this connection. */
+export async function flushNats(): Promise<void> {
+  const conn = await ensureConnected();
+  await conn.flush();
+}
+
 export interface SubscribeOptions {
   /** NATS queue group name. When set, only one subscriber in the group receives each message. */
   queue?: string;
@@ -241,11 +247,35 @@ export async function* subscribe(
 /**
  * Drain and close the NATS connection.
  */
-export async function closeNats(): Promise<void> {
+export async function closeNats(options: { drainTimeoutMs?: number } = {}): Promise<void> {
   if (nc) {
-    await nc.drain();
+    const current = nc;
+    if (options.drainTimeoutMs && options.drainTimeoutMs > 0) {
+      await drainWithTimeout(current, options.drainTimeoutMs);
+    } else {
+      await current.drain();
+    }
     nc = null;
+    explicitConnect = false;
     log.info("NATS connection closed");
+  }
+}
+
+async function drainWithTimeout(conn: NatsConnection, timeoutMs: number): Promise<void> {
+  let timedOut = false;
+  await Promise.race([
+    conn.drain(),
+    new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        timedOut = true;
+        resolve();
+      }, timeoutMs);
+      timer.unref?.();
+    }),
+  ]);
+  if (timedOut) {
+    log.warn("NATS drain timed out; closing connection", { timeoutMs });
+    await conn.close();
   }
 }
 

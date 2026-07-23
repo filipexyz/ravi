@@ -5,17 +5,19 @@
 import {
   getGroupMetadata,
   getCommandsMetadata,
+  getCommandAccessMetadata,
   getArgsMetadata,
   getOptionsMetadata,
   getScopeMetadata,
   type ArgMetadata,
+  type CommandAccessOptions,
   type OptionMetadata,
   type ScopeType,
 } from "./decorators.js";
 import { extractOptionName, inferOptionType } from "./utils.js";
 import { nats } from "../nats.js";
 import { getContext } from "./context.js";
-import { enforceScopeCheck } from "../permissions/scope.js";
+import { enforceCliCommandAuthorization } from "./command-access.js";
 import { resolveCommandSkillGate, type SkillGateMetadata } from "./skill-gates.js";
 
 // ============================================================================
@@ -37,6 +39,7 @@ export interface ExportedTool {
     options: OptionMetadata[];
     scope?: ScopeType;
     skillGate?: SkillGateMetadata;
+    access?: CommandAccessOptions;
   };
 }
 
@@ -80,6 +83,7 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
 
     // Resolve scope: command-level > group-level > "admin" (fail-secure default)
     const scopeMap = getScopeMetadata(cls);
+    const commandAccessMap = getCommandAccessMetadata(cls);
 
     for (const cmdMeta of commandsMeta) {
       const argsMeta = getArgsMetadata(instance, cmdMeta.method);
@@ -94,6 +98,7 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
         command: cmdMeta.name,
         method: cmdMeta.method,
       });
+      const access = commandAccessMap.get(cmdMeta.method);
 
       tools.push({
         name: `${normalizedGroup}_${cmdMeta.name}`,
@@ -107,6 +112,7 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
           normalizedGroup,
           cmdMeta.name,
           effectiveScope,
+          access,
         ),
         metadata: {
           group: normalizedGroup,
@@ -116,6 +122,7 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
           options: optionsMeta,
           scope: effectiveScope,
           ...(skillGate ? { skillGate } : {}),
+          ...(access ? { access } : {}),
         },
       });
     }
@@ -190,13 +197,20 @@ function buildHandler(
   group: string,
   command: string,
   scope: ScopeType,
+  access: CommandAccessOptions | undefined,
 ): (args: Record<string, unknown>) => Promise<ToolResult> {
   return async (toolArgs: Record<string, unknown>): Promise<ToolResult> => {
-    // Scope enforcement (before method execution)
-    const scopeResult = enforceScopeCheck(scope, group, command);
-    if (!scopeResult.allowed) {
+    const accessResult = enforceCliCommandAuthorization({
+      group,
+      command,
+      access,
+      input: toolArgs,
+      source: "tool",
+      scope,
+    });
+    if (!accessResult.allowed) {
       return {
-        content: [{ type: "text", text: scopeResult.errorMessage }],
+        content: [{ type: "text", text: accessResult.errorMessage }],
         isError: true,
       };
     }

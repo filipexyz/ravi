@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Scope, Arg, Option } from "../decorators.js";
+import { Group, Command, CommandAccess, Scope, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems, parseCliListLimit, parseCliListOffset } from "../pagination.js";
 import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
@@ -63,7 +63,7 @@ import {
   type ContactSessionSummary,
 } from "../../session-trace/session-trace-db.js";
 import type { SessionEventRecord } from "../../session-trace/types.js";
-import { getScopeContext, isScopeEnforced, canAccessContact } from "../../permissions/scope.js";
+import { getScopeContext, isScopeEnforced, canAccessContact, canWriteContacts } from "../../permissions/scope.js";
 import { printInspectionBlock, printInspectionField } from "../inspection-output.js";
 
 const CONTACT_DB_META = { source: "contact-db", freshness: "persisted" } as const;
@@ -310,23 +310,64 @@ function summarizeContacts(contacts: Contact[]) {
   };
 }
 
-function assertCanReadContactTimeline(contactRef: string): void {
+function canReadContactRecord(scopeCtx: ReturnType<typeof getScopeContext>, contact: Contact): boolean {
+  const contactAgent = getRouteAgent(contact);
+  const contactSessions = contactAgent ? [{ agentId: contactAgent }] : [];
+  return canAccessContact(scopeCtx, contact, null, contactSessions);
+}
+
+function canReadCanonicalContact(
+  scopeCtx: ReturnType<typeof getScopeContext>,
+  contactId: string,
+  tags: string[] = [],
+): boolean {
+  const contact = getContact(contactId);
+  if (contact) return canReadContactRecord(scopeCtx, contact);
+  return canAccessContact(scopeCtx, { id: contactId, tags }, null, []);
+}
+
+function canReadContactDetails(scopeCtx: ReturnType<typeof getScopeContext>, details: ContactDetails): boolean {
+  return canReadCanonicalContact(scopeCtx, details.contact.id, details.policy?.tags ?? []);
+}
+
+function filterVisibleContacts<T extends Contact>(contacts: T[]): T[] {
   const scopeCtx = getScopeContext();
-  if (!isScopeEnforced(scopeCtx)) return;
+  if (!isScopeEnforced(scopeCtx)) return contacts;
+  return contacts.filter((contact) => canReadContactRecord(scopeCtx, contact));
+}
 
+function getVisibleContactDetails(
+  contactRef: string,
+  options: { includeDuplicateCandidates?: boolean } = {},
+): { contact: Contact | null; details: ContactDetails | null } {
+  const details = getContactDetails(contactRef, options);
   const contact = getContact(contactRef);
-  if (contact) {
-    const contactAgent = getRouteAgent(contact);
-    const contactSessions = contactAgent ? [{ agentId: contactAgent }] : [];
-    if (canAccessContact(scopeCtx, contact, null, contactSessions)) return;
-    fail(`Permission denied: agent:${scopeCtx.agentId} cannot read contact timeline for ${contact.id}`);
-  }
+  if (!contact && !details) return { contact: null, details: null };
 
-  const details = getContactDetails(contactRef);
-  if (!details) fail(`Contact not found: ${contactRef}`);
-  const tags = details.policy?.tags ?? [];
-  if (canAccessContact(scopeCtx, { id: details.contact.id, tags }, null, [])) return;
-  fail(`Permission denied: agent:${scopeCtx.agentId} cannot read contact timeline for ${details.contact.id}`);
+  const scopeCtx = getScopeContext();
+  if (!isScopeEnforced(scopeCtx)) return { contact, details };
+
+  if (contact && canReadContactRecord(scopeCtx, contact)) return { contact, details };
+  if (details && canReadContactDetails(scopeCtx, details)) return { contact, details };
+  return { contact: null, details: null };
+}
+
+function assertCanReadContact(contactRef: string): void {
+  const visible = getVisibleContactDetails(contactRef);
+  if (visible.contact || visible.details) return;
+  fail(`Contact not found: ${contactRef}`);
+}
+
+function assertCanReadContactTimeline(contactRef: string): void {
+  assertCanReadContact(contactRef);
+}
+
+function canViewPendingAccountEntry(entry: { phone: string; pendingKind?: string }): boolean {
+  const scopeCtx = getScopeContext();
+  if (!isScopeEnforced(scopeCtx)) return true;
+  if (entry.pendingKind === "chat") return canWriteContacts(scopeCtx);
+  const contact = getContact(entry.phone);
+  return contact ? canReadContactRecord(scopeCtx, contact) : canWriteContacts(scopeCtx);
 }
 
 @Group({
@@ -336,6 +377,7 @@ function assertCanReadContactTimeline(contactRef: string): void {
 export class ContactsCommands {
   @Scope("open")
   @Command({ name: "list", description: "List all contacts" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "list", risk: "low" })
   list(
     @Option({ flags: "--status <status>", description: "Filter by status" }) filterStatus?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -343,17 +385,7 @@ export class ContactsCommands {
     @Option({ flags: "--offset <n>", description: "Number of matching contacts to skip (default: 0)" }) offset?: string,
   ) {
     let contacts = filterStatus ? getAllContacts().filter((c) => c.status === filterStatus) : getAllContacts();
-
-    // Scope isolation: filter contacts by agent scope (via REBAC)
-    const scopeCtx = getScopeContext();
-    if (isScopeEnforced(scopeCtx)) {
-      contacts = contacts.filter((c) => {
-        // Find the agent that owns this contact's session (via route)
-        const contactAgent = getRouteAgent(c);
-        const contactSessions = contactAgent ? [{ agentId: contactAgent }] : [];
-        return canAccessContact(scopeCtx, c, null, contactSessions);
-      });
-    }
+    contacts = filterVisibleContacts(contacts);
 
     const page = paginateCliItems(contacts, { limit, offset });
     const pageContacts = page.items;
@@ -415,15 +447,16 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "pending", description: "List pending contacts" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "pending", risk: "low" })
   pending(
     @Option({ flags: "-a, --account <id>", description: "Filter by account" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     // Global pending contacts
-    const contacts = getPendingContacts();
-    const accountPendingContacts = listAccountPendingContacts(account);
-    const pendingChats = listAccountPendingChats(account);
-    const accountPending = listAccountPending(account);
+    const contacts = filterVisibleContacts(getPendingContacts());
+    const accountPendingContacts = listAccountPendingContacts(account).filter(canViewPendingAccountEntry);
+    const pendingChats = listAccountPendingChats(account).filter(canViewPendingAccountEntry);
+    const accountPending = listAccountPending(account).filter(canViewPendingAccountEntry);
 
     const payload = {
       filter: { account: account ?? null },
@@ -514,6 +547,7 @@ export class ContactsCommands {
     aliases: ["intake-backfill"],
     description: "Backfill canonical contacts from captured chats",
   })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "backfill", risk: "medium" })
   backfill(
     @Option({ flags: "--instance <id>", description: "Limit to one channel instance/account" }) instanceId?: string,
     @Option({ flags: "--channel <channel>", description: "Limit to one channel, e.g. whatsapp" }) channel?: string,
@@ -612,6 +646,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "add", description: "Add/allow a contact" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "add", risk: "medium" })
   add(
     @Arg("identity", { description: "Phone number or WhatsApp identity" }) identity: string,
     @Arg("name", { required: false, description: "Contact name" }) name?: string,
@@ -661,6 +696,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "approve", description: "Approve pending contact" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "approve", risk: "medium" })
   approve(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("mode", { required: false, description: "Reply mode (auto|mention)" })
@@ -712,6 +748,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "remove", description: "Remove a contact" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "remove", risk: "destructive" })
   remove(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -734,6 +771,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "allow", description: "Allow a contact" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "allow", risk: "medium" })
   allow(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -763,6 +801,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "block", description: "Block a contact" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "block", risk: "destructive" })
   block(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -792,6 +831,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "set", description: "Set contact property" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "set", risk: "medium" })
   set(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("key", { description: "Property key" }) key: string,
@@ -892,12 +932,12 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "get", description: "Show canonical contact details", aliases: ["show"] })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "get", risk: "low" })
   get(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const details = getContactDetails(contactRef);
-    const contact = getContact(contactRef);
+    const { details, contact } = getVisibleContactDetails(contactRef, { includeDuplicateCandidates: true });
 
     if (!contact && !details) {
       const payload = { found: false as const, target: contactRef, contact: null };
@@ -999,6 +1039,7 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "info", description: "Show contact details with all identities" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "info", risk: "low" })
   info(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1008,6 +1049,7 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "check", description: "Check contact status (alias for info)" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "check", risk: "low" })
   check(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1017,6 +1059,7 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "timeline", description: "Show contact timeline events" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "timeline", risk: "low" })
   timeline(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
@@ -1081,6 +1124,7 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "messages", description: "Show messages attributed to a contact" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "messages", risk: "low" })
   messages(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
@@ -1135,6 +1179,7 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "activity", description: "Show session activity attributed to a contact" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "activity", risk: "low" })
   activity(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
@@ -1193,6 +1238,7 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "sessions", description: "Show session summaries attributed to a contact" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "sessions", risk: "low" })
   sessions(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
@@ -1250,6 +1296,7 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "profile", description: "Show a contact profile card" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "profile", risk: "low" })
   profile(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1372,6 +1419,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "note", description: "Append a note to a contact timeline" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "note", risk: "low" })
   note(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("text", { description: "Note text" }) text: string,
@@ -1406,12 +1454,13 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "find", description: "Find contacts by tag or search query" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "find", risk: "low" })
   find(
     @Arg("query", { description: "Tag name (with --tag) or search query" }) query: string,
     @Option({ flags: "--tag", description: "Search by tag" }) byTag?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const contacts = byTag ? findContactsByTag(query) : searchContacts(query);
+    const contacts = filterVisibleContacts(byTag ? findContactsByTag(query) : searchContacts(query));
     const payload = {
       query,
       byTag: Boolean(byTag),
@@ -1444,6 +1493,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "tag", description: "Add a tag to a contact" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "tag", risk: "medium" })
   tag(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("tag", { description: "Tag to add" }) tag: string,
@@ -1472,6 +1522,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "untag", description: "Remove a tag from a contact" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "untag", risk: "medium" })
   untag(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("tag", { description: "Tag to remove" }) tag: string,
@@ -1500,6 +1551,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "link", description: "Link a platform identity to a contact" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "link", risk: "medium" })
   link(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--channel <channel>", description: "Channel, e.g. phone, whatsapp, telegram, email" })
@@ -1542,6 +1594,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "unlink", description: "Unlink a platform identity from its contact" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "unlink", risk: "medium" })
   unlink(
     @Arg("platformIdentity", { description: "Platform identity ID or value" }) platformIdentityRef: string,
     @Option({ flags: "--reason <text>", description: "Reason for the unlink audit event" }) reason?: string,
@@ -1573,8 +1626,18 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "duplicates", description: "Find likely duplicate contacts" })
+  @CommandAccess({ kind: "read", resource: "contacts", action: "duplicates", risk: "low" })
   duplicates(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
-    const duplicateContacts = listDuplicateContacts();
+    const scopeCtx = getScopeContext();
+    const duplicateContacts = listDuplicateContacts()
+      .filter((entry) => !isScopeEnforced(scopeCtx) || canReadCanonicalContact(scopeCtx, entry.contact.id))
+      .map((entry) => ({
+        ...entry,
+        duplicateCandidates: isScopeEnforced(scopeCtx)
+          ? entry.duplicateCandidates.filter((candidate) => canReadCanonicalContact(scopeCtx, candidate.contact.id))
+          : entry.duplicateCandidates,
+      }))
+      .filter((entry) => entry.duplicateCandidates.length > 0);
     const payload = {
       total: duplicateContacts.length,
       duplicateContacts,
@@ -1603,6 +1666,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "merge", description: "Merge two contacts (move identities from source to target)" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "merge", risk: "medium" })
   merge(
     @Arg("source", { description: "Source contact ID (will be deleted)" }) sourceRef: string,
     @Arg("target", { description: "Target contact ID" }) targetRef: string,
@@ -1644,6 +1708,7 @@ export class ContactsCommands {
 export class ContactsMetadataCommands {
   @Scope("open")
   @Command({ name: "list", description: "List current scoped metadata for a contact" })
+  @CommandAccess({ kind: "read", resource: "contacts.metadata", action: "list", risk: "low" })
   list(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--scope <type:id>", description: "Filter by scoped context" }) scope?: string,
@@ -1697,6 +1762,7 @@ export class ContactsMetadataCommands {
 
   @Scope("writeContacts")
   @Command({ name: "set", description: "Set scoped metadata for a contact" })
+  @CommandAccess({ kind: "mutate", resource: "contacts.metadata", action: "set", risk: "medium" })
   set(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("key", { description: "Namespaced metadata key" }) key: string,
@@ -1734,6 +1800,7 @@ export class ContactsMetadataCommands {
 
   @Scope("writeContacts")
   @Command({ name: "remove", description: "Remove scoped metadata from a contact" })
+  @CommandAccess({ kind: "mutate", resource: "contacts.metadata", action: "remove", risk: "destructive" })
   remove(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("key", { description: "Namespaced metadata key" }) key: string,

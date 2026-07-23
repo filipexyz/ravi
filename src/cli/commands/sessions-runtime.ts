@@ -6,7 +6,7 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { Group, Command, CommandAccess, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { declareCommandReturns, runtimeControlReturnSchema } from "./operational-return-schemas.js";
 import { requestReply } from "../../utils/request-reply.js";
@@ -109,6 +109,7 @@ async function requestRuntimeControl(
 })
 export class SessionRuntimeCommands {
   @Command({ name: "list", description: "List runtime threads through an active session" })
+  @CommandAccess({ kind: "read", resource: "sessions.runtime", action: "list", risk: "low" })
   async list(
     @Arg("session", { description: "Ravi session name or key" }) nameOrKey: string,
     @Option({ flags: "--limit <count>", description: "Maximum number of threads to return" }) limit?: string,
@@ -132,6 +133,7 @@ export class SessionRuntimeCommands {
   }
 
   @Command({ name: "read", description: "Read a runtime thread through an active session" })
+  @CommandAccess({ kind: "read", resource: "sessions.runtime", action: "read", risk: "low" })
   async read(
     @Arg("session", { description: "Ravi session name or key" }) nameOrKey: string,
     @Arg("threadId", { description: "Runtime thread id; defaults to current thread", required: false })
@@ -150,6 +152,7 @@ export class SessionRuntimeCommands {
   }
 
   @Command({ name: "steer", description: "Steer the active runtime turn" })
+  @CommandAccess({ kind: "read", resource: "sessions.runtime", action: "steer", risk: "low" })
   async steer(
     @Arg("session", { description: "Ravi session name or key" }) nameOrKey: string,
     @Arg("text", { description: "Steering text to append to the active turn" }) text: string,
@@ -171,6 +174,7 @@ export class SessionRuntimeCommands {
   }
 
   @Command({ name: "follow-up", description: "Queue a follow-up after the active runtime turn" })
+  @CommandAccess({ kind: "read", resource: "sessions.runtime", action: "follow-up", risk: "low" })
   async followUp(
     @Arg("session", { description: "Ravi session name or key" }) nameOrKey: string,
     @Arg("text", { description: "Follow-up text to run after the active turn" }) text: string,
@@ -192,6 +196,7 @@ export class SessionRuntimeCommands {
   }
 
   @Command({ name: "interrupt", description: "Interrupt the active runtime turn" })
+  @CommandAccess({ kind: "read", resource: "sessions.runtime", action: "interrupt", risk: "low" })
   async interrupt(
     @Arg("session", { description: "Ravi session name or key" }) nameOrKey: string,
     @Option({ flags: "--thread <id>", description: "Expected runtime thread id" }) threadId?: string,
@@ -209,6 +214,7 @@ export class SessionRuntimeCommands {
   }
 
   @Command({ name: "rollback", description: "Rollback completed runtime turns" })
+  @CommandAccess({ kind: "read", resource: "sessions.runtime", action: "rollback", risk: "low" })
   async rollback(
     @Arg("session", { description: "Ravi session name or key" }) nameOrKey: string,
     @Arg("turns", { description: "Number of completed turns to rollback", required: false }) turns?: string,
@@ -226,6 +232,7 @@ export class SessionRuntimeCommands {
   }
 
   @Command({ name: "fork", description: "Fork a runtime thread if the provider supports it" })
+  @CommandAccess({ kind: "read", resource: "sessions.runtime", action: "fork", risk: "low" })
   async fork(
     @Arg("session", { description: "Ravi session name or key" }) nameOrKey: string,
     @Arg("threadId", { description: "Runtime thread id; defaults to current thread", required: false })

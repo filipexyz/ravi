@@ -627,6 +627,14 @@ export const AgentsCreateInputSchema = {
       "description": "Agent ID",
       "type": "string"
     },
+    "model": {
+      "description": "Runtime model selector",
+      "type": "string"
+    },
+    "modelPreset": {
+      "description": "Reference a runtime model preset (mutually exclusive with --model)",
+      "type": "string"
+    },
     "provider": {
       "description": "Runtime provider id",
       "type": "string"
@@ -963,6 +971,268 @@ export const AgentsListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `agents.permissions`. */
+export const AgentsPermissionsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "capabilities": {
+      "description": "Comma-separated explicit capabilities (permission:objectType:objectId)",
+      "type": "string"
+    },
+    "clearCapabilities": {
+      "description": "Remove explicit capabilities while preserving profile",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Agent ID",
+      "type": "string"
+    },
+    "profile": {
+      "description": "Profile: bootstrap, full-access, none",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `agents.permissions`. */
+export const AgentsPermissionsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "permissions",
+      "type": "string"
+    },
+    "after": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "capabilities": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "objectId": {
+                        "type": "string"
+                      },
+                      "objectType": {
+                        "type": "string"
+                      },
+                      "permission": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "profile": {
+              "enum": [
+                "bootstrap",
+                "full-access"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "agent": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "agentId": {
+      "type": "string"
+    },
+    "before": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "capabilities": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "objectId": {
+                        "type": "string"
+                      },
+                      "objectType": {
+                        "type": "string"
+                      },
+                      "permission": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "profile": {
+              "enum": [
+                "bootstrap",
+                "full-access"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "command": {
+      "type": "string"
+    },
+    "defaults": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "profile": {
+      "type": "string"
+    },
+    "runtimePermissions": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "capabilities": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "objectId": {
+                        "type": "string"
+                      },
+                      "objectType": {
+                        "type": "string"
+                      },
+                      "permission": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "profile": {
+              "enum": [
+                "bootstrap",
+                "full-access"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "agentId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `agents.reset`. */
 export const AgentsResetInputSchema = {
   "additionalProperties": false,
@@ -1125,6 +1395,45 @@ export const AgentsSetReturnSchema = {
     "key": {
       "type": "string"
     },
+    "sessionOverrides": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "effort": {
+            "enum": [
+              "none",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max",
+              "ultra"
+            ],
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "sessionName": {
+            "type": "string"
+          },
+          "thinking": {
+            "enum": [
+              "off",
+              "normal",
+              "verbose"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionName"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
     "value": {}
   },
   "required": [
@@ -1132,7 +1441,8 @@ export const AgentsSetReturnSchema = {
     "changed",
     "agentId",
     "key",
-    "value"
+    "value",
+    "sessionOverrides"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -1351,6 +1661,91 @@ export const AppsCheckReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `apps.delete`. */
+export const AppsDeleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dryRun": {
+      "description": "Print planned deletions without removing files",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "App id to delete",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.delete`. */
+export const AppsDeleteReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dryRun": {
+      "type": "boolean"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "planned",
+              "deleted",
+              "not_found"
+            ],
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "manifest",
+              "spec",
+              "skill"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "path",
+          "action"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "id": {
+      "type": "string"
+    },
+    "nextCommands": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "removedDirs": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "dryRun",
+    "files",
+    "removedDirs",
+    "nextCommands"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `apps.guide`. */
 export const AppsGuideInputSchema = {
   "additionalProperties": false,
@@ -1433,6 +1828,162 @@ export const AppsGuideReturnSchema = {
                   },
                   "type": "array"
                 },
+                "provider": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "cacheTtlSec": {
+                          "type": "number"
+                        },
+                        "decisionSchema": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "enum": [
+                                "ref",
+                                "inline",
+                                "unknown"
+                              ],
+                              "type": "string"
+                            },
+                            "ref": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "schema": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "ref",
+                            "schema",
+                            "type"
+                          ],
+                          "type": "object"
+                        },
+                        "failClosed": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "interface": {
+                          "enum": [
+                            "builtin",
+                            "cli",
+                            "sdk",
+                            "tool"
+                          ],
+                          "type": "string"
+                        },
+                        "operation": {
+                          "type": "string"
+                        },
+                        "requestSchema": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "enum": [
+                                "ref",
+                                "inline",
+                                "unknown"
+                              ],
+                              "type": "string"
+                            },
+                            "ref": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "schema": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "ref",
+                            "schema",
+                            "type"
+                          ],
+                          "type": "object"
+                        },
+                        "scope": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "timeoutMs": {
+                          "type": "number"
+                        },
+                        "version": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "version",
+                        "interface",
+                        "operation",
+                        "decisionSchema",
+                        "requestSchema",
+                        "failClosed"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "required": {
                   "items": {
                     "type": "string"
@@ -1443,7 +1994,8 @@ export const AppsGuideReturnSchema = {
               "required": [
                 "required",
                 "optional",
-                "mutating"
+                "mutating",
+                "provider"
               ],
               "type": "object"
             },
@@ -1592,6 +2144,390 @@ export const AppsGuideReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `apps.import-cli`. */
+export const AppsImportCliInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "command": {
+      "description": "CLI command to import, e.g. 'ravi apps' or 'my-cli'",
+      "type": "string"
+    },
+    "description": {
+      "description": "Short app description",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Print planned files without writing",
+      "type": "boolean"
+    },
+    "force": {
+      "description": "Overwrite existing scaffold files",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Stable app id to generate",
+      "type": "string"
+    },
+    "name": {
+      "description": "Human display name",
+      "type": "string"
+    },
+    "skipSkill": {
+      "description": "Do not create a skill skeleton",
+      "type": "boolean"
+    },
+    "skipSpec": {
+      "description": "Do not create an app spec skeleton",
+      "type": "boolean"
+    },
+    "skipUi": {
+      "description": "Do not include interfaces.ui in the manifest",
+      "type": "boolean"
+    },
+    "source": {
+      "description": "Import source: auto|manifest|registry|help",
+      "type": "string"
+    }
+  },
+  "required": [
+    "command"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.import-cli`. */
+export const AppsImportCliReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "command": {
+      "type": "string"
+    },
+    "confidence": {
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "type": "string"
+    },
+    "debugCandidates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "confidence": {
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "destructive": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interactive": {
+            "type": "boolean"
+          },
+          "json": {
+            "type": "boolean"
+          },
+          "mutating": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "reviewRequired": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "streaming": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "command",
+          "description",
+          "json",
+          "mutating",
+          "destructive",
+          "streaming",
+          "interactive",
+          "confidence",
+          "reviewRequired"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "description": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "planned",
+              "created",
+              "overwritten"
+            ],
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "manifest",
+              "spec",
+              "skill"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "path",
+          "action"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "force": {
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string"
+    },
+    "manifest": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "manifestPath": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "nextCommands": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "operationCandidates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "confidence": {
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "destructive": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "interactive": {
+            "type": "boolean"
+          },
+          "json": {
+            "type": "boolean"
+          },
+          "mutating": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "reviewRequired": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "streaming": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "command",
+          "description",
+          "json",
+          "mutating",
+          "destructive",
+          "streaming",
+          "interactive",
+          "confidence",
+          "reviewRequired"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "reviewRequired": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "skill": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "skillPath": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "enum": [
+        "manifest",
+        "registry",
+        "help"
+      ],
+      "type": "string"
+    },
+    "sourceCommand": {
+      "type": "string"
+    },
+    "specPath": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "description",
+    "command",
+    "dryRun",
+    "force",
+    "manifestPath",
+    "specPath",
+    "skillPath",
+    "skill",
+    "files",
+    "manifest",
+    "nextCommands",
+    "sourceCommand",
+    "source",
+    "confidence",
+    "operationCandidates",
+    "debugCandidates",
+    "warnings",
+    "reviewRequired"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `apps.list`. */
 export const AppsListInputSchema = {
   "additionalProperties": false,
@@ -1673,6 +2609,162 @@ export const AppsListReturnSchema = {
                 },
                 "type": "array"
               },
+              "provider": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cacheTtlSec": {
+                        "type": "number"
+                      },
+                      "decisionSchema": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "enum": [
+                              "ref",
+                              "inline",
+                              "unknown"
+                            ],
+                            "type": "string"
+                          },
+                          "ref": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "schema": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "type": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "ref",
+                          "schema",
+                          "type"
+                        ],
+                        "type": "object"
+                      },
+                      "failClosed": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "interface": {
+                        "enum": [
+                          "builtin",
+                          "cli",
+                          "sdk",
+                          "tool"
+                        ],
+                        "type": "string"
+                      },
+                      "operation": {
+                        "type": "string"
+                      },
+                      "requestSchema": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "enum": [
+                              "ref",
+                              "inline",
+                              "unknown"
+                            ],
+                            "type": "string"
+                          },
+                          "ref": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "schema": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "type": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "ref",
+                          "schema",
+                          "type"
+                        ],
+                        "type": "object"
+                      },
+                      "scope": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "timeoutMs": {
+                        "type": "number"
+                      },
+                      "version": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version",
+                      "interface",
+                      "operation",
+                      "decisionSchema",
+                      "requestSchema",
+                      "failClosed"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "required": {
                 "items": {
                   "type": "string"
@@ -1683,7 +2775,8 @@ export const AppsListReturnSchema = {
             "required": [
               "required",
               "optional",
-              "mutating"
+              "mutating",
+              "provider"
             ],
             "type": "object"
           },
@@ -1808,6 +2901,162 @@ export const AppsListReturnSchema = {
                 },
                 "type": "array"
               },
+              "provider": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cacheTtlSec": {
+                        "type": "number"
+                      },
+                      "decisionSchema": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "enum": [
+                              "ref",
+                              "inline",
+                              "unknown"
+                            ],
+                            "type": "string"
+                          },
+                          "ref": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "schema": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "type": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "ref",
+                          "schema",
+                          "type"
+                        ],
+                        "type": "object"
+                      },
+                      "failClosed": {
+                        "const": true,
+                        "type": "boolean"
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "interface": {
+                        "enum": [
+                          "builtin",
+                          "cli",
+                          "sdk",
+                          "tool"
+                        ],
+                        "type": "string"
+                      },
+                      "operation": {
+                        "type": "string"
+                      },
+                      "requestSchema": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "enum": [
+                              "ref",
+                              "inline",
+                              "unknown"
+                            ],
+                            "type": "string"
+                          },
+                          "ref": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "schema": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "type": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "ref",
+                          "schema",
+                          "type"
+                        ],
+                        "type": "object"
+                      },
+                      "scope": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "timeoutMs": {
+                        "type": "number"
+                      },
+                      "version": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version",
+                      "interface",
+                      "operation",
+                      "decisionSchema",
+                      "requestSchema",
+                      "failClosed"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "required": {
                 "items": {
                   "type": "string"
@@ -1818,7 +3067,8 @@ export const AppsListReturnSchema = {
             "required": [
               "required",
               "optional",
-              "mutating"
+              "mutating",
+              "provider"
             ],
             "type": "object"
           },
@@ -2031,6 +3281,162 @@ export const AppsPromptsReturnSchema = {
                   },
                   "type": "array"
                 },
+                "provider": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "cacheTtlSec": {
+                          "type": "number"
+                        },
+                        "decisionSchema": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "enum": [
+                                "ref",
+                                "inline",
+                                "unknown"
+                              ],
+                              "type": "string"
+                            },
+                            "ref": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "schema": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "ref",
+                            "schema",
+                            "type"
+                          ],
+                          "type": "object"
+                        },
+                        "failClosed": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "interface": {
+                          "enum": [
+                            "builtin",
+                            "cli",
+                            "sdk",
+                            "tool"
+                          ],
+                          "type": "string"
+                        },
+                        "operation": {
+                          "type": "string"
+                        },
+                        "requestSchema": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "enum": [
+                                "ref",
+                                "inline",
+                                "unknown"
+                              ],
+                              "type": "string"
+                            },
+                            "ref": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "schema": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "ref",
+                            "schema",
+                            "type"
+                          ],
+                          "type": "object"
+                        },
+                        "scope": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "timeoutMs": {
+                          "type": "number"
+                        },
+                        "version": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "version",
+                        "interface",
+                        "operation",
+                        "decisionSchema",
+                        "requestSchema",
+                        "failClosed"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "required": {
                   "items": {
                     "type": "string"
@@ -2041,7 +3447,8 @@ export const AppsPromptsReturnSchema = {
               "required": [
                 "required",
                 "optional",
-                "mutating"
+                "mutating",
+                "provider"
               ],
               "type": "object"
             },
@@ -2218,6 +3625,39 @@ export const AppsRunInputSchema = {
 
 /** JSON Schema for the return shape of `apps.run`. */
 export const AppsRunReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "appId": {
@@ -2298,6 +3738,95 @@ export const AppsRunReturnSchema = {
         }
       ]
     },
+    "permissionProvider": {
+      "additionalProperties": false,
+      "properties": {
+        "audit": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "cache": {
+          "additionalProperties": false,
+          "properties": {
+            "hit": {
+              "type": "boolean"
+            },
+            "ttlSec": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "hit"
+          ],
+          "type": "object"
+        },
+        "decision": {
+          "enum": [
+            "allow",
+            "deny",
+            "needs_grant",
+            "not_applicable",
+            "error",
+            "invalid"
+          ],
+          "type": "string"
+        },
+        "durationMs": {
+          "type": "number"
+        },
+        "error": {
+          "type": "string"
+        },
+        "grantSuggestion": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "interface": {
+          "enum": [
+            "builtin",
+            "cli",
+            "sdk",
+            "tool"
+          ],
+          "type": "string"
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "providerOperationId": {
+          "type": "string"
+        },
+        "providerVersion": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "reasonCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requestId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId",
+        "providerVersion",
+        "providerOperationId",
+        "interface",
+        "requestId",
+        "decision",
+        "reasonCode",
+        "durationMs",
+        "cache"
+      ],
+      "type": "object"
+    },
     "result": {},
     "status": {
       "enum": [
@@ -2375,6 +3904,39 @@ export const AppsScaffoldInputSchema = {
 
 /** JSON Schema for the return shape of `apps.scaffold`. */
 export const AppsScaffoldReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "command": {
@@ -2425,7 +3987,15 @@ export const AppsScaffoldReturnSchema = {
     "id": {
       "type": "string"
     },
-    "manifest": {},
+    "manifest": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
     "manifestPath": {
       "type": "string"
     },
@@ -2570,6 +4140,162 @@ export const AppsShowReturnSchema = {
               },
               "type": "array"
             },
+            "provider": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "cacheTtlSec": {
+                      "type": "number"
+                    },
+                    "decisionSchema": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "kind": {
+                          "enum": [
+                            "ref",
+                            "inline",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
+                        "ref": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "schema": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "type": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "ref",
+                        "schema",
+                        "type"
+                      ],
+                      "type": "object"
+                    },
+                    "failClosed": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "interface": {
+                      "enum": [
+                        "builtin",
+                        "cli",
+                        "sdk",
+                        "tool"
+                      ],
+                      "type": "string"
+                    },
+                    "operation": {
+                      "type": "string"
+                    },
+                    "requestSchema": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "kind": {
+                          "enum": [
+                            "ref",
+                            "inline",
+                            "unknown"
+                          ],
+                          "type": "string"
+                        },
+                        "ref": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "schema": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "type": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "ref",
+                        "schema",
+                        "type"
+                      ],
+                      "type": "object"
+                    },
+                    "scope": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "timeoutMs": {
+                      "type": "number"
+                    },
+                    "version": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "version",
+                    "interface",
+                    "operation",
+                    "decisionSchema",
+                    "requestSchema",
+                    "failClosed"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "required": {
               "items": {
                 "type": "string"
@@ -2580,7 +4306,8 @@ export const AppsShowReturnSchema = {
           "required": [
             "required",
             "optional",
-            "mutating"
+            "mutating",
+            "provider"
           ],
           "type": "object"
         },
@@ -3026,8 +4753,12 @@ export const ArtifactsListInputSchema = {
       "description": "Number of matching artifacts to skip (default: 0)",
       "type": "string"
     },
+    "orderBy": {
+      "description": "Sort by createdAt or updatedAt (default: createdAt)",
+      "type": "string"
+    },
     "rich": {
-      "description": "Return rich projection with stats and per-item lineage (task/session/agent refs). Honors --kind/--session/--task/--limit/--lifecycle/--agent; ignores --tag/--include-deleted.",
+      "description": "Return rich projection with stats and per-item lineage (task/session/agent refs). Honors --kind/--session/--task/--tag/--limit/--lifecycle/--agent; ignores --include-deleted.",
       "type": "boolean"
     },
     "session": {
@@ -3259,7 +4990,7 @@ export const ArtifactsPublishInputSchema = {
       "type": "string"
     },
     "noActivate": {
-      "default": true,
+      "default": false,
       "description": "Create publish records without activating a site release",
       "type": "boolean"
     },
@@ -3288,7 +5019,7 @@ export const ArtifactsPublishInputSchema = {
       "type": "string"
     },
     "target": {
-      "description": "Local artifact id, file, or directory",
+      "description": "Local artifact id, file, or directory; use a directory with index.html for Pages",
       "type": "string"
     },
     "uploadSession": {
@@ -3308,25 +5039,195 @@ export const ArtifactsPublishInputSchema = {
 
 /** JSON Schema for the return shape of `artifacts.publish`. */
 export const ArtifactsPublishReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
-    "artifact": {},
-    "artifactVersion": {},
-    "localSync": {
-      "additionalProperties": {},
-      "properties": {},
-      "type": "object"
+    "artifact": {
+      "$ref": "#/$defs/__schema0"
     },
-    "publish": {},
-    "release": {},
+    "artifactVersion": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "authenticated": {
+      "const": true,
+      "type": "boolean"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "localSync": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "const": "package_source",
+              "type": "string"
+            },
+            "status": {
+              "const": "skipped",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "artifactId": {
+              "type": "string"
+            },
+            "eventType": {
+              "const": "published",
+              "type": "string"
+            },
+            "status": {
+              "const": "recorded",
+              "type": "string"
+            },
+            "versionId": {
+              "type": "string"
+            },
+            "versionNumber": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "status",
+            "artifactId",
+            "versionId",
+            "versionNumber",
+            "eventType"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "artifactId": {
+              "type": "string"
+            },
+            "error": {
+              "type": "string"
+            },
+            "status": {
+              "const": "failed",
+              "type": "string"
+            },
+            "versionId": {
+              "type": "string"
+            },
+            "versionNumber": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "status",
+            "artifactId",
+            "versionId",
+            "versionNumber",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "publish": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "release": {
+      "$ref": "#/$defs/__schema0"
+    },
     "routes": {
-      "items": {},
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
       "type": "array"
     },
+    "site": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
     "upload": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "attempted": {
+          "type": "number"
+        },
+        "skipped": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "attempted",
+        "skipped"
+      ],
       "type": "object"
+    },
+    "uploadSession": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "url": {
       "anyOf": [
@@ -3340,13 +5241,19 @@ export const ArtifactsPublishReturnSchema = {
     }
   },
   "required": [
+    "success",
+    "consoleUrl",
+    "authenticated",
+    "uploadSession",
+    "upload",
     "artifact",
     "artifactVersion",
+    "site",
     "publish",
     "release",
     "routes",
     "url",
-    "upload"
+    "localSync"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -3798,6 +5705,21 @@ export const ArtifactsVersionsReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `audio.blob`. */
+export const AudioBlobInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "TTS playback item id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `audio.generate`. */
 export const AudioGenerateInputSchema = {
   "additionalProperties": false,
@@ -3834,14 +5756,15 @@ export const AudioGenerateInputSchema = {
       "description": "Text to convert to speech",
       "type": "string"
     },
+    "textFile": {
+      "description": "Relative .md or .txt file to convert to speech",
+      "type": "string"
+    },
     "voice": {
       "description": "ElevenLabs voice ID",
       "type": "string"
     }
   },
-  "required": [
-    "text"
-  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -3936,6 +5859,845 @@ export const AudioGenerateReturnSchema = {
     "success",
     "audio",
     "options"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `audio.pending`. */
+export const AudioPendingInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Filter by agent id",
+      "type": "string"
+    },
+    "chat": {
+      "description": "Filter by target chat id",
+      "type": "string"
+    },
+    "clientId": {
+      "description": "Filter by extension playback client id",
+      "type": "string"
+    },
+    "id": {
+      "description": "Filter by playback item id",
+      "type": "string"
+    },
+    "includeFailed": {
+      "description": "Include failed TTS requests",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Maximum items to return",
+      "type": "string"
+    },
+    "requestId": {
+      "description": "Filter by playback request id",
+      "type": "string"
+    },
+    "session": {
+      "description": "Filter by session name",
+      "type": "string"
+    },
+    "sessionKey": {
+      "description": "Filter by session key",
+      "type": "string"
+    },
+    "since": {
+      "description": "Only return TTS items after this Unix ms timestamp",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `audio.pending`. */
+export const AudioPendingReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "generatedAt": {
+      "type": "number"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "audio": {
+            "additionalProperties": false,
+            "properties": {
+              "filePath": {
+                "type": "string"
+              },
+              "filename": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "mimeType": {
+                "type": "string"
+              },
+              "modelId": {
+                "type": "string"
+              },
+              "outputFormat": {
+                "type": "string"
+              },
+              "provider": {
+                "const": "elevenlabs",
+                "type": "string"
+              },
+              "sizeBytes": {
+                "type": "number"
+              },
+              "voiceId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "filePath",
+              "filename",
+              "mimeType",
+              "sizeBytes",
+              "provider",
+              "voiceId",
+              "modelId",
+              "outputFormat"
+            ],
+            "type": "object"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "emitId": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "failedAt": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "playback": {
+            "additionalProperties": false,
+            "properties": {
+              "autoplay": {
+                "type": "boolean"
+              },
+              "clientId": {
+                "type": "string"
+              },
+              "target": {
+                "enum": [
+                  "extension",
+                  "channel",
+                  "none"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "target",
+              "autoplay"
+            ],
+            "type": "object"
+          },
+          "readyAt": {
+            "type": "number"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "sessionKey": {
+            "type": "string"
+          },
+          "sessionName": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "target": {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "canonicalChatId": {
+                "type": "string"
+              },
+              "channel": {
+                "type": "string"
+              },
+              "chatId": {
+                "type": "string"
+              },
+              "instanceId": {
+                "type": "string"
+              },
+              "threadId": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "text": {
+            "type": "string"
+          },
+          "textPreview": {
+            "type": "string"
+          },
+          "voice": {
+            "additionalProperties": false,
+            "properties": {
+              "elevenlabs": {
+                "additionalProperties": false,
+                "properties": {
+                  "applyLanguageTextNormalization": {
+                    "type": "boolean"
+                  },
+                  "applyTextNormalization": {
+                    "enum": [
+                      "auto",
+                      "on",
+                      "off"
+                    ],
+                    "type": "string"
+                  },
+                  "enableLogging": {
+                    "type": "boolean"
+                  },
+                  "nextRequestIds": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "nextText": {
+                    "type": "string"
+                  },
+                  "optimizeStreamingLatency": {
+                    "type": "number"
+                  },
+                  "previousRequestIds": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "previousText": {
+                    "type": "string"
+                  },
+                  "pronunciationDictionaryLocators": {
+                    "items": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "type": "array"
+                  },
+                  "seed": {
+                    "type": "number"
+                  },
+                  "usePvcAsIvc": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              },
+              "lang": {
+                "type": "string"
+              },
+              "modelId": {
+                "type": "string"
+              },
+              "outputFormat": {
+                "type": "string"
+              },
+              "provider": {
+                "const": "elevenlabs",
+                "type": "string"
+              },
+              "voiceId": {
+                "type": "string"
+              },
+              "voiceSettings": {
+                "additionalProperties": false,
+                "properties": {
+                  "similarityBoost": {
+                    "type": "number"
+                  },
+                  "speed": {
+                    "type": "number"
+                  },
+                  "stability": {
+                    "type": "number"
+                  },
+                  "style": {
+                    "type": "number"
+                  },
+                  "useSpeakerBoost": {
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "required": [
+              "provider",
+              "modelId",
+              "lang",
+              "outputFormat"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "requestId",
+          "status",
+          "createdAt",
+          "text",
+          "textPreview",
+          "playback",
+          "voice"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "ok",
+    "generatedAt",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `audio.tts`. */
+export const AudioTtsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Target account/instance alias",
+      "type": "string"
+    },
+    "agent": {
+      "description": "Agent ID used to resolve TTS defaults",
+      "type": "string"
+    },
+    "channel": {
+      "description": "Target channel, e.g. whatsapp",
+      "type": "string"
+    },
+    "chat": {
+      "description": "Target chat id",
+      "type": "string"
+    },
+    "clientId": {
+      "description": "Extension playback client id",
+      "type": "string"
+    },
+    "elevenlabs": {
+      "description": "Additional ElevenLabs request JSON",
+      "type": "string"
+    },
+    "format": {
+      "description": "ElevenLabs output format override",
+      "type": "string"
+    },
+    "id": {
+      "description": "Playback request id",
+      "type": "string"
+    },
+    "lang": {
+      "description": "Language code override",
+      "type": "string"
+    },
+    "model": {
+      "description": "ElevenLabs model ID override",
+      "type": "string"
+    },
+    "noAutoplay": {
+      "default": false,
+      "description": "Do not autoplay in extension clients",
+      "type": "boolean"
+    },
+    "session": {
+      "description": "Session name",
+      "type": "string"
+    },
+    "sessionKey": {
+      "description": "Session key",
+      "type": "string"
+    },
+    "speed": {
+      "description": "Voice speed override",
+      "type": "string"
+    },
+    "text": {
+      "description": "Text to convert to speech",
+      "type": "string"
+    },
+    "voice": {
+      "description": "ElevenLabs voice ID override",
+      "type": "string"
+    },
+    "voiceSettings": {
+      "description": "ElevenLabs voiceSettings JSON",
+      "type": "string"
+    }
+  },
+  "required": [
+    "text"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `audio.tts`. */
+export const AudioTtsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "ok": {
+      "const": true,
+      "type": "boolean"
+    },
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "emitId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "playback": {
+          "additionalProperties": false,
+          "properties": {
+            "autoplay": {
+              "type": "boolean"
+            },
+            "clientId": {
+              "type": "string"
+            },
+            "target": {
+              "enum": [
+                "extension",
+                "channel",
+                "none"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "target",
+            "autoplay"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "sessionKey": {
+          "type": "string"
+        },
+        "sessionName": {
+          "type": "string"
+        },
+        "source": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "target": {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "canonicalChatId": {
+              "type": "string"
+            },
+            "channel": {
+              "type": "string"
+            },
+            "chatId": {
+              "type": "string"
+            },
+            "instanceId": {
+              "type": "string"
+            },
+            "threadId": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "text": {
+          "type": "string"
+        },
+        "voice": {
+          "additionalProperties": false,
+          "properties": {
+            "elevenlabs": {
+              "additionalProperties": false,
+              "properties": {
+                "applyLanguageTextNormalization": {
+                  "type": "boolean"
+                },
+                "applyTextNormalization": {
+                  "enum": [
+                    "auto",
+                    "on",
+                    "off"
+                  ],
+                  "type": "string"
+                },
+                "enableLogging": {
+                  "type": "boolean"
+                },
+                "nextRequestIds": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "nextText": {
+                  "type": "string"
+                },
+                "optimizeStreamingLatency": {
+                  "type": "number"
+                },
+                "previousRequestIds": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "previousText": {
+                  "type": "string"
+                },
+                "pronunciationDictionaryLocators": {
+                  "items": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "type": "array"
+                },
+                "seed": {
+                  "type": "number"
+                },
+                "usePvcAsIvc": {
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
+            "lang": {
+              "type": "string"
+            },
+            "modelId": {
+              "type": "string"
+            },
+            "outputFormat": {
+              "type": "string"
+            },
+            "provider": {
+              "const": "elevenlabs",
+              "type": "string"
+            },
+            "voiceId": {
+              "type": "string"
+            },
+            "voiceSettings": {
+              "additionalProperties": false,
+              "properties": {
+                "similarityBoost": {
+                  "type": "number"
+                },
+                "speed": {
+                  "type": "number"
+                },
+                "stability": {
+                  "type": "number"
+                },
+                "style": {
+                  "type": "number"
+                },
+                "useSpeakerBoost": {
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "required": [
+            "provider",
+            "modelId",
+            "lang",
+            "outputFormat"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "topic": {
+      "const": "ravi.tts",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "topic",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `audio.voices`. */
+export const AudioVoicesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "category": {
+      "description": "Voice category filter",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Maximum voices to return",
+      "type": "string"
+    },
+    "search": {
+      "description": "Search by voice name, description or labels",
+      "type": "string"
+    },
+    "voiceType": {
+      "description": "Voice type filter",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `audio.voices`. */
+export const AudioVoicesReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "generatedAt": {
+      "type": "number"
+    },
+    "hasMore": {
+      "type": "boolean"
+    },
+    "nextPageToken": {
+      "type": "string"
+    },
+    "ok": {
+      "const": true,
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "elevenlabs",
+      "type": "string"
+    },
+    "totalCount": {
+      "type": "number"
+    },
+    "voices": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "highQualityBaseModelIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "isLegacy": {
+            "type": "boolean"
+          },
+          "isOwner": {
+            "type": "boolean"
+          },
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "name": {
+            "type": "string"
+          },
+          "previewUrl": {
+            "type": "string"
+          },
+          "verifiedLanguages": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "accent": {
+                  "type": "string"
+                },
+                "language": {
+                  "type": "string"
+                },
+                "locale": {
+                  "type": "string"
+                },
+                "previewUrl": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "voiceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "voiceId",
+          "name"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "generatedAt",
+    "hasMore",
+    "voices"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -4276,584 +7038,8 @@ export const BridgesRevokeReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.accounts.create`. */
-export const CalendarAccountsCreateInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "credentialsRef": {
-      "description": "Reference to an existing credential store entry",
-      "type": "string"
-    },
-    "id": {
-      "description": "Stable local account id",
-      "type": "string"
-    },
-    "name": {
-      "description": "Display name",
-      "type": "string"
-    },
-    "provider": {
-      "description": "Provider id, e.g. local or google-calendar",
-      "type": "string"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `calendar.accounts.create`. */
-export const CalendarAccountsCreateReturnSchema = {
-  "$defs": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
-  "additionalProperties": false,
-  "properties": {
-    "account": {
-      "additionalProperties": false,
-      "properties": {
-        "capabilities": {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        },
-        "createdAt": {
-          "type": "number"
-        },
-        "credentialsRef": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "defaultCalendarId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "displayName": {
-          "type": "string"
-        },
-        "id": {
-          "type": "string"
-        },
-        "provider": {
-          "type": "string"
-        },
-        "settings": {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        },
-        "status": {
-          "enum": [
-            "active",
-            "paused",
-            "auth_required",
-            "disabled"
-          ],
-          "type": "string"
-        },
-        "updatedAt": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "id",
-        "provider",
-        "displayName",
-        "status",
-        "defaultCalendarId",
-        "credentialsRef",
-        "capabilities",
-        "settings",
-        "createdAt",
-        "updatedAt"
-      ],
-      "type": "object"
-    }
-  },
-  "required": [
-    "account"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `calendar.accounts.list`. */
-export const CalendarAccountsListInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "limit": {
-      "description": "Maximum records",
-      "type": "string"
-    },
-    "offset": {
-      "description": "Offset",
-      "type": "string"
-    },
-    "provider": {
-      "description": "Filter by provider",
-      "type": "string"
-    },
-    "status": {
-      "description": "Filter by account status",
-      "type": "string"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `calendar.accounts.list`. */
-export const CalendarAccountsListReturnSchema = {
-  "$defs": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
-  "additionalProperties": false,
-  "properties": {
-    "accounts": {
-      "items": {
-        "additionalProperties": false,
-        "properties": {
-          "capabilities": {
-            "additionalProperties": {
-              "$ref": "#/$defs/__schema0"
-            },
-            "propertyNames": {
-              "type": "string"
-            },
-            "type": "object"
-          },
-          "createdAt": {
-            "type": "number"
-          },
-          "credentialsRef": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "defaultCalendarId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "displayName": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "provider": {
-            "type": "string"
-          },
-          "settings": {
-            "additionalProperties": {
-              "$ref": "#/$defs/__schema0"
-            },
-            "propertyNames": {
-              "type": "string"
-            },
-            "type": "object"
-          },
-          "status": {
-            "enum": [
-              "active",
-              "paused",
-              "auth_required",
-              "disabled"
-            ],
-            "type": "string"
-          },
-          "updatedAt": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "id",
-          "provider",
-          "displayName",
-          "status",
-          "defaultCalendarId",
-          "credentialsRef",
-          "capabilities",
-          "settings",
-          "createdAt",
-          "updatedAt"
-        ],
-        "type": "object"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "accounts"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `calendar.accounts.sync`. */
-export const CalendarAccountsSyncInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "account": {
-      "description": "Local calendar account id",
-      "type": "string"
-    },
-    "once": {
-      "description": "Run one foreground tick",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "account"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `calendar.accounts.sync`. */
-export const CalendarAccountsSyncReturnSchema = {
-  "$defs": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
-  "anyOf": [
-    {
-      "additionalProperties": false,
-      "properties": {
-        "account": {
-          "additionalProperties": false,
-          "properties": {
-            "capabilities": {
-              "additionalProperties": {
-                "$ref": "#/$defs/__schema0"
-              },
-              "propertyNames": {
-                "type": "string"
-              },
-              "type": "object"
-            },
-            "createdAt": {
-              "type": "number"
-            },
-            "credentialsRef": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "defaultCalendarId": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "displayName": {
-              "type": "string"
-            },
-            "id": {
-              "type": "string"
-            },
-            "provider": {
-              "type": "string"
-            },
-            "settings": {
-              "additionalProperties": {
-                "$ref": "#/$defs/__schema0"
-              },
-              "propertyNames": {
-                "type": "string"
-              },
-              "type": "object"
-            },
-            "status": {
-              "enum": [
-                "active",
-                "paused",
-                "auth_required",
-                "disabled"
-              ],
-              "type": "string"
-            },
-            "updatedAt": {
-              "type": "number"
-            }
-          },
-          "required": [
-            "id",
-            "provider",
-            "displayName",
-            "status",
-            "defaultCalendarId",
-            "credentialsRef",
-            "capabilities",
-            "settings",
-            "createdAt",
-            "updatedAt"
-          ],
-          "type": "object"
-        },
-        "localFirst": {
-          "const": true,
-          "type": "boolean"
-        },
-        "ok": {
-          "const": true,
-          "type": "boolean"
-        },
-        "status": {
-          "const": "adapter_not_required",
-          "type": "string"
-        }
-      },
-      "required": [
-        "ok",
-        "account",
-        "status",
-        "localFirst"
-      ],
-      "type": "object"
-    },
-    {
-      "additionalProperties": false,
-      "properties": {
-        "account": {
-          "additionalProperties": false,
-          "properties": {
-            "capabilities": {
-              "additionalProperties": {
-                "$ref": "#/$defs/__schema0"
-              },
-              "propertyNames": {
-                "type": "string"
-              },
-              "type": "object"
-            },
-            "createdAt": {
-              "type": "number"
-            },
-            "credentialsRef": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "defaultCalendarId": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "displayName": {
-              "type": "string"
-            },
-            "id": {
-              "type": "string"
-            },
-            "provider": {
-              "type": "string"
-            },
-            "settings": {
-              "additionalProperties": {
-                "$ref": "#/$defs/__schema0"
-              },
-              "propertyNames": {
-                "type": "string"
-              },
-              "type": "object"
-            },
-            "status": {
-              "enum": [
-                "active",
-                "paused",
-                "auth_required",
-                "disabled"
-              ],
-              "type": "string"
-            },
-            "updatedAt": {
-              "type": "number"
-            }
-          },
-          "required": [
-            "id",
-            "provider",
-            "displayName",
-            "status",
-            "defaultCalendarId",
-            "credentialsRef",
-            "capabilities",
-            "settings",
-            "createdAt",
-            "updatedAt"
-          ],
-          "type": "object"
-        },
-        "message": {
-          "type": "string"
-        },
-        "ok": {
-          "const": false,
-          "type": "boolean"
-        },
-        "status": {
-          "const": "adapter_not_started",
-          "type": "string"
-        }
-      },
-      "required": [
-        "ok",
-        "account",
-        "status",
-        "message"
-      ],
-      "type": "object"
-    }
-  ]
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `calendar.availability`. */
-export const CalendarAvailabilityInputSchema = {
+/** JSON Schema for the input body of `calendars.availability`. */
+export const CalendarsAvailabilityInputSchema = {
   "additionalProperties": false,
   "properties": {
     "calendar": {
@@ -4876,8 +7062,8 @@ export const CalendarAvailabilityInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.availability`. */
-export const CalendarAvailabilityReturnSchema = {
+/** JSON Schema for the return shape of `calendars.availability`. */
+export const CalendarsAvailabilityReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "busy": {
@@ -4949,8 +7135,8 @@ export const CalendarAvailabilityReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.calendars.create`. */
-export const CalendarCalendarsCreateInputSchema = {
+/** JSON Schema for the input body of `calendars.create`. */
+export const CalendarsCreateInputSchema = {
   "additionalProperties": false,
   "properties": {
     "account": {
@@ -4997,8 +7183,8 @@ export const CalendarCalendarsCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.calendars.create`. */
-export const CalendarCalendarsCreateReturnSchema = {
+/** JSON Schema for the return shape of `calendars.create`. */
+export const CalendarsCreateReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -5174,8 +7360,8 @@ export const CalendarCalendarsCreateReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.calendars.disable`. */
-export const CalendarCalendarsDisableInputSchema = {
+/** JSON Schema for the input body of `calendars.disable`. */
+export const CalendarsDisableInputSchema = {
   "additionalProperties": false,
   "properties": {
     "calendar": {
@@ -5189,8 +7375,8 @@ export const CalendarCalendarsDisableInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.calendars.disable`. */
-export const CalendarCalendarsDisableReturnSchema = {
+/** JSON Schema for the return shape of `calendars.disable`. */
+export const CalendarsDisableReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -5366,724 +7552,8 @@ export const CalendarCalendarsDisableReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.calendars.list`. */
-export const CalendarCalendarsListInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "account": {
-      "description": "Local account id",
-      "type": "string"
-    },
-    "limit": {
-      "description": "Maximum records",
-      "type": "string"
-    },
-    "offset": {
-      "description": "Offset",
-      "type": "string"
-    },
-    "status": {
-      "description": "Filter by calendar status",
-      "type": "string"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `calendar.calendars.list`. */
-export const CalendarCalendarsListReturnSchema = {
-  "$defs": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
-  "additionalProperties": false,
-  "properties": {
-    "calendars": {
-      "items": {
-        "additionalProperties": false,
-        "properties": {
-          "accountId": {
-            "type": "string"
-          },
-          "color": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "createdAt": {
-            "type": "number"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "id": {
-            "type": "string"
-          },
-          "isDefault": {
-            "type": "boolean"
-          },
-          "lastSyncedAt": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "metadata": {
-            "additionalProperties": {
-              "$ref": "#/$defs/__schema0"
-            },
-            "propertyNames": {
-              "type": "string"
-            },
-            "type": "object"
-          },
-          "name": {
-            "type": "string"
-          },
-          "ownerId": {
-            "type": "string"
-          },
-          "ownerType": {
-            "type": "string"
-          },
-          "providerCalendarId": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "role": {
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "active",
-              "paused",
-              "disabled",
-              "deleted"
-            ],
-            "type": "string"
-          },
-          "timezone": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "updatedAt": {
-            "type": "number"
-          },
-          "visibility": {
-            "enum": [
-              "private",
-              "shared",
-              "public",
-              "local_only"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "accountId",
-          "providerCalendarId",
-          "name",
-          "description",
-          "color",
-          "timezone",
-          "role",
-          "status",
-          "visibility",
-          "ownerType",
-          "ownerId",
-          "isDefault",
-          "lastSyncedAt",
-          "metadata",
-          "createdAt",
-          "updatedAt"
-        ],
-        "type": "object"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "calendars"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `calendar.calendars.share`. */
-export const CalendarCalendarsShareInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "calendar": {
-      "description": "Local calendar id or name",
-      "type": "string"
-    },
-    "expiresAt": {
-      "description": "Optional membership expiration timestamp",
-      "type": "string"
-    },
-    "relation": {
-      "description": "owner, reader, writer, manager, or free_busy",
-      "type": "string"
-    },
-    "with": {
-      "description": "Subject, e.g. agent:main",
-      "type": "string"
-    }
-  },
-  "required": [
-    "calendar"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `calendar.calendars.share`. */
-export const CalendarCalendarsShareReturnSchema = {
-  "$defs": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
-  "additionalProperties": false,
-  "properties": {
-    "calendar": {
-      "additionalProperties": false,
-      "properties": {
-        "accountId": {
-          "type": "string"
-        },
-        "color": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "createdAt": {
-          "type": "number"
-        },
-        "description": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "id": {
-          "type": "string"
-        },
-        "isDefault": {
-          "type": "boolean"
-        },
-        "lastSyncedAt": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "metadata": {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        },
-        "name": {
-          "type": "string"
-        },
-        "ownerId": {
-          "type": "string"
-        },
-        "ownerType": {
-          "type": "string"
-        },
-        "providerCalendarId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "role": {
-          "type": "string"
-        },
-        "status": {
-          "enum": [
-            "active",
-            "paused",
-            "disabled",
-            "deleted"
-          ],
-          "type": "string"
-        },
-        "timezone": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "updatedAt": {
-          "type": "number"
-        },
-        "visibility": {
-          "enum": [
-            "private",
-            "shared",
-            "public",
-            "local_only"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "accountId",
-        "providerCalendarId",
-        "name",
-        "description",
-        "color",
-        "timezone",
-        "role",
-        "status",
-        "visibility",
-        "ownerType",
-        "ownerId",
-        "isDefault",
-        "lastSyncedAt",
-        "metadata",
-        "createdAt",
-        "updatedAt"
-      ],
-      "type": "object"
-    },
-    "member": {
-      "additionalProperties": false,
-      "properties": {
-        "calendarId": {
-          "type": "string"
-        },
-        "createdAt": {
-          "type": "number"
-        },
-        "expiresAt": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "id": {
-          "type": "string"
-        },
-        "memberId": {
-          "type": "string"
-        },
-        "memberType": {
-          "type": "string"
-        },
-        "relation": {
-          "enum": [
-            "owner",
-            "reader",
-            "writer",
-            "manager",
-            "free_busy"
-          ],
-          "type": "string"
-        },
-        "updatedAt": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "id",
-        "calendarId",
-        "memberType",
-        "memberId",
-        "relation",
-        "expiresAt",
-        "createdAt",
-        "updatedAt"
-      ],
-      "type": "object"
-    }
-  },
-  "required": [
-    "calendar",
-    "member"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `calendar.calendars.show`. */
-export const CalendarCalendarsShowInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "calendar": {
-      "description": "Local calendar id, name, or provider calendar id",
-      "type": "string"
-    },
-    "members": {
-      "description": "Include membership projection rows",
-      "type": "boolean"
-    }
-  },
-  "required": [
-    "calendar"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `calendar.calendars.show`. */
-export const CalendarCalendarsShowReturnSchema = {
-  "$defs": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
-  "additionalProperties": false,
-  "properties": {
-    "calendar": {
-      "additionalProperties": false,
-      "properties": {
-        "accountId": {
-          "type": "string"
-        },
-        "color": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "createdAt": {
-          "type": "number"
-        },
-        "description": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "id": {
-          "type": "string"
-        },
-        "isDefault": {
-          "type": "boolean"
-        },
-        "lastSyncedAt": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "metadata": {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        },
-        "name": {
-          "type": "string"
-        },
-        "ownerId": {
-          "type": "string"
-        },
-        "ownerType": {
-          "type": "string"
-        },
-        "providerCalendarId": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "role": {
-          "type": "string"
-        },
-        "status": {
-          "enum": [
-            "active",
-            "paused",
-            "disabled",
-            "deleted"
-          ],
-          "type": "string"
-        },
-        "timezone": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "updatedAt": {
-          "type": "number"
-        },
-        "visibility": {
-          "enum": [
-            "private",
-            "shared",
-            "public",
-            "local_only"
-          ],
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "accountId",
-        "providerCalendarId",
-        "name",
-        "description",
-        "color",
-        "timezone",
-        "role",
-        "status",
-        "visibility",
-        "ownerType",
-        "ownerId",
-        "isDefault",
-        "lastSyncedAt",
-        "metadata",
-        "createdAt",
-        "updatedAt"
-      ],
-      "type": "object"
-    },
-    "members": {
-      "items": {
-        "additionalProperties": false,
-        "properties": {
-          "calendarId": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "number"
-          },
-          "expiresAt": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "id": {
-            "type": "string"
-          },
-          "memberId": {
-            "type": "string"
-          },
-          "memberType": {
-            "type": "string"
-          },
-          "relation": {
-            "enum": [
-              "owner",
-              "reader",
-              "writer",
-              "manager",
-              "free_busy"
-            ],
-            "type": "string"
-          },
-          "updatedAt": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "id",
-          "calendarId",
-          "memberType",
-          "memberId",
-          "relation",
-          "expiresAt",
-          "createdAt",
-          "updatedAt"
-        ],
-        "type": "object"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "calendar"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `calendar.events.cancel`. */
-export const CalendarEventsCancelInputSchema = {
+/** JSON Schema for the input body of `calendars.events.cancel`. */
+export const CalendarsEventsCancelInputSchema = {
   "additionalProperties": false,
   "properties": {
     "event": {
@@ -6101,8 +7571,8 @@ export const CalendarEventsCancelInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.events.cancel`. */
-export const CalendarEventsCancelReturnSchema = {
+/** JSON Schema for the return shape of `calendars.events.cancel`. */
+export const CalendarsEventsCancelReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -6796,8 +8266,8 @@ export const CalendarEventsCancelReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.events.create`. */
-export const CalendarEventsCreateInputSchema = {
+/** JSON Schema for the input body of `calendars.events.create`. */
+export const CalendarsEventsCreateInputSchema = {
   "additionalProperties": false,
   "properties": {
     "attendee": {
@@ -6840,8 +8310,8 @@ export const CalendarEventsCreateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.events.create`. */
-export const CalendarEventsCreateReturnSchema = {
+/** JSON Schema for the return shape of `calendars.events.create`. */
+export const CalendarsEventsCreateReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -7535,8 +9005,8 @@ export const CalendarEventsCreateReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.events.list`. */
-export const CalendarEventsListInputSchema = {
+/** JSON Schema for the input body of `calendars.events.list`. */
+export const CalendarsEventsListInputSchema = {
   "additionalProperties": false,
   "properties": {
     "calendar": {
@@ -7575,8 +9045,8 @@ export const CalendarEventsListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.events.list`. */
-export const CalendarEventsListReturnSchema = {
+/** JSON Schema for the return shape of `calendars.events.list`. */
+export const CalendarsEventsListReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -8176,8 +9646,8 @@ export const CalendarEventsListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.events.read`. */
-export const CalendarEventsReadInputSchema = {
+/** JSON Schema for the input body of `calendars.events.read`. */
+export const CalendarsEventsReadInputSchema = {
   "additionalProperties": false,
   "properties": {
     "event": {
@@ -8191,8 +9661,8 @@ export const CalendarEventsReadInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.events.read`. */
-export const CalendarEventsReadReturnSchema = {
+/** JSON Schema for the return shape of `calendars.events.read`. */
+export const CalendarsEventsReadReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -8772,8 +10242,8 @@ export const CalendarEventsReadReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.events.respond`. */
-export const CalendarEventsRespondInputSchema = {
+/** JSON Schema for the input body of `calendars.events.respond`. */
+export const CalendarsEventsRespondInputSchema = {
   "additionalProperties": false,
   "properties": {
     "attendeeAgent": {
@@ -8803,8 +10273,8 @@ export const CalendarEventsRespondInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.events.respond`. */
-export const CalendarEventsRespondReturnSchema = {
+/** JSON Schema for the return shape of `calendars.events.respond`. */
+export const CalendarsEventsRespondReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -9491,8 +10961,8 @@ export const CalendarEventsRespondReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.events.update`. */
-export const CalendarEventsUpdateInputSchema = {
+/** JSON Schema for the input body of `calendars.events.update`. */
+export const CalendarsEventsUpdateInputSchema = {
   "additionalProperties": false,
   "properties": {
     "busy": {
@@ -9542,8 +11012,8 @@ export const CalendarEventsUpdateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.events.update`. */
-export const CalendarEventsUpdateReturnSchema = {
+/** JSON Schema for the return shape of `calendars.events.update`. */
+export const CalendarsEventsUpdateReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -10237,181 +11707,12 @@ export const CalendarEventsUpdateReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.outbox.inspect`. */
-export const CalendarOutboxInspectInputSchema = {
+/** JSON Schema for the input body of `calendars.list`. */
+export const CalendarsListInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "outbox": {
-      "description": "Local outbox id",
-      "type": "string"
-    }
-  },
-  "required": [
-    "outbox"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `calendar.outbox.inspect`. */
-export const CalendarOutboxInspectReturnSchema = {
-  "$defs": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
-  "additionalProperties": false,
-  "properties": {
-    "outbox": {
-      "additionalProperties": false,
-      "properties": {
-        "accountId": {
-          "type": "string"
-        },
-        "attemptCount": {
-          "type": "number"
-        },
-        "calendarId": {
-          "type": "string"
-        },
-        "createdAt": {
-          "type": "number"
-        },
-        "eventId": {
-          "type": "string"
-        },
-        "id": {
-          "type": "string"
-        },
-        "idempotencyKey": {
-          "type": "string"
-        },
-        "lastErrorCode": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "nextAttemptAt": {
-          "type": "number"
-        },
-        "operation": {
-          "enum": [
-            "create",
-            "update",
-            "cancel",
-            "delete",
-            "respond"
-          ],
-          "type": "string"
-        },
-        "payload": {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        },
-        "providerResult": {
-          "anyOf": [
-            {
-              "additionalProperties": {
-                "$ref": "#/$defs/__schema0"
-              },
-              "propertyNames": {
-                "type": "string"
-              },
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "status": {
-          "enum": [
-            "pending",
-            "leased",
-            "sending",
-            "sent",
-            "acked",
-            "failed",
-            "dead"
-          ],
-          "type": "string"
-        },
-        "updatedAt": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "id",
-        "accountId",
-        "calendarId",
-        "eventId",
-        "operation",
-        "idempotencyKey",
-        "payload",
-        "status",
-        "attemptCount",
-        "nextAttemptAt",
-        "lastErrorCode",
-        "providerResult",
-        "createdAt",
-        "updatedAt"
-      ],
-      "type": "object"
-    }
-  },
-  "required": [
-    "outbox"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `calendar.outbox.list`. */
-export const CalendarOutboxListInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "calendar": {
-      "description": "Local calendar id or name",
+    "account": {
+      "description": "Local account id",
       "type": "string"
     },
     "limit": {
@@ -10423,15 +11724,15 @@ export const CalendarOutboxListInputSchema = {
       "type": "string"
     },
     "status": {
-      "description": "Filter by outbox status",
+      "description": "Filter by calendar status",
       "type": "string"
     }
   },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.outbox.list`. */
-export const CalendarOutboxListReturnSchema = {
+/** JSON Schema for the return shape of `calendars.list`. */
+export const CalendarsListReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -10471,32 +11772,14 @@ export const CalendarOutboxListReturnSchema = {
   },
   "additionalProperties": false,
   "properties": {
-    "outbox": {
+    "calendars": {
       "items": {
         "additionalProperties": false,
         "properties": {
           "accountId": {
             "type": "string"
           },
-          "attemptCount": {
-            "type": "number"
-          },
-          "calendarId": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "number"
-          },
-          "eventId": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "idempotencyKey": {
-            "type": "string"
-          },
-          "lastErrorCode": {
+          "color": {
             "anyOf": [
               {
                 "type": "string"
@@ -10506,20 +11789,36 @@ export const CalendarOutboxListReturnSchema = {
               }
             ]
           },
-          "nextAttemptAt": {
+          "createdAt": {
             "type": "number"
           },
-          "operation": {
-            "enum": [
-              "create",
-              "update",
-              "cancel",
-              "delete",
-              "respond"
-            ],
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
             "type": "string"
           },
-          "payload": {
+          "isDefault": {
+            "type": "boolean"
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metadata": {
             "additionalProperties": {
               "$ref": "#/$defs/__schema0"
             },
@@ -10528,51 +11827,76 @@ export const CalendarOutboxListReturnSchema = {
             },
             "type": "object"
           },
-          "providerResult": {
+          "name": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "ownerType": {
+            "type": "string"
+          },
+          "providerCalendarId": {
             "anyOf": [
               {
-                "additionalProperties": {
-                  "$ref": "#/$defs/__schema0"
-                },
-                "propertyNames": {
-                  "type": "string"
-                },
-                "type": "object"
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ]
           },
+          "role": {
+            "type": "string"
+          },
           "status": {
             "enum": [
-              "pending",
-              "leased",
-              "sending",
-              "sent",
-              "acked",
-              "failed",
-              "dead"
+              "active",
+              "paused",
+              "disabled",
+              "deleted"
             ],
             "type": "string"
           },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "updatedAt": {
             "type": "number"
+          },
+          "visibility": {
+            "enum": [
+              "private",
+              "shared",
+              "public",
+              "local_only"
+            ],
+            "type": "string"
           }
         },
         "required": [
           "id",
           "accountId",
-          "calendarId",
-          "eventId",
-          "operation",
-          "idempotencyKey",
-          "payload",
+          "providerCalendarId",
+          "name",
+          "description",
+          "color",
+          "timezone",
+          "role",
           "status",
-          "attemptCount",
-          "nextAttemptAt",
-          "lastErrorCode",
-          "providerResult",
+          "visibility",
+          "ownerType",
+          "ownerId",
+          "isDefault",
+          "lastSyncedAt",
+          "metadata",
           "createdAt",
           "updatedAt"
         ],
@@ -10582,28 +11906,40 @@ export const CalendarOutboxListReturnSchema = {
     }
   },
   "required": [
-    "outbox"
+    "calendars"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.outbox.retry`. */
-export const CalendarOutboxRetryInputSchema = {
+/** JSON Schema for the input body of `calendars.share`. */
+export const CalendarsShareInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "outbox": {
-      "description": "Local outbox id",
+    "calendar": {
+      "description": "Local calendar id or name",
+      "type": "string"
+    },
+    "expiresAt": {
+      "description": "Optional membership expiration timestamp",
+      "type": "string"
+    },
+    "relation": {
+      "description": "owner, reader, writer, manager, or free_busy",
+      "type": "string"
+    },
+    "with": {
+      "description": "Subject, e.g. agent:main",
       "type": "string"
     }
   },
   "required": [
-    "outbox"
+    "calendar"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.outbox.retry`. */
-export const CalendarOutboxRetryReturnSchema = {
+/** JSON Schema for the return shape of `calendars.share`. */
+export const CalendarsShareReturnSchema = {
   "$defs": {
     "__schema0": {
       "anyOf": [
@@ -10643,31 +11979,13 @@ export const CalendarOutboxRetryReturnSchema = {
   },
   "additionalProperties": false,
   "properties": {
-    "outbox": {
+    "calendar": {
       "additionalProperties": false,
       "properties": {
         "accountId": {
           "type": "string"
         },
-        "attemptCount": {
-          "type": "number"
-        },
-        "calendarId": {
-          "type": "string"
-        },
-        "createdAt": {
-          "type": "number"
-        },
-        "eventId": {
-          "type": "string"
-        },
-        "id": {
-          "type": "string"
-        },
-        "idempotencyKey": {
-          "type": "string"
-        },
-        "lastErrorCode": {
+        "color": {
           "anyOf": [
             {
               "type": "string"
@@ -10677,20 +11995,36 @@ export const CalendarOutboxRetryReturnSchema = {
             }
           ]
         },
-        "nextAttemptAt": {
+        "createdAt": {
           "type": "number"
         },
-        "operation": {
-          "enum": [
-            "create",
-            "update",
-            "cancel",
-            "delete",
-            "respond"
-          ],
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
           "type": "string"
         },
-        "payload": {
+        "isDefault": {
+          "type": "boolean"
+        },
+        "lastSyncedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
           "additionalProperties": {
             "$ref": "#/$defs/__schema0"
           },
@@ -10699,31 +12033,116 @@ export const CalendarOutboxRetryReturnSchema = {
           },
           "type": "object"
         },
-        "providerResult": {
+        "name": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "type": "string"
+        },
+        "providerCalendarId": {
           "anyOf": [
             {
-              "additionalProperties": {
-                "$ref": "#/$defs/__schema0"
-              },
-              "propertyNames": {
-                "type": "string"
-              },
-              "type": "object"
+              "type": "string"
             },
             {
               "type": "null"
             }
           ]
         },
+        "role": {
+          "type": "string"
+        },
         "status": {
           "enum": [
-            "pending",
-            "leased",
-            "sending",
-            "sent",
-            "acked",
-            "failed",
-            "dead"
+            "active",
+            "paused",
+            "disabled",
+            "deleted"
+          ],
+          "type": "string"
+        },
+        "timezone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "visibility": {
+          "enum": [
+            "private",
+            "shared",
+            "public",
+            "local_only"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "accountId",
+        "providerCalendarId",
+        "name",
+        "description",
+        "color",
+        "timezone",
+        "role",
+        "status",
+        "visibility",
+        "ownerType",
+        "ownerId",
+        "isDefault",
+        "lastSyncedAt",
+        "metadata",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "member": {
+      "additionalProperties": false,
+      "properties": {
+        "calendarId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "memberId": {
+          "type": "string"
+        },
+        "memberType": {
+          "type": "string"
+        },
+        "relation": {
+          "enum": [
+            "owner",
+            "reader",
+            "writer",
+            "manager",
+            "free_busy"
           ],
           "type": "string"
         },
@@ -10733,17 +12152,11 @@ export const CalendarOutboxRetryReturnSchema = {
       },
       "required": [
         "id",
-        "accountId",
         "calendarId",
-        "eventId",
-        "operation",
-        "idempotencyKey",
-        "payload",
-        "status",
-        "attemptCount",
-        "nextAttemptAt",
-        "lastErrorCode",
-        "providerResult",
+        "memberType",
+        "memberId",
+        "relation",
+        "expiresAt",
         "createdAt",
         "updatedAt"
       ],
@@ -10751,29 +12164,582 @@ export const CalendarOutboxRetryReturnSchema = {
     }
   },
   "required": [
-    "outbox"
+    "calendar",
+    "member"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `calendar.outbox.status`. */
-export const CalendarOutboxStatusInputSchema = {
+/** JSON Schema for the input body of `calendars.show`. */
+export const CalendarsShowInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "calendar": {
+      "description": "Local calendar id, name, or provider calendar id",
+      "type": "string"
+    },
+    "members": {
+      "description": "Include membership projection rows",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "calendar"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `calendar.outbox.status`. */
-export const CalendarOutboxStatusReturnSchema = {
+/** JSON Schema for the return shape of `calendars.show`. */
+export const CalendarsShowReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
-    "counts": {
-      "additionalProperties": {
-        "type": "number"
+    "calendar": {
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "isDefault": {
+          "type": "boolean"
+        },
+        "lastSyncedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "type": "string"
+        },
+        "providerCalendarId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "role": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "paused",
+            "disabled",
+            "deleted"
+          ],
+          "type": "string"
+        },
+        "timezone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "visibility": {
+          "enum": [
+            "private",
+            "shared",
+            "public",
+            "local_only"
+          ],
+          "type": "string"
+        }
       },
-      "propertyNames": {
-        "type": "string"
+      "required": [
+        "id",
+        "accountId",
+        "providerCalendarId",
+        "name",
+        "description",
+        "color",
+        "timezone",
+        "role",
+        "status",
+        "visibility",
+        "ownerType",
+        "ownerId",
+        "isDefault",
+        "lastSyncedAt",
+        "metadata",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "members": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "calendarId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "memberId": {
+            "type": "string"
+          },
+          "memberType": {
+            "type": "string"
+          },
+          "relation": {
+            "enum": [
+              "owner",
+              "reader",
+              "writer",
+              "manager",
+              "free_busy"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "calendarId",
+          "memberType",
+          "memberId",
+          "relation",
+          "expiresAt",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
       },
+      "type": "array"
+    }
+  },
+  "required": [
+    "calendar"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `channels.create`. */
+export const ChannelsCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "credentialConnection": {
+      "description": "Credential Manager connection id",
+      "type": "string"
+    },
+    "name": {
+      "description": "Channel config name",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Channel provider, e.g. slack",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `channels.create`. */
+export const ChannelsCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "channel": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "type": "number"
+        },
+        "credentialConnection": {
+          "type": "string"
+        },
+        "defaults": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "deletedAt": {
+          "type": "number"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "provider",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "channel",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `channels.list`. */
+export const ChannelsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching channels to skip (default: 0)",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Filter by provider, e.g. slack",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `channels.list`. */
+export const ChannelsListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "channels": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "credentialConnection": {
+            "type": "string"
+          },
+          "defaults": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "deletedAt": {
+            "type": "number"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "provider",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "credentialConnection": {
+            "type": "string"
+          },
+          "defaults": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "deletedAt": {
+            "type": "number"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "provider",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
       "type": "object"
     },
     "total": {
@@ -10781,8 +12747,2135 @@ export const CalendarOutboxStatusReturnSchema = {
     }
   },
   "required": [
-    "counts",
-    "total"
+    "total",
+    "pagination",
+    "channels",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `channels.probe`. */
+export const ChannelsProbeInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `channels.probe`. */
+export const ChannelsProbeReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "adapters": {
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "outbound": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "pid": {
+      "type": "number"
+    },
+    "running": {
+      "type": "boolean"
+    },
+    "startedAt": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "running",
+    "startedAt",
+    "pid",
+    "outbound",
+    "adapters"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `channels.restart`. */
+export const ChannelsRestartInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "build": {
+      "description": "Use dist bundle from source repo",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `channels.restart`. */
+export const ChannelsRestartReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "pm2Status": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "runnerEnv": {
+      "additionalProperties": false,
+      "properties": {
+        "consumeOutbound": {
+          "type": "string"
+        },
+        "slackSocketMode": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "slackSocketMode",
+        "consumeOutbound"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "additionalProperties": false,
+      "properties": {
+        "channels": {
+          "additionalProperties": false,
+          "properties": {
+            "cpu": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "managed": {
+              "type": "boolean"
+            },
+            "memoryBytes": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "memoryMb": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "pid": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pmId": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "running": {
+              "type": "boolean"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "managed",
+            "running",
+            "status",
+            "pid",
+            "pmId",
+            "cpu",
+            "memoryBytes",
+            "memoryMb"
+          ],
+          "type": "object"
+        },
+        "health": {
+          "additionalProperties": false,
+          "properties": {
+            "checkedAt": {
+              "type": "number"
+            },
+            "reachable": {
+              "type": "boolean"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "ready",
+                "starting",
+                "degraded",
+                "unreachable",
+                "stopped"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reachable",
+            "checkedAt"
+          ],
+          "type": "object"
+        },
+        "pm2Available": {
+          "type": "boolean"
+        },
+        "processName": {
+          "type": "string"
+        },
+        "processes": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "cpu": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "managed": {
+                "type": "boolean"
+              },
+              "memoryBytes": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "memoryMb": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "pid": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "pmId": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "running": {
+                "type": "boolean"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "managed",
+              "running",
+              "status",
+              "pid",
+              "pmId",
+              "cpu",
+              "memoryBytes",
+              "memoryMb"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "runner": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "adapters": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "channelId": {
+                        "type": "string"
+                      },
+                      "connectedAt": {
+                        "type": "number"
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "lastPongAt": {
+                        "type": "number"
+                      },
+                      "reason": {
+                        "type": "string"
+                      },
+                      "reconnectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "status": {
+                        "enum": [
+                          "disabled",
+                          "starting",
+                          "connected",
+                          "degraded",
+                          "reconnecting",
+                          "disconnected",
+                          "failed"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "channelId",
+                      "status"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "observedAt": {
+                  "type": "number"
+                },
+                "outbound": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "consumer": {
+                      "type": "string"
+                    },
+                    "consuming": {
+                      "type": "boolean"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "infrastructureReady": {
+                      "type": "boolean"
+                    },
+                    "lastError": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "type": "number"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "phase": {
+                          "const": "consume_loop",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "phase",
+                        "message",
+                        "at"
+                      ],
+                      "type": "object"
+                    },
+                    "lastMessageAt": {
+                      "type": "number"
+                    },
+                    "publishOutbox": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "lastError": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "at": {
+                              "type": "number"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "message",
+                            "at"
+                          ],
+                          "type": "object"
+                        },
+                        "lastPublishedAt": {
+                          "type": "number"
+                        },
+                        "nextAttemptAt": {
+                          "type": "number"
+                        },
+                        "oldestPendingAt": {
+                          "type": "number"
+                        },
+                        "pendingCount": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "pendingCount"
+                      ],
+                      "type": "object"
+                    },
+                    "stream": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "stream",
+                    "consumer",
+                    "enabled",
+                    "infrastructureReady",
+                    "consuming"
+                  ],
+                  "type": "object"
+                },
+                "pid": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                },
+                "running": {
+                  "type": "boolean"
+                },
+                "schemaVersion": {
+                  "const": 1,
+                  "type": "number"
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "schemaVersion",
+                "observedAt",
+                "running",
+                "startedAt",
+                "pid",
+                "outbound",
+                "adapters"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "pm2Available",
+        "processName",
+        "channels",
+        "processes"
+      ],
+      "type": "object"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "bundlePath": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "sourceProjectRoot": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bundlePath",
+        "cwd"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "changed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `channels.set`. */
+export const ChannelsSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "description": "Property key: provider|enabled|credentialConnection|defaults",
+      "type": "string"
+    },
+    "name": {
+      "description": "Channel config name",
+      "type": "string"
+    },
+    "value": {
+      "description": "Property value, or '-' to clear nullable fields",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key",
+    "name",
+    "value"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `channels.set`. */
+export const ChannelsSetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "channel": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "type": "number"
+        },
+        "credentialConnection": {
+          "type": "string"
+        },
+        "defaults": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "deletedAt": {
+          "type": "number"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "provider",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "channel",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `channels.show`. */
+export const ChannelsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "description": "Channel config name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `channels.show`. */
+export const ChannelsShowReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "createdAt": {
+      "type": "number"
+    },
+    "credentialConnection": {
+      "type": "string"
+    },
+    "defaults": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "deletedAt": {
+      "type": "number"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "name": {
+      "type": "string"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "updatedAt": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "name",
+    "provider",
+    "createdAt",
+    "updatedAt"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `channels.start`. */
+export const ChannelsStartInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "build": {
+      "description": "Use dist bundle from source repo",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `channels.start`. */
+export const ChannelsStartReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "pm2Status": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "runnerEnv": {
+      "additionalProperties": false,
+      "properties": {
+        "consumeOutbound": {
+          "type": "string"
+        },
+        "slackSocketMode": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "slackSocketMode",
+        "consumeOutbound"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "additionalProperties": false,
+      "properties": {
+        "channels": {
+          "additionalProperties": false,
+          "properties": {
+            "cpu": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "managed": {
+              "type": "boolean"
+            },
+            "memoryBytes": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "memoryMb": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "pid": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pmId": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "running": {
+              "type": "boolean"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "managed",
+            "running",
+            "status",
+            "pid",
+            "pmId",
+            "cpu",
+            "memoryBytes",
+            "memoryMb"
+          ],
+          "type": "object"
+        },
+        "health": {
+          "additionalProperties": false,
+          "properties": {
+            "checkedAt": {
+              "type": "number"
+            },
+            "reachable": {
+              "type": "boolean"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "ready",
+                "starting",
+                "degraded",
+                "unreachable",
+                "stopped"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reachable",
+            "checkedAt"
+          ],
+          "type": "object"
+        },
+        "pm2Available": {
+          "type": "boolean"
+        },
+        "processName": {
+          "type": "string"
+        },
+        "processes": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "cpu": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "managed": {
+                "type": "boolean"
+              },
+              "memoryBytes": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "memoryMb": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "pid": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "pmId": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "running": {
+                "type": "boolean"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "managed",
+              "running",
+              "status",
+              "pid",
+              "pmId",
+              "cpu",
+              "memoryBytes",
+              "memoryMb"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "runner": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "adapters": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "channelId": {
+                        "type": "string"
+                      },
+                      "connectedAt": {
+                        "type": "number"
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "lastPongAt": {
+                        "type": "number"
+                      },
+                      "reason": {
+                        "type": "string"
+                      },
+                      "reconnectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "status": {
+                        "enum": [
+                          "disabled",
+                          "starting",
+                          "connected",
+                          "degraded",
+                          "reconnecting",
+                          "disconnected",
+                          "failed"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "channelId",
+                      "status"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "observedAt": {
+                  "type": "number"
+                },
+                "outbound": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "consumer": {
+                      "type": "string"
+                    },
+                    "consuming": {
+                      "type": "boolean"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "infrastructureReady": {
+                      "type": "boolean"
+                    },
+                    "lastError": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "type": "number"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "phase": {
+                          "const": "consume_loop",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "phase",
+                        "message",
+                        "at"
+                      ],
+                      "type": "object"
+                    },
+                    "lastMessageAt": {
+                      "type": "number"
+                    },
+                    "publishOutbox": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "lastError": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "at": {
+                              "type": "number"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "message",
+                            "at"
+                          ],
+                          "type": "object"
+                        },
+                        "lastPublishedAt": {
+                          "type": "number"
+                        },
+                        "nextAttemptAt": {
+                          "type": "number"
+                        },
+                        "oldestPendingAt": {
+                          "type": "number"
+                        },
+                        "pendingCount": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "pendingCount"
+                      ],
+                      "type": "object"
+                    },
+                    "stream": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "stream",
+                    "consumer",
+                    "enabled",
+                    "infrastructureReady",
+                    "consuming"
+                  ],
+                  "type": "object"
+                },
+                "pid": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                },
+                "running": {
+                  "type": "boolean"
+                },
+                "schemaVersion": {
+                  "const": 1,
+                  "type": "number"
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "schemaVersion",
+                "observedAt",
+                "running",
+                "startedAt",
+                "pid",
+                "outbound",
+                "adapters"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "pm2Available",
+        "processName",
+        "channels",
+        "processes"
+      ],
+      "type": "object"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "bundlePath": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "sourceProjectRoot": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bundlePath",
+        "cwd"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "changed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `channels.status`. */
+export const ChannelsStatusInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `channels.status`. */
+export const ChannelsStatusReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channels": {
+      "additionalProperties": false,
+      "properties": {
+        "cpu": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "managed": {
+          "type": "boolean"
+        },
+        "memoryBytes": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "memoryMb": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pmId": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "managed",
+        "running",
+        "status",
+        "pid",
+        "pmId",
+        "cpu",
+        "memoryBytes",
+        "memoryMb"
+      ],
+      "type": "object"
+    },
+    "health": {
+      "additionalProperties": false,
+      "properties": {
+        "checkedAt": {
+          "type": "number"
+        },
+        "reachable": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ready",
+            "starting",
+            "degraded",
+            "unreachable",
+            "stopped"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "reachable",
+        "checkedAt"
+      ],
+      "type": "object"
+    },
+    "pm2Available": {
+      "type": "boolean"
+    },
+    "processName": {
+      "type": "string"
+    },
+    "processes": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "cpu": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "managed": {
+            "type": "boolean"
+          },
+          "memoryBytes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "memoryMb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "pid": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pmId": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "managed",
+          "running",
+          "status",
+          "pid",
+          "pmId",
+          "cpu",
+          "memoryBytes",
+          "memoryMb"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "runner": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "adapters": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "channelId": {
+                    "type": "string"
+                  },
+                  "connectedAt": {
+                    "type": "number"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "lastPongAt": {
+                    "type": "number"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "reconnectCount": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "status": {
+                    "enum": [
+                      "disabled",
+                      "starting",
+                      "connected",
+                      "degraded",
+                      "reconnecting",
+                      "disconnected",
+                      "failed"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "channelId",
+                  "status"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "observedAt": {
+              "type": "number"
+            },
+            "outbound": {
+              "additionalProperties": false,
+              "properties": {
+                "consumer": {
+                  "type": "string"
+                },
+                "consuming": {
+                  "type": "boolean"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "infrastructureReady": {
+                  "type": "boolean"
+                },
+                "lastError": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": {
+                      "type": "number"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "phase": {
+                      "const": "consume_loop",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "phase",
+                    "message",
+                    "at"
+                  ],
+                  "type": "object"
+                },
+                "lastMessageAt": {
+                  "type": "number"
+                },
+                "publishOutbox": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "lastError": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "type": "number"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "message",
+                        "at"
+                      ],
+                      "type": "object"
+                    },
+                    "lastPublishedAt": {
+                      "type": "number"
+                    },
+                    "nextAttemptAt": {
+                      "type": "number"
+                    },
+                    "oldestPendingAt": {
+                      "type": "number"
+                    },
+                    "pendingCount": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "pendingCount"
+                  ],
+                  "type": "object"
+                },
+                "stream": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "stream",
+                "consumer",
+                "enabled",
+                "infrastructureReady",
+                "consuming"
+              ],
+              "type": "object"
+            },
+            "pid": {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            },
+            "running": {
+              "type": "boolean"
+            },
+            "schemaVersion": {
+              "const": 1,
+              "type": "number"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "observedAt",
+            "running",
+            "startedAt",
+            "pid",
+            "outbound",
+            "adapters"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "pm2Available",
+    "processName",
+    "channels",
+    "processes"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `channels.stop`. */
+export const ChannelsStopInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `channels.stop`. */
+export const ChannelsStopReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "pm2Status": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "runnerEnv": {
+      "additionalProperties": false,
+      "properties": {
+        "consumeOutbound": {
+          "type": "string"
+        },
+        "slackSocketMode": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "slackSocketMode",
+        "consumeOutbound"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "additionalProperties": false,
+      "properties": {
+        "channels": {
+          "additionalProperties": false,
+          "properties": {
+            "cpu": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "managed": {
+              "type": "boolean"
+            },
+            "memoryBytes": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "memoryMb": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "pid": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pmId": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "running": {
+              "type": "boolean"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "managed",
+            "running",
+            "status",
+            "pid",
+            "pmId",
+            "cpu",
+            "memoryBytes",
+            "memoryMb"
+          ],
+          "type": "object"
+        },
+        "health": {
+          "additionalProperties": false,
+          "properties": {
+            "checkedAt": {
+              "type": "number"
+            },
+            "reachable": {
+              "type": "boolean"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "ready",
+                "starting",
+                "degraded",
+                "unreachable",
+                "stopped"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reachable",
+            "checkedAt"
+          ],
+          "type": "object"
+        },
+        "pm2Available": {
+          "type": "boolean"
+        },
+        "processName": {
+          "type": "string"
+        },
+        "processes": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "cpu": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "managed": {
+                "type": "boolean"
+              },
+              "memoryBytes": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "memoryMb": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "pid": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "pmId": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "running": {
+                "type": "boolean"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "managed",
+              "running",
+              "status",
+              "pid",
+              "pmId",
+              "cpu",
+              "memoryBytes",
+              "memoryMb"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "runner": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "adapters": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "channelId": {
+                        "type": "string"
+                      },
+                      "connectedAt": {
+                        "type": "number"
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "lastPongAt": {
+                        "type": "number"
+                      },
+                      "reason": {
+                        "type": "string"
+                      },
+                      "reconnectCount": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "status": {
+                        "enum": [
+                          "disabled",
+                          "starting",
+                          "connected",
+                          "degraded",
+                          "reconnecting",
+                          "disconnected",
+                          "failed"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "channelId",
+                      "status"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "observedAt": {
+                  "type": "number"
+                },
+                "outbound": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "consumer": {
+                      "type": "string"
+                    },
+                    "consuming": {
+                      "type": "boolean"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "infrastructureReady": {
+                      "type": "boolean"
+                    },
+                    "lastError": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": {
+                          "type": "number"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "phase": {
+                          "const": "consume_loop",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "phase",
+                        "message",
+                        "at"
+                      ],
+                      "type": "object"
+                    },
+                    "lastMessageAt": {
+                      "type": "number"
+                    },
+                    "publishOutbox": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "lastError": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "at": {
+                              "type": "number"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "message",
+                            "at"
+                          ],
+                          "type": "object"
+                        },
+                        "lastPublishedAt": {
+                          "type": "number"
+                        },
+                        "nextAttemptAt": {
+                          "type": "number"
+                        },
+                        "oldestPendingAt": {
+                          "type": "number"
+                        },
+                        "pendingCount": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "pendingCount"
+                      ],
+                      "type": "object"
+                    },
+                    "stream": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "stream",
+                    "consumer",
+                    "enabled",
+                    "infrastructureReady",
+                    "consuming"
+                  ],
+                  "type": "object"
+                },
+                "pid": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                },
+                "running": {
+                  "type": "boolean"
+                },
+                "schemaVersion": {
+                  "const": 1,
+                  "type": "number"
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "schemaVersion",
+                "observedAt",
+                "running",
+                "startedAt",
+                "pid",
+                "outbound",
+                "adapters"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "pm2Available",
+        "processName",
+        "channels",
+        "processes"
+      ],
+      "type": "object"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "bundlePath": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "sourceProjectRoot": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bundlePath",
+        "cwd"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "changed"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -11137,6 +15230,451 @@ export const ChatsListsMembersReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `chats.lists.preview`. */
+export const ChatsListsPreviewInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "listId": {
+      "description": "Canonical reading-list id (crl_<24 hex>)",
+      "pattern": "^crl_[0-9a-f]{24}$",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Optional owner assertion for the canonical list id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "listId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `chats.lists.preview`. */
+export const ChatsListsPreviewReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "list": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "visibility": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "ownerType",
+        "ownerId",
+        "visibility",
+        "mode",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "preview": {
+      "additionalProperties": false,
+      "properties": {
+        "current": {
+          "additionalProperties": false,
+          "properties": {
+            "preserved": {
+              "type": "number"
+            },
+            "selector": {
+              "type": "number"
+            },
+            "total": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "total",
+            "selector",
+            "preserved"
+          ],
+          "type": "object"
+        },
+        "diff": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "added": {
+                  "type": "number"
+                },
+                "eligible": {
+                  "type": "number"
+                },
+                "kept": {
+                  "type": "number"
+                },
+                "preserved": {
+                  "type": "number"
+                },
+                "removed": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "added",
+                "removed",
+                "kept",
+                "preserved",
+                "eligible"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dryRun": {
+          "const": true,
+          "type": "boolean"
+        },
+        "list": {
+          "additionalProperties": false,
+          "properties": {
+            "archivedAt": {
+              "type": "number"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "description": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "mode": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "ownerId": {
+              "type": "string"
+            },
+            "ownerType": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            },
+            "visibility": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "ownerType",
+            "ownerId",
+            "visibility",
+            "mode",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "validation": {
+          "additionalProperties": false,
+          "properties": {
+            "canApply": {
+              "type": "boolean"
+            },
+            "conditions": {
+              "additionalProperties": false,
+              "properties": {
+                "negative": {
+                  "type": "number"
+                },
+                "positive": {
+                  "type": "number"
+                },
+                "supported": {
+                  "type": "number"
+                },
+                "total": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "total",
+                "supported",
+                "positive",
+                "negative"
+              ],
+              "type": "object"
+            },
+            "issues": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "severity": {
+                    "enum": [
+                      "error",
+                      "warning"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code",
+                  "severity",
+                  "message"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "match": {
+              "enum": [
+                "all",
+                "any"
+              ],
+              "type": "string"
+            },
+            "riskLevel": {
+              "enum": [
+                "low",
+                "high"
+              ],
+              "type": "string"
+            },
+            "scope": {
+              "enum": [
+                "contact",
+                "chat"
+              ],
+              "type": "string"
+            },
+            "valid": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "valid",
+            "canApply",
+            "riskLevel",
+            "scope",
+            "match",
+            "conditions",
+            "issues"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "list",
+        "dryRun",
+        "validation",
+        "current",
+        "diff"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "list",
+    "preview"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.lists.recompute`. */
+export const ChatsListsRecomputeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "listId": {
+      "description": "Canonical reading-list id (crl_<24 hex>)",
+      "pattern": "^crl_[0-9a-f]{24}$",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Optional owner assertion for the canonical list id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "listId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `chats.lists.recompute`. */
+export const ChatsListsRecomputeReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "list": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "visibility": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "ownerType",
+        "ownerId",
+        "visibility",
+        "mode",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "recompute": {
+      "additionalProperties": false,
+      "properties": {
+        "added": {
+          "type": "number"
+        },
+        "eligible": {
+          "type": "number"
+        },
+        "kept": {
+          "type": "number"
+        },
+        "list": {
+          "additionalProperties": false,
+          "properties": {
+            "archivedAt": {
+              "type": "number"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "description": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "mode": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "ownerId": {
+              "type": "string"
+            },
+            "ownerType": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            },
+            "visibility": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "ownerType",
+            "ownerId",
+            "visibility",
+            "mode",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "preserved": {
+          "type": "number"
+        },
+        "removed": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "list",
+        "added",
+        "removed",
+        "kept",
+        "preserved",
+        "eligible"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "list",
+    "recompute"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `chats.lists.remove`. */
 export const ChatsListsRemoveInputSchema = {
   "additionalProperties": false,
@@ -11173,6 +15711,201 @@ export const ChatsListsRemoveInputSchema = {
 export const ChatsListsRemoveReturnSchema = {
   "additionalProperties": {},
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `chats.lists.show`. */
+export const ChatsListsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "listId": {
+      "description": "Canonical reading-list id (crl_<24 hex>)",
+      "pattern": "^crl_[0-9a-f]{24}$",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Optional owner assertion for the canonical list id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "listId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `chats.lists.show`. */
+export const ChatsListsShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "current": {
+      "additionalProperties": false,
+      "properties": {
+        "preserved": {
+          "type": "number"
+        },
+        "selector": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "total",
+        "selector",
+        "preserved"
+      ],
+      "type": "object"
+    },
+    "list": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "visibility": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "ownerType",
+        "ownerId",
+        "visibility",
+        "mode",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "validation": {
+      "additionalProperties": false,
+      "properties": {
+        "canApply": {
+          "type": "boolean"
+        },
+        "conditions": {
+          "additionalProperties": false,
+          "properties": {
+            "negative": {
+              "type": "number"
+            },
+            "positive": {
+              "type": "number"
+            },
+            "supported": {
+              "type": "number"
+            },
+            "total": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "total",
+            "supported",
+            "positive",
+            "negative"
+          ],
+          "type": "object"
+        },
+        "issues": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "severity": {
+                "enum": [
+                  "error",
+                  "warning"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "severity",
+              "message"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "match": {
+          "enum": [
+            "all",
+            "any"
+          ],
+          "type": "string"
+        },
+        "riskLevel": {
+          "enum": [
+            "low",
+            "high"
+          ],
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "contact",
+            "chat"
+          ],
+          "type": "string"
+        },
+        "valid": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "valid",
+        "canApply",
+        "riskLevel",
+        "scope",
+        "match",
+        "conditions",
+        "issues"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "list",
+    "validation",
+    "current"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -11488,6 +16221,791 @@ export const CloudProjectsListReturnSchema = {
     "pagination",
     "projects",
     "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.scope.clear`. */
+export const CloudScopeClearInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Clear default for an agent; current agent when omitted",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "global": {
+      "description": "Clear default for this local Ravi installation",
+      "type": "boolean"
+    },
+    "session": {
+      "description": "Clear default for a Ravi session; current session when omitted",
+      "type": "string"
+    },
+    "workspace": {
+      "description": "Clear default for a workspace; current cwd when omitted",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.scope.clear`. */
+export const CloudScopeClearReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "clear",
+      "type": "string"
+    },
+    "cleared": {
+      "type": "boolean"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "scopeKey": {
+          "type": "string"
+        },
+        "scopeKind": {
+          "enum": [
+            "session",
+            "agent",
+            "workspace",
+            "global"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "scopeKind",
+        "scopeKey"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "action",
+    "target",
+    "cleared"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.scope.explain`. */
+export const CloudScopeExplainInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "project": {
+      "description": "Pretend this explicit project was passed",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.scope.explain`. */
+export const CloudScopeExplainReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "candidates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "consoleUrl": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "organization": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "slug": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "project": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "ref": {
+                    "type": "string"
+                  },
+                  "slug": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "ref"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "scopeKey": {
+            "type": "string"
+          },
+          "scopeKind": {
+            "enum": [
+              "session",
+              "agent",
+              "workspace",
+              "global"
+            ],
+            "type": "string"
+          },
+          "selected": {
+            "type": "boolean"
+          },
+          "source": {
+            "enum": [
+              "explicit",
+              "runtime_context",
+              "local_project_mapping",
+              "session_default",
+              "agent_default",
+              "workspace_default",
+              "global_default",
+              "cloud_credentials",
+              "env_compat",
+              "single_remote_project"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "label",
+          "selected",
+          "available"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "missingProjectCommand": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "organization": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "slug": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "resolved": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "consoleUrl": {
+              "type": "string"
+            },
+            "organization": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "slug": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "project": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "ref": {
+                      "type": "string"
+                    },
+                    "slug": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ref"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source": {
+              "enum": [
+                "explicit",
+                "runtime_context",
+                "local_project_mapping",
+                "session_default",
+                "agent_default",
+                "workspace_default",
+                "global_default",
+                "cloud_credentials",
+                "env_compat",
+                "single_remote_project"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "consoleUrl",
+            "source"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "resolved",
+    "candidates"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.scope.set`. */
+export const CloudScopeSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Set default for an agent; current agent when omitted",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "global": {
+      "description": "Set default for this local Ravi installation",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project id or slug to use by default",
+      "type": "string"
+    },
+    "session": {
+      "description": "Set default for a Ravi session; current session when omitted",
+      "type": "string"
+    },
+    "workspace": {
+      "description": "Set default for a workspace; current cwd when omitted",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.scope.set`. */
+export const CloudScopeSetReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "set",
+      "type": "string"
+    },
+    "scope": {
+      "additionalProperties": false,
+      "properties": {
+        "consoleUrl": {
+          "type": "string"
+        },
+        "organization": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "slug": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "project": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ref": {
+                  "type": "string"
+                },
+                "slug": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "ref"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "enum": [
+            "explicit",
+            "runtime_context",
+            "local_project_mapping",
+            "session_default",
+            "agent_default",
+            "workspace_default",
+            "global_default",
+            "cloud_credentials",
+            "env_compat",
+            "single_remote_project"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "consoleUrl",
+        "source"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "scopeKey": {
+          "type": "string"
+        },
+        "scopeKind": {
+          "enum": [
+            "session",
+            "agent",
+            "workspace",
+            "global"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "scopeKind",
+        "scopeKey"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "action",
+    "target",
+    "scope"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.scope.show`. */
+export const CloudScopeShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.scope.show`. */
+export const CloudScopeShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "scope": {
+      "additionalProperties": false,
+      "properties": {
+        "consoleUrl": {
+          "type": "string"
+        },
+        "organization": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "slug": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "project": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ref": {
+                  "type": "string"
+                },
+                "slug": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "ref"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "enum": [
+            "explicit",
+            "runtime_context",
+            "local_project_mapping",
+            "session_default",
+            "agent_default",
+            "workspace_default",
+            "global_default",
+            "cloud_credentials",
+            "env_compat",
+            "single_remote_project"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "consoleUrl",
+        "source"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "scope"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -13439,8 +18957,65 @@ export const ContextAuthorizeInputSchema = {
 
 /** JSON Schema for the return shape of `context.authorize`. */
 export const ContextAuthorizeReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "allowed": {
+      "type": "boolean"
+    },
+    "approved": {
+      "type": "boolean"
+    },
+    "capabilitiesCount": {
+      "type": "number"
+    },
+    "contextId": {
+      "type": "string"
+    },
+    "inherited": {
+      "type": "boolean"
+    },
+    "objectId": {
+      "type": "string"
+    },
+    "objectType": {
+      "type": "string"
+    },
+    "permission": {
+      "type": "string"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "contextId",
+    "agentId",
+    "permission",
+    "objectType",
+    "objectId",
+    "allowed",
+    "capabilitiesCount",
+    "approved",
+    "inherited",
+    "reason"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -13453,8 +19028,79 @@ export const ContextCapabilitiesInputSchema = {
 
 /** JSON Schema for the return shape of `context.capabilities`. */
 export const ContextCapabilitiesReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "capabilities": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "objectId": {
+            "type": "string"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "permission",
+          "objectType",
+          "objectId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "contextId": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "sessionKey": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionName": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "contextId",
+    "kind",
+    "agentId",
+    "sessionKey",
+    "sessionName",
+    "capabilities"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -13485,8 +19131,46 @@ export const ContextCheckInputSchema = {
 
 /** JSON Schema for the return shape of `context.check`. */
 export const ContextCheckReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "allowed": {
+      "type": "boolean"
+    },
+    "capabilitiesCount": {
+      "type": "number"
+    },
+    "contextId": {
+      "type": "string"
+    },
+    "objectId": {
+      "type": "string"
+    },
+    "objectType": {
+      "type": "string"
+    },
+    "permission": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "contextId",
+    "agentId",
+    "permission",
+    "objectType",
+    "objectId",
+    "allowed",
+    "capabilitiesCount"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -13520,8 +19204,707 @@ export const ContextCleanupAgentRuntimeInputSchema = {
 
 /** JSON Schema for the return shape of `context.cleanup-agent-runtime`. */
 export const ContextCleanupAgentRuntimeReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "candidates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "capabilitiesCount": {
+                "type": "number"
+              },
+              "contextId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "expiresAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "issuanceMode": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "issuedFor": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string"
+              },
+              "lastUsedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "parentContextId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "revokedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sessionKey": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sessionName": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "expired",
+                  "revoked"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "contextId",
+              "kind",
+              "status",
+              "agentId",
+              "sessionKey",
+              "sessionName",
+              "createdAt",
+              "expiresAt",
+              "lastUsedAt",
+              "revokedAt",
+              "capabilitiesCount",
+              "parentContextId",
+              "issuedFor",
+              "issuanceMode"
+            ],
+            "type": "object"
+          },
+          "lastSeenAt": {
+            "type": "number"
+          },
+          "sessionExists": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "context",
+          "lastSeenAt",
+          "sessionExists"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "candidatesCount": {
+      "type": "number"
+    },
+    "cutoffAt": {
+      "type": "number"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "olderThan": {
+      "type": "string"
+    },
+    "olderThanMs": {
+      "type": "number"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "revoked": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "cascaded": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "agentId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "capabilitiesCount": {
+                  "type": "number"
+                },
+                "contextId": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "number"
+                },
+                "expiresAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "issuanceMode": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "issuedFor": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "lastUsedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "parentContextId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "revokedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "sessionKey": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "sessionName": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "active",
+                    "expired",
+                    "revoked"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "contextId",
+                "kind",
+                "status",
+                "agentId",
+                "sessionKey",
+                "sessionName",
+                "createdAt",
+                "expiresAt",
+                "lastUsedAt",
+                "revokedAt",
+                "capabilitiesCount",
+                "parentContextId",
+                "issuedFor",
+                "issuanceMode"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "context": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "capabilities": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "objectId": {
+                      "type": "string"
+                    },
+                    "objectType": {
+                      "type": "string"
+                    },
+                    "permission": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "permission",
+                    "objectType",
+                    "objectId"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "capabilitiesCount": {
+                "type": "number"
+              },
+              "contextId": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "expiresAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "issuanceMode": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "issuedFor": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string"
+              },
+              "lastUsedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "lineage": {
+                "additionalProperties": false,
+                "properties": {
+                  "approvalSource": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "issuanceMode": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "issuedAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "issuedFor": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "parentContextId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "parentContextKind": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "parentContextId",
+                  "parentContextKind",
+                  "issuedFor",
+                  "issuedAt",
+                  "issuanceMode",
+                  "approvalSource"
+                ],
+                "type": "object"
+              },
+              "metadata": {
+                "anyOf": [
+                  {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "parentContextId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "revokedAt": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sessionKey": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "sessionName": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "source": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "accountId": {
+                        "type": "string"
+                      },
+                      "channel": {
+                        "type": "string"
+                      },
+                      "chatId": {
+                        "type": "string"
+                      },
+                      "threadId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "channel",
+                      "accountId",
+                      "chatId"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "expired",
+                  "revoked"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "contextId",
+              "kind",
+              "status",
+              "agentId",
+              "sessionKey",
+              "sessionName",
+              "createdAt",
+              "expiresAt",
+              "lastUsedAt",
+              "revokedAt",
+              "capabilitiesCount",
+              "parentContextId",
+              "issuedFor",
+              "issuanceMode",
+              "source",
+              "metadata",
+              "capabilities",
+              "lineage"
+            ],
+            "type": "object"
+          },
+          "revokedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "context",
+          "cascaded",
+          "revokedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "revokedCount": {
+      "type": "number"
+    },
+    "scanned": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "const": "agent-runtime",
+          "type": "string"
+        },
+        "sessionKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "agentId",
+        "sessionKey"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "dryRun",
+    "reason",
+    "olderThan",
+    "olderThanMs",
+    "cutoffAt",
+    "scanned",
+    "candidatesCount",
+    "revokedCount",
+    "candidates",
+    "revoked"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -13534,8 +19917,33 @@ export const ContextCodexBashHookInputSchema = {
 
 /** JSON Schema for the return shape of `context.codex-bash-hook`. */
 export const ContextCodexBashHookReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "hookSpecificOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "hookEventName": {
+          "const": "PreToolUse",
+          "type": "string"
+        },
+        "permissionDecision": {
+          "enum": [
+            "deny"
+          ],
+          "type": "string"
+        },
+        "permissionDecisionReason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "hookEventName",
+        "permissionDecision",
+        "permissionDecisionReason"
+      ],
+      "type": "object"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -13564,8 +19972,30 @@ export const ContextCredentialsAddInputSchema = {
 
 /** JSON Schema for the return shape of `context.credentials.add`. */
 export const ContextCredentialsAddReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "added": {
+      "type": "string"
+    },
+    "default": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "path": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "default",
+    "added"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -13587,8 +20017,229 @@ export const ContextCredentialsListInputSchema = {
 
 /** JSON Schema for the return shape of `context.credentials.list`. */
 export const ContextCredentialsListReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "default": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "entries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contextId": {
+            "type": "string"
+          },
+          "contextKey": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "issuedAt": {
+            "type": "number"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "contextKey",
+          "contextId",
+          "agentId",
+          "label",
+          "kind",
+          "issuedAt",
+          "expiresAt",
+          "isDefault"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "exists": {
+      "type": "boolean"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contextId": {
+            "type": "string"
+          },
+          "contextKey": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "issuedAt": {
+            "type": "number"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "contextKey",
+          "contextId",
+          "agentId",
+          "label",
+          "kind",
+          "issuedAt",
+          "expiresAt",
+          "isDefault"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "path": {
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "path",
+    "exists",
+    "default",
+    "total",
+    "pagination",
+    "items",
+    "entries"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -13609,8 +20260,30 @@ export const ContextCredentialsRemoveInputSchema = {
 
 /** JSON Schema for the return shape of `context.credentials.remove`. */
 export const ContextCredentialsRemoveReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "default": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "path": {
+      "type": "string"
+    },
+    "removed": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "default",
+    "removed"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -13631,8 +20304,26 @@ export const ContextCredentialsSetDefaultInputSchema = {
 
 /** JSON Schema for the return shape of `context.credentials.set-default`. */
 export const ContextCredentialsSetDefaultReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "default": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "path": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "default"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -13653,8 +20344,322 @@ export const ContextInfoInputSchema = {
 
 /** JSON Schema for the return shape of `context.info`. */
 export const ContextInfoReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "capabilities": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "objectId": {
+            "type": "string"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "permission",
+          "objectType",
+          "objectId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "capabilitiesCount": {
+      "type": "number"
+    },
+    "contextId": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "number"
+    },
+    "expiresAt": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "issuanceMode": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "issuedFor": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "kind": {
+      "type": "string"
+    },
+    "lastUsedAt": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lineage": {
+      "additionalProperties": false,
+      "properties": {
+        "approvalSource": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/__schema0"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issuanceMode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issuedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issuedFor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parentContextId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parentContextKind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "parentContextId",
+        "parentContextKind",
+        "issuedFor",
+        "issuedAt",
+        "issuanceMode",
+        "approvalSource"
+      ],
+      "type": "object"
+    },
+    "metadata": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "parentContextId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "revokedAt": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionKey": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionName": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "channel": {
+              "type": "string"
+            },
+            "chatId": {
+              "type": "string"
+            },
+            "threadId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "channel",
+            "accountId",
+            "chatId"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "status": {
+      "enum": [
+        "active",
+        "expired",
+        "revoked"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "contextId",
+    "kind",
+    "status",
+    "agentId",
+    "sessionKey",
+    "sessionName",
+    "createdAt",
+    "expiresAt",
+    "lastUsedAt",
+    "revokedAt",
+    "capabilitiesCount",
+    "parentContextId",
+    "issuedFor",
+    "issuanceMode",
+    "source",
+    "metadata",
+    "capabilities",
+    "lineage"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -13687,8 +20692,205 @@ export const ContextIssueInputSchema = {
 
 /** JSON Schema for the return shape of `context.issue`. */
 export const ContextIssueReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "capabilities": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "objectId": {
+            "type": "string"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "permission",
+          "objectType",
+          "objectId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "capabilitiesCount": {
+      "type": "number"
+    },
+    "cliName": {
+      "type": "string"
+    },
+    "contextId": {
+      "type": "string"
+    },
+    "contextKey": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "number"
+    },
+    "env": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "expiresAt": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "kind": {
+      "type": "string"
+    },
+    "metadata": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "parentContextId": {
+      "type": "string"
+    },
+    "sessionKey": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionName": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "channel": {
+              "type": "string"
+            },
+            "chatId": {
+              "type": "string"
+            },
+            "threadId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "channel",
+            "accountId",
+            "chatId"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "contextId",
+    "contextKey",
+    "kind",
+    "cliName",
+    "agentId",
+    "sessionKey",
+    "sessionName",
+    "parentContextId",
+    "createdAt",
+    "expiresAt",
+    "capabilities",
+    "capabilitiesCount",
+    "source",
+    "metadata",
+    "env"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -13709,8 +20911,603 @@ export const ContextLineageInputSchema = {
 
 /** JSON Schema for the return shape of `context.lineage`. */
 export const ContextLineageReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "ancestors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "capabilitiesCount": {
+            "type": "number"
+          },
+          "contextId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuanceMode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuedFor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parentContextId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "active",
+              "expired",
+              "revoked"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "contextId",
+          "kind",
+          "status",
+          "agentId",
+          "sessionKey",
+          "sessionName",
+          "createdAt",
+          "expiresAt",
+          "lastUsedAt",
+          "revokedAt",
+          "capabilitiesCount",
+          "parentContextId",
+          "issuedFor",
+          "issuanceMode"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "context": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capabilities": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "objectId": {
+                "type": "string"
+              },
+              "objectType": {
+                "type": "string"
+              },
+              "permission": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "permission",
+              "objectType",
+              "objectId"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "capabilitiesCount": {
+          "type": "number"
+        },
+        "contextId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issuanceMode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issuedFor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastUsedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lineage": {
+          "additionalProperties": false,
+          "properties": {
+            "approvalSource": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/__schema0"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "issuanceMode": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "issuedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "issuedFor": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "parentContextId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "parentContextKind": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "parentContextId",
+            "parentContextKind",
+            "issuedFor",
+            "issuedAt",
+            "issuanceMode",
+            "approvalSource"
+          ],
+          "type": "object"
+        },
+        "metadata": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parentContextId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revokedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "channel": {
+                  "type": "string"
+                },
+                "chatId": {
+                  "type": "string"
+                },
+                "threadId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "channel",
+                "accountId",
+                "chatId"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "active",
+            "expired",
+            "revoked"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "contextId",
+        "kind",
+        "status",
+        "agentId",
+        "sessionKey",
+        "sessionName",
+        "createdAt",
+        "expiresAt",
+        "lastUsedAt",
+        "revokedAt",
+        "capabilitiesCount",
+        "parentContextId",
+        "issuedFor",
+        "issuanceMode",
+        "source",
+        "metadata",
+        "capabilities",
+        "lineage"
+      ],
+      "type": "object"
+    },
+    "descendants": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "capabilitiesCount": {
+            "type": "number"
+          },
+          "contextId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuanceMode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuedFor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parentContextId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "active",
+              "expired",
+              "revoked"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "contextId",
+          "kind",
+          "status",
+          "agentId",
+          "sessionKey",
+          "sessionName",
+          "createdAt",
+          "expiresAt",
+          "lastUsedAt",
+          "revokedAt",
+          "capabilitiesCount",
+          "parentContextId",
+          "issuedFor",
+          "issuanceMode"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "context",
+    "ancestors",
+    "descendants"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -13748,8 +21545,396 @@ export const ContextListInputSchema = {
 
 /** JSON Schema for the return shape of `context.list`. */
 export const ContextListReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "contexts": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "capabilitiesCount": {
+            "type": "number"
+          },
+          "contextId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuanceMode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuedFor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parentContextId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "active",
+              "expired",
+              "revoked"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "contextId",
+          "kind",
+          "status",
+          "agentId",
+          "sessionKey",
+          "sessionName",
+          "createdAt",
+          "expiresAt",
+          "lastUsedAt",
+          "revokedAt",
+          "capabilitiesCount",
+          "parentContextId",
+          "issuedFor",
+          "issuanceMode"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "count": {
+      "type": "number"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "capabilitiesCount": {
+            "type": "number"
+          },
+          "contextId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuanceMode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuedFor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parentContextId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "active",
+              "expired",
+              "revoked"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "contextId",
+          "kind",
+          "status",
+          "agentId",
+          "sessionKey",
+          "sessionName",
+          "createdAt",
+          "expiresAt",
+          "lastUsedAt",
+          "revokedAt",
+          "capabilitiesCount",
+          "parentContextId",
+          "issuedFor",
+          "issuanceMode"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "count",
+    "total",
+    "pagination",
+    "items",
+    "contexts"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `context.prune`. */
+export const ContextPruneInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apply": {
+      "description": "Delete the matched contexts. Requires --confirm prune-contexts.",
+      "type": "boolean"
+    },
+    "confirm": {
+      "description": "Required with --apply; must be exactly prune-contexts",
+      "type": "string"
+    },
+    "olderThan": {
+      "description": "Only delete contexts created at least this long ago (default: 7d)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `context.prune`. */
+export const ContextPruneReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "matchedCount": {
+      "type": "number"
+    },
+    "olderThan": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "pruned",
+        "planned"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "dryRun",
+    "olderThan",
+    "matchedCount",
+    "changedCount"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -13762,7 +21947,7 @@ export const ContextRevokeInputSchema = {
       "type": "string"
     },
     "noCascade": {
-      "default": true,
+      "default": false,
       "description": "Do not revoke descendant contexts (use only for narrow rotation; emits a loud warning)",
       "type": "boolean"
     },
@@ -13779,8 +21964,471 @@ export const ContextRevokeInputSchema = {
 
 /** JSON Schema for the return shape of `context.revoke`. */
 export const ContextRevokeReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "cascaded": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "capabilitiesCount": {
+            "type": "number"
+          },
+          "contextId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuanceMode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuedFor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parentContextId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "active",
+              "expired",
+              "revoked"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "contextId",
+          "kind",
+          "status",
+          "agentId",
+          "sessionKey",
+          "sessionName",
+          "createdAt",
+          "expiresAt",
+          "lastUsedAt",
+          "revokedAt",
+          "capabilitiesCount",
+          "parentContextId",
+          "issuedFor",
+          "issuanceMode"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "context": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capabilities": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "objectId": {
+                "type": "string"
+              },
+              "objectType": {
+                "type": "string"
+              },
+              "permission": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "permission",
+              "objectType",
+              "objectId"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "capabilitiesCount": {
+          "type": "number"
+        },
+        "contextId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issuanceMode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issuedFor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastUsedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lineage": {
+          "additionalProperties": false,
+          "properties": {
+            "approvalSource": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/__schema0"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "issuanceMode": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "issuedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "issuedFor": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "parentContextId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "parentContextKind": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "parentContextId",
+            "parentContextKind",
+            "issuedFor",
+            "issuedAt",
+            "issuanceMode",
+            "approvalSource"
+          ],
+          "type": "object"
+        },
+        "metadata": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parentContextId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revokedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "channel": {
+                  "type": "string"
+                },
+                "chatId": {
+                  "type": "string"
+                },
+                "threadId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "channel",
+                "accountId",
+                "chatId"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "active",
+            "expired",
+            "revoked"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "contextId",
+        "kind",
+        "status",
+        "agentId",
+        "sessionKey",
+        "sessionName",
+        "createdAt",
+        "expiresAt",
+        "lastUsedAt",
+        "revokedAt",
+        "capabilitiesCount",
+        "parentContextId",
+        "issuedFor",
+        "issuanceMode",
+        "source",
+        "metadata",
+        "capabilities",
+        "lineage"
+      ],
+      "type": "object"
+    },
+    "revokedAt": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "context",
+    "cascaded",
+    "revokedAt"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -13793,8 +22441,195 @@ export const ContextVisibilityInputSchema = {
 
 /** JSON Schema for the return shape of `context.visibility`. */
 export const ContextVisibilityReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "compact": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": "number"
+        },
+        "lastCompactedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "willCompactAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "threshold",
+        "willCompactAt",
+        "lastCompactedAt",
+        "count"
+      ],
+      "type": "object"
+    },
+    "lastUpdatedAt": {
+      "type": "number"
+    },
+    "loadedSkills": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "provider": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionKey": {
+      "type": "string"
+    },
+    "skills": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "detail": {
+                  "type": "string"
+                },
+                "itemId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "type": "number"
+          },
+          "loadedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "state",
+          "confidence",
+          "lastSeenAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "tokens": {
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "remaining": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "used": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "used",
+        "limit",
+        "remaining"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "sessionKey",
+    "agentId",
+    "provider",
+    "tokens",
+    "compact",
+    "skills",
+    "loadedSkills",
+    "lastUpdatedAt"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -13807,8 +22642,322 @@ export const ContextWhoamiInputSchema = {
 
 /** JSON Schema for the return shape of `context.whoami`. */
 export const ContextWhoamiReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "capabilities": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "objectId": {
+            "type": "string"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "permission",
+          "objectType",
+          "objectId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "capabilitiesCount": {
+      "type": "number"
+    },
+    "contextId": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "number"
+    },
+    "expiresAt": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "issuanceMode": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "issuedFor": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "kind": {
+      "type": "string"
+    },
+    "lastUsedAt": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lineage": {
+      "additionalProperties": false,
+      "properties": {
+        "approvalSource": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/__schema0"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issuanceMode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issuedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issuedFor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parentContextId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parentContextKind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "parentContextId",
+        "parentContextKind",
+        "issuedFor",
+        "issuedAt",
+        "issuanceMode",
+        "approvalSource"
+      ],
+      "type": "object"
+    },
+    "metadata": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "parentContextId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "revokedAt": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionKey": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionName": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "channel": {
+              "type": "string"
+            },
+            "chatId": {
+              "type": "string"
+            },
+            "threadId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "channel",
+            "accountId",
+            "chatId"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "status": {
+      "enum": [
+        "active",
+        "expired",
+        "revoked"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "contextId",
+    "kind",
+    "status",
+    "agentId",
+    "sessionKey",
+    "sessionName",
+    "createdAt",
+    "expiresAt",
+    "lastUsedAt",
+    "revokedAt",
+    "capabilitiesCount",
+    "parentContextId",
+    "issuedFor",
+    "issuanceMode",
+    "source",
+    "metadata",
+    "capabilities",
+    "lineage"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -14027,6 +23176,242 @@ export const CostsAgentsReturnSchema = {
     "limit",
     "totalAgents",
     "agents"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `costs.pricing`. */
+export const CostsPricingInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dryRun": {
+      "description": "Preview recompute results without updating cost_events",
+      "type": "boolean"
+    },
+    "hours": {
+      "description": "Time window in hours (default: 24)",
+      "type": "string"
+    },
+    "includePriced": {
+      "description": "Also recompute rows already marked as priced",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Maximum rows to recompute (default: 500, max: 5000)",
+      "type": "string"
+    },
+    "recompute": {
+      "description": "Recompute pricing metadata for non-priced rows in the window",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `costs.pricing`. */
+export const CostsPricingReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "recompute": {
+      "additionalProperties": false,
+      "properties": {
+        "attempted": {
+          "type": "number"
+        },
+        "dryRun": {
+          "type": "boolean"
+        },
+        "includePriced": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "priced": {
+          "type": "number"
+        },
+        "rows": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "number"
+              },
+              "model": {
+                "type": "string"
+              },
+              "previousPricingStatus": {
+                "type": "string"
+              },
+              "pricingError": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "pricingModel": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "pricingSource": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "pricingStatus": {
+                "type": "string"
+              },
+              "totalCost": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "model",
+              "previousPricingStatus",
+              "pricingStatus",
+              "totalCost",
+              "pricingModel",
+              "pricingSource",
+              "pricingError"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "unpriced": {
+          "type": "number"
+        },
+        "updated": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "dryRun",
+        "includePriced",
+        "limit",
+        "attempted",
+        "updated",
+        "priced",
+        "unpriced",
+        "rows"
+      ],
+      "type": "object"
+    },
+    "rows": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "type": "number"
+          },
+          "lastCreatedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "type": "string"
+          },
+          "pricingModel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pricingSource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pricingStatus": {
+            "type": "string"
+          },
+          "totalCost": {
+            "type": "number"
+          },
+          "totalTokens": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "pricingStatus",
+          "model",
+          "pricingModel",
+          "pricingSource",
+          "events",
+          "totalCost",
+          "totalTokens",
+          "lastCreatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "window": {
+      "additionalProperties": false,
+      "properties": {
+        "effectiveHours": {
+          "type": "number"
+        },
+        "requestedHours": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sinceMs": {
+          "type": "number"
+        },
+        "untilMs": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "requestedHours",
+        "effectiveHours",
+        "sinceMs",
+        "untilMs"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "window",
+    "rows"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -14331,6 +23716,527 @@ export const CostsTopSessionsReturnSchema = {
     "window",
     "limit",
     "sessions"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `credentials.connections.disable`. */
+export const CredentialsConnectionsDisableInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Connection id",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Provider id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `credentials.connections.disable`. */
+export const CredentialsConnectionsDisableReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "backend": {
+              "enum": [
+                "keychain",
+                "vault"
+              ],
+              "type": "string"
+            },
+            "connection": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "provider": {
+              "type": "string"
+            },
+            "scopes": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "secretRef": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "active",
+                "disabled"
+              ],
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "provider",
+            "connection",
+            "label",
+            "backend",
+            "secretRef",
+            "scopes",
+            "status",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "connection"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `credentials.connections.enable`. */
+export const CredentialsConnectionsEnableInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Connection id",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Provider id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `credentials.connections.enable`. */
+export const CredentialsConnectionsEnableReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "backend": {
+              "enum": [
+                "keychain",
+                "vault"
+              ],
+              "type": "string"
+            },
+            "connection": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "provider": {
+              "type": "string"
+            },
+            "scopes": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "secretRef": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "active",
+                "disabled"
+              ],
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "provider",
+            "connection",
+            "label",
+            "backend",
+            "secretRef",
+            "scopes",
+            "status",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "connection"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `credentials.connections.list`. */
+export const CredentialsConnectionsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "all": {
+      "description": "Include disabled connections",
+      "type": "boolean"
+    },
+    "limit": {
+      "default": "50",
+      "description": "Page size",
+      "type": "string"
+    },
+    "offset": {
+      "default": "0",
+      "description": "Offset",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Filter by provider, e.g. slack",
+      "type": "string"
+    },
+    "status": {
+      "description": "Filter by status: active or disabled",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `credentials.connections.list`. */
+export const CredentialsConnectionsListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "backend": {
+            "enum": [
+              "keychain",
+              "vault"
+            ],
+            "type": "string"
+          },
+          "connection": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "secretRef": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "disabled"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "connection",
+          "label",
+          "backend",
+          "secretRef",
+          "scopes",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `credentials.connections.show`. */
+export const CredentialsConnectionsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Connection id, e.g. main",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Provider id, e.g. slack",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `credentials.connections.show`. */
+export const CredentialsConnectionsShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "enum": [
+            "keychain",
+            "vault"
+          ],
+          "type": "string"
+        },
+        "connection": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "type": "string"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "secretRef": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "disabled"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "connection",
+        "label",
+        "backend",
+        "secretRef",
+        "scopes",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "connection"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `credentials.policies.explain`. */
+export const CredentialsPoliciesExplainInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "description": "Provider action, e.g. messages.send",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Connection id",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Provider id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `credentials.policies.explain`. */
+export const CredentialsPoliciesExplainReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "approval": {
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "required",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "requiredCapabilities": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "provider",
+    "connection",
+    "action",
+    "requiredCapabilities",
+    "approval"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -15237,6 +25143,10 @@ export const CrmOpportunityCreateInputSchema = {
       "description": "Owner, e.g. agent:main",
       "type": "string"
     },
+    "pipeline": {
+      "description": "Pipeline ID or name",
+      "type": "string"
+    },
     "stage": {
       "description": "Pipeline stage key or ID",
       "type": "string"
@@ -15405,6 +25315,22 @@ export const CrmOpportunityShowReturnSchema = {
 export const CrmPipelineCreateInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "analystAvoid": {
+      "description": "Comma list of forbidden topics",
+      "type": "string"
+    },
+    "analystMentions": {
+      "description": "Comma list of mandatory mentions in analyst messages",
+      "type": "string"
+    },
+    "analystTone": {
+      "description": "Tone for analyst-drafted messages",
+      "type": "string"
+    },
+    "consumer": {
+      "description": "Comma list of consumer agent ids",
+      "type": "string"
+    },
     "default": {
       "description": "Mark as default pipeline for the entity type",
       "type": "boolean"
@@ -15413,16 +25339,79 @@ export const CrmPipelineCreateInputSchema = {
       "description": "CRM entity type (default: opportunity)",
       "type": "string"
     },
+    "hitlRequiredWhen": {
+      "description": "JSON {conditions:[...]}",
+      "type": "string"
+    },
     "idempotencyKey": {
       "description": "Deduplicate repeated create attempts",
       "type": "string"
     },
+    "messagePrefix": {
+      "description": "Outbound message prefix",
+      "type": "string"
+    },
+    "messageSuffix": {
+      "description": "Outbound message suffix",
+      "type": "string"
+    },
     "metadata": {
-      "description": "Metadata JSON object",
+      "description": "Raw metadata JSON object (structured flags merge on top)",
       "type": "string"
     },
     "name": {
       "description": "Pipeline name",
+      "type": "string"
+    },
+    "objetivo": {
+      "description": "One-paragraph pipeline purpose",
+      "type": "string"
+    },
+    "priorityGlobal": {
+      "description": "Cross-pipeline arbitration priority (1=highest, 5=lowest)",
+      "type": "string"
+    },
+    "producer": {
+      "description": "Comma list of producer agent ids",
+      "type": "string"
+    },
+    "readingListId": {
+      "description": "Reading list slug bound to this pipeline",
+      "type": "string"
+    },
+    "reguaTag": {
+      "description": "Repeatable regua tag JSON {tag,apply_when,linked_stage,apply_by}",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "relatedCron": {
+      "description": "Comma list of related CRON ids",
+      "type": "string"
+    },
+    "relatedTrigger": {
+      "description": "Comma list of related trigger ids",
+      "type": "string"
+    },
+    "sendWindow": {
+      "description": "Send window 'hours[,days],timezone' (e.g. 9-21,mon-sat,America/Sao_Paulo)",
+      "type": "string"
+    },
+    "versao": {
+      "description": "Semver of this metadata document",
+      "type": "string"
+    },
+    "vipGuardAction": {
+      "description": "hitl | block | tag_only",
+      "type": "string"
+    },
+    "vipGuardLtv": {
+      "description": "Lifetime value threshold for VIP",
+      "type": "string"
+    },
+    "vipGuardTag": {
+      "description": "Comma list of VIP tag triggers",
       "type": "string"
     }
   },
@@ -15548,20 +25537,434 @@ export const CrmPipelineListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `crm.pipeline.policy.hitl-check`. */
+export const CrmPipelinePolicyHitlCheckInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "context": {
+      "description": "JSON object with context (tags, contact_value, ltv)",
+      "type": "string"
+    },
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pipeline"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.pipeline.policy.hitl-check`. */
+export const CrmPipelinePolicyHitlCheckReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "decision": {
+      "additionalProperties": false,
+      "properties": {
+        "hitlRequired": {
+          "type": "boolean"
+        },
+        "matchedConditions": {
+          "type": "number"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "hitlRequired",
+        "matchedConditions",
+        "reasons"
+      ],
+      "type": "object"
+    },
+    "errors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "warning",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message",
+          "severity"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "pipelineId": {
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "warning",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message",
+          "severity"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "pipelineId",
+    "ok",
+    "errors",
+    "warnings",
+    "decision"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.policy.send-window-check`. */
+export const CrmPipelinePolicySendWindowCheckInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "at": {
+      "description": "Instant to evaluate (ISO 8601, default: now)",
+      "type": "string"
+    },
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pipeline"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.pipeline.policy.send-window-check`. */
+export const CrmPipelinePolicySendWindowCheckReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "decision": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "evaluatedAtIso": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "releaseAtIso": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "allowed",
+        "reason",
+        "evaluatedAtIso",
+        "timezone"
+      ],
+      "type": "object"
+    },
+    "errors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "warning",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message",
+          "severity"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "pipelineId": {
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "warning",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message",
+          "severity"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "pipelineId",
+    "ok",
+    "errors",
+    "warnings",
+    "decision"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.pipeline.review`. */
+export const CrmPipelineReviewInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "pipeline": {
+      "description": "CRM pipeline ID or name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pipeline"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.pipeline.review`. */
+export const CrmPipelineReviewReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "fields": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "group": {
+            "enum": [
+              "identidade",
+              "estrutura",
+              "politicas",
+              "tags",
+              "comunicacao",
+              "integracoes"
+            ],
+            "type": "string"
+          },
+          "present": {
+            "enum": [
+              "present",
+              "absent",
+              "partial"
+            ],
+            "type": "string"
+          },
+          "suggestion": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "group",
+          "field",
+          "present",
+          "detail"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "highSeverityGaps": {
+      "type": "number"
+    },
+    "pipelineId": {
+      "type": "string"
+    },
+    "pipelineName": {
+      "type": "string"
+    },
+    "totalGaps": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "pipelineId",
+    "pipelineName",
+    "highSeverityGaps",
+    "totalGaps",
+    "fields"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.pipeline.set`. */
 export const CrmPipelineSetInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "analystAvoid": {
+      "description": "Patch metadata.analyst_guidance.avoid (comma)",
+      "type": "string"
+    },
+    "analystMentions": {
+      "description": "Patch metadata.analyst_guidance.mandatory_mentions (comma)",
+      "type": "string"
+    },
+    "analystTone": {
+      "description": "Patch metadata.analyst_guidance.tone",
+      "type": "string"
+    },
+    "consumer": {
+      "description": "Patch metadata.consumers (comma list)",
+      "type": "string"
+    },
     "field": {
       "description": "name|entity-type|default|status|metadata",
+      "type": "string"
+    },
+    "hitlRequiredWhen": {
+      "description": "Patch metadata.hitl_required_when",
+      "type": "string"
+    },
+    "messagePrefix": {
+      "description": "Patch metadata.message_rule.prefix",
+      "type": "string"
+    },
+    "messageSuffix": {
+      "description": "Patch metadata.message_rule.suffix",
+      "type": "string"
+    },
+    "objetivo": {
+      "description": "Patch metadata.objetivo",
       "type": "string"
     },
     "pipeline": {
       "description": "CRM pipeline ID or name",
       "type": "string"
     },
+    "priorityGlobal": {
+      "description": "Patch metadata.priority_global (1-5)",
+      "type": "string"
+    },
+    "producer": {
+      "description": "Patch metadata.producers (comma list)",
+      "type": "string"
+    },
+    "readingListId": {
+      "description": "Patch metadata.reading_list_id",
+      "type": "string"
+    },
+    "reguaTag": {
+      "description": "Repeatable regua tag JSON (appends to existing list)",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "relatedCron": {
+      "description": "Patch metadata.related_crons (comma)",
+      "type": "string"
+    },
+    "relatedTrigger": {
+      "description": "Patch metadata.related_triggers (comma)",
+      "type": "string"
+    },
+    "sendWindow": {
+      "description": "Patch metadata.send_window",
+      "type": "string"
+    },
     "value": {
-      "description": "New value",
+      "description": "New value (use '-' to patch metadata via structured flags)",
+      "type": "string"
+    },
+    "versao": {
+      "description": "Patch metadata.versao",
+      "type": "string"
+    },
+    "vipGuardAction": {
+      "description": "Patch metadata.vip_guard.action (hitl|block|tag_only)",
+      "type": "string"
+    },
+    "vipGuardLtv": {
+      "description": "Patch metadata.vip_guard.ltv_threshold",
+      "type": "string"
+    },
+    "vipGuardTag": {
+      "description": "Patch metadata.vip_guard.tag_triggers",
       "type": "string"
     }
   },
@@ -15595,6 +25998,10 @@ export const CrmPipelineSetReturnSchema = {
 export const CrmPipelineShowInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "explain": {
+      "description": "Render metadata field-by-field with operational impact",
+      "type": "boolean"
+    },
     "pipeline": {
       "description": "CRM pipeline ID or name",
       "type": "string"
@@ -16162,6 +26569,148 @@ export const CrmPipelineStageTopicsReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `crm.pipeline.validate`. */
+export const CrmPipelineValidateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "pipeline": {
+      "description": "CRM pipeline ID or name (omit when using --schema-json)",
+      "type": "string"
+    },
+    "schemaJson": {
+      "description": "Print canonical JSON Schema (Draft-07) and exit",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.pipeline.validate`. */
+export const CrmPipelineValidateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "errors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "warning",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message",
+          "severity"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "pipelineId": {
+      "type": "string"
+    },
+    "schema": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "warning",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message",
+          "severity"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "pipelineId",
+    "ok",
+    "errors",
+    "warnings"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.task.cancel`. */
 export const CrmTaskCancelInputSchema = {
   "additionalProperties": false,
@@ -16557,6 +27106,10 @@ export const CronAddInputSchema = {
     },
     "exec": {
       "description": "Alias for --shell",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Durable create idempotency key",
       "type": "string"
     },
     "isolated": {
@@ -17136,7 +27689,7 @@ export const DaemonInitAdminKeyInputSchema = {
       "type": "string"
     },
     "noStore": {
-      "default": true,
+      "default": false,
       "description": "Alias for --print-only (do not write to ~/.ravi/credentials.json)",
       "type": "boolean"
     },
@@ -17408,7 +27961,20 @@ export const DevinAuthCheckReturnSchema = {
     },
     "self": {
       "additionalProperties": {},
-      "properties": {},
+      "properties": {
+        "org_id": {
+          "type": "string"
+        },
+        "principal_type": {
+          "type": "string"
+        },
+        "service_user_id": {
+          "type": "string"
+        },
+        "service_user_name": {
+          "type": "string"
+        }
+      },
       "type": "object"
     }
   },
@@ -17441,7 +28007,214 @@ export const DevinSessionsArchiveReturnSchema = {
   "properties": {
     "session": {
       "additionalProperties": {},
-      "properties": {},
+      "properties": {
+        "acusConsumed": {
+          "type": "number"
+        },
+        "devinId": {
+          "type": "string"
+        },
+        "devinMode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effectiveCreateAsUserId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "isArchived": {
+          "type": "boolean"
+        },
+        "lastSyncedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxAcuLimit": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxAcuLimitSource": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "originId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "originType": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "platform": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "proxRunId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resumable": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "serviceUserId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "statusDetail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "taskId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "url": {
+          "type": "string"
+        },
+        "userId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "devinId",
+        "title",
+        "status",
+        "statusDetail",
+        "url",
+        "tags",
+        "updatedAt"
+      ],
       "type": "object"
     },
     "status": {
@@ -17482,7 +28255,36 @@ export const DevinSessionsAttachmentsReturnSchema = {
     "attachments": {
       "items": {
         "additionalProperties": {},
-        "properties": {},
+        "properties": {
+          "attachmentId": {
+            "type": "string"
+          },
+          "contentType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "attachmentId",
+          "name",
+          "source",
+          "url"
+        ],
         "type": "object"
       },
       "type": "array"
@@ -17507,11 +28309,11 @@ export const DevinSessionsCreateInputSchema = {
   "additionalProperties": false,
   "properties": {
     "advancedMode": {
-      "description": "analyze|create|improve|batch|manage",
+      "description": "Legacy: analyze|create|improve|batch|manage",
       "type": "string"
     },
     "asUser": {
-      "description": "create_as_user_id",
+      "description": "create_as_user_id (impersonate user)",
       "type": "string"
     },
     "attachmentUrl": {
@@ -17529,6 +28331,14 @@ export const DevinSessionsCreateInputSchema = {
       "description": "Child playbook ID",
       "type": "string"
     },
+    "devinId": {
+      "description": "Idempotent session creation key",
+      "type": "string"
+    },
+    "devinMode": {
+      "description": "Agent mode: normal|fast|lite|ultra",
+      "type": "string"
+    },
     "knowledge": {
       "description": "Knowledge note IDs",
       "items": {
@@ -17541,9 +28351,18 @@ export const DevinSessionsCreateInputSchema = {
       "type": "string"
     },
     "noMaxAcuLimit": {
-      "default": true,
+      "default": false,
       "description": "Intentionally omit max_acu_limit",
       "type": "boolean"
+    },
+    "noResumable": {
+      "default": false,
+      "description": "Disposable session, do not preserve VM state",
+      "type": "boolean"
+    },
+    "platform": {
+      "description": "VM platform override (org-specific)",
+      "type": "string"
     },
     "playbook": {
       "description": "Playbook ID",
@@ -17572,8 +28391,12 @@ export const DevinSessionsCreateInputSchema = {
       },
       "type": "array"
     },
+    "resumable": {
+      "description": "Preserve VM state for resume (default: true)",
+      "type": "boolean"
+    },
     "secret": {
-      "description": "Secret IDs",
+      "description": "Secret IDs (org-level secret references)",
       "items": {
         "type": "string"
       },
@@ -17585,6 +28408,17 @@ export const DevinSessionsCreateInputSchema = {
         "type": "string"
       },
       "type": "array"
+    },
+    "sessionSecret": {
+      "description": "Inline session secrets (key=value); sensitive by default",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "structuredOutputRequired": {
+      "description": "Require structured output before turn ends",
+      "type": "boolean"
     },
     "structuredOutputSchema": {
       "description": "JSON schema for structured output",
@@ -17613,6 +28447,16 @@ export const DevinSessionsCreateInputSchema = {
 export const DevinSessionsCreateReturnSchema = {
   "additionalProperties": {},
   "properties": {
+    "devinMode": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "maxAcuLimit": {
       "anyOf": [
         {
@@ -17626,9 +28470,236 @@ export const DevinSessionsCreateReturnSchema = {
     "maxAcuLimitSource": {
       "type": "string"
     },
+    "platform": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "resumable": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "session": {
       "additionalProperties": {},
-      "properties": {},
+      "properties": {
+        "acusConsumed": {
+          "type": "number"
+        },
+        "devinId": {
+          "type": "string"
+        },
+        "devinMode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effectiveCreateAsUserId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "isArchived": {
+          "type": "boolean"
+        },
+        "lastSyncedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxAcuLimit": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxAcuLimitSource": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "originId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "originType": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "platform": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "proxRunId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resumable": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "serviceUserId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "statusDetail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "taskId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "url": {
+          "type": "string"
+        },
+        "userId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "devinId",
+        "title",
+        "status",
+        "statusDetail",
+        "url",
+        "tags",
+        "updatedAt"
+      ],
       "type": "object"
     },
     "status": {
@@ -17670,12 +28741,248 @@ export const DevinSessionsInsightsReturnSchema = {
   "properties": {
     "insights": {
       "additionalProperties": {},
-      "properties": {},
+      "properties": {
+        "analysis": {
+          "anyOf": [
+            {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "numDevinMessages": {
+          "type": "number"
+        },
+        "numUserMessages": {
+          "type": "number"
+        },
+        "sessionSize": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
       "type": "object"
     },
     "session": {
       "additionalProperties": {},
-      "properties": {},
+      "properties": {
+        "acusConsumed": {
+          "type": "number"
+        },
+        "devinId": {
+          "type": "string"
+        },
+        "devinMode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effectiveCreateAsUserId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "isArchived": {
+          "type": "boolean"
+        },
+        "lastSyncedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxAcuLimit": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxAcuLimitSource": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "originId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "originType": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "platform": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "proxRunId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resumable": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "serviceUserId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "statusDetail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "taskId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "url": {
+          "type": "string"
+        },
+        "userId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "devinId",
+        "title",
+        "status",
+        "statusDetail",
+        "url",
+        "tags",
+        "updatedAt"
+      ],
       "type": "object"
     },
     "summary": {
@@ -17795,7 +29102,214 @@ export const DevinSessionsListReturnSchema = {
     "sessions": {
       "items": {
         "additionalProperties": {},
-        "properties": {},
+        "properties": {
+          "acusConsumed": {
+            "type": "number"
+          },
+          "devinId": {
+            "type": "string"
+          },
+          "devinMode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effectiveCreateAsUserId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "isArchived": {
+            "type": "boolean"
+          },
+          "lastSyncedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxAcuLimit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxAcuLimitSource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "originId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "originType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proxRunId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resumable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "serviceUserId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusDetail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "url": {
+            "type": "string"
+          },
+          "userId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "devinId",
+          "title",
+          "status",
+          "statusDetail",
+          "url",
+          "tags",
+          "updatedAt"
+        ],
         "type": "object"
       },
       "type": "array"
@@ -17846,7 +29360,26 @@ export const DevinSessionsMessagesReturnSchema = {
     "messages": {
       "items": {
         "additionalProperties": {},
-        "properties": {},
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "eventId": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "eventId",
+          "createdAt",
+          "source",
+          "message"
+        ],
         "type": "object"
       },
       "type": "array"
@@ -17893,7 +29426,214 @@ export const DevinSessionsSendReturnSchema = {
   "properties": {
     "session": {
       "additionalProperties": {},
-      "properties": {},
+      "properties": {
+        "acusConsumed": {
+          "type": "number"
+        },
+        "devinId": {
+          "type": "string"
+        },
+        "devinMode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effectiveCreateAsUserId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "isArchived": {
+          "type": "boolean"
+        },
+        "lastSyncedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxAcuLimit": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxAcuLimitSource": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "originId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "originType": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "platform": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "proxRunId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resumable": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "serviceUserId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "statusDetail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "taskId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "url": {
+          "type": "string"
+        },
+        "userId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "devinId",
+        "title",
+        "status",
+        "statusDetail",
+        "url",
+        "tags",
+        "updatedAt"
+      ],
       "type": "object"
     },
     "status": {
@@ -17933,7 +29673,214 @@ export const DevinSessionsShowReturnSchema = {
   "properties": {
     "session": {
       "additionalProperties": {},
-      "properties": {},
+      "properties": {
+        "acusConsumed": {
+          "type": "number"
+        },
+        "devinId": {
+          "type": "string"
+        },
+        "devinMode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effectiveCreateAsUserId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "isArchived": {
+          "type": "boolean"
+        },
+        "lastSyncedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxAcuLimit": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxAcuLimitSource": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "originId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "originType": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "platform": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "proxRunId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resumable": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "serviceUserId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "statusDetail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "taskId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "url": {
+          "type": "string"
+        },
+        "userId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "devinId",
+        "title",
+        "status",
+        "statusDetail",
+        "url",
+        "tags",
+        "updatedAt"
+      ],
       "type": "object"
     }
   },
@@ -17996,7 +29943,214 @@ export const DevinSessionsSyncReturnSchema = {
     },
     "session": {
       "additionalProperties": {},
-      "properties": {},
+      "properties": {
+        "acusConsumed": {
+          "type": "number"
+        },
+        "devinId": {
+          "type": "string"
+        },
+        "devinMode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effectiveCreateAsUserId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "isArchived": {
+          "type": "boolean"
+        },
+        "lastSyncedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxAcuLimit": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxAcuLimitSource": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "originId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "originType": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "platform": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "proxRunId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resumable": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "serviceUserId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "statusDetail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "taskId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "url": {
+          "type": "string"
+        },
+        "userId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "devinId",
+        "title",
+        "status",
+        "statusDetail",
+        "url",
+        "tags",
+        "updatedAt"
+      ],
       "type": "object"
     }
   },
@@ -18038,7 +30192,214 @@ export const DevinSessionsTerminateReturnSchema = {
     },
     "session": {
       "additionalProperties": {},
-      "properties": {},
+      "properties": {
+        "acusConsumed": {
+          "type": "number"
+        },
+        "devinId": {
+          "type": "string"
+        },
+        "devinMode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effectiveCreateAsUserId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "isArchived": {
+          "type": "boolean"
+        },
+        "lastSyncedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxAcuLimit": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maxAcuLimitSource": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "originId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "originType": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "platform": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "proxRunId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resumable": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "serviceUserId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "statusDetail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "taskId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "url": {
+          "type": "string"
+        },
+        "userId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "devinId",
+        "title",
+        "status",
+        "statusDetail",
+        "url",
+        "tags",
+        "updatedAt"
+      ],
       "type": "object"
     },
     "status": {
@@ -18105,6 +30466,130 @@ export const EvalRunReturnSchema = {
     "session",
     "execution",
     "grade"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `feedback.send`. */
+export const FeedbackSendInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "kind": {
+      "description": "bug|idea|ux|docs|performance|security|other",
+      "type": "string"
+    },
+    "message": {
+      "description": "Feedback message",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "metadataJson": {
+      "description": "Small JSON object with extra structured context",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug",
+      "type": "string"
+    },
+    "severity": {
+      "description": "low|medium|high|critical",
+      "type": "string"
+    },
+    "surface": {
+      "description": "Product surface, e.g. console/pages",
+      "type": "string"
+    },
+    "tag": {
+      "description": "Comma-separated tags; can be repeated",
+      "type": "string"
+    },
+    "title": {
+      "description": "Short feedback title",
+      "type": "string"
+    },
+    "url": {
+      "description": "Relevant URL",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `feedback.send`. */
+export const FeedbackSendReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "consoleUrl": {
+      "type": "string"
+    },
+    "feedback": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "url": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "feedback",
+    "url"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -29319,6 +41804,869 @@ export const MediaSendReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `meetings.finalize`. */
+export const MeetingsFinalizeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "noPostTranscribe": {
+      "default": false,
+      "description": "Skip post-call audio transcription",
+      "type": "boolean"
+    },
+    "runDir": {
+      "description": "Completed meet-recorder run directory",
+      "type": "string"
+    },
+    "title": {
+      "description": "Optional meeting title override",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `meetings.finalize`. */
+export const MeetingsFinalizeReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "artifactId": {
+      "type": "string"
+    },
+    "artifactPath": {
+      "type": "string"
+    },
+    "diagnosticCount": {
+      "type": "number"
+    },
+    "handoffMessage": {
+      "type": "string"
+    },
+    "mediaRefCount": {
+      "type": "number"
+    },
+    "session": {
+      "additionalProperties": false,
+      "properties": {
+        "endedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "providerMeetingId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "providerMeetingId",
+        "title",
+        "startedAt",
+        "endedAt"
+      ],
+      "type": "object"
+    },
+    "transcriptSegmentCount": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "artifactId",
+    "artifactPath",
+    "handoffMessage",
+    "transcriptSegmentCount",
+    "mediaRefCount",
+    "diagnosticCount",
+    "session"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `meetings.profiles.init`. */
+export const MeetingsProfilesInitInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "profileId": {
+      "description": "Meeting profile id",
+      "type": "string"
+    },
+    "source": {
+      "default": "workspace",
+      "description": "workspace|user",
+      "type": "string"
+    }
+  },
+  "required": [
+    "profileId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `meetings.profiles.init`. */
+export const MeetingsProfilesInitReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "profileDir": {
+      "type": "string"
+    },
+    "profilePath": {
+      "type": "string"
+    },
+    "sourceKind": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "sourceKind",
+    "profileDir",
+    "profilePath"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `meetings.profiles.list`. */
+export const MeetingsProfilesListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching profiles to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `meetings.profiles.list`. */
+export const MeetingsProfilesListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "chrome": {
+            "additionalProperties": false,
+            "properties": {
+              "browserChannel": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "profileDir": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "profileDir",
+              "browserChannel"
+            ],
+            "type": "object"
+          },
+          "defaults": {
+            "additionalProperties": false,
+            "properties": {
+              "capture": {
+                "type": "string"
+              },
+              "duration": {
+                "type": "string"
+              },
+              "emptyGrace": {
+                "type": "string"
+              },
+              "maxDuration": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "out": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "live": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "contextChars": {
+                "type": "number"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "includeSessionContext": {
+                "type": "boolean"
+              },
+              "initialPromptChars": {
+                "type": "number"
+              },
+              "initialPromptDelay": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tools": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "enabled",
+              "agentId",
+              "contextChars",
+              "includeSessionContext",
+              "initialPromptChars",
+              "initialPromptDelay",
+              "tools"
+            ],
+            "type": "object"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "sourceKind": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "voice": {
+            "additionalProperties": false,
+            "properties": {
+              "runtime": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "runtime"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "label",
+          "sourceKind",
+          "source",
+          "provider",
+          "chrome",
+          "voice",
+          "live",
+          "defaults"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "profiles": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "chrome": {
+            "additionalProperties": false,
+            "properties": {
+              "browserChannel": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "profileDir": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "profileDir",
+              "browserChannel"
+            ],
+            "type": "object"
+          },
+          "defaults": {
+            "additionalProperties": false,
+            "properties": {
+              "capture": {
+                "type": "string"
+              },
+              "duration": {
+                "type": "string"
+              },
+              "emptyGrace": {
+                "type": "string"
+              },
+              "maxDuration": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "out": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "live": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "contextChars": {
+                "type": "number"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "includeSessionContext": {
+                "type": "boolean"
+              },
+              "initialPromptChars": {
+                "type": "number"
+              },
+              "initialPromptDelay": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tools": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "enabled",
+              "agentId",
+              "contextChars",
+              "includeSessionContext",
+              "initialPromptChars",
+              "initialPromptDelay",
+              "tools"
+            ],
+            "type": "object"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "sourceKind": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "voice": {
+            "additionalProperties": false,
+            "properties": {
+              "runtime": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "runtime"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "label",
+          "sourceKind",
+          "source",
+          "provider",
+          "chrome",
+          "voice",
+          "live",
+          "defaults"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "profiles"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `meetings.profiles.show`. */
+export const MeetingsProfilesShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "profileId": {
+      "description": "Meeting profile id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "profileId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `meetings.profiles.show`. */
+export const MeetingsProfilesShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "chrome": {
+      "additionalProperties": false,
+      "properties": {
+        "browserChannel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profileDir": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "profileDir",
+        "browserChannel"
+      ],
+      "type": "object"
+    },
+    "defaults": {
+      "additionalProperties": false,
+      "properties": {
+        "capture": {
+          "type": "string"
+        },
+        "duration": {
+          "type": "string"
+        },
+        "emptyGrace": {
+          "type": "string"
+        },
+        "maxDuration": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "out": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "id": {
+      "type": "string"
+    },
+    "label": {
+      "type": "string"
+    },
+    "live": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contextChars": {
+          "type": "number"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "includeSessionContext": {
+          "type": "boolean"
+        },
+        "initialPromptChars": {
+          "type": "number"
+        },
+        "initialPromptDelay": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tools": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "enabled",
+        "agentId",
+        "contextChars",
+        "includeSessionContext",
+        "initialPromptChars",
+        "initialPromptDelay",
+        "tools"
+      ],
+      "type": "object"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "sourceKind": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "voice": {
+      "additionalProperties": false,
+      "properties": {
+        "runtime": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "runtime"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "label",
+    "sourceKind",
+    "source",
+    "provider",
+    "chrome",
+    "voice",
+    "live",
+    "defaults"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `meetings.profiles.validate`. */
+export const MeetingsProfilesValidateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "profileId": {
+      "description": "Optional meeting profile id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `meetings.profiles.validate`. */
+export const MeetingsProfilesValidateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "results": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "sourceKind": {
+            "type": "string"
+          },
+          "valid": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "sourceKind",
+          "source",
+          "valid"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "valid": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "valid",
+    "results"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `meetings.voice-runtimes`. */
+export const MeetingsVoiceRuntimesInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `meetings.voice-runtimes`. */
+export const MeetingsVoiceRuntimesReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "candidates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "availability": {
+            "type": "string"
+          },
+          "constraints": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "defaultModel": {
+            "type": "string"
+          },
+          "docsUrl": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "providerRuntime": {
+            "type": "string"
+          },
+          "strengths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "availability",
+          "kind",
+          "docsUrl",
+          "strengths",
+          "constraints"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "defaultRuntimeId": {
+      "type": "string"
+    },
+    "recommendation": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "defaultRuntimeId",
+    "recommendation",
+    "candidates"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `metrics.dates`. */
 export const MetricsDatesInputSchema = {
   "additionalProperties": false,
@@ -29857,6 +43205,10 @@ export const ObserversProfilesValidateReturnSchema = {
 export const ObserversRefreshInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "reconcile": {
+      "description": "attach-missing|detach-disabled|refresh-profile|full-reconcile",
+      "type": "string"
+    },
     "session": {
       "description": "Source session name or key",
       "type": "string"
@@ -29888,6 +43240,31 @@ export const ObserversRefreshReturnSchema = {
       },
       "type": "array"
     },
+    "disabled": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "mode": {
+      "enum": [
+        "attach-missing",
+        "detach-disabled",
+        "refresh-profile",
+        "full-reconcile"
+      ],
+      "type": "string"
+    },
+    "refreshedProfiles": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
     "skipped": {
       "items": {
         "additionalProperties": {},
@@ -29897,9 +43274,16 @@ export const ObserversRefreshReturnSchema = {
       "type": "array"
     },
     "source": {
-      "additionalProperties": {},
-      "properties": {},
-      "type": "object"
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "total": {
       "type": "number"
@@ -29907,8 +43291,11 @@ export const ObserversRefreshReturnSchema = {
   },
   "required": [
     "source",
+    "mode",
     "total",
     "created",
+    "disabled",
+    "refreshedProfiles",
     "bindings",
     "skipped"
   ],
@@ -30227,6 +43614,10 @@ export const ObserversRulesSetInputSchema = {
       "description": "global|agent|session|task|profile|project|tag",
       "type": "string"
     },
+    "selector": {
+      "description": "Predicate over source.*, turn.* and event.*; use 'clear' to remove",
+      "type": "string"
+    },
     "sourceAgent": {
       "description": "Match source agent id",
       "type": "string"
@@ -30384,6 +43775,13 @@ export const ObserversShowReturnSchema = {
 export const PagesCreateInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "args": {
+      "description": "[project] <slug>; project defaults to Ravi Console scope",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "console": {
       "description": "Console base URL",
       "type": "string"
@@ -30393,11 +43791,7 @@ export const PagesCreateInputSchema = {
       "type": "boolean"
     },
     "project": {
-      "description": "Console project id or slug",
-      "type": "string"
-    },
-    "slug": {
-      "description": "Hosted subdomain slug, e.g. demo for demo.ravi.page",
+      "description": "Console project id or slug; overrides saved Console scope",
       "type": "string"
     },
     "visibility": {
@@ -30406,8 +43800,7 @@ export const PagesCreateInputSchema = {
     }
   },
   "required": [
-    "project",
-    "slug"
+    "args"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -30456,6 +43849,16 @@ export const PagesCreateReturnSchema = {
     "consoleUrl": {
       "type": "string"
     },
+    "contentPublishCommand": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "projectRef": {
       "type": "string"
     },
@@ -30485,6 +43888,7 @@ export const PagesCreateReturnSchema = {
   },
   "required": [
     "success",
+    "contentPublishCommand",
     "consoleUrl",
     "projectRef",
     "site",
@@ -30497,6 +43901,13 @@ export const PagesCreateReturnSchema = {
 export const PagesDomainsInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "args": {
+      "description": "[project] <site> <hostname...>; project defaults to scope only for the non-ambiguous form",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "check": {
       "description": "Run provider readiness check after binding",
       "type": "boolean"
@@ -30505,26 +43916,13 @@ export const PagesDomainsInputSchema = {
       "description": "Console base URL",
       "type": "string"
     },
-    "hostnames": {
-      "description": "Custom hostname(s), e.g. www.example.com",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
     "project": {
-      "description": "Console project id or slug",
-      "type": "string"
-    },
-    "site": {
-      "description": "Pages site id or slug",
+      "description": "Console project id or slug; overrides saved Console scope",
       "type": "string"
     }
   },
   "required": [
-    "hostnames",
-    "project",
-    "site"
+    "args"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -30644,13 +44042,10 @@ export const PagesListInputSchema = {
       "type": "string"
     },
     "project": {
-      "description": "Console project id or slug",
+      "description": "Console project id or slug; defaults to Ravi Console scope",
       "type": "string"
     }
   },
-  "required": [
-    "project"
-  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -30792,20 +44187,493 @@ export const PagesListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `pages.update`. */
-export const PagesUpdateInputSchema = {
+/** JSON Schema for the input body of `pages.publish`. */
+export const PagesPublishInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "args": {
+      "description": "[project] [site] <source>; project defaults to Ravi Console scope and site defaults to the project Pages host",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "artifactSlug": {
+      "description": "Published artifact slug",
+      "type": "string"
+    },
+    "artifactVersion": {
+      "description": "Local artifact version number (default: latest)",
+      "type": "string"
+    },
+    "assetBase": {
+      "description": "Package asset base intent",
+      "type": "string"
+    },
+    "basePath": {
+      "description": "Package base path intent",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "description": {
+      "description": "Published artifact description",
+      "type": "string"
+    },
+    "entrypoint": {
+      "description": "Package entrypoint path, usually index.html",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Idempotency key for Console retries",
+      "type": "string"
+    },
+    "noActivate": {
+      "default": false,
+      "description": "Create publish records without activating a site release",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides saved Console scope",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Release reason sent to Console",
+      "type": "string"
+    },
+    "replaceRelease": {
+      "description": "Replace the full active route map instead of merging",
+      "type": "boolean"
+    },
+    "route": {
+      "description": "Pages route path to mount content at (default: /)",
+      "type": "string"
+    },
+    "site": {
+      "description": "Legacy site slug/id; defaults to the project Pages host",
+      "type": "string"
+    },
+    "title": {
+      "description": "Published artifact title",
+      "type": "string"
+    },
+    "uploadSession": {
+      "description": "Use an existing Console upload session",
+      "type": "string"
+    },
+    "visibility": {
+      "description": "Pages visibility: private|protected_link|public",
+      "type": "string"
+    }
+  },
+  "required": [
+    "args"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `pages.publish`. */
+export const PagesPublishReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "artifact": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "artifactVersion": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "authenticated": {
+      "const": true,
+      "type": "boolean"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "localSync": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "const": "package_source",
+              "type": "string"
+            },
+            "status": {
+              "const": "skipped",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "artifactId": {
+              "type": "string"
+            },
+            "eventType": {
+              "const": "published",
+              "type": "string"
+            },
+            "status": {
+              "const": "recorded",
+              "type": "string"
+            },
+            "versionId": {
+              "type": "string"
+            },
+            "versionNumber": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "status",
+            "artifactId",
+            "versionId",
+            "versionNumber",
+            "eventType"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "artifactId": {
+              "type": "string"
+            },
+            "error": {
+              "type": "string"
+            },
+            "status": {
+              "const": "failed",
+              "type": "string"
+            },
+            "versionId": {
+              "type": "string"
+            },
+            "versionNumber": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "status",
+            "artifactId",
+            "versionId",
+            "versionNumber",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "publish": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "release": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "routes": {
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "site": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "upload": {
+      "additionalProperties": false,
+      "properties": {
+        "attempted": {
+          "type": "number"
+        },
+        "skipped": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "attempted",
+        "skipped"
+      ],
+      "type": "object"
+    },
+    "uploadSession": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "authenticated",
+    "uploadSession",
+    "upload",
+    "artifact",
+    "artifactVersion",
+    "site",
+    "publish",
+    "release",
+    "routes",
+    "url",
+    "localSync"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `pages.published`. */
+export const PagesPublishedInputSchema = {
   "additionalProperties": false,
   "properties": {
     "console": {
       "description": "Console base URL",
       "type": "string"
     },
-    "project": {
-      "description": "Console project id or slug",
+    "limit": {
+      "description": "Maximum pages to return (default: 50)",
       "type": "string"
     },
-    "site": {
-      "description": "Pages site id or slug",
+    "offset": {
+      "description": "Number of pages to skip (default: 0)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; defaults to Ravi Console scope",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `pages.published`. */
+export const PagesPublishedReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "consoleUrl": {
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pages": {
+      "items": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "total",
+    "pagination",
+    "pages",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `pages.update`. */
+export const PagesUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "args": {
+      "description": "[project] <site>; project defaults to Ravi Console scope",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides saved Console scope",
       "type": "string"
     },
     "visibility": {
@@ -30814,8 +44682,7 @@ export const PagesUpdateInputSchema = {
     }
   },
   "required": [
-    "project",
-    "site"
+    "args"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -30913,27 +44780,24 @@ export const PagesUpdateReturnSchema = {
 export const PagesVisibilityInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "args": {
+      "description": "[project] <site> <visibility>; project defaults to Ravi Console scope",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "console": {
       "description": "Console base URL",
       "type": "string"
     },
     "project": {
-      "description": "Console project id or slug",
-      "type": "string"
-    },
-    "site": {
-      "description": "Pages site id or slug",
-      "type": "string"
-    },
-    "visibility": {
-      "description": "private|protected_link|public",
+      "description": "Console project id or slug; overrides saved Console scope",
       "type": "string"
     }
   },
   "required": [
-    "project",
-    "site",
-    "visibility"
+    "args"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -31027,28 +44891,188 @@ export const PagesVisibilityReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `permissions.check`. */
-export const PermissionsCheckInputSchema = {
+/** JSON Schema for the input body of `permissions.allow`. */
+export const PermissionsAllowInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "object": {
-      "description": "Object (e.g., group:contacts, session:dev-grupo1)",
+    "agent": {
+      "description": "Comma-separated executor agents whose runtime ceiling must include the profile capabilities",
       "type": "string"
     },
-    "permission": {
-      "description": "Permission (e.g., execute, access, admin)",
+    "apply": {
+      "description": "Apply the planned provider-owned mutations",
+      "type": "boolean"
+    },
+    "capabilities": {
+      "description": "Comma-separated capabilities, e.g. mutate:image:generate,execute:executable:curl",
       "type": "string"
     },
-    "subject": {
-      "description": "Subject (e.g., agent:dev)",
+    "description": {
+      "description": "Description when creating/updating the profile tag",
+      "type": "string"
+    },
+    "label": {
+      "description": "Human label when creating/updating the profile tag",
+      "type": "string"
+    },
+    "profile": {
+      "description": "Permission profile/tag name, with or without permission- prefix",
+      "type": "string"
+    },
+    "to": {
+      "description": "Comma-separated subjects to receive the profile. Prefer agent:<id>; contact:<id> is legacy/user-overlay.",
       "type": "string"
     }
   },
   "required": [
-    "object",
-    "permission",
-    "subject"
+    "profile"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.allow`. */
+export const PermissionsAllowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentCeilings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "capabilities": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "objectId": {
+            "type": "string"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "permission",
+          "objectType",
+          "objectId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "changedCount": {
+      "type": "number"
+    },
+    "description": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "label": {
+      "type": "string"
+    },
+    "nextCommand": {
+      "type": "string"
+    },
+    "operations": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "capability": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "planned",
+              "applied",
+              "unchanged"
+            ],
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "status",
+          "message"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "profile": {
+      "type": "string"
+    },
+    "tagSlug": {
+      "type": "string"
+    },
+    "targets": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "dryRun",
+    "profile",
+    "tagSlug",
+    "label",
+    "capabilities",
+    "targets",
+    "agentCeilings",
+    "operations",
+    "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `permissions.check`. */
+export const PermissionsCheckInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "localOperator": {
+      "description": "Evaluate through explicit operator-control local path",
+      "type": "boolean"
+    },
+    "objectId": {
+      "description": "Object id",
+      "type": "string"
+    },
+    "objectType": {
+      "description": "Object type",
+      "type": "string"
+    },
+    "permission": {
+      "description": "Permission/relation to check",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -31059,795 +45083,738 @@ export const PermissionsCheckReturnSchema = {
     "allowed": {
       "type": "boolean"
     },
-    "object": {
+    "decision": {
       "additionalProperties": false,
       "properties": {
-        "id": {
-          "type": "string"
-        },
-        "raw": {
-          "type": "string"
-        },
-        "type": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "raw",
-        "type",
-        "id"
-      ],
-      "type": "object"
-    },
-    "permission": {
-      "type": "string"
-    },
-    "subject": {
-      "additionalProperties": false,
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "raw": {
-          "type": "string"
-        },
-        "type": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "raw",
-        "type",
-        "id"
-      ],
-      "type": "object"
-    }
-  },
-  "required": [
-    "subject",
-    "permission",
-    "object",
-    "allowed"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `permissions.clear`. */
-export const PermissionsClearInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "all": {
-      "description": "Clear ALL relations (including config)",
-      "type": "boolean"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `permissions.clear`. */
-export const PermissionsClearReturnSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "changedCount": {
-      "type": "number"
-    },
-    "status": {
-      "const": "cleared",
-      "type": "string"
-    },
-    "target": {
-      "additionalProperties": {},
-      "properties": {
-        "type": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "type"
-      ],
-      "type": "object"
-    }
-  },
-  "required": [
-    "target",
-    "changedCount",
-    "status"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `permissions.grant`. */
-export const PermissionsGrantInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "object": {
-      "description": "Object (e.g., system:*, group:contacts, session:dev-*)",
-      "type": "string"
-    },
-    "relation": {
-      "description": "Relation (e.g., admin, access, execute, write_contacts)",
-      "type": "string"
-    },
-    "subject": {
-      "description": "Subject (e.g., agent:dev)",
-      "type": "string"
-    }
-  },
-  "required": [
-    "object",
-    "relation",
-    "subject"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `permissions.grant`. */
-export const PermissionsGrantReturnSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "changedCount": {
-      "type": "number"
-    },
-    "relation": {
-      "additionalProperties": {},
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "object": {
-          "type": "string"
-        },
-        "objectId": {
-          "type": "string"
-        },
-        "objectMembers": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "objectType": {
-          "type": "string"
-        },
-        "relation": {
-          "type": "string"
-        },
-        "source": {
-          "type": "string"
-        },
-        "subject": {
-          "type": "string"
-        },
-        "subjectId": {
-          "type": "string"
-        },
-        "subjectType": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "subjectType",
-        "subjectId",
-        "subject",
-        "relation",
-        "objectType",
-        "objectId",
-        "object"
-      ],
-      "type": "object"
-    },
-    "status": {
-      "const": "granted",
-      "type": "string"
-    },
-    "target": {
-      "additionalProperties": {},
-      "properties": {
-        "type": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "type"
-      ],
-      "type": "object"
-    },
-    "warnings": {
-      "items": {
-        "additionalProperties": {},
-        "propertyNames": {
-          "type": "string"
-        },
-        "type": "object"
-      },
-      "type": "array"
-    }
-  },
-  "required": [
-    "target",
-    "changedCount",
-    "status",
-    "relation",
-    "warnings"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `permissions.init`. */
-export const PermissionsInitInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "subject": {
-      "description": "Subject (e.g., agent:dev)",
-      "type": "string"
-    },
-    "template": {
-      "description": "Template: sdk-tools, all-tools, safe-executables, full-access, tool-groups",
-      "type": "string"
-    }
-  },
-  "required": [
-    "subject",
-    "template"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `permissions.init`. */
-export const PermissionsInitReturnSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "changedCount": {
-      "type": "number"
-    },
-    "relations": {
-      "items": {
-        "additionalProperties": {},
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "object": {
-            "type": "string"
-          },
-          "objectId": {
-            "type": "string"
-          },
-          "objectMembers": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "objectType": {
-            "type": "string"
-          },
-          "relation": {
-            "type": "string"
-          },
-          "source": {
-            "type": "string"
-          },
-          "subject": {
-            "type": "string"
-          },
-          "subjectId": {
-            "type": "string"
-          },
-          "subjectType": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "subjectType",
-          "subjectId",
-          "subject",
-          "relation",
-          "objectType",
-          "objectId",
-          "object"
-        ],
-        "type": "object"
-      },
-      "type": "array"
-    },
-    "status": {
-      "const": "applied",
-      "type": "string"
-    },
-    "target": {
-      "additionalProperties": {},
-      "properties": {
-        "type": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "type"
-      ],
-      "type": "object"
-    }
-  },
-  "required": [
-    "target",
-    "changedCount",
-    "status",
-    "relations"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `permissions.list`. */
-export const PermissionsListInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "limit": {
-      "description": "Page size (default: 50, max: 500)",
-      "type": "string"
-    },
-    "object": {
-      "description": "Filter by object (e.g., group:contacts)",
-      "type": "string"
-    },
-    "offset": {
-      "description": "Number of matching relations to skip (default: 0)",
-      "type": "string"
-    },
-    "relation": {
-      "description": "Filter by relation",
-      "type": "string"
-    },
-    "source": {
-      "description": "Filter by source (config|manual)",
-      "type": "string"
-    },
-    "subject": {
-      "description": "Filter by subject (e.g., agent:dev)",
-      "type": "string"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `permissions.list`. */
-export const PermissionsListReturnSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "filter": {
-      "additionalProperties": {},
-      "properties": {
-        "objectId": {
-          "type": "string"
-        },
-        "objectType": {
-          "type": "string"
-        },
-        "relation": {
-          "type": "string"
-        },
-        "source": {
-          "type": "string"
-        },
-        "subjectId": {
-          "type": "string"
-        },
-        "subjectType": {
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "items": {
-      "items": {
-        "additionalProperties": {},
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "object": {
-            "type": "string"
-          },
-          "objectId": {
-            "type": "string"
-          },
-          "objectMembers": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "objectType": {
-            "type": "string"
-          },
-          "relation": {
-            "type": "string"
-          },
-          "source": {
-            "type": "string"
-          },
-          "subject": {
-            "type": "string"
-          },
-          "subjectId": {
-            "type": "string"
-          },
-          "subjectType": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "subjectType",
-          "subjectId",
-          "subject",
-          "relation",
-          "objectType",
-          "objectId",
-          "object"
-        ],
-        "type": "object"
-      },
-      "type": "array"
-    },
-    "pagination": {
-      "additionalProperties": false,
-      "properties": {
-        "hasMore": {
+        "allowed": {
           "type": "boolean"
         },
-        "limit": {
-          "type": "number"
-        },
-        "nextCommand": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "nextOffset": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "offset": {
-          "type": "number"
-        },
-        "returned": {
-          "type": "number"
-        },
-        "total": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "limit",
-        "offset",
-        "returned",
-        "total",
-        "hasMore",
-        "nextOffset",
-        "nextCommand"
-      ],
-      "type": "object"
-    },
-    "relations": {
-      "items": {
-        "additionalProperties": {},
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "object": {
-            "type": "string"
-          },
-          "objectId": {
-            "type": "string"
-          },
-          "objectMembers": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "objectType": {
-            "type": "string"
-          },
-          "relation": {
-            "type": "string"
-          },
-          "source": {
-            "type": "string"
-          },
-          "subject": {
-            "type": "string"
-          },
-          "subjectId": {
-            "type": "string"
-          },
-          "subjectType": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "subjectType",
-          "subjectId",
-          "subject",
-          "relation",
-          "objectType",
-          "objectId",
-          "object"
-        ],
-        "type": "object"
-      },
-      "type": "array"
-    },
-    "total": {
-      "type": "number"
-    }
-  },
-  "required": [
-    "total",
-    "pagination",
-    "filter",
-    "items",
-    "relations"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `permissions.revoke`. */
-export const PermissionsRevokeInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "object": {
-      "description": "Object (e.g., system:*, group:contacts)",
-      "type": "string"
-    },
-    "relation": {
-      "description": "Relation",
-      "type": "string"
-    },
-    "subject": {
-      "description": "Subject (e.g., agent:dev)",
-      "type": "string"
-    }
-  },
-  "required": [
-    "object",
-    "relation",
-    "subject"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `permissions.revoke`. */
-export const PermissionsRevokeReturnSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "changedCount": {
-      "type": "number"
-    },
-    "relation": {
-      "additionalProperties": {},
-      "properties": {
-        "id": {
+        "contextId": {
           "type": "string"
         },
-        "object": {
+        "decision": {
+          "enum": [
+            "allow",
+            "deny",
+            "needs_approval",
+            "not_applicable"
+          ],
           "type": "string"
+        },
+        "durationMs": {
+          "type": "number"
+        },
+        "evidence": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "objectId": {
+                "type": "string"
+              },
+              "objectType": {
+                "type": "string"
+              },
+              "permission": {
+                "type": "string"
+              },
+              "providerId": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
         },
         "objectId": {
           "type": "string"
         },
-        "objectMembers": {
+        "objectType": {
+          "type": "string"
+        },
+        "permission": {
+          "type": "string"
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "providerVersion": {
+          "type": "string"
+        },
+        "reasonCode": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "subject": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "decision",
+        "allowed",
+        "providerId",
+        "providerVersion",
+        "reasonCode",
+        "permission",
+        "objectType",
+        "objectId"
+      ],
+      "type": "object"
+    },
+    "guidance": {
+      "additionalProperties": false,
+      "properties": {
+        "breakGlass": {
+          "type": "string"
+        },
+        "canonicalCapability": {
+          "type": "string"
+        },
+        "inspectCommands": {
           "items": {
             "type": "string"
           },
           "type": "array"
         },
-        "objectType": {
-          "type": "string"
-        },
-        "relation": {
-          "type": "string"
-        },
-        "source": {
-          "type": "string"
-        },
-        "subject": {
-          "type": "string"
-        },
-        "subjectId": {
-          "type": "string"
-        },
-        "subjectType": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "subjectType",
-        "subjectId",
-        "subject",
-        "relation",
-        "objectType",
-        "objectId",
-        "object"
-      ],
-      "type": "object"
-    },
-    "remainingIndividualRelations": {
-      "items": {
-        "additionalProperties": {},
-        "properties": {
-          "id": {
+        "nextSteps": {
+          "items": {
             "type": "string"
           },
-          "object": {
-            "type": "string"
-          },
-          "objectId": {
-            "type": "string"
-          },
-          "objectMembers": {
-            "items": {
+          "type": "array"
+        },
+        "preferredPath": {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
               "type": "string"
             },
-            "type": "array"
+            "message": {
+              "type": "string"
+            },
+            "suggestedTags": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "capabilities": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "slug": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "slug",
+                  "label",
+                  "capabilities"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
           },
-          "objectType": {
-            "type": "string"
-          },
-          "relation": {
-            "type": "string"
-          },
-          "source": {
-            "type": "string"
-          },
-          "subject": {
-            "type": "string"
-          },
-          "subjectId": {
-            "type": "string"
-          },
-          "subjectType": {
-            "type": "string"
-          }
+          "required": [
+            "kind",
+            "message",
+            "suggestedTags"
+          ],
+          "type": "object"
         },
-        "required": [
-          "subjectType",
-          "subjectId",
-          "subject",
-          "relation",
-          "objectType",
-          "objectId",
-          "object"
-        ],
-        "type": "object"
-      },
-      "type": "array"
-    },
-    "status": {
-      "const": "revoked",
-      "type": "string"
-    },
-    "target": {
-      "additionalProperties": {},
-      "properties": {
-        "type": {
+        "rawCapabilityFallback": {
+          "type": "string"
+        },
+        "requestShape": {
+          "additionalProperties": false,
+          "properties": {
+            "profileOrTag": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "ttl": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scope",
+            "profileOrTag",
+            "reason",
+            "ttl"
+          ],
+          "type": "object"
+        },
+        "scope": {
           "type": "string"
         }
       },
       "required": [
-        "type"
+        "canonicalCapability",
+        "scope",
+        "inspectCommands",
+        "preferredPath",
+        "rawCapabilityFallback",
+        "breakGlass",
+        "requestShape",
+        "nextSteps"
       ],
       "type": "object"
     }
   },
   "required": [
-    "target",
-    "changedCount",
-    "status",
-    "relation",
-    "remainingIndividualRelations"
+    "allowed",
+    "decision"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `permissions.sync`. */
-export const PermissionsSyncInputSchema = {
+/** JSON Schema for the input body of `permissions.materialize`. */
+export const PermissionsMaterializeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "subjectId": {
+      "description": "Subject id",
+      "type": "string"
+    },
+    "subjectType": {
+      "description": "Subject type",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.materialize`. */
+export const PermissionsMaterializeReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "capabilities": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "objectId": {
+            "type": "string"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "permission",
+          "objectType",
+          "objectId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "guidance": {
+      "additionalProperties": false,
+      "properties": {
+        "breakGlass": {
+          "type": "string"
+        },
+        "recurringAccess": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "recurringAccess",
+        "breakGlass"
+      ],
+      "type": "object"
+    },
+    "subject": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "subject",
+    "capabilities",
+    "guidance"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `permissions.resolve`. */
+export const PermissionsResolveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apply": {
+      "description": "Apply the planned provider-owned mutations",
+      "type": "boolean"
+    },
+    "capabilities": {
+      "description": "Optional capabilities to merge into the profile; defaults to the denied capability",
+      "type": "string"
+    },
+    "denialId": {
+      "description": "Permission denial id",
+      "type": "string"
+    },
+    "profile": {
+      "description": "Permission profile/tag to use instead of the suggested one",
+      "type": "string"
+    }
+  },
+  "required": [
+    "denialId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.resolve`. */
+export const PermissionsResolveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentCeilings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "capabilities": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "objectId": {
+            "type": "string"
+          },
+          "objectType": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "permission",
+          "objectType",
+          "objectId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "changedCount": {
+      "type": "number"
+    },
+    "denial": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contextId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "number"
+        },
+        "missingCapability": {
+          "type": "string"
+        },
+        "sessionName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "subject": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "missingCapability",
+        "subject",
+        "agentId",
+        "sessionName",
+        "contextId"
+      ],
+      "type": "object"
+    },
+    "description": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "guidance": {
+      "additionalProperties": false,
+      "properties": {
+        "breakGlass": {
+          "type": "string"
+        },
+        "canonicalCapability": {
+          "type": "string"
+        },
+        "inspectCommands": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "nextSteps": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "preferredPath": {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "suggestedTags": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "capabilities": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "slug": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "slug",
+                  "label",
+                  "capabilities"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "message",
+            "suggestedTags"
+          ],
+          "type": "object"
+        },
+        "rawCapabilityFallback": {
+          "type": "string"
+        },
+        "requestShape": {
+          "additionalProperties": false,
+          "properties": {
+            "profileOrTag": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "ttl": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "scope",
+            "profileOrTag",
+            "reason",
+            "ttl"
+          ],
+          "type": "object"
+        },
+        "scope": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "canonicalCapability",
+        "scope",
+        "inspectCommands",
+        "preferredPath",
+        "rawCapabilityFallback",
+        "breakGlass",
+        "requestShape",
+        "nextSteps"
+      ],
+      "type": "object"
+    },
+    "label": {
+      "type": "string"
+    },
+    "nextCommand": {
+      "type": "string"
+    },
+    "operations": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "capability": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "planned",
+              "applied",
+              "unchanged"
+            ],
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "status",
+          "message"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "profile": {
+      "type": "string"
+    },
+    "tagSlug": {
+      "type": "string"
+    },
+    "targets": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "dryRun",
+    "profile",
+    "tagSlug",
+    "label",
+    "capabilities",
+    "targets",
+    "agentCeilings",
+    "operations",
+    "changedCount",
+    "denial"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `permissions.status`. */
+export const PermissionsStatusInputSchema = {
   "additionalProperties": false,
   "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the return shape of `permissions.sync`. */
-export const PermissionsSyncReturnSchema = {
+/** JSON Schema for the return shape of `permissions.status`. */
+export const PermissionsStatusReturnSchema = {
   "additionalProperties": false,
   "properties": {
-    "changedCount": {
-      "type": "number"
-    },
-    "relations": {
+    "authorizationProviders": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "id": {
             "type": "string"
           },
-          "object": {
-            "type": "string"
+          "required": {
+            "type": "boolean"
           },
-          "objectId": {
-            "type": "string"
-          },
-          "objectMembers": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "objectType": {
-            "type": "string"
-          },
-          "relation": {
-            "type": "string"
-          },
-          "source": {
-            "type": "string"
-          },
-          "subject": {
-            "type": "string"
-          },
-          "subjectId": {
-            "type": "string"
-          },
-          "subjectType": {
+          "version": {
             "type": "string"
           }
         },
         "required": [
-          "subjectType",
-          "subjectId",
-          "subject",
-          "relation",
-          "objectType",
-          "objectId",
-          "object"
+          "id",
+          "version",
+          "required"
         ],
         "type": "object"
       },
       "type": "array"
     },
-    "status": {
-      "const": "synced",
-      "type": "string"
+    "capabilityMaterializers": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "required"
+        ],
+        "type": "object"
+      },
+      "type": "array"
     },
-    "target": {
-      "additionalProperties": {},
+    "guidance": {
+      "additionalProperties": false,
       "properties": {
-        "type": {
+        "breakGlass": {
+          "type": "string"
+        },
+        "inspect": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "recurringAccess": {
           "type": "string"
         }
       },
       "required": [
-        "type"
+        "inspect",
+        "recurringAccess",
+        "breakGlass"
       ],
       "type": "object"
+    },
+    "mutationCommands": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "enabled",
+        "message"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "const": "provider-runtime",
+      "type": "string"
     }
   },
   "required": [
-    "target",
-    "changedCount",
     "status",
-    "relations"
+    "mutationCommands",
+    "guidance",
+    "authorizationProviders",
+    "capabilityMaterializers"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -35173,6 +49140,908 @@ export const RuntimeCredentialsStatusReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `runtime.presets.create`. */
+export const RuntimePresetsCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "description": "Human-readable description",
+      "type": "string"
+    },
+    "disabled": {
+      "description": "Create in the disabled state",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Stable preset id/slug",
+      "type": "string"
+    },
+    "model": {
+      "description": "Model selector",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Runtime provider id (immutable)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.presets.create`. */
+export const RuntimePresetsCreateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "create",
+        "set-model",
+        "enable",
+        "disable",
+        "delete"
+      ],
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "preset": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "model",
+        "description",
+        "enabled",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "dryRun",
+    "preset"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.presets.delete`. */
+export const RuntimePresetsDeleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dryRun": {
+      "description": "Preview without persisting",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Preset id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.presets.delete`. */
+export const RuntimePresetsDeleteReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "create",
+        "set-model",
+        "enable",
+        "disable",
+        "delete"
+      ],
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "preset": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "model",
+        "description",
+        "enabled",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "dryRun",
+    "preset"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.presets.disable`. */
+export const RuntimePresetsDisableInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dryRun": {
+      "description": "Preview without persisting or bumping the version",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Preset id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.presets.disable`. */
+export const RuntimePresetsDisableReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "create",
+        "set-model",
+        "enable",
+        "disable",
+        "delete"
+      ],
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "preset": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "model",
+        "description",
+        "enabled",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "dryRun",
+    "preset"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.presets.enable`. */
+export const RuntimePresetsEnableInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dryRun": {
+      "description": "Preview without persisting or bumping the version",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Preset id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.presets.enable`. */
+export const RuntimePresetsEnableReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "create",
+        "set-model",
+        "enable",
+        "disable",
+        "delete"
+      ],
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "preset": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "model",
+        "description",
+        "enabled",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "dryRun",
+    "preset"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.presets.impact`. */
+export const RuntimePresetsImpactInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Preset id",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of agents to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.presets.impact`. */
+export const RuntimePresetsImpactReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "effectiveModel": {
+            "type": "string"
+          },
+          "modelSource": {
+            "const": "agent_preset",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "shadowingSessions": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "agentId",
+          "name",
+          "provider",
+          "effectiveModel",
+          "modelSource",
+          "shadowingSessions"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "correctionCommand": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "limit": {
+      "type": "number"
+    },
+    "model": {
+      "type": "string"
+    },
+    "offset": {
+      "type": "number"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "presetId": {
+      "type": "string"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "referenced": {
+      "type": "boolean"
+    },
+    "referencingAgentsTotal": {
+      "type": "number"
+    },
+    "shadowingSessionsTotal": {
+      "type": "number"
+    },
+    "version": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "presetId",
+    "version",
+    "provider",
+    "model",
+    "enabled",
+    "referencingAgentsTotal",
+    "shadowingSessionsTotal",
+    "agents",
+    "limit",
+    "offset",
+    "referenced",
+    "correctionCommand",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.presets.list`. */
+export const RuntimePresetsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "disabled": {
+      "description": "Only disabled presets",
+      "type": "boolean"
+    },
+    "enabled": {
+      "description": "Only enabled presets",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of presets to skip (default: 0)",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Filter by provider",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.presets.list`. */
+export const RuntimePresetsListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "presets": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "model",
+          "description",
+          "enabled",
+          "version",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "presets"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.presets.set`. */
+export const RuntimePresetsSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "dryRun": {
+      "description": "Preview without persisting or bumping the version",
+      "type": "boolean"
+    },
+    "field": {
+      "description": "Field to set (model)",
+      "type": "string"
+    },
+    "id": {
+      "description": "Preset id",
+      "type": "string"
+    },
+    "value": {
+      "description": "New value",
+      "type": "string"
+    }
+  },
+  "required": [
+    "field",
+    "id",
+    "value"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.presets.set`. */
+export const RuntimePresetsSetReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "create",
+        "set-model",
+        "enable",
+        "disable",
+        "delete"
+      ],
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "preset": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "model",
+        "description",
+        "enabled",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "dryRun",
+    "preset"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `runtime.presets.show`. */
+export const RuntimePresetsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Preset id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `runtime.presets.show`. */
+export const RuntimePresetsShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "preset": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "type": "number"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "model",
+        "description",
+        "enabled",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "referencingAgentsTotal": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "preset",
+    "referencingAgentsTotal"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sdk.client.check`. */
 export const SdkClientCheckInputSchema = {
   "additionalProperties": false,
@@ -35338,7 +50207,7 @@ export const SdkOpenapiEmitInputSchema = {
   "additionalProperties": false,
   "properties": {
     "out": {
-      "description": "Write spec JSON to this path",
+      "description": "Write spec JSON to this path (default: docs/openapi.json)",
       "type": "string"
     },
     "stdout": {
@@ -35571,6 +50440,28 @@ export const SelfContextInputSchema = {
 export const SelfContextReturnSchema = {
   "additionalProperties": {},
   "properties": {
+    "actor": {
+      "additionalProperties": {},
+      "properties": {
+        "data": {},
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "missing",
+            "unavailable"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
     "chat": {
       "additionalProperties": {},
       "properties": {
@@ -35737,6 +50628,7 @@ export const SelfContextReturnSchema = {
     "depth",
     "limit",
     "identity",
+    "actor",
     "session",
     "chat",
     "route",
@@ -35926,6 +50818,28 @@ export const SelfWhoamiInputSchema = {
 export const SelfWhoamiReturnSchema = {
   "additionalProperties": {},
   "properties": {
+    "actor": {
+      "additionalProperties": {},
+      "properties": {
+        "data": {},
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "missing",
+            "unavailable"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
     "chat": {
       "additionalProperties": {},
       "properties": {
@@ -36010,6 +50924,7 @@ export const SelfWhoamiReturnSchema = {
   "required": [
     "generatedAt",
     "identity",
+    "actor",
     "session",
     "chat",
     "route",
@@ -36768,12 +51683,294 @@ export const SessionsFollowupsSnoozeReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `sessions.followups.update`. */
+export const SessionsFollowupsUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "barrier": {
+      "description": "Delivery barrier: followup|steer|p0|p1|p2|p3",
+      "type": "string"
+    },
+    "description": {
+      "description": "Update description; pass empty string to clear",
+      "type": "string"
+    },
+    "id": {
+      "description": "Followup cadence id",
+      "type": "string"
+    },
+    "message": {
+      "description": "Update default followup message template",
+      "type": "string"
+    },
+    "name": {
+      "description": "Update cadence name",
+      "type": "string"
+    },
+    "recalculateNext": {
+      "description": "Recalculate next run from the updated schedule",
+      "type": "boolean"
+    },
+    "step": {
+      "description": "Replace idle followup steps; repeat or quote, e.g. --step '2h=First' --step '3h=Second'",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.followups.update`. */
+export const SessionsFollowupsUpdateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "followup": {
+      "additionalProperties": false,
+      "properties": {
+        "createdAt": {
+          "type": "number"
+        },
+        "deliveryBarrier": {
+          "enum": [
+            "immediate_interrupt",
+            "after_tool",
+            "after_response",
+            "after_task"
+          ],
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastError": {
+          "type": "string"
+        },
+        "lastRunAt": {
+          "type": "number"
+        },
+        "lastRunAtIso": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastStatus": {
+          "enum": [
+            "ok",
+            "skipped",
+            "failed"
+          ],
+          "type": "string"
+        },
+        "messageTemplate": {
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "nextRunAt": {
+          "type": "number"
+        },
+        "nextRunAtIso": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "type": "string"
+        },
+        "schedule": {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "type": "number"
+            },
+            "cron": {
+              "type": "string"
+            },
+            "every": {
+              "type": "number"
+            },
+            "steps": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "afterMs": {
+                    "type": "number"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "messageTemplate": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "afterMs",
+                  "messageTemplate"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "timezone": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "every",
+                "at",
+                "cron"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        "scheduleDescription": {
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "afterMs": {
+                "type": "number"
+              },
+              "label": {
+                "type": "string"
+              },
+              "messageTemplate": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "afterMs",
+              "messageTemplate"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "targetRef": {
+          "type": "string"
+        },
+        "targetType": {
+          "enum": [
+            "session",
+            "chat",
+            "reading_list"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "enabled",
+        "ownerType",
+        "ownerId",
+        "targetType",
+        "targetRef",
+        "schedule",
+        "deliveryBarrier",
+        "messageTemplate",
+        "createdAt",
+        "updatedAt",
+        "scheduleDescription",
+        "nextRunAtIso",
+        "lastRunAtIso"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "followup"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.goal`. */
 export const SessionsGoalInputSchema = {
   "additionalProperties": false,
   "properties": {
     "action": {
-      "description": "get|set|create|pause|resume|complete|clear|account",
+      "description": "get|set|create|pause|resume|block|complete|clear|account",
       "type": "string"
     },
     "budget": {
@@ -36790,6 +51987,10 @@ export const SessionsGoalInputSchema = {
     },
     "project": {
       "description": "Optional project id link for set/create",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Concrete reason for blocking",
       "type": "string"
     },
     "seconds": {
@@ -36814,8 +52015,139 @@ export const SessionsGoalInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.goal`. */
 export const SessionsGoalReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "goal": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "blockedReason": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "goalId": {
+              "type": "string"
+            },
+            "objective": {
+              "type": "string"
+            },
+            "projectId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sessionKey": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "active",
+                "paused",
+                "budget_limited",
+                "blocked",
+                "complete"
+              ],
+              "type": "string"
+            },
+            "taskId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "timeUsedSeconds": {
+              "type": "number"
+            },
+            "tokenBudget": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "tokensUsed": {
+              "type": "number"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "sessionKey",
+            "goalId",
+            "objective",
+            "status",
+            "tokenBudget",
+            "tokensUsed",
+            "timeUsedSeconds",
+            "taskId",
+            "projectId",
+            "blockedReason",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "session": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "sessionKey": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionKey",
+        "agentId",
+        "label"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "session",
+    "goal"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -37103,9 +52435,142 @@ export const SessionsReadInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.read`. */
 export const SessionsReadReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
-  "type": "object"
+  "anyOf": [
+    {
+      "additionalProperties": {},
+      "properties": {
+        "count": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "messages": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "role": {
+                    "enum": [
+                      "user",
+                      "assistant"
+                    ],
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "time": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "role",
+                  "text",
+                  "time"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "type": "number"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "role",
+                  "content",
+                  "createdAt",
+                  "source"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "session": {
+          "additionalProperties": {},
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "sessionKey": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionKey",
+            "label",
+            "agentId"
+          ],
+          "type": "object"
+        },
+        "totalMessages": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "transcript": {
+          "additionalProperties": {},
+          "properties": {
+            "available": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "available"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "session",
+        "transcript",
+        "messages"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": {},
+      "properties": {
+        "error": {
+          "type": "string"
+        },
+        "messageId": {
+          "type": "string"
+        },
+        "meta": {},
+        "ok": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    }
+  ]
 } as const satisfies SdkJsonSchema;
 
 /** JSON Schema for the input body of `sessions.rename`. */
@@ -37573,7 +53038,98 @@ export const SessionsSendInputSchema = {
 /** JSON Schema for the return shape of `sessions.send`. */
 export const SessionsSendReturnSchema = {
   "additionalProperties": {},
-  "properties": {},
+  "properties": {
+    "action": {
+      "const": "send",
+      "type": "string"
+    },
+    "createdSession": {
+      "type": "boolean"
+    },
+    "delivery": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "mode": {
+      "enum": [
+        "fire-and-forget",
+        "wait"
+      ],
+      "type": "string"
+    },
+    "promptLength": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "published": {
+      "type": "boolean"
+    },
+    "response": {
+      "additionalProperties": false,
+      "properties": {
+        "length": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "length",
+        "text"
+      ],
+      "type": "object"
+    },
+    "session": {
+      "additionalProperties": {},
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "sessionKey": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionKey",
+        "label",
+        "agentId"
+      ],
+      "type": "object"
+    },
+    "thread": {
+      "anyOf": [
+        {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "action",
+    "mode",
+    "published",
+    "createdSession",
+    "session",
+    "promptLength",
+    "delivery",
+    "thread"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -37604,6 +53160,472 @@ export const SessionsSetDisplayReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `sessions.set-effort`. */
+export const SessionsSetEffortInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "level": {
+      "description": "Reasoning effort (none|minimal|low|medium|high|xhigh|max|ultra) or 'clear'",
+      "type": "string"
+    },
+    "nameOrKey": {
+      "description": "Session name or key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "level",
+    "nameOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.set-effort`. */
+export const SessionsSetEffortReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "set-effort",
+      "type": "string"
+    },
+    "after": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "effectiveModel": {
+              "type": "string"
+            },
+            "effectiveProvider": {
+              "type": "string"
+            },
+            "effortOverride": {
+              "enum": [
+                "none",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max",
+                "ultra"
+              ],
+              "type": "string"
+            },
+            "ephemeral": {
+              "type": "boolean"
+            },
+            "expiresAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "label": {
+              "type": "string"
+            },
+            "modelOverride": {
+              "type": "string"
+            },
+            "modelPresetId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "modelPresetVersion": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "modelSource": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "runtimeOptions": {
+              "additionalProperties": false,
+              "properties": {
+                "effort": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "source": {
+                      "enum": [
+                        "session_override",
+                        "agent_default",
+                        "runtime_default"
+                      ],
+                      "type": "string"
+                    },
+                    "value": {
+                      "enum": [
+                        "none",
+                        "minimal",
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max",
+                        "ultra"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "source"
+                  ],
+                  "type": "object"
+                },
+                "model": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "source": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "source"
+                  ],
+                  "type": "object"
+                },
+                "thinking": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "source": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "value": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "source"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "model",
+                "effort",
+                "thinking"
+              ],
+              "type": "object"
+            },
+            "sessionKey": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionKey",
+            "label",
+            "agentId",
+            "effectiveProvider",
+            "effectiveModel",
+            "modelSource",
+            "modelPresetId",
+            "modelPresetVersion",
+            "ephemeral",
+            "expiresAt",
+            "runtimeOptions"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "appliesOn": {
+      "const": "next-turn-runtime-restart",
+      "type": "string"
+    },
+    "before": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "effectiveModel": {
+          "type": "string"
+        },
+        "effectiveProvider": {
+          "type": "string"
+        },
+        "effortOverride": {
+          "enum": [
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra"
+          ],
+          "type": "string"
+        },
+        "ephemeral": {
+          "type": "boolean"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "modelOverride": {
+          "type": "string"
+        },
+        "modelPresetId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelPresetVersion": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelSource": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "runtimeOptions": {
+          "additionalProperties": false,
+          "properties": {
+            "effort": {
+              "additionalProperties": false,
+              "properties": {
+                "source": {
+                  "enum": [
+                    "session_override",
+                    "agent_default",
+                    "runtime_default"
+                  ],
+                  "type": "string"
+                },
+                "value": {
+                  "enum": [
+                    "none",
+                    "minimal",
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh",
+                    "max",
+                    "ultra"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "source"
+              ],
+              "type": "object"
+            },
+            "model": {
+              "additionalProperties": false,
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "source"
+              ],
+              "type": "object"
+            },
+            "thinking": {
+              "additionalProperties": false,
+              "properties": {
+                "source": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "value",
+                "source"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "model",
+            "effort",
+            "thinking"
+          ],
+          "type": "object"
+        },
+        "sessionKey": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionKey",
+        "label",
+        "agentId",
+        "effectiveProvider",
+        "effectiveModel",
+        "modelSource",
+        "modelPresetId",
+        "modelPresetVersion",
+        "ephemeral",
+        "expiresAt",
+        "runtimeOptions"
+      ],
+      "type": "object"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "effectiveEffort": {
+      "enum": [
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "type": "string"
+    },
+    "effectiveEffortSource": {
+      "enum": [
+        "session_override",
+        "agent_default",
+        "runtime_default"
+      ],
+      "type": "string"
+    },
+    "effortOverride": {
+      "anyOf": [
+        {
+          "enum": [
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionKey": {
+      "type": "string"
+    },
+    "sessionName": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "sessionKey",
+    "sessionName",
+    "before",
+    "after",
+    "effortOverride",
+    "effectiveEffort",
+    "effectiveEffortSource",
+    "appliesOn"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.set-model`. */
 export const SessionsSetModelInputSchema = {
   "additionalProperties": false,
@@ -37628,6 +53650,443 @@ export const SessionsSetModelInputSchema = {
 export const SessionsSetModelReturnSchema = {
   "additionalProperties": {},
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.set-provider`. */
+export const SessionsSetProviderInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "nameOrKey": {
+      "description": "Session name or key",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Runtime provider id (codex, claude, pi) or 'clear' to remove override",
+      "type": "string"
+    }
+  },
+  "required": [
+    "nameOrKey",
+    "provider"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.set-provider`. */
+export const SessionsSetProviderReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "set-provider",
+      "type": "string"
+    },
+    "after": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "effectiveModel": {
+              "type": "string"
+            },
+            "effectiveProvider": {
+              "type": "string"
+            },
+            "effortOverride": {
+              "enum": [
+                "none",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max",
+                "ultra"
+              ],
+              "type": "string"
+            },
+            "ephemeral": {
+              "type": "boolean"
+            },
+            "expiresAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "label": {
+              "type": "string"
+            },
+            "modelOverride": {
+              "type": "string"
+            },
+            "modelPresetId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "modelPresetVersion": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "modelSource": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "runtimeOptions": {
+              "additionalProperties": false,
+              "properties": {
+                "effort": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "source": {
+                      "enum": [
+                        "session_override",
+                        "agent_default",
+                        "runtime_default"
+                      ],
+                      "type": "string"
+                    },
+                    "value": {
+                      "enum": [
+                        "none",
+                        "minimal",
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max",
+                        "ultra"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "source"
+                  ],
+                  "type": "object"
+                },
+                "model": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "source": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "source"
+                  ],
+                  "type": "object"
+                },
+                "thinking": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "source": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "value": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "source"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "model",
+                "effort",
+                "thinking"
+              ],
+              "type": "object"
+            },
+            "sessionKey": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionKey",
+            "label",
+            "agentId",
+            "effectiveProvider",
+            "effectiveModel",
+            "modelSource",
+            "modelPresetId",
+            "modelPresetVersion",
+            "ephemeral",
+            "expiresAt",
+            "runtimeOptions"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "appliesOn": {
+      "const": "next-turn-runtime-restart",
+      "type": "string"
+    },
+    "before": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "effectiveModel": {
+          "type": "string"
+        },
+        "effectiveProvider": {
+          "type": "string"
+        },
+        "effortOverride": {
+          "enum": [
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra"
+          ],
+          "type": "string"
+        },
+        "ephemeral": {
+          "type": "boolean"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "modelOverride": {
+          "type": "string"
+        },
+        "modelPresetId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelPresetVersion": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelSource": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "runtimeOptions": {
+          "additionalProperties": false,
+          "properties": {
+            "effort": {
+              "additionalProperties": false,
+              "properties": {
+                "source": {
+                  "enum": [
+                    "session_override",
+                    "agent_default",
+                    "runtime_default"
+                  ],
+                  "type": "string"
+                },
+                "value": {
+                  "enum": [
+                    "none",
+                    "minimal",
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh",
+                    "max",
+                    "ultra"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "source"
+              ],
+              "type": "object"
+            },
+            "model": {
+              "additionalProperties": false,
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "source"
+              ],
+              "type": "object"
+            },
+            "thinking": {
+              "additionalProperties": false,
+              "properties": {
+                "source": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "value",
+                "source"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "model",
+            "effort",
+            "thinking"
+          ],
+          "type": "object"
+        },
+        "sessionKey": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionKey",
+        "label",
+        "agentId",
+        "effectiveProvider",
+        "effectiveModel",
+        "modelSource",
+        "modelPresetId",
+        "modelPresetVersion",
+        "ephemeral",
+        "expiresAt",
+        "runtimeOptions"
+      ],
+      "type": "object"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "effectiveProvider": {
+      "type": "string"
+    },
+    "runtimeProviderOverride": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessionKey": {
+      "type": "string"
+    },
+    "sessionName": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "action",
+    "changed",
+    "sessionKey",
+    "sessionName",
+    "before",
+    "after",
+    "runtimeProviderOverride",
+    "effectiveProvider",
+    "appliesOn"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -39880,6 +56339,253 @@ export const SkillGatesShowReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `skills.grant`. */
+export const SkillsGrantInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id (immutable)",
+      "type": "string"
+    },
+    "note": {
+      "description": "Optional operator note",
+      "type": "string"
+    },
+    "skill": {
+      "description": "Skill name (matches SKILL.md name)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent",
+    "skill"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.grant`. */
+export const SkillsGrantReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "grant": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "grantedAt": {
+          "type": "number"
+        },
+        "note": {
+          "type": "string"
+        },
+        "skillName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agentId",
+        "skillName",
+        "grantedAt"
+      ],
+      "type": "object"
+    },
+    "skillName": {
+      "type": "string"
+    },
+    "success": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "agentId",
+    "skillName"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skills.grant-batch`. */
+export const SkillsGrantBatchInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Target a single agent (mutually exclusive with --all-agents)",
+      "type": "string"
+    },
+    "allAgents": {
+      "description": "Target every agent in the fleet",
+      "type": "boolean"
+    },
+    "allSkills": {
+      "description": "Target every catalog + installed skill",
+      "type": "boolean"
+    },
+    "dryRun": {
+      "description": "Preview counts without writing any grant",
+      "type": "boolean"
+    },
+    "note": {
+      "description": "Optional operator note stamped on every grant",
+      "type": "string"
+    },
+    "skill": {
+      "description": "Target a single skill (mutually exclusive with --all-skills)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.grant-batch`. */
+export const SkillsGrantBatchReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentsTargeted": {
+      "type": "number"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "errors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "skillName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId",
+          "skillName",
+          "error"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "op": {
+      "enum": [
+        "grant",
+        "revoke"
+      ],
+      "type": "string"
+    },
+    "pairsAffected": {
+      "type": "number"
+    },
+    "pairsSkipped": {
+      "type": "number"
+    },
+    "sampleAgents": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "sampleSkills": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "skillsTargeted": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "op",
+    "dryRun",
+    "agentsTargeted",
+    "skillsTargeted",
+    "pairsAffected",
+    "pairsSkipped",
+    "errors",
+    "sampleAgents",
+    "sampleSkills"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skills.inspect`. */
+export const SkillsInspectInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id (immutable)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.inspect`. */
+export const SkillsInspectReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "allowlist": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "hasConfiguration": {
+      "type": "boolean"
+    },
+    "provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "baseline": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "fromCapabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "fromGrants": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "baseline",
+        "fromCapabilities",
+        "fromGrants"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "agentId",
+    "hasConfiguration",
+    "allowlist",
+    "provenance"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `skills.install`. */
 export const SkillsInstallInputSchema = {
   "additionalProperties": false,
@@ -40152,6 +56858,175 @@ export const SkillsListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `skills.revoke`. */
+export const SkillsRevokeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent id (immutable)",
+      "type": "string"
+    },
+    "skill": {
+      "description": "Skill name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent",
+    "skill"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.revoke`. */
+export const SkillsRevokeReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "grant": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "grantedAt": {
+          "type": "number"
+        },
+        "note": {
+          "type": "string"
+        },
+        "skillName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agentId",
+        "skillName",
+        "grantedAt"
+      ],
+      "type": "object"
+    },
+    "skillName": {
+      "type": "string"
+    },
+    "success": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "agentId",
+    "skillName"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skills.revoke-batch`. */
+export const SkillsRevokeBatchInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Target a single agent (mutually exclusive with --all-agents)",
+      "type": "string"
+    },
+    "allAgents": {
+      "description": "Target every agent in the fleet",
+      "type": "boolean"
+    },
+    "allSkills": {
+      "description": "Target every catalog + installed skill",
+      "type": "boolean"
+    },
+    "dryRun": {
+      "description": "Preview counts without removing any grant",
+      "type": "boolean"
+    },
+    "skill": {
+      "description": "Target a single skill (mutually exclusive with --all-skills)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.revoke-batch`. */
+export const SkillsRevokeBatchReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentsTargeted": {
+      "type": "number"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "errors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "skillName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId",
+          "skillName",
+          "error"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "op": {
+      "enum": [
+        "grant",
+        "revoke"
+      ],
+      "type": "string"
+    },
+    "pairsAffected": {
+      "type": "number"
+    },
+    "pairsSkipped": {
+      "type": "number"
+    },
+    "sampleAgents": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "sampleSkills": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "skillsTargeted": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "op",
+    "dryRun",
+    "agentsTargeted",
+    "skillsTargeted",
+    "pairsAffected",
+    "pairsSkipped",
+    "errors",
+    "sampleAgents",
+    "sampleSkills"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `skills.show`. */
 export const SkillsShowInputSchema = {
   "additionalProperties": false,
@@ -40265,6 +57140,4508 @@ export const SkillsSyncReturnSchema = {
     "success",
     "codexSynced",
     "total"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skills.who`. */
+export const SkillsWhoInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "List grants for a specific agent instead",
+      "type": "string"
+    },
+    "skill": {
+      "description": "Skill name to look up",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `skills.who`. */
+export const SkillsWhoReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "grants": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "grantedAt": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          },
+          "skillName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId",
+          "skillName",
+          "grantedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "skillName": {
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "grants"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.blocks-send`. */
+export const SlackBlocksSendInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Slack channel/conversation ID",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Ravi channel config; SDK-safe alias for --channel",
+      "type": "string"
+    },
+    "ephemeralUser": {
+      "description": "Send as an ephemeral message visible only to this Slack user",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "file": {
+      "description": "Path to a Block Kit message JSON file",
+      "type": "string"
+    },
+    "text": {
+      "description": "Top-level fallback text for notifications/accessibility",
+      "type": "string"
+    },
+    "threadTs": {
+      "description": "Send inside a Slack thread",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel",
+    "file"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.blocks-send`. */
+export const SlackBlocksSendReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.blocks-showcase`. */
+export const SlackBlocksShowcaseInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Slack channel/conversation ID",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "threadTs": {
+      "description": "Send inside a Slack thread",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.blocks-showcase`. */
+export const SlackBlocksShowcaseReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.blocks-update`. */
+export const SlackBlocksUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Slack channel/conversation ID",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "file": {
+      "description": "Path to a Block Kit message JSON file",
+      "type": "string"
+    },
+    "text": {
+      "description": "Top-level fallback text for notifications/accessibility",
+      "type": "string"
+    },
+    "ts": {
+      "description": "Slack message timestamp",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel",
+    "file",
+    "ts"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.blocks-update`. */
+export const SlackBlocksUpdateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.blocks-validate`. */
+export const SlackBlocksValidateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    },
+    "file": {
+      "description": "Path to a Block Kit JSON file",
+      "type": "string"
+    },
+    "target": {
+      "description": "Validation target: blocks, message or view",
+      "type": "string"
+    }
+  },
+  "required": [
+    "file"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.blocks-validate`. */
+export const SlackBlocksValidateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.canvas-access-delete`. */
+export const SlackCanvasAccessDeleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "canvas": {
+      "description": "Slack canvas ID",
+      "type": "string"
+    },
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    },
+    "channels": {
+      "description": "Comma-separated Slack channel IDs",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "users": {
+      "description": "Comma-separated Slack user IDs",
+      "type": "string"
+    }
+  },
+  "required": [
+    "canvas"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.canvas-access-delete`. */
+export const SlackCanvasAccessDeleteReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.canvas-access-set`. */
+export const SlackCanvasAccessSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "access": {
+      "description": "read|write|owner",
+      "type": "string"
+    },
+    "canvas": {
+      "description": "Slack canvas ID",
+      "type": "string"
+    },
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    },
+    "channels": {
+      "description": "Comma-separated Slack channel IDs",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "users": {
+      "description": "Comma-separated Slack user IDs",
+      "type": "string"
+    }
+  },
+  "required": [
+    "access",
+    "canvas"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.canvas-access-set`. */
+export const SlackCanvasAccessSetReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.canvas-artifact-publish`. */
+export const SlackCanvasArtifactPublishInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "artifactOrFile": {
+      "description": "Ravi artifact id or local Markdown file path",
+      "type": "string"
+    },
+    "canvas": {
+      "description": "Publish into an existing Slack canvas ID",
+      "type": "string"
+    },
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "skipRefresh": {
+      "description": "Do not refresh the artifact from its source file before publishing",
+      "type": "boolean"
+    },
+    "slackChannel": {
+      "description": "Create/reuse a channel canvas for this Slack channel",
+      "type": "string"
+    },
+    "title": {
+      "description": "Canvas title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "artifactOrFile"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.canvas-artifact-publish`. */
+export const SlackCanvasArtifactPublishReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.canvas-artifact-status`. */
+export const SlackCanvasArtifactStatusInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "artifact": {
+      "description": "Ravi artifact id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "artifact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.canvas-artifact-status`. */
+export const SlackCanvasArtifactStatusReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "item": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "ok": {
+      "const": true,
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "item"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.canvas-channel-create`. */
+export const SlackCanvasChannelCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "artifact": {
+      "description": "Read initial canvas markdown from a Ravi artifact",
+      "type": "string"
+    },
+    "channel": {
+      "description": "Slack channel/conversation ID",
+      "type": "string"
+    },
+    "ensure": {
+      "description": "Return existing channel canvas when it already exists",
+      "type": "boolean"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "markdown": {
+      "description": "Initial canvas markdown",
+      "type": "string"
+    },
+    "markdownFile": {
+      "description": "Read initial canvas markdown from a file",
+      "type": "string"
+    },
+    "skipRefresh": {
+      "description": "Do not refresh the artifact from its source file before publishing",
+      "type": "boolean"
+    },
+    "title": {
+      "description": "Canvas title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.canvas-channel-create`. */
+export const SlackCanvasChannelCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.canvas-channel-showcase`. */
+export const SlackCanvasChannelShowcaseInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Slack channel/conversation ID",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "title": {
+      "description": "Canvas title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.canvas-channel-showcase`. */
+export const SlackCanvasChannelShowcaseReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.canvas-create`. */
+export const SlackCanvasCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "artifact": {
+      "description": "Read initial canvas markdown from a Ravi artifact",
+      "type": "string"
+    },
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "markdown": {
+      "description": "Initial canvas markdown",
+      "type": "string"
+    },
+    "markdownFile": {
+      "description": "Read initial canvas markdown from a file",
+      "type": "string"
+    },
+    "skipRefresh": {
+      "description": "Do not refresh the artifact from its source file before publishing",
+      "type": "boolean"
+    },
+    "slackChannel": {
+      "description": "Optional Slack channel tab target",
+      "type": "string"
+    },
+    "title": {
+      "description": "Canvas title",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.canvas-create`. */
+export const SlackCanvasCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.canvas-delete`. */
+export const SlackCanvasDeleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "canvas": {
+      "description": "Slack canvas ID",
+      "type": "string"
+    },
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "canvas"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.canvas-delete`. */
+export const SlackCanvasDeleteReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.canvas-edit`. */
+export const SlackCanvasEditInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "artifact": {
+      "description": "Read markdown content from a Ravi artifact",
+      "type": "string"
+    },
+    "canvas": {
+      "description": "Slack canvas ID",
+      "type": "string"
+    },
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "markdown": {
+      "description": "Markdown content for insert/replace operations",
+      "type": "string"
+    },
+    "markdownFile": {
+      "description": "Read markdown content from a file",
+      "type": "string"
+    },
+    "operation": {
+      "description": "insert_after|insert_before|insert_at_start|insert_at_end|replace|delete|rename",
+      "type": "string"
+    },
+    "sectionId": {
+      "description": "Slack canvas section ID",
+      "type": "string"
+    },
+    "skipRefresh": {
+      "description": "Do not refresh the artifact from its source file before publishing",
+      "type": "boolean"
+    },
+    "title": {
+      "description": "New title for rename operation",
+      "type": "string"
+    }
+  },
+  "required": [
+    "canvas",
+    "operation"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.canvas-edit`. */
+export const SlackCanvasEditReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.canvas-sections-lookup`. */
+export const SlackCanvasSectionsLookupInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "canvas": {
+      "description": "Slack canvas ID",
+      "type": "string"
+    },
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    },
+    "containsText": {
+      "description": "Text that matching sections must contain",
+      "type": "string"
+    },
+    "sectionTypes": {
+      "default": "any_header",
+      "description": "Comma-separated section types, e.g. h1,h2,h3,any_header",
+      "type": "string"
+    }
+  },
+  "required": [
+    "canvas"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.canvas-sections-lookup`. */
+export const SlackCanvasSectionsLookupReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "limit",
+        "cursor",
+        "nextCursor",
+        "hasMore"
+      ],
+      "type": "object"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "items",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.canvas-showcase`. */
+export const SlackCanvasShowcaseInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "canvas": {
+      "description": "Slack canvas ID",
+      "type": "string"
+    },
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "slackChannel": {
+      "description": "Slack channel/conversation ID for the showcase context",
+      "type": "string"
+    },
+    "title": {
+      "description": "Canvas title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "canvas"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.canvas-showcase`. */
+export const SlackCanvasShowcaseReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.channels-create`. */
+export const SlackChannelsCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "name": {
+      "description": "New Slack channel name",
+      "type": "string"
+    },
+    "private": {
+      "description": "Create a private channel",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.channels-create`. */
+export const SlackChannelsCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.channels-history`. */
+export const SlackChannelsHistoryInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Slack channel/conversation ID",
+      "type": "string"
+    },
+    "cursor": {
+      "description": "Slack pagination cursor",
+      "type": "string"
+    },
+    "inclusive": {
+      "description": "Include boundary timestamps",
+      "type": "boolean"
+    },
+    "latest": {
+      "description": "Latest Slack timestamp",
+      "type": "string"
+    },
+    "limit": {
+      "default": "20",
+      "description": "Page size",
+      "type": "string"
+    },
+    "oldest": {
+      "description": "Oldest Slack timestamp",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.channels-history`. */
+export const SlackChannelsHistoryReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "limit",
+        "cursor",
+        "nextCursor",
+        "hasMore"
+      ],
+      "type": "object"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "items",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.channels-info`. */
+export const SlackChannelsInfoInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Slack channel/conversation ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.channels-info`. */
+export const SlackChannelsInfoReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.channels-invite`. */
+export const SlackChannelsInviteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Slack channel/conversation ID",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Ravi channel config; SDK-safe alias for --channel",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "users": {
+      "description": "Comma-separated Slack user IDs",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel",
+    "users"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.channels-invite`. */
+export const SlackChannelsInviteReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.channels-list`. */
+export const SlackChannelsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    },
+    "cursor": {
+      "description": "Slack pagination cursor",
+      "type": "string"
+    },
+    "includeArchived": {
+      "description": "Include archived conversations",
+      "type": "boolean"
+    },
+    "limit": {
+      "default": "100",
+      "description": "Page size",
+      "type": "string"
+    },
+    "types": {
+      "default": "public_channel,private_channel,im,mpim",
+      "description": "Slack conversation types",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.channels-list`. */
+export const SlackChannelsListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "limit",
+        "cursor",
+        "nextCursor",
+        "hasMore"
+      ],
+      "type": "object"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "items",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.channels-rename`. */
+export const SlackChannelsRenameInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Slack channel/conversation ID",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "name": {
+      "description": "New Slack channel name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel",
+    "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.channels-rename`. */
+export const SlackChannelsRenameReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.files-list`. */
+export const SlackFilesListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    },
+    "cursor": {
+      "description": "Slack pagination cursor",
+      "type": "string"
+    },
+    "limit": {
+      "default": "20",
+      "description": "Page size",
+      "type": "string"
+    },
+    "slackChannel": {
+      "description": "Restrict to a Slack channel/conversation ID",
+      "type": "string"
+    },
+    "user": {
+      "description": "Restrict to a Slack user ID",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.files-list`. */
+export const SlackFilesListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "limit",
+        "cursor",
+        "nextCursor",
+        "hasMore"
+      ],
+      "type": "object"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "items",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.interactions-respond`. */
+export const SlackInteractionsRespondInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "file": {
+      "description": "Path to a JSON response payload",
+      "type": "string"
+    },
+    "responseUrlId": {
+      "description": "Opaque Slack interaction response URL handle",
+      "type": "string"
+    }
+  },
+  "required": [
+    "file",
+    "responseUrlId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.interactions-respond`. */
+export const SlackInteractionsRespondReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.members-list`. */
+export const SlackMembersListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Slack channel/conversation ID",
+      "type": "string"
+    },
+    "cursor": {
+      "description": "Slack pagination cursor",
+      "type": "string"
+    },
+    "limit": {
+      "default": "100",
+      "description": "Page size",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.members-list`. */
+export const SlackMembersListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "limit",
+        "cursor",
+        "nextCursor",
+        "hasMore"
+      ],
+      "type": "object"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "items",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.messages-inspect`. */
+export const SlackMessagesInspectInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Slack channel/conversation ID",
+      "type": "string"
+    },
+    "ts": {
+      "description": "Slack message timestamp",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel",
+    "ts"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.messages-inspect`. */
+export const SlackMessagesInspectReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.messages-replay`. */
+export const SlackMessagesReplayInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Slack channel/conversation ID",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the replay; default is dry-run",
+      "type": "boolean"
+    },
+    "force": {
+      "description": "Replay even when the message is already in Ravi",
+      "type": "boolean"
+    },
+    "ts": {
+      "description": "Slack message timestamp",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel",
+    "ts"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.messages-replay`. */
+export const SlackMessagesReplayReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.messages-send`. */
+export const SlackMessagesSendInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Slack channel/conversation ID",
+      "type": "string"
+    },
+    "ephemeralUser": {
+      "description": "Send as an ephemeral message visible only to this Slack user",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "text": {
+      "description": "Message text",
+      "type": "string"
+    },
+    "threadTs": {
+      "description": "Send inside a Slack thread",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel",
+    "text"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.messages-send`. */
+export const SlackMessagesSendReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.modals-open`. */
+export const SlackModalsOpenInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "file": {
+      "description": "Path to a Block Kit view JSON file",
+      "type": "string"
+    },
+    "triggerId": {
+      "description": "Slack interaction trigger_id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "file",
+    "triggerId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.modals-open`. */
+export const SlackModalsOpenReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.modals-push`. */
+export const SlackModalsPushInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "file": {
+      "description": "Path to a Block Kit view JSON file",
+      "type": "string"
+    },
+    "triggerId": {
+      "description": "Slack interaction trigger_id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "file",
+    "triggerId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.modals-push`. */
+export const SlackModalsPushReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.modals-update`. */
+export const SlackModalsUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "externalId": {
+      "description": "Treat <view> as an external_id instead of a view_id",
+      "type": "boolean"
+    },
+    "file": {
+      "description": "Path to a Block Kit view JSON file",
+      "type": "string"
+    },
+    "hash": {
+      "description": "Slack view.hash for optimistic concurrency control",
+      "type": "string"
+    },
+    "view": {
+      "description": "Slack view_id, or external_id when --external-id is set",
+      "type": "string"
+    }
+  },
+  "required": [
+    "file",
+    "view"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.modals-update`. */
+export const SlackModalsUpdateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.permissions-list`. */
+export const SlackPermissionsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.permissions-list`. */
+export const SlackPermissionsListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.topology`. */
+export const SlackTopologyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    },
+    "cursor": {
+      "description": "Slack pagination cursor",
+      "type": "string"
+    },
+    "includeArchived": {
+      "description": "Include archived conversations",
+      "type": "boolean"
+    },
+    "limit": {
+      "default": "200",
+      "description": "Conversation page size",
+      "type": "string"
+    },
+    "types": {
+      "default": "public_channel,private_channel",
+      "description": "Slack conversation types",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.topology`. */
+export const SlackTopologyReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "accountId": {
+      "type": "string"
+    },
+    "capabilities": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "channels": {
+      "items": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "type": "array"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "ok": {
+      "const": true,
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "ungroupedChannelIds": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "accountId",
+    "channels",
+    "ungroupedChannelIds",
+    "capabilities"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.work-objects-present-details`. */
+export const SlackWorkObjectsPresentDetailsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Ravi channel config",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Ravi channel config; SDK-safe alias for --channel",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "file": {
+      "description": "Path to Slack native Work Object detail metadata JSON",
+      "type": "string"
+    },
+    "triggerId": {
+      "description": "Slack entity_details_requested trigger_id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "file",
+    "triggerId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.work-objects-present-details`. */
+export const SlackWorkObjectsPresentDetailsReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.work-objects-send`. */
+export const SlackWorkObjectsSendInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Slack channel/conversation ID",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Ravi channel config; SDK-safe alias for --channel",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "file": {
+      "description": "Path to Slack native Work Object message JSON",
+      "type": "string"
+    },
+    "text": {
+      "description": "Top-level fallback text for notifications/accessibility",
+      "type": "string"
+    },
+    "threadTs": {
+      "description": "Send inside a Slack thread",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel",
+    "file"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.work-objects-send`. */
+export const SlackWorkObjectsSendReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.work-objects-unfurl`. */
+export const SlackWorkObjectsUnfurlInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "description": "Slack channel/conversation ID containing the URL message",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Ravi channel config; SDK-safe alias for --channel",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Perform the mutation; default is dry-run",
+      "type": "boolean"
+    },
+    "file": {
+      "description": "Path to Slack native Work Object metadata JSON",
+      "type": "string"
+    },
+    "ts": {
+      "description": "Slack message timestamp containing the URL",
+      "type": "string"
+    },
+    "url": {
+      "description": "URL in the message to unfurl",
+      "type": "string"
+    }
+  },
+  "required": [
+    "channel",
+    "file",
+    "ts",
+    "url"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.work-objects-unfurl`. */
+export const SlackWorkObjectsUnfurlReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "method": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    },
+    "raw": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider",
+    "connection",
+    "source",
+    "dryRun",
+    "method",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `slack.work-objects-validate`. */
+export const SlackWorkObjectsValidateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "file": {
+      "description": "Path to Slack native Work Object metadata JSON",
+      "type": "string"
+    },
+    "target": {
+      "default": "message",
+      "description": "Validation target: message or detail",
+      "type": "string"
+    }
+  },
+  "required": [
+    "file"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `slack.work-objects-validate`. */
+export const SlackWorkObjectsValidateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "dryRun": {
+      "type": "boolean"
+    },
+    "item": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "ok": {
+      "const": true,
+      "type": "boolean"
+    },
+    "outputFile": {
+      "type": "string"
+    },
+    "provider": {
+      "const": "slack",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "provider"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -43801,7 +65178,7 @@ export const TasksCreateInputSchema = {
       "type": "array"
     },
     "effort": {
-      "description": "Runtime effort: low|medium|high|xhigh",
+      "description": "Runtime effort: none|minimal|low|medium|high|xhigh|max|ultra",
       "type": "string"
     },
     "input": {
@@ -44202,7 +65579,7 @@ export const TasksDispatchInputSchema = {
       "type": "string"
     },
     "effort": {
-      "description": "Runtime effort: low|medium|high|xhigh",
+      "description": "Runtime effort: none|minimal|low|medium|high|xhigh|max|ultra",
       "type": "string"
     },
     "model": {
@@ -45494,6 +66871,233 @@ export const ThreadsShowReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `tools.invoke`. */
+export const ToolsInvokeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "args": {
+      "description": "JSON args (optional)",
+      "type": "string"
+    },
+    "name": {
+      "description": "Tool name",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tools.invoke`. */
+export const ToolsInvokeReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "args": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "executed": {
+      "const": true,
+      "type": "boolean"
+    },
+    "mode": {
+      "const": "executed",
+      "type": "string"
+    },
+    "result": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "type": {
+                "const": "text",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "text"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "isError": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "isError",
+        "content"
+      ],
+      "type": "object"
+    },
+    "tool": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": false,
+          "properties": {
+            "access": {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "resource": {
+                  "type": "string"
+                },
+                "risk": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "resource",
+                "action",
+                "risk"
+              ],
+              "type": "object"
+            },
+            "args": {
+              "items": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "command": {
+              "type": "string"
+            },
+            "group": {
+              "type": "string"
+            },
+            "method": {
+              "type": "string"
+            },
+            "options": {
+              "items": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "skillGate": {
+              "additionalProperties": false,
+              "properties": {
+                "skill": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "skill",
+                "source"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "group",
+            "command",
+            "method",
+            "args",
+            "options"
+          ],
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "metadata"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "mode",
+    "executed",
+    "tool",
+    "args",
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tools.list`. */
 export const ToolsListInputSchema = {
   "additionalProperties": false,
@@ -45671,6 +67275,94 @@ export const ToolsSchemaReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `tools.search`. */
+export const ToolsSearchInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Max results (default: 10)",
+      "type": "string"
+    },
+    "query": {
+      "description": "Search query (matches name, description, parameters, access metadata, skill gate)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "query"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tools.search`. */
+export const ToolsSearchReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "matchedFields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rank": {
+            "type": "number"
+          },
+          "score": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "rank",
+          "score",
+          "name",
+          "description",
+          "group",
+          "command",
+          "matchedFields"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "limit": {
+      "type": "number"
+    },
+    "query": {
+      "type": "string"
+    },
+    "returned": {
+      "type": "number"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "query",
+    "limit",
+    "total",
+    "returned",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tools.show`. */
 export const ToolsShowInputSchema = {
   "additionalProperties": false,
@@ -45723,40 +67415,227 @@ export const ToolsTestInputSchema = {
 
 /** JSON Schema for the return shape of `tools.test`. */
 export const ToolsTestReturnSchema = {
-  "additionalProperties": {},
-  "properties": {
-    "args": {
-      "additionalProperties": {},
-      "properties": {},
-      "type": "object"
-    },
-    "result": {
-      "additionalProperties": {},
-      "properties": {
-        "content": {
-          "items": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
           "type": "array"
         },
-        "isError": {
-          "type": "boolean"
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "access": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "resource": {
+              "type": "string"
+            },
+            "risk": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "resource",
+            "action",
+            "risk"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "args": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "executed": {
+      "const": false,
+      "type": "boolean"
+    },
+    "invokeCommand": {
+      "type": "string"
+    },
+    "mode": {
+      "const": "dry_run",
+      "type": "string"
+    },
+    "schema": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "tool": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": false,
+          "properties": {
+            "access": {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "resource": {
+                  "type": "string"
+                },
+                "risk": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "resource",
+                "action",
+                "risk"
+              ],
+              "type": "object"
+            },
+            "args": {
+              "items": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "command": {
+              "type": "string"
+            },
+            "group": {
+              "type": "string"
+            },
+            "method": {
+              "type": "string"
+            },
+            "options": {
+              "items": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "skillGate": {
+              "additionalProperties": false,
+              "properties": {
+                "skill": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "skill",
+                "source"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "group",
+            "command",
+            "method",
+            "args",
+            "options"
+          ],
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
         }
       },
       "required": [
-        "isError",
-        "content"
+        "name",
+        "description",
+        "metadata"
       ],
-      "type": "object"
-    },
-    "tool": {
-      "additionalProperties": {},
-      "properties": {},
       "type": "object"
     }
   },
   "required": [
+    "mode",
+    "executed",
     "tool",
     "args",
-    "result"
+    "schema",
+    "access",
+    "invokeCommand"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -45834,6 +67713,22 @@ export const TranscribeFileReturnSchema = {
         "duration": {
           "type": "number"
         },
+        "model": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "segments": {
+          "items": {
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
         "text": {
           "type": "string"
         }
@@ -45869,6 +67764,14 @@ export const TriggersAddInputSchema = {
       "description": "Cooldown between fires (e.g., 5s, 30s, 1m)",
       "type": "string"
     },
+    "envFile": {
+      "description": "Env file loaded for shell triggers",
+      "type": "string"
+    },
+    "exec": {
+      "description": "Alias for --shell",
+      "type": "string"
+    },
     "filter": {
       "description": "Filter expression (e.g. 'data.cwd == \"/path/to/workspace\"')",
       "type": "string"
@@ -45881,8 +67784,24 @@ export const TriggersAddInputSchema = {
       "description": "Trigger name",
       "type": "string"
     },
+    "onError": {
+      "description": "Error action, e.g. notify-session:<session>",
+      "type": "string"
+    },
+    "replySession": {
+      "description": "Override the session used for outbound delivery (defaults to caller session)",
+      "type": "string"
+    },
     "session": {
       "description": "Session: main or isolated (default: isolated)",
+      "type": "string"
+    },
+    "shell": {
+      "description": "Run a shell command directly without invoking an agent",
+      "type": "string"
+    },
+    "timeout": {
+      "description": "Shell timeout, e.g. 60 or 5m",
       "type": "string"
     },
     "topic": {
@@ -46229,7 +68148,7 @@ export const TriggersSetInputSchema = {
       "type": "string"
     },
     "key": {
-      "description": "Property: name, message, topic, agent, account, session, cooldown",
+      "description": "Property: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, filter, replySession",
       "type": "string"
     },
     "value": {
@@ -46409,12 +68328,20 @@ export const TriggersTopicsReturnSchema = {
 export const VideoAnalyzeInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "forceAnalyze": {
+      "description": "Force Gemini analysis even when YouTube subtitles exist",
+      "type": "boolean"
+    },
     "output": {
       "description": "Output file path (default: auto-generated in cwd)",
       "type": "string"
     },
     "prompt": {
-      "description": "Custom analysis prompt",
+      "description": "Custom Gemini prompt used by Gemini strategy/fallback",
+      "type": "string"
+    },
+    "strategy": {
+      "description": "Analysis strategy: auto, subtitles, or gemini (default: auto)",
       "type": "string"
     },
     "url": {
@@ -46449,11 +68376,36 @@ export const VideoAnalyzeReturnSchema = {
     "video": {
       "additionalProperties": {},
       "properties": {
+        "chapters": {
+          "items": {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          "type": "array"
+        },
         "duration": {
           "type": "string"
         },
         "source": {
           "type": "string"
+        },
+        "strategy": {
+          "enum": [
+            "gemini",
+            "subtitles"
+          ],
+          "type": "string"
+        },
+        "subtitleLanguage": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "summary": {
           "type": "string"
@@ -46476,6 +68428,7 @@ export const VideoAnalyzeReturnSchema = {
       },
       "required": [
         "source",
+        "strategy",
         "title",
         "duration",
         "summary",
@@ -47012,7 +68965,7 @@ export const WhatsappDmReadInputSchema = {
       "type": "string"
     },
     "noAck": {
-      "default": true,
+      "default": false,
       "description": "Don't send read receipt",
       "type": "boolean"
     }
@@ -47122,6 +69075,10 @@ export const WhatsappGroupCreateInputSchema = {
       "description": "CWD for --create-agent (default: ~/ravi/<agent>)",
       "type": "string"
     },
+    "agentModel": {
+      "description": "Runtime model selector for --create-agent",
+      "type": "string"
+    },
     "agentProvider": {
       "description": "Runtime provider id for --create-agent",
       "type": "string"
@@ -47135,7 +69092,7 @@ export const WhatsappGroupCreateInputSchema = {
       "type": "string"
     },
     "participants": {
-      "description": "Phone numbers to add (comma-separated)",
+      "description": "Phone numbers to add (comma-separated); omitted uses current contact actor when available",
       "type": "string"
     },
     "skipTaggedAdmins": {
@@ -47144,8 +69101,7 @@ export const WhatsappGroupCreateInputSchema = {
     }
   },
   "required": [
-    "name",
-    "participants"
+    "name"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -47535,6 +69491,1125 @@ export const WhatsappGroupSettingsInputSchema = {
 export const WhatsappGroupSettingsReturnSchema = {
   "additionalProperties": {},
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `work-objects.action`. */
+export const WorkObjectsActionInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "actionId": {
+      "description": "Action id, e.g. task.comment",
+      "type": "string"
+    },
+    "id": {
+      "description": "External reference id",
+      "type": "string"
+    },
+    "type": {
+      "description": "External reference type, e.g. task",
+      "type": "string"
+    },
+    "value": {
+      "description": "Optional action value",
+      "type": "string"
+    }
+  },
+  "required": [
+    "actionId",
+    "id",
+    "type"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `work-objects.action`. */
+export const WorkObjectsActionReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "providerId": {
+      "type": "string"
+    },
+    "result": {
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "object": {
+          "additionalProperties": false,
+          "properties": {
+            "actions": {
+              "additionalProperties": false,
+              "properties": {
+                "overflowActions": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "accessibilityLabel": {
+                        "type": "string"
+                      },
+                      "actionId": {
+                        "type": "string"
+                      },
+                      "processingState": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "interstitialText": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "enabled"
+                        ],
+                        "type": "object"
+                      },
+                      "style": {
+                        "enum": [
+                          "primary",
+                          "danger"
+                        ],
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "url": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "text"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "primaryActions": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "accessibilityLabel": {
+                        "type": "string"
+                      },
+                      "actionId": {
+                        "type": "string"
+                      },
+                      "processingState": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "interstitialText": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "enabled"
+                        ],
+                        "type": "object"
+                      },
+                      "style": {
+                        "enum": [
+                          "primary",
+                          "danger"
+                        ],
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "url": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "text"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "attributes": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "customFields": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "edit": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "key": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "long": {
+                    "type": "boolean"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "value",
+                  "label",
+                  "key"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "description": {
+              "type": "string"
+            },
+            "displayId": {
+              "type": "string"
+            },
+            "displayOrder": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "displayType": {
+              "type": "string"
+            },
+            "entityType": {
+              "type": "string"
+            },
+            "externalRef": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "type": "object"
+            },
+            "fields": {
+              "additionalProperties": {
+                "additionalProperties": false,
+                "properties": {
+                  "edit": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "long": {
+                    "type": "boolean"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                },
+                "type": "object"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "metadataLastModified": {
+              "type": "number"
+            },
+            "productIconUrl": {
+              "type": "string"
+            },
+            "productName": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "url",
+            "externalRef",
+            "title"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "providerId",
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `work-objects.resolve`. */
+export const WorkObjectsResolveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "External reference id",
+      "type": "string"
+    },
+    "target": {
+      "description": "URL or object id",
+      "type": "string"
+    },
+    "type": {
+      "description": "External reference type, e.g. task",
+      "type": "string"
+    },
+    "url": {
+      "description": "Object URL to resolve",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `work-objects.resolve`. */
+export const WorkObjectsResolveReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "providerId": {
+      "type": "string"
+    },
+    "result": {
+      "additionalProperties": false,
+      "properties": {
+        "actions": {
+          "additionalProperties": false,
+          "properties": {
+            "overflowActions": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "accessibilityLabel": {
+                    "type": "string"
+                  },
+                  "actionId": {
+                    "type": "string"
+                  },
+                  "processingState": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "interstitialText": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "enabled"
+                    ],
+                    "type": "object"
+                  },
+                  "style": {
+                    "enum": [
+                      "primary",
+                      "danger"
+                    ],
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "primaryActions": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "accessibilityLabel": {
+                    "type": "string"
+                  },
+                  "actionId": {
+                    "type": "string"
+                  },
+                  "processingState": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "interstitialText": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "enabled"
+                    ],
+                    "type": "object"
+                  },
+                  "style": {
+                    "enum": [
+                      "primary",
+                      "danger"
+                    ],
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "attributes": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "customFields": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "edit": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "key": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "long": {
+                "type": "boolean"
+              },
+              "type": {
+                "type": "string"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "value",
+              "label",
+              "key"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "description": {
+          "type": "string"
+        },
+        "displayId": {
+          "type": "string"
+        },
+        "displayOrder": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "displayType": {
+          "type": "string"
+        },
+        "entityType": {
+          "type": "string"
+        },
+        "externalRef": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "fields": {
+          "additionalProperties": {
+            "additionalProperties": false,
+            "properties": {
+              "edit": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "label": {
+                "type": "string"
+              },
+              "long": {
+                "type": "boolean"
+              },
+              "type": {
+                "type": "string"
+              },
+              "value": {
+                "$ref": "#/$defs/__schema0"
+              }
+            },
+            "type": "object"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "metadataLastModified": {
+          "type": "number"
+        },
+        "productIconUrl": {
+          "type": "string"
+        },
+        "productName": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "externalRef",
+        "title"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "providerId",
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `work-objects.suggest`. */
+export const WorkObjectsSuggestInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "fieldId": {
+      "description": "Field id, e.g. status",
+      "type": "string"
+    },
+    "id": {
+      "description": "External reference id",
+      "type": "string"
+    },
+    "query": {
+      "description": "Optional suggestion filter",
+      "type": "string"
+    },
+    "type": {
+      "description": "External reference type, e.g. task",
+      "type": "string"
+    }
+  },
+  "required": [
+    "fieldId",
+    "id",
+    "type"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `work-objects.suggest`. */
+export const WorkObjectsSuggestReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "providerId": {
+      "type": "string"
+    },
+    "result": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "value"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "providerId",
+    "result"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `work-objects.update`. */
+export const WorkObjectsUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "External reference id",
+      "type": "string"
+    },
+    "revision": {
+      "description": "Optional optimistic revision",
+      "type": "string"
+    },
+    "type": {
+      "description": "External reference type, e.g. task",
+      "type": "string"
+    },
+    "values": {
+      "description": "Patch values as JSON object",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "type"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `work-objects.update`. */
+export const WorkObjectsUpdateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "providerId": {
+      "type": "string"
+    },
+    "result": {
+      "additionalProperties": false,
+      "properties": {
+        "fieldErrors": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "formError": {
+          "type": "string"
+        },
+        "object": {
+          "additionalProperties": false,
+          "properties": {
+            "actions": {
+              "additionalProperties": false,
+              "properties": {
+                "overflowActions": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "accessibilityLabel": {
+                        "type": "string"
+                      },
+                      "actionId": {
+                        "type": "string"
+                      },
+                      "processingState": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "interstitialText": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "enabled"
+                        ],
+                        "type": "object"
+                      },
+                      "style": {
+                        "enum": [
+                          "primary",
+                          "danger"
+                        ],
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "url": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "text"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "primaryActions": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "accessibilityLabel": {
+                        "type": "string"
+                      },
+                      "actionId": {
+                        "type": "string"
+                      },
+                      "processingState": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "interstitialText": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "enabled"
+                        ],
+                        "type": "object"
+                      },
+                      "style": {
+                        "enum": [
+                          "primary",
+                          "danger"
+                        ],
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "url": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "text"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "attributes": {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "customFields": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "edit": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "key": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "long": {
+                    "type": "boolean"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "value",
+                  "label",
+                  "key"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "description": {
+              "type": "string"
+            },
+            "displayId": {
+              "type": "string"
+            },
+            "displayOrder": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "displayType": {
+              "type": "string"
+            },
+            "entityType": {
+              "type": "string"
+            },
+            "externalRef": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "type": "object"
+            },
+            "fields": {
+              "additionalProperties": {
+                "additionalProperties": false,
+                "properties": {
+                  "edit": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "long": {
+                    "type": "boolean"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "$ref": "#/$defs/__schema0"
+                  }
+                },
+                "type": "object"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "metadataLastModified": {
+              "type": "number"
+            },
+            "productIconUrl": {
+              "type": "string"
+            },
+            "productName": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "url",
+            "externalRef",
+            "title"
+          ],
+          "type": "object"
+        },
+        "revision": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "providerId",
+    "result"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -48092,5 +71167,2146 @@ export const WorkflowsSpecsShowInputSchema = {
 export const WorkflowsSpecsShowReturnSchema = {
   "additionalProperties": {},
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.analytics-countries`. */
+export const YtAnalyticsCountriesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "days": {
+      "description": "Recent days, 1-365 (default: 28)",
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Rows, 1-200 (default: 10)",
+      "pattern": "^\\d+$",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.analytics-countries`. */
+export const YtAnalyticsCountriesReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "countries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "country": {
+            "type": "string"
+          },
+          "subscribersGained": {
+            "type": "number"
+          },
+          "views": {
+            "type": "number"
+          },
+          "watchTimeMinutes": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "country",
+          "views",
+          "watchTimeMinutes",
+          "subscribersGained"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "period": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "period",
+    "countries"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.analytics-demographics`. */
+export const YtAnalyticsDemographicsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "days": {
+      "description": "Recent days, 1-365 (default: 28)",
+      "pattern": "^\\d+$",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.analytics-demographics`. */
+export const YtAnalyticsDemographicsReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "demographics": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "ageGroup": {
+            "type": "string"
+          },
+          "gender": {
+            "type": "string"
+          },
+          "viewerPercentage": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "ageGroup",
+          "gender",
+          "viewerPercentage"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "period": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "period",
+    "demographics"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.analytics-devices`. */
+export const YtAnalyticsDevicesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "days": {
+      "description": "Recent days, 1-365 (default: 28)",
+      "pattern": "^\\d+$",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.analytics-devices`. */
+export const YtAnalyticsDevicesReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "devices": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "views": {
+            "type": "number"
+          },
+          "watchTimeMinutes": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "device",
+          "views",
+          "watchTimeMinutes"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "period": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "period",
+    "devices"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.analytics-overview`. */
+export const YtAnalyticsOverviewInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "days": {
+      "description": "Recent days, 1-365 (default: 28)",
+      "pattern": "^\\d+$",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.analytics-overview`. */
+export const YtAnalyticsOverviewReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "overview": {
+      "additionalProperties": false,
+      "properties": {
+        "avgViewDurationSec": {
+          "type": "number"
+        },
+        "comments": {
+          "type": "number"
+        },
+        "dislikes": {
+          "type": "number"
+        },
+        "likes": {
+          "type": "number"
+        },
+        "netSubscribers": {
+          "type": "number"
+        },
+        "shares": {
+          "type": "number"
+        },
+        "subscribersGained": {
+          "type": "number"
+        },
+        "subscribersLost": {
+          "type": "number"
+        },
+        "views": {
+          "type": "number"
+        },
+        "watchTimeMinutes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "views",
+        "watchTimeMinutes",
+        "avgViewDurationSec",
+        "subscribersGained",
+        "subscribersLost",
+        "netSubscribers",
+        "likes",
+        "dislikes",
+        "comments",
+        "shares"
+      ],
+      "type": "object"
+    },
+    "period": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "period",
+    "overview"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.analytics-series`. */
+export const YtAnalyticsSeriesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "days": {
+      "description": "Recent days, 1-365 (default: 28)",
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "metric": {
+      "description": "views|estimatedMinutesWatched|averageViewDuration|subscribersGained|likes|comments|shares (default: views)",
+      "enum": [
+        "views",
+        "estimatedMinutesWatched",
+        "averageViewDuration",
+        "subscribersGained",
+        "likes",
+        "comments",
+        "shares"
+      ],
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.analytics-series`. */
+export const YtAnalyticsSeriesReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "data": {
+      "items": {
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "metric": {
+      "type": "string"
+    },
+    "period": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "period",
+    "metric",
+    "data"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.analytics-top`. */
+export const YtAnalyticsTopInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "days": {
+      "description": "Recent days, 1-365 (default: 28)",
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Rows, 1-200 (default: 10)",
+      "pattern": "^\\d+$",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.analytics-top`. */
+export const YtAnalyticsTopReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "period": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "videos": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "avgViewDurationSec": {
+            "type": "number"
+          },
+          "comments": {
+            "type": "number"
+          },
+          "likes": {
+            "type": "number"
+          },
+          "title": {
+            "type": "string"
+          },
+          "videoId": {
+            "type": "string"
+          },
+          "views": {
+            "type": "number"
+          },
+          "watchTimeMinutes": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "videoId",
+          "title",
+          "views",
+          "watchTimeMinutes",
+          "avgViewDurationSec",
+          "likes",
+          "comments"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "success",
+    "period",
+    "videos"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.analytics-traffic`. */
+export const YtAnalyticsTrafficInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "days": {
+      "description": "Recent days, 1-365 (default: 28)",
+      "pattern": "^\\d+$",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.analytics-traffic`. */
+export const YtAnalyticsTrafficReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "period": {
+      "type": "string"
+    },
+    "sources": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "views": {
+            "type": "number"
+          },
+          "watchTimeMinutes": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "source",
+          "views",
+          "watchTimeMinutes"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "period",
+    "sources"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.caption-download`. */
+export const YtCaptionDownloadInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "captionId": {
+      "description": "Caption track ID from `ravi yt captions`",
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "format": {
+      "description": "srt|vtt|ttml (default: srt)",
+      "enum": [
+        "srt",
+        "vtt",
+        "ttml"
+      ],
+      "type": "string"
+    },
+    "language": {
+      "description": "Optional ISO 639-1 translation language",
+      "type": "string"
+    }
+  },
+  "required": [
+    "captionId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.caption-download`. */
+export const YtCaptionDownloadReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "captionId": {
+      "type": "string"
+    },
+    "content": {
+      "type": "string"
+    },
+    "format": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "captionId",
+    "format",
+    "content"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.captions`. */
+export const YtCaptionsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "videoId": {
+      "description": "YouTube video ID",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "videoId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.captions`. */
+export const YtCaptionsReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "captions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "captionId": {
+            "type": "string"
+          },
+          "isAutoSynced": {
+            "type": "boolean"
+          },
+          "isDraft": {
+            "type": "boolean"
+          },
+          "language": {
+            "type": "string"
+          },
+          "lastUpdated": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "trackKind": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "captionId",
+          "language",
+          "name",
+          "trackKind",
+          "isAutoSynced",
+          "isDraft",
+          "status",
+          "lastUpdated"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "totalResults": {
+      "type": "number"
+    },
+    "videoId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "success",
+    "videoId",
+    "captions",
+    "totalResults"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.comments`. */
+export const YtCommentsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size, 1-100 (default: 20)",
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "page": {
+      "description": "Provider page token from nextPageToken",
+      "type": "string"
+    },
+    "videoId": {
+      "description": "YouTube video ID",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "videoId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.comments`. */
+export const YtCommentsReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "comments": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "author": {
+            "type": "string"
+          },
+          "authorChannelUrl": {
+            "type": "string"
+          },
+          "commentId": {
+            "type": "string"
+          },
+          "likeCount": {
+            "type": "number"
+          },
+          "publishedAt": {
+            "type": "string"
+          },
+          "replyCount": {
+            "type": "number"
+          },
+          "text": {
+            "type": "string"
+          },
+          "threadId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "threadId",
+          "commentId",
+          "author",
+          "authorChannelUrl",
+          "text",
+          "likeCount",
+          "publishedAt",
+          "replyCount"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "nextPageToken": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "totalResults": {
+      "type": "number"
+    },
+    "videoId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "success",
+    "videoId",
+    "comments",
+    "totalResults"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.health`. */
+export const YtHealthInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.health`. */
+export const YtHealthReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "app": {
+      "const": "youtube",
+      "type": "string"
+    },
+    "authenticated": {
+      "const": false,
+      "type": "boolean"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "credentialConfigured": {
+      "type": "boolean"
+    },
+    "credentialStatus": {
+      "type": "string"
+    },
+    "externalCheckPerformed": {
+      "const": false,
+      "type": "boolean"
+    },
+    "message": {
+      "type": "string"
+    },
+    "ready": {
+      "type": "boolean"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "app",
+    "connection",
+    "ready",
+    "credentialConfigured",
+    "credentialStatus",
+    "authenticated",
+    "externalCheckPerformed",
+    "message"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.info`. */
+export const YtInfoInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.info`. */
+export const YtInfoReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "channel": {
+      "additionalProperties": false,
+      "properties": {
+        "channelId": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "subscriberCount": {
+          "type": "number"
+        },
+        "thumbnail": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "uploadsPlaylistId": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "videoCount": {
+          "type": "number"
+        },
+        "viewCount": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "channelId",
+        "title",
+        "description",
+        "subscriberCount",
+        "videoCount",
+        "viewCount",
+        "thumbnail",
+        "uploadsPlaylistId",
+        "url"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "channel"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.playlist`. */
+export const YtPlaylistInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size, 1-50 (default: 25)",
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "page": {
+      "description": "Provider page token from nextPageToken",
+      "type": "string"
+    },
+    "playlistId": {
+      "description": "YouTube playlist ID",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "playlistId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.playlist`. */
+export const YtPlaylistReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "nextPageToken": {
+      "type": "string"
+    },
+    "playlistId": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "totalResults": {
+      "type": "number"
+    },
+    "videos": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "commentCount": {
+            "type": "number"
+          },
+          "description": {
+            "type": "string"
+          },
+          "duration": {
+            "type": "string"
+          },
+          "likeCount": {
+            "type": "number"
+          },
+          "playlistItemId": {
+            "type": "string"
+          },
+          "privacyStatus": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "type": "string"
+          },
+          "thumbnail": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "videoId": {
+            "type": "string"
+          },
+          "viewCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "videoId",
+          "title",
+          "description",
+          "publishedAt",
+          "thumbnail",
+          "viewCount",
+          "likeCount",
+          "commentCount",
+          "duration",
+          "privacyStatus",
+          "url"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "success",
+    "playlistId",
+    "videos",
+    "totalResults"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.playlist-add`. */
+export const YtPlaylistAddInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "playlistId": {
+      "description": "Target YouTube playlist ID",
+      "minLength": 1,
+      "type": "string"
+    },
+    "videoId": {
+      "description": "YouTube video ID",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "playlistId",
+    "videoId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.playlist-add`. */
+export const YtPlaylistAddReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "item": {
+      "additionalProperties": false,
+      "properties": {
+        "playlistId": {
+          "type": "string"
+        },
+        "playlistItemId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "videoId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "playlistItemId",
+        "playlistId",
+        "videoId",
+        "title"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "item"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.playlist-create`. */
+export const YtPlaylistCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "description": {
+      "description": "Playlist description",
+      "type": "string"
+    },
+    "privacy": {
+      "description": "public|private|unlisted (default: private)",
+      "enum": [
+        "public",
+        "private",
+        "unlisted"
+      ],
+      "type": "string"
+    },
+    "title": {
+      "description": "Playlist title",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "title"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.playlist-create`. */
+export const YtPlaylistCreateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "playlist": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "itemCount": {
+          "type": "number"
+        },
+        "playlistId": {
+          "type": "string"
+        },
+        "privacyStatus": {
+          "type": "string"
+        },
+        "publishedAt": {
+          "type": "string"
+        },
+        "thumbnail": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "playlistId",
+        "title",
+        "description",
+        "thumbnail",
+        "itemCount",
+        "publishedAt",
+        "privacyStatus",
+        "url"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "playlist"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.playlist-delete`. */
+export const YtPlaylistDeleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "playlistId": {
+      "description": "Owned YouTube playlist ID",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "playlistId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.playlist-delete`. */
+export const YtPlaylistDeleteReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "deleted": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "deleted"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.playlist-remove`. */
+export const YtPlaylistRemoveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "playlistItemId": {
+      "description": "Playlist item ID, not video ID",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "playlistItemId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.playlist-remove`. */
+export const YtPlaylistRemoveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "removed": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "removed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.playlists`. */
+export const YtPlaylistsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size, 1-50 (default: 25)",
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "page": {
+      "description": "Provider page token from nextPageToken",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.playlists`. */
+export const YtPlaylistsReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "nextPageToken": {
+      "type": "string"
+    },
+    "playlists": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "itemCount": {
+            "type": "number"
+          },
+          "playlistId": {
+            "type": "string"
+          },
+          "privacyStatus": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "type": "string"
+          },
+          "thumbnail": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "playlistId",
+          "title",
+          "description",
+          "thumbnail",
+          "itemCount",
+          "publishedAt",
+          "privacyStatus",
+          "url"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "totalResults": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "success",
+    "playlists",
+    "totalResults"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.reply`. */
+export const YtReplyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "commentId": {
+      "description": "Top-level comment ID from `ravi yt comments`",
+      "minLength": 1,
+      "type": "string"
+    },
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "text": {
+      "description": "Exact approved reply text",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "commentId",
+    "text"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.reply`. */
+export const YtReplyReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "replyId": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "replyId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.search`. */
+export const YtSearchInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size, 1-50 (default: 10)",
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "page": {
+      "description": "Provider page token from nextPageToken",
+      "type": "string"
+    },
+    "query": {
+      "description": "Search text",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "query"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.search`. */
+export const YtSearchReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "nextPageToken": {
+      "type": "string"
+    },
+    "query": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "totalResults": {
+      "type": "number"
+    },
+    "videos": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "commentCount": {
+            "type": "number"
+          },
+          "description": {
+            "type": "string"
+          },
+          "duration": {
+            "type": "string"
+          },
+          "likeCount": {
+            "type": "number"
+          },
+          "playlistItemId": {
+            "type": "string"
+          },
+          "privacyStatus": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "type": "string"
+          },
+          "thumbnail": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "videoId": {
+            "type": "string"
+          },
+          "viewCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "videoId",
+          "title",
+          "description",
+          "publishedAt",
+          "thumbnail",
+          "viewCount",
+          "likeCount",
+          "commentCount",
+          "duration",
+          "privacyStatus",
+          "url"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "success",
+    "videos",
+    "totalResults",
+    "query"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.stats`. */
+export const YtStatsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "id": {
+      "description": "YouTube video ID",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.stats`. */
+export const YtStatsReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "stats": {
+      "additionalProperties": false,
+      "properties": {
+        "commentCount": {
+          "type": "number"
+        },
+        "daysSincePublish": {
+          "type": "number"
+        },
+        "likeCount": {
+          "type": "number"
+        },
+        "publishedAt": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "videoId": {
+          "type": "string"
+        },
+        "viewCount": {
+          "type": "number"
+        },
+        "viewsPerDay": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "videoId",
+        "title",
+        "viewCount",
+        "likeCount",
+        "commentCount",
+        "publishedAt",
+        "daysSincePublish",
+        "viewsPerDay"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "stats"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.subscriptions`. */
+export const YtSubscriptionsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size, 1-50 (default: 25)",
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "page": {
+      "description": "Provider page token from nextPageToken",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.subscriptions`. */
+export const YtSubscriptionsReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "nextPageToken": {
+      "type": "string"
+    },
+    "subscriptions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "channelId": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "type": "string"
+          },
+          "subscriptionId": {
+            "type": "string"
+          },
+          "thumbnail": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "totalItemCount": {
+            "type": "number"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "subscriptionId",
+          "channelId",
+          "title",
+          "description",
+          "thumbnail",
+          "publishedAt",
+          "totalItemCount",
+          "url"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "totalResults": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "success",
+    "subscriptions",
+    "totalResults"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.unanswered`. */
+export const YtUnansweredInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Threads inspected, 1-100 (default: 50)",
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "page": {
+      "description": "Provider page token from nextPageToken",
+      "type": "string"
+    },
+    "videoId": {
+      "description": "YouTube video ID",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "videoId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.unanswered`. */
+export const YtUnansweredReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "comments": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "author": {
+            "type": "string"
+          },
+          "authorChannelUrl": {
+            "type": "string"
+          },
+          "commentId": {
+            "type": "string"
+          },
+          "likeCount": {
+            "type": "number"
+          },
+          "publishedAt": {
+            "type": "string"
+          },
+          "replyCount": {
+            "type": "number"
+          },
+          "text": {
+            "type": "string"
+          },
+          "threadId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "threadId",
+          "commentId",
+          "author",
+          "authorChannelUrl",
+          "text",
+          "likeCount",
+          "publishedAt",
+          "replyCount"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "nextPageToken": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "totalUnanswered": {
+      "type": "number"
+    },
+    "videoId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "success",
+    "videoId",
+    "comments",
+    "totalUnanswered"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.video`. */
+export const YtVideoInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "id": {
+      "description": "YouTube video ID",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.video`. */
+export const YtVideoReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "video": {
+      "additionalProperties": false,
+      "properties": {
+        "commentCount": {
+          "type": "number"
+        },
+        "description": {
+          "type": "string"
+        },
+        "duration": {
+          "type": "string"
+        },
+        "likeCount": {
+          "type": "number"
+        },
+        "playlistItemId": {
+          "type": "string"
+        },
+        "privacyStatus": {
+          "type": "string"
+        },
+        "publishedAt": {
+          "type": "string"
+        },
+        "thumbnail": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "videoId": {
+          "type": "string"
+        },
+        "viewCount": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "videoId",
+        "title",
+        "description",
+        "publishedAt",
+        "thumbnail",
+        "viewCount",
+        "likeCount",
+        "commentCount",
+        "duration",
+        "privacyStatus",
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "video"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.video-categories`. */
+export const YtVideoCategoriesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "region": {
+      "description": "ISO 3166-1 alpha-2 region (default: BR)",
+      "pattern": "^[A-Za-z]{2}$",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.video-categories`. */
+export const YtVideoCategoriesReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "categories": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "assignable": {
+            "type": "boolean"
+          },
+          "categoryId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "categoryId",
+          "title",
+          "assignable"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "region": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "totalResults": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "success",
+    "region",
+    "categories",
+    "totalResults"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.video-delete`. */
+export const YtVideoDeleteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "id": {
+      "description": "Owned YouTube video ID",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.video-delete`. */
+export const YtVideoDeleteReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "deleted": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "deleted"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.video-update`. */
+export const YtVideoUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "category": {
+      "description": "Replacement category ID",
+      "type": "string"
+    },
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "description": {
+      "description": "Replacement description",
+      "type": "string"
+    },
+    "id": {
+      "description": "Owned YouTube video ID",
+      "minLength": 1,
+      "type": "string"
+    },
+    "privacy": {
+      "description": "public|private|unlisted",
+      "enum": [
+        "public",
+        "private",
+        "unlisted"
+      ],
+      "type": "string"
+    },
+    "tags": {
+      "description": "Replacement comma-separated tag list",
+      "type": "string"
+    },
+    "title": {
+      "description": "Replacement title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.video-update`. */
+export const YtVideoUpdateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "video": {
+      "additionalProperties": false,
+      "properties": {
+        "commentCount": {
+          "type": "number"
+        },
+        "description": {
+          "type": "string"
+        },
+        "duration": {
+          "type": "string"
+        },
+        "likeCount": {
+          "type": "number"
+        },
+        "playlistItemId": {
+          "type": "string"
+        },
+        "privacyStatus": {
+          "type": "string"
+        },
+        "publishedAt": {
+          "type": "string"
+        },
+        "thumbnail": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "videoId": {
+          "type": "string"
+        },
+        "viewCount": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "videoId",
+        "title",
+        "description",
+        "publishedAt",
+        "thumbnail",
+        "viewCount",
+        "likeCount",
+        "commentCount",
+        "duration",
+        "privacyStatus",
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "video"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `yt.videos`. */
+export const YtVideosInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "connection": {
+      "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size, 1-50 (default: 10)",
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "page": {
+      "description": "Provider page token from nextPageToken",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `yt.videos`. */
+export const YtVideosReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "nextPageToken": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "totalResults": {
+      "type": "number"
+    },
+    "videos": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "commentCount": {
+            "type": "number"
+          },
+          "description": {
+            "type": "string"
+          },
+          "duration": {
+            "type": "string"
+          },
+          "likeCount": {
+            "type": "number"
+          },
+          "playlistItemId": {
+            "type": "string"
+          },
+          "privacyStatus": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "type": "string"
+          },
+          "thumbnail": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "videoId": {
+            "type": "string"
+          },
+          "viewCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "videoId",
+          "title",
+          "description",
+          "publishedAt",
+          "thumbnail",
+          "viewCount",
+          "likeCount",
+          "commentCount",
+          "duration",
+          "privacyStatus",
+          "url"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "success",
+    "videos",
+    "totalResults"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

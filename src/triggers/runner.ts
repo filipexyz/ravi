@@ -6,8 +6,11 @@
  * emits it to the agent session.
  */
 
-import { nats } from "../nats.js";
 import { createHash } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { nats } from "../nats.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import { getDefaultAgentId } from "../router/router-db.js";
@@ -23,10 +26,11 @@ import {
 } from "../router/index.js";
 import { getAgent } from "../router/config.js";
 import { dbListTriggers, dbGetTrigger, dbUpdateTriggerState } from "./triggers-db.js";
-import { evaluateFilter } from "./filter.js";
+import { compileFilter, type CompiledFilter } from "./filter.js";
 import type { Trigger } from "./types.js";
 import { isBlockedTriggerTopic } from "./topic-policy.js";
 import { buildTriggerPrompt } from "./prompt.js";
+import { DEFAULT_CRON_SHELL_TIMEOUT_MS, runShellCronCommand, type ShellCronRunResult } from "../cron/shell-executor.js";
 
 const log = logger.child("triggers:runner");
 const EVENT_DEDUPE_TTL_MS = 60_000;
@@ -35,12 +39,54 @@ const EVENT_DEDUPE_MAX = 2_000;
 /** Tracks a topic subscription stream for teardown */
 type TopicSub = ReturnType<typeof nats.subscribe>;
 
+interface PreparedTrigger {
+  trigger: Trigger;
+  filter: CompiledFilter;
+}
+
+interface TopicSubscription {
+  stream: TopicSub;
+  triggers: PreparedTrigger[];
+}
+
+export function planTriggerTopicRefresh(
+  currentTopics: Iterable<string>,
+  desiredTopics: Iterable<string>,
+): { keep: string[]; add: string[]; remove: string[] } {
+  const current = new Set(currentTopics);
+  const desired = new Set(desiredTopics);
+  return {
+    keep: [...desired].filter((topic) => current.has(topic)).sort(),
+    add: [...desired].filter((topic) => !current.has(topic)).sort(),
+    remove: [...current].filter((topic) => !desired.has(topic)).sort(),
+  };
+}
+
+export function isTriggerOriginatedEvent(topic: string, data: unknown): boolean {
+  if (topic.includes(":trigger:")) return true;
+  if (!data || typeof data !== "object") return false;
+  const record = data as Record<string, unknown>;
+  const origin = (record._turnProvenance as { origin?: unknown } | undefined)?.origin;
+  return origin === "trigger" || record._trigger === true;
+}
+
+export function shouldRetryTriggerTopic(
+  topic: string,
+  running: boolean,
+  desiredTopics: ReadonlySet<string>,
+  subscriptions: ReadonlyMap<string, unknown>,
+): boolean {
+  return running && desiredTopics.has(topic) && !subscriptions.has(topic);
+}
+
 /**
  * TriggerRunner - manages event-driven trigger subscriptions
  */
 export class TriggerRunner {
   /** Topic streams (NOT including refresh/test — those are long-lived) */
-  private topicSubs: TopicSub[] = [];
+  private topicSubs = new Map<string, TopicSubscription>();
+  /** Last desired topic set, used to prevent delayed retries from reviving removed subscriptions. */
+  private desiredTopics = new Set<string>();
   private running = false;
   private recentEventFires = new Map<string, number>();
   private recentEventFireOps = 0;
@@ -79,14 +125,15 @@ export class TriggerRunner {
    * Tear down all topic subscriptions.
    */
   private teardownSubscriptions(): void {
-    for (const sub of this.topicSubs) {
+    for (const subscription of this.topicSubs.values()) {
       try {
-        sub.return?.(undefined);
+        subscription.stream.return?.(undefined);
       } catch {
         // ignore close errors
       }
     }
-    this.topicSubs = [];
+    this.topicSubs.clear();
+    this.desiredTopics.clear();
   }
 
   // Mutex to prevent concurrent setupSubscriptions calls
@@ -115,39 +162,78 @@ export class TriggerRunner {
   }
 
   private async _doSetupSubscriptions(): Promise<void> {
-    // Tear down existing
-    this.teardownSubscriptions();
-
     const triggers = dbListTriggers({ enabledOnly: true });
 
     // Group by topic to share subscriptions
-    const byTopic = new Map<string, Trigger[]>();
+    const byTopic = new Map<string, PreparedTrigger[]>();
     for (const t of triggers) {
+      if (isBlockedTriggerTopic(t.topic)) {
+        log.warn("Skipping trigger on internal topic (anti-loop)", { topic: t.topic, triggerId: t.id });
+        continue;
+      }
       const list = byTopic.get(t.topic) || [];
-      list.push(t);
+      const filter = compileFilter(t.filter);
+      if (!filter.valid) {
+        log.warn("Loaded invalid trigger filter; preserving legacy fail-open behavior", {
+          triggerId: t.id,
+          filter: t.filter,
+          error: filter.error,
+        });
+      }
+      list.push({ trigger: t, filter });
       byTopic.set(t.topic, list);
     }
 
-    for (const [topic, trigs] of byTopic) {
-      if (isBlockedTriggerTopic(topic)) {
-        log.warn("Skipping trigger on internal topic (anti-loop)", { topic });
-        continue;
+    this.desiredTopics = new Set(byTopic.keys());
+    const plan = planTriggerTopicRefresh(this.topicSubs.keys(), this.desiredTopics);
+    for (const topic of plan.keep) {
+      const existing = this.topicSubs.get(topic);
+      const desired = byTopic.get(topic);
+      if (!existing || !desired) continue;
+      const previousById = new Map(existing.triggers.map((item) => [item.trigger.id, item.trigger]));
+      for (const item of desired) {
+        const previous = previousById.get(item.trigger.id);
+        if (previous?.lastFiredAt && (!item.trigger.lastFiredAt || previous.lastFiredAt > item.trigger.lastFiredAt)) {
+          item.trigger.lastFiredAt = previous.lastFiredAt;
+        }
       }
-      this.subscribeToTopic(topic, trigs);
+      // The loop reads this mutable snapshot, so config changes do not churn
+      // a healthy NATS subscription for the same topic.
+      existing.triggers = desired;
+    }
+
+    for (const topic of plan.add) {
+      const desired = byTopic.get(topic);
+      if (desired) this.subscribeToTopic(topic, desired);
+    }
+
+    for (const topic of plan.remove) {
+      const subscription = this.topicSubs.get(topic);
+      if (!subscription) continue;
+      this.topicSubs.delete(topic);
+      try {
+        subscription.stream.return?.(undefined);
+      } catch {
+        // Ignore close failures; the subscription is no longer reachable.
+      }
     }
 
     log.info("Subscriptions set up", {
       topics: byTopic.size,
       triggers: triggers.length,
+      addedTopics: plan.add.length,
+      retainedTopics: plan.keep.length,
+      removedTopics: plan.remove.length,
     });
   }
 
   /**
    * Subscribe to a NATS topic and fire matching triggers.
    */
-  private subscribeToTopic(topic: string, triggers: Trigger[]): void {
+  private subscribeToTopic(topic: string, triggers: PreparedTrigger[]): void {
     const stream = nats.subscribe(topic);
-    this.topicSubs.push(stream);
+    const subscription: TopicSubscription = { stream, triggers };
+    this.topicSubs.set(topic, subscription);
 
     // Run subscription loop in background
     (async () => {
@@ -157,12 +243,13 @@ export class TriggerRunner {
 
           // Skip events from trigger sessions (prevents self-fire loops)
           // Trigger sessions use pattern: ravi.agent:{id}:trigger:{triggerId}.*
-          if (event.topic.includes(":trigger:")) continue;
-          // Also skip events explicitly tagged as trigger-originated
+          // Prefer canonical turn provenance; retain legacy topic/marker checks
+          // for producers that have not adopted it yet.
           const eventData = event.data as Record<string, unknown> | undefined;
-          if (eventData?._trigger) continue;
+          if (isTriggerOriginatedEvent(event.topic, eventData)) continue;
 
-          for (const trigger of triggers) {
+          for (const prepared of subscription.triggers) {
+            const trigger = prepared.trigger;
             // Cooldown check
             if (trigger.lastFiredAt && Date.now() - trigger.lastFiredAt < trigger.cooldownMs) {
               log.debug("Trigger cooldown active, skipping", {
@@ -173,7 +260,7 @@ export class TriggerRunner {
             }
 
             // Filter check: evaluate trigger's filter expression against event data
-            if (!evaluateFilter(trigger.filter, event.data)) {
+            if (!prepared.filter.evaluate(event.data)) {
               log.debug("Trigger filter did not match, skipping", {
                 triggerId: trigger.id,
                 triggerName: trigger.name,
@@ -208,13 +295,14 @@ export class TriggerRunner {
         }
       } catch (err) {
         // Stream closed is expected during teardown
-        if (!this.running) return;
+        if (!this.running || this.topicSubs.get(topic) !== subscription) return;
 
         log.error("Topic subscription error", { topic, error: err });
+        this.topicSubs.delete(topic);
         // Retry after delay
         setTimeout(() => {
-          if (this.running) {
-            this.subscribeToTopic(topic, triggers);
+          if (shouldRetryTriggerTopic(topic, this.running, this.desiredTopics, this.topicSubs)) {
+            this.subscribeToTopic(topic, subscription.triggers);
           }
         }, 5000);
       }
@@ -314,6 +402,11 @@ export class TriggerRunner {
       source.accountId = trigger.accountId;
     }
 
+    if ((trigger.executionType ?? "agent") === "shell") {
+      await this.fireShellTrigger(trigger, event, source);
+      return;
+    }
+
     const prompt = buildTriggerPrompt(trigger, event);
 
     log.info("Firing trigger", {
@@ -338,6 +431,198 @@ export class TriggerRunner {
 
     // Update in-memory trigger too (for cooldown tracking)
     trigger.lastFiredAt = Date.now();
+  }
+
+  private truncateForPrompt(text: string, max = 4000): string {
+    if (text.length <= max) return text;
+    return `${text.slice(0, max)}\n... [truncated ${text.length - max} chars]`;
+  }
+
+  private formatShellError(result: ShellCronRunResult): string {
+    const exit = result.timedOut
+      ? `timeout after ${result.durationMs}ms`
+      : result.signal
+        ? `signal ${result.signal}`
+        : `exit code ${result.exitCode ?? "unknown"}`;
+    const stderr = result.stderr.trim();
+    return stderr
+      ? `Shell trigger command failed with ${exit}: ${this.truncateForPrompt(stderr)}`
+      : `Shell trigger command failed with ${exit}`;
+  }
+
+  private buildShellEnv(
+    trigger: Trigger,
+    event: { topic: string; data: unknown },
+    source: { channel: string; accountId: string; chatId: string } | undefined,
+    eventFile: string,
+    dataFile: string,
+  ): Record<string, string> {
+    const data = event.data && typeof event.data === "object" ? (event.data as Record<string, unknown>) : {};
+    const stringField = (key: string): string => {
+      const value = data[key];
+      return typeof value === "string" ? value : "";
+    };
+
+    return {
+      RAVI_TRIGGER_ID: trigger.id,
+      RAVI_TRIGGER_NAME: trigger.name,
+      RAVI_TRIGGER_TOPIC: event.topic,
+      RAVI_TRIGGER_EVENT_FILE: eventFile,
+      RAVI_TRIGGER_DATA_FILE: dataFile,
+      RAVI_TRIGGER_SOURCE_CHANNEL: source?.channel ?? "",
+      RAVI_TRIGGER_SOURCE_ACCOUNT_ID: source?.accountId ?? "",
+      RAVI_TRIGGER_SOURCE_CHAT_ID: source?.chatId ?? "",
+      RAVI_TRIGGER_PROVIDER: stringField("provider"),
+      RAVI_TRIGGER_INTERACTION_TYPE: stringField("interactionType"),
+      RAVI_TRIGGER_ACTION_ID: stringField("actionId"),
+      RAVI_TRIGGER_BLOCK_ID: stringField("blockId"),
+      RAVI_TRIGGER_VALUE: stringField("value"),
+      RAVI_TRIGGER_USER_ID: stringField("userId"),
+      RAVI_TRIGGER_CHANNEL_ID: stringField("channelId"),
+      RAVI_TRIGGER_MESSAGE_TS: stringField("messageTs"),
+      RAVI_TRIGGER_THREAD_TS: stringField("threadTs"),
+      RAVI_TRIGGER_RESPONSE_URL_ID: stringField("responseUrlId"),
+    };
+  }
+
+  private async notifyShellTriggerError(
+    trigger: Trigger,
+    result: ShellCronRunResult,
+    errorMessage: string,
+  ): Promise<void> {
+    if (!trigger.onError) return;
+    const prefix = "notify-session:";
+    if (!trigger.onError.startsWith(prefix)) {
+      log.warn("Unsupported trigger on-error action", { triggerId: trigger.id, onError: trigger.onError });
+      return;
+    }
+
+    const sessionRef = trigger.onError.slice(prefix.length).trim();
+    if (!sessionRef) {
+      log.warn("Trigger on-error notify-session missing target", { triggerId: trigger.id });
+      return;
+    }
+
+    const resolved = resolveSession(sessionRef);
+    const sessionName = resolved?.name ?? sessionRef;
+    const stdout = result.stdout.trim();
+    const stderr = result.stderr.trim();
+    const prompt = [
+      `[System] Inform: [from: trigger:${trigger.id}] Trigger shell command failed.`,
+      "",
+      `Trigger: ${trigger.name}`,
+      `Topic: ${trigger.topic}`,
+      `Command: ${trigger.shellCommand ?? result.command}`,
+      `Error: ${errorMessage}`,
+      `Exit code: ${result.exitCode ?? "(none)"}`,
+      `Signal: ${result.signal ?? "(none)"}`,
+      `Duration: ${result.durationMs}ms`,
+      stderr ? `\nStderr:\n${this.truncateForPrompt(stderr)}` : "",
+      stdout ? `\nStdout:\n${this.truncateForPrompt(stdout)}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    await publishSessionPrompt(sessionName, {
+      prompt,
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
+      _trigger: true,
+      _triggerId: trigger.id,
+      _triggerOnError: true,
+    });
+  }
+
+  private async fireShellTrigger(
+    trigger: Trigger,
+    event: { topic: string; data: unknown },
+    source: { channel: string; accountId: string; chatId: string } | undefined,
+  ): Promise<void> {
+    if (!trigger.shellCommand?.trim()) {
+      throw new Error("Shell trigger is missing shellCommand");
+    }
+
+    const firedAt = Date.now();
+    const tempDir = await mkdtemp(join(tmpdir(), "ravi-trigger-shell-"));
+    const eventFile = join(tempDir, "event.json");
+    const dataFile = join(tempDir, "data.json");
+
+    try {
+      await writeFile(
+        eventFile,
+        JSON.stringify(
+          {
+            trigger: {
+              id: trigger.id,
+              name: trigger.name,
+              topic: trigger.topic,
+            },
+            event,
+            source,
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      );
+      await writeFile(dataFile, JSON.stringify(event.data ?? null, null, 2), "utf8");
+
+      log.info("Firing shell trigger", {
+        triggerId: trigger.id,
+        triggerName: trigger.name,
+        topic: event.topic,
+        hasSource: !!source,
+      });
+
+      const result = await runShellCronCommand(trigger.shellCommand, {
+        timeoutMs: trigger.shellTimeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS,
+        envFile: trigger.shellEnvFile,
+        env: this.buildShellEnv(trigger, event, source, eventFile, dataFile),
+      });
+
+      if (result.stdout.trim()) {
+        log.info("Shell trigger stdout", {
+          triggerId: trigger.id,
+          output: this.truncateForPrompt(result.stdout.trim()),
+        });
+      }
+      if (result.stderr.trim()) {
+        log.warn("Shell trigger stderr", {
+          triggerId: trigger.id,
+          output: this.truncateForPrompt(result.stderr.trim()),
+        });
+      }
+
+      const ok = !result.timedOut && result.exitCode === 0;
+      const errorMessage = ok ? undefined : this.formatShellError(result);
+
+      if (!ok && errorMessage) {
+        try {
+          await this.notifyShellTriggerError(trigger, result, errorMessage);
+        } catch (notifyError) {
+          log.error("Failed to notify session about trigger shell error", {
+            triggerId: trigger.id,
+            error: notifyError instanceof Error ? notifyError.message : String(notifyError),
+          });
+        }
+      }
+
+      log.info("Shell trigger completed", {
+        triggerId: trigger.id,
+        triggerName: trigger.name,
+        status: ok ? "ok" : "error",
+        exitCode: result.exitCode,
+        signal: result.signal,
+        durationMs: result.durationMs,
+      });
+    } finally {
+      await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      dbUpdateTriggerState(trigger.id, {
+        lastFiredAt: firedAt,
+        incrementFire: true,
+      });
+      trigger.lastFiredAt = firedAt;
+    }
   }
 
   /**

@@ -251,4 +251,52 @@ describe("SessionCommands trace", () => {
     expect(records.some((record) => record.recordType === "blob")).toBe(true);
     expect(records.some((record) => record.recordType === "explanation")).toBe(true);
   });
+
+  it("keeps omitted JSON trace limit unbounded while defaulting human output", () => {
+    seedCliTrace();
+
+    let jsonResult: { trace: { filters: { limit: number | null } } } | undefined;
+    captureLogs(() => {
+      jsonResult = new SessionCommands().trace(
+        "cli-trace",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        false,
+        false,
+        false,
+        false,
+        undefined,
+        undefined,
+        false,
+      ) as unknown as { trace: { filters: { limit: number | null } } };
+    });
+    expect(jsonResult?.trace.filters.limit).toBe(null);
+
+    let humanResult: { trace: { filters: { limit: number | null } } } | undefined;
+    captureLogs(() => {
+      humanResult = new SessionCommands().trace(
+        "cli-trace",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        false,
+        false,
+        false,
+        false,
+        undefined,
+        undefined,
+        false,
+      ) as unknown as { trace: { filters: { limit: number | null } } };
+    });
+    expect(humanResult?.trace.filters.limit).toBe(200);
+  });
 });

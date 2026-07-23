@@ -1,4 +1,4 @@
-import { calculateCost } from "../constants.js";
+import { calculateCost, prewarmPricingCatalog } from "../costs/pricing-catalog.js";
 import { backfillProviderSessionId, getRecentHistory, saveMessage } from "../db.js";
 import { HEARTBEAT_OK } from "../heartbeat/index.js";
 import { getToolSafety } from "../hooks/tool-safety.js";
@@ -25,6 +25,7 @@ import {
   classifyRuntimeContextWindowFailure,
   RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
 } from "./context-window-recovery.js";
+import { compactionAnnouncementForTurn } from "./compaction-announcement.js";
 import { classifyRuntimeCredentialFailure } from "./credential-classifier.js";
 import { mergeRuntimeCredentialSessionMetadata } from "./credential-resolver.js";
 import { refreshRuntimeCredential } from "./credential-refresh.js";
@@ -36,13 +37,17 @@ import {
 import type { RuntimeCredentialFailureSignal } from "./credential-types.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import {
+  LEGACY_RUNTIME_PROVIDER_ID,
+  shutdownRuntimeStreamingSession,
   stashCurrentTurnRuntimeMessages,
   stashPendingRuntimeMessages,
   type RuntimeHostStreamingSession,
   type RuntimeUserMessage,
 } from "./host-session.js";
 import { resolveSessionOutputTarget } from "./session-output-target.js";
+import { resolveRuntimeIdleSessionTtlMs } from "./session-pool.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
+import { formatUserFacingTurnFailure, publicRuntimeFailureDetail } from "./public-failure.js";
 import {
   createObservationEvent,
   deliverObservationEvents,
@@ -59,17 +64,27 @@ import {
 } from "./skill-visibility.js";
 import type {
   RuntimeCapabilities,
+  RuntimeEvent,
   RuntimeEventMetadata,
   RuntimeProviderId,
   RuntimeSessionHandle,
   RuntimeSkillVisibilitySnapshot,
 } from "./types.js";
+import { classifyTurnProvenance } from "./turn-provenance.js";
 
 const log = logger.child("bot");
 
 const MAX_OUTPUT_LENGTH = 1000;
 const MAX_TURN_FAILURE_LOG_DETAIL = 1800;
-const MAX_TURN_FAILURE_RESPONSE = 320;
+const PROVIDER_INACTIVE_AFTER_TOOL_REASON = "provider_inactive";
+const PROVIDER_TURN_INACTIVITY_REASON = "provider_turn_inactive";
+const IDLE_SESSION_TTL_REASON = "idle_session_ttl";
+const RUNTIME_SESSION_CLOSE_TIMEOUT_MS = 5_000;
+const USER_FACING_LIMIT_SUPPRESSION_DEFAULT_MS = 60 * 60_000;
+const USER_FACING_LIMIT_SUPPRESSION_MAX_MS = 24 * 60 * 60_000;
+const USER_FACING_LIMIT_SUPPRESSION_RESET_GRACE_MS = 60_000;
+
+const userFacingRuntimeLimitSuppressions = new Map<string, number>();
 
 export type RuntimeSafeEmit = (topic: string, data: Record<string, unknown>) => Promise<void>;
 
@@ -216,9 +231,14 @@ function recordRuntimeCredentialTurnSuccess(streaming: RuntimeHostStreamingSessi
   if (!credentialId) return;
   try {
     recordRuntimeCredentialSuccess(credentialId);
-    completeRuntimeCredentialAttempt(credential?.attemptId, { status: "succeeded" });
+    completeRuntimeCredentialAttempt(credential?.attemptId, {
+      status: "succeeded",
+    });
   } catch (error) {
-    log.warn("Failed to record runtime credential success", { credentialId, error });
+    log.warn("Failed to record runtime credential success", {
+      credentialId,
+      error,
+    });
   }
 }
 
@@ -261,7 +281,10 @@ function recordRuntimeCredentialTurnFailure(input: {
 
   try {
     recordRuntimeCredentialFailure(credential.credentialId, signal);
-    completeRuntimeCredentialAttempt(credential.attemptId, { status: "failed", signal });
+    completeRuntimeCredentialAttempt(credential.attemptId, {
+      status: "failed",
+      signal,
+    });
   } catch (error) {
     log.warn("Failed to record runtime credential failure", {
       credentialId: credential.credentialId,
@@ -354,31 +377,149 @@ function isRecoverableInterruptionFailure(event: {
   return hasAbortMarker || hasInterruptedDiagnostic;
 }
 
-export function formatUserFacingTurnFailure(error: string): string {
-  const firstLine = error
-    .split("\n")
-    .map((line) => line.trim())
-    .find(Boolean);
-  const detail = firstLine ?? (error.trim() || "unknown error");
-  const clipped =
-    detail.length > MAX_TURN_FAILURE_RESPONSE
-      ? `${detail.slice(0, MAX_TURN_FAILURE_RESPONSE - 15)}... [truncated]`
-      : detail;
-  return `Error: ${clipped}`;
+type UserFacingRuntimeLimitFailure = {
+  kind: "session_limit";
+  windowKey: string;
+  expiresAt: number;
+};
+
+type UserFacingRuntimeLimitSuppressionDecision =
+  | {
+      suppressed: false;
+      classified?: UserFacingRuntimeLimitFailure;
+    }
+  | {
+      suppressed: true;
+      classified: UserFacingRuntimeLimitFailure;
+      previousExpiresAt: number;
+    };
+
+function firstNonEmptyLine(value: string): string {
+  return (
+    value
+      .split("\n")
+      .map((line) => line.trim())
+      .find(Boolean) ?? ""
+  );
+}
+
+function normalizeSuppressionText(value: string): string {
+  return value.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function extractSessionLimitResetDescriptor(error: string): string | undefined {
+  const firstLine = firstNonEmptyLine(error);
+  const match = firstLine.match(/\breset(?:s|ting)?\s+(.+?)(?:$|[.;])/i);
+  const raw = match?.[1]?.trim();
+  if (!raw) return undefined;
+  return normalizeSuppressionText(raw.replace(/^at\s+/i, "")).slice(0, 120);
+}
+
+function parseResetDescriptorTime(descriptor: string, now: number): number | undefined {
+  const match = descriptor.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
+  if (!match) return undefined;
+
+  let hour = Number(match[1]);
+  const minute = match[2] === undefined ? 0 : Number(match[2]);
+  const meridiem = match[3]?.toLowerCase();
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23 || !Number.isInteger(minute) || minute < 0 || minute > 59) {
+    return undefined;
+  }
+
+  if (meridiem === "pm" && hour < 12) hour += 12;
+  if (meridiem === "am" && hour === 12) hour = 0;
+
+  const resetAt = new Date(now);
+  resetAt.setHours(hour, minute, 0, 0);
+  if (resetAt.getTime() <= now - USER_FACING_LIMIT_SUPPRESSION_RESET_GRACE_MS) {
+    resetAt.setDate(resetAt.getDate() + 1);
+  }
+  return resetAt.getTime();
+}
+
+export function classifyUserFacingRuntimeLimitFailure(
+  error: string,
+  now = Date.now(),
+): UserFacingRuntimeLimitFailure | undefined {
+  const normalized = normalizeSuppressionText(error);
+  const isExactSessionLimit = /you['’]?ve hit your session limit/i.test(error);
+  const isGenericSessionLimitWithReset = /\bsession limit\b/i.test(error) && /\breset(?:s|ting)?\b/i.test(error);
+  if (!isExactSessionLimit && !isGenericSessionLimitWithReset) return undefined;
+
+  const resetDescriptor = extractSessionLimitResetDescriptor(error);
+  const resetAt = resetDescriptor ? parseResetDescriptorTime(resetDescriptor, now) : undefined;
+  const expiresAt = resetAt
+    ? Math.min(resetAt + USER_FACING_LIMIT_SUPPRESSION_RESET_GRACE_MS, now + USER_FACING_LIMIT_SUPPRESSION_MAX_MS)
+    : now + USER_FACING_LIMIT_SUPPRESSION_DEFAULT_MS;
+  const windowKey = resetDescriptor
+    ? `reset:${resetDescriptor}`
+    : `message:${firstNonEmptyLine(normalized).slice(0, 160)}`;
+
+  return {
+    kind: "session_limit",
+    windowKey,
+    expiresAt,
+  };
+}
+
+export function resetUserFacingRuntimeLimitSuppressionsForTest(): void {
+  userFacingRuntimeLimitSuppressions.clear();
+}
+
+function pruneExpiredUserFacingRuntimeLimitSuppressions(now: number): void {
+  for (const [key, expiresAt] of userFacingRuntimeLimitSuppressions.entries()) {
+    if (expiresAt <= now) {
+      userFacingRuntimeLimitSuppressions.delete(key);
+    }
+  }
+}
+
+export function shouldSuppressUserFacingRuntimeLimitFailure(input: {
+  error: string;
+  scope: string;
+  now?: number;
+}): UserFacingRuntimeLimitSuppressionDecision {
+  const now = input.now ?? Date.now();
+  const classified = classifyUserFacingRuntimeLimitFailure(input.error, now);
+  if (!classified) return { suppressed: false };
+
+  pruneExpiredUserFacingRuntimeLimitSuppressions(now);
+  const key = `${input.scope}:${classified.kind}:${classified.windowKey}`;
+  const previousExpiresAt = userFacingRuntimeLimitSuppressions.get(key);
+  if (previousExpiresAt !== undefined && previousExpiresAt > now) {
+    return { suppressed: true, classified, previousExpiresAt };
+  }
+
+  userFacingRuntimeLimitSuppressions.set(key, classified.expiresAt);
+  return { suppressed: false, classified };
+}
+
+function buildUserFacingFailureSuppressionScope(input: {
+  sessionKey: string;
+  provider: RuntimeProviderId;
+  source?: RuntimeHostStreamingSession["currentSource"];
+}): string {
+  const source = input.source;
+  const outputScope = source
+    ? `${source.channel}:${source.accountId ?? ""}:${source.chatId ?? source.canonicalChatId ?? ""}`
+    : input.sessionKey;
+  return `${input.provider}:${outputScope}`;
 }
 
 function resolveCostTrackingModel(
   runtimeProvider: RuntimeProviderId,
   executionModel: string | null | undefined,
   configuredModel: string,
-  defaultRuntimeProviderId: RuntimeProviderId,
 ): string | null {
   const explicitModel = executionModel?.trim();
   if (explicitModel) {
     return explicitModel;
   }
 
-  return runtimeProvider === defaultRuntimeProviderId ? configuredModel : null;
+  // Only the legacy Claude provider backfills the agent's configured model when
+  // execution metadata omits one. Subscription-billed providers (codex) report
+  // no per-token model and must not be priced against an assumed model.
+  return runtimeProvider === LEGACY_RUNTIME_PROVIDER_ID ? configuredModel : null;
 }
 
 export interface RunRuntimeEventLoopOptions {
@@ -411,13 +552,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     runtimeCapabilities,
     model,
     instanceId,
-    defaultRuntimeProviderId,
     streamingSessions,
     stashedMessages,
     safeEmit,
     drainPendingStarts,
     restartStashedSession,
   } = options;
+  prewarmPricingCatalog();
   const recordTraceEvent = (
     input: Omit<Parameters<typeof recordRuntimeTraceEvent>[0], "sessionKey" | "sessionName" | "agentId" | "runId">,
   ) => {
@@ -535,6 +676,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       turnId: input.turnId ?? streaming.currentTraceTurnId,
       preview: input.preview,
       payload: input.payload,
+      turn: streaming.currentTurnProvenance ?? classifyTurnProvenance({ source: streaming.currentSource }),
     });
     observationEvents.push(event);
     deliverObservationBatch([event], ["realtime"], "realtime");
@@ -595,9 +737,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   // recovering quickly from the silent hang.
   // Override via `RAVI_RUNTIME_PROVIDER_INACTIVITY_MS`.
   const PROVIDER_INACTIVITY_TIMEOUT_MS = Math.max(
-    30_000,
+    1_000,
     Number(process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS) || 3 * 60 * 1000,
   );
+  const PROVIDER_TURN_INACTIVITY_TIMEOUT_MS = Math.max(
+    1_000,
+    Number(process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS) || 15 * 60 * 1000,
+  );
+  const PROVIDER_TURN_INACTIVITY_CHECK_MS = Math.min(
+    30_000,
+    Math.max(1_000, Math.floor(PROVIDER_TURN_INACTIVITY_TIMEOUT_MS / 10)),
+  );
+  const IDLE_SESSION_TTL_MS = resolveRuntimeIdleSessionTtlMs();
   let toolStuckTimer: ReturnType<typeof setTimeout> | undefined;
   let providerInactivityTimer: ReturnType<typeof setTimeout> | undefined;
   const clearProviderInactivityWatch = () => {
@@ -620,10 +771,56 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         sessionName,
       }).catch(() => {});
       if (!streaming.abortController.signal.aborted) {
-        streaming.internalAbortReason = "provider_inactive";
+        streaming.internalAbortReason = PROVIDER_INACTIVE_AFTER_TOOL_REASON;
         streaming.abortController.abort();
       }
     }, PROVIDER_INACTIVITY_TIMEOUT_MS);
+  };
+  const clearIdleSessionEvictionTimer = () => {
+    if (streaming.idleSessionEvictionTimer) {
+      clearTimeout(streaming.idleSessionEvictionTimer);
+      streaming.idleSessionEvictionTimer = undefined;
+    }
+  };
+  const scheduleIdleSessionEviction = () => {
+    if (IDLE_SESSION_TTL_MS <= 0) {
+      return;
+    }
+    clearIdleSessionEvictionTimer();
+    streaming.idleSessionEvictionTimer = setTimeout(() => {
+      streaming.idleSessionEvictionTimer = undefined;
+      if (
+        streaming.done ||
+        streaming.starting ||
+        streaming.turnActive ||
+        streaming.compacting ||
+        streaming.toolRunning ||
+        streaming.pendingMessages.length > 0
+      ) {
+        return;
+      }
+
+      log.info("Evicting idle runtime session", {
+        runId,
+        sessionName,
+        timeoutMs: IDLE_SESSION_TTL_MS,
+      });
+      recordTraceEvent({
+        provider: runtimeSession.provider,
+        model,
+        eventType: "session.idle_evicted",
+        eventGroup: "session",
+        status: "evicted",
+        source: streaming.currentSource,
+        payloadJson: {
+          reason: IDLE_SESSION_TTL_REASON,
+          timeoutMs: IDLE_SESSION_TTL_MS,
+          lastActivity: streaming.lastActivity,
+        },
+      });
+      shutdownRuntimeStreamingSession(streaming, IDLE_SESSION_TTL_REASON);
+    }, IDLE_SESSION_TTL_MS);
+    streaming.idleSessionEvictionTimer.unref?.();
   };
   const clearActiveToolState = () => {
     if (toolStuckTimer !== undefined) {
@@ -654,16 +851,173 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     // Include _source on turn-ending events so any gateway daemon can stop typing.
     // In multi-daemon mode the daemon that processes the prompt may differ from
     // the daemon that received the inbound message (which set activeTargets locally).
-    const augmented =
-      (event.type === "result" || event.type === "silent") && streaming.currentSource
-        ? { ...event, _source: streaming.currentSource }
-        : event;
+    const augmented = {
+      ...event,
+      ...(streaming.currentTurnProvenance ? { _turnProvenance: streaming.currentTurnProvenance } : {}),
+      ...((event.type === "result" || event.type === "silent") && streaming.currentSource
+        ? { _source: streaming.currentSource }
+        : {}),
+    };
     await safeEmit(`ravi.session.${sessionName}.${legacyEventTopicSuffix}`, augmented);
   };
 
   const emitRuntimeEvent = async (event: Record<string, unknown>) => {
-    const augmented = streaming.currentSource ? { ...event, _source: streaming.currentSource } : event;
+    const augmented = {
+      ...event,
+      ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
+      ...(streaming.currentTurnProvenance ? { _turnProvenance: streaming.currentTurnProvenance } : {}),
+    };
     await safeEmit(`ravi.session.${sessionName}.runtime`, augmented);
+  };
+
+  const recordProviderTurnInactivityTimeout = (idleMs: number) => {
+    const currentTurnId = streaming.currentTraceTurnId;
+    if (!currentTurnId || streaming.currentTraceTurnTerminalRecorded) {
+      return;
+    }
+
+    log.warn("Provider turn inactive — aborting session", {
+      runId,
+      sessionName,
+      turnId: currentTurnId,
+      timeoutMs: PROVIDER_TURN_INACTIVITY_TIMEOUT_MS,
+      idleMs,
+    });
+    safeEmit(`ravi.session.${sessionName}.runtime`, {
+      type: "provider.inactive",
+      reason: PROVIDER_TURN_INACTIVITY_REASON,
+      timeoutMs: PROVIDER_TURN_INACTIVITY_TIMEOUT_MS,
+      idleMs,
+      sessionName,
+      turnId: currentTurnId,
+    }).catch(() => {});
+    recordTraceEvent({
+      turnId: currentTurnId,
+      provider: runtimeSession.provider,
+      model,
+      eventType: "session.timeout",
+      eventGroup: "session",
+      status: "timeout",
+      source: streaming.currentSource,
+      payloadJson: {
+        reason: PROVIDER_TURN_INACTIVITY_REASON,
+        timeoutMs: PROVIDER_TURN_INACTIVITY_TIMEOUT_MS,
+        idleMs,
+        pendingMessages: streaming.pendingMessages.length,
+        currentTurnPendingIds: streaming.currentTurnPendingIds ?? [],
+      },
+    });
+    recordTerminalTraceOnce({
+      status: "timeout",
+      eventType: "turn.failed",
+      abortReason: PROVIDER_TURN_INACTIVITY_REASON,
+      error: `Provider produced no runtime events for ${PROVIDER_TURN_INACTIVITY_TIMEOUT_MS}ms.`,
+      payloadJson: {
+        reason: PROVIDER_TURN_INACTIVITY_REASON,
+        timeoutMs: PROVIDER_TURN_INACTIVITY_TIMEOUT_MS,
+        idleMs,
+        autoRecovered: true,
+      },
+    });
+    flushObservationEvents("turn.failed", {
+      provider: runtimeSession.provider,
+      reason: PROVIDER_TURN_INACTIVITY_REASON,
+      timeoutMs: PROVIDER_TURN_INACTIVITY_TIMEOUT_MS,
+      idleMs,
+      autoRecovered: true,
+    });
+  };
+
+  const recordUnterminatedTurnExit = () => {
+    const currentTurnId = streaming.currentTraceTurnId;
+    if (!currentTurnId || streaming.currentTraceTurnTerminalRecorded) {
+      return;
+    }
+
+    const reason =
+      streaming.internalAbortReason ??
+      (streaming.abortController.signal.aborted ? "runtime_aborted" : "runtime_event_loop_closed");
+    const timedOut =
+      reason === PROVIDER_INACTIVE_AFTER_TOOL_REASON ||
+      reason === PROVIDER_TURN_INACTIVITY_REASON ||
+      reason === "stuck_tool";
+    const status = timedOut ? "timeout" : "aborted";
+    const eventType = timedOut ? "turn.failed" : "turn.interrupted";
+
+    log.warn("Runtime event loop ended with unterminated active turn", {
+      runId,
+      sessionName,
+      turnId: currentTurnId,
+      reason,
+      status,
+      toolRunning: streaming.toolRunning,
+      compacting: streaming.compacting,
+      pendingMessages: streaming.pendingMessages.length,
+      currentTurnPendingIds: streaming.currentTurnPendingIds ?? [],
+    });
+
+    recordTraceEvent({
+      turnId: currentTurnId,
+      provider: runtimeSession.provider,
+      model,
+      eventType: "session.unterminated_turn",
+      eventGroup: "session",
+      status,
+      source: streaming.currentSource,
+      payloadJson: {
+        reason,
+        phase: "runtime.event_loop.finally",
+        activeTurn: streaming.turnActive,
+        toolRunning: streaming.toolRunning,
+        compacting: streaming.compacting,
+        pendingMessages: streaming.pendingMessages.length,
+        currentTurnPendingIds: streaming.currentTurnPendingIds ?? [],
+      },
+    });
+
+    recordTerminalTraceOnce({
+      status,
+      eventType,
+      abortReason: reason,
+      error: timedOut ? `Runtime ended without a terminal provider event after ${reason}.` : null,
+      payloadJson: {
+        reason,
+        phase: "runtime.event_loop.finally",
+        autoRecovered: Boolean(restartStashedReason),
+      },
+    });
+  };
+
+  const prepareUnterminatedTurnRecovery = () => {
+    const currentTurnId = streaming.currentTraceTurnId;
+    if (!currentTurnId || streaming.currentTraceTurnTerminalRecorded || restartStashedReason) {
+      return;
+    }
+
+    const reason =
+      streaming.internalAbortReason ??
+      (streaming.abortController.signal.aborted ? "runtime_aborted" : "runtime_event_loop_closed");
+
+    if (reason !== "runtime_event_loop_closed") {
+      return;
+    }
+    if (streaming.pendingMessages.length === 0 || streaming.toolRunning || streaming.currentTurnToolStarted) {
+      return;
+    }
+
+    const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages);
+    if (stashedCount === 0) {
+      return;
+    }
+
+    restartStashedReason = reason;
+    log.warn("Recovering unterminated runtime turn by replaying pending messages", {
+      runId,
+      sessionName,
+      turnId: currentTurnId,
+      reason,
+      stashedMessages: stashedCount,
+    });
   };
 
   const patchLiveState = (
@@ -757,7 +1111,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       resolvedTarget = resolution.target;
       resolvedSource = resolution.source;
       if (!resolution.target) {
-        log.warn("Response target unresolved — dropping emit", { sessionName, source: resolvedSource });
+        log.warn("Response target unresolved — dropping emit", {
+          sessionName,
+          source: resolvedSource,
+        });
         return;
       }
     }
@@ -796,8 +1153,121 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       });
   };
 
+  const runtimeEventIterator = runtimeSession.events[Symbol.asyncIterator]();
+  let runtimeSessionClosePromise: Promise<void> | null = null;
+  const closeRuntimeSession = (): Promise<void> => {
+    if (runtimeSessionClosePromise) {
+      return runtimeSessionClosePromise;
+    }
+
+    const closeResources = async () => {
+      await Promise.all([
+        (async () => {
+          try {
+            await runtimeSession.close?.();
+          } catch (error) {
+            log.warn("Failed to close runtime session handle", {
+              runId,
+              sessionName,
+              provider: runtimeSession.provider,
+              error,
+            });
+          }
+        })(),
+        (async () => {
+          try {
+            await runtimeEventIterator.return?.();
+          } catch (error) {
+            log.warn("Failed to close runtime event iterator", {
+              runId,
+              sessionName,
+              provider: runtimeSession.provider,
+              error,
+            });
+          }
+        })(),
+      ]);
+    };
+
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    runtimeSessionClosePromise = Promise.race([
+      closeResources(),
+      new Promise<void>((resolve) => {
+        timeout = setTimeout(() => {
+          log.warn("Timed out closing runtime session resources", {
+            runId,
+            sessionName,
+            provider: runtimeSession.provider,
+            timeoutMs: RUNTIME_SESSION_CLOSE_TIMEOUT_MS,
+          });
+          resolve();
+        }, RUNTIME_SESSION_CLOSE_TIMEOUT_MS);
+        timeout.unref?.();
+      }),
+    ]).finally(() => {
+      if (timeout) clearTimeout(timeout);
+    });
+    return runtimeSessionClosePromise;
+  };
+  const readNextRuntimeEvent = async (): Promise<IteratorResult<RuntimeEvent>> => {
+    const nextEvent = runtimeEventIterator.next();
+    let interval: ReturnType<typeof setInterval> | undefined;
+    let removeAbortListener: (() => void) | undefined;
+    let timedOut = false;
+    const timeout = new Promise<IteratorResult<RuntimeEvent>>((resolve) => {
+      interval = setInterval(() => {
+        if (timedOut || streaming.done || streaming.abortController.signal.aborted) return;
+        if (!streaming.turnActive || streaming.toolRunning || streaming.compacting) return;
+
+        const idleMs = Date.now() - streaming.lastActivity;
+        if (idleMs < PROVIDER_TURN_INACTIVITY_TIMEOUT_MS) return;
+
+        timedOut = true;
+        recordProviderTurnInactivityTimeout(idleMs);
+        stashPendingRuntimeMessages(sessionName, streaming, stashedMessages);
+        restartStashedReason = PROVIDER_TURN_INACTIVITY_REASON;
+        streaming.interrupted = true;
+        streaming.turnActive = false;
+        streaming.internalAbortReason = PROVIDER_TURN_INACTIVITY_REASON;
+        clearActiveToolState();
+        markRuntimeLiveIdle(sessionName, "provider turn inactive");
+        signalTurnComplete();
+        clearTraceTurnState();
+        streaming.done = true;
+        if (!streaming.abortController.signal.aborted) {
+          streaming.abortController.abort();
+        }
+        void closeRuntimeSession();
+        resolve({ done: true, value: undefined as never });
+      }, PROVIDER_TURN_INACTIVITY_CHECK_MS);
+      interval.unref?.();
+    });
+    const abort = new Promise<IteratorResult<RuntimeEvent>>((resolve) => {
+      const signal = streaming.abortController.signal;
+      if (signal.aborted) {
+        resolve({ done: true, value: undefined as never });
+        return;
+      }
+      const onAbort = () => resolve({ done: true, value: undefined as never });
+      signal.addEventListener("abort", onAbort, { once: true });
+      removeAbortListener = () => signal.removeEventListener("abort", onAbort);
+    });
+
+    try {
+      return await Promise.race([nextEvent, timeout, abort]);
+    } finally {
+      if (interval) clearInterval(interval);
+      removeAbortListener?.();
+    }
+  };
+
   try {
-    for await (const event of runtimeSession.events) {
+    while (!streaming.done) {
+      const next = await readNextRuntimeEvent();
+      if (next.done) {
+        break;
+      }
+      const event = next.value;
       if (streaming.done) {
         break;
       }
@@ -852,6 +1322,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const wasCompacting = streaming.compacting;
         streaming.compacting = status === "compacting";
         const compactionChanged = streaming.compacting !== wasCompacting;
+        // Snapshot whether compaction announcements may be externalized for the
+        // turn effectively executing. Falls back to source-only classification
+        // if a per-turn snapshot was not recorded (e.g. resumed stashed turn).
+        const compactionAnnouncement = compactionAnnouncementForTurn(
+          streaming.currentTurnProvenance ?? classifyTurnProvenance({ source: streaming.currentSource }),
+        );
         if (status === "compacting" || compactionChanged) {
           log.info("Compaction status", {
             sessionName,
@@ -876,6 +1352,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             status,
             wasCompacting,
             compacting: streaming.compacting,
+            externalAnnouncementsAllowed: compactionAnnouncement.externalAnnouncementsAllowed,
+            announcementOrigin: compactionAnnouncement.origin,
             metadata: event.metadata,
           },
         });
@@ -897,10 +1375,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           });
         }
 
+        const liveActivity = status === "idle" ? "idle" : streaming.compacting ? "compacting" : "thinking";
         patchLiveState(
           {
-            activity: streaming.compacting ? "compacting" : "thinking",
-            summary: streaming.compacting ? "compacting" : "runtime active",
+            activity: liveActivity,
+            summary: status === "idle" ? "runtime idle" : streaming.compacting ? "compacting" : "runtime active",
             agentId: agent.id,
             runId,
             provider: runtimeSession.provider,
@@ -910,7 +1389,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           statusSkillVisibility,
         );
 
-        if (getAnnounceCompaction() && streaming.currentSource && streaming.agentMode !== "sentinel") {
+        // External compaction announcements are user-facing runtime responses.
+        // They are suppressed for automation-originated turns (cron, trigger,
+        // session followup, heartbeat, and other background automation) while
+        // human/channel turns keep them when enabled and not in sentinel mode.
+        // Internal status/trace/live-state/skill-visibility handling above is
+        // preserved for every origin.
+        if (
+          getAnnounceCompaction() &&
+          streaming.currentSource &&
+          streaming.agentMode !== "sentinel" &&
+          compactionAnnouncement.externalAnnouncementsAllowed
+        ) {
           if (streaming.compacting && !wasCompacting) {
             emitResponse("🧠 Compactando memória... um momento.").catch(() => {});
           } else if (!streaming.compacting && wasCompacting) {
@@ -993,6 +1483,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           sessionName,
           agentId: agent.id,
           metadata: event.metadata,
+          ...(streaming.currentTurnProvenance ? { _turnProvenance: streaming.currentTurnProvenance } : {}),
         }).catch((err) => log.warn("Failed to emit tool start", { error: err }));
         updateRuntimeLiveState(sessionName, {
           activity: "thinking",
@@ -1167,6 +1658,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           sessionName,
           agentId: agent.id,
           metadata: event.metadata,
+          ...(streaming.currentTurnProvenance ? { _turnProvenance: streaming.currentTurnProvenance } : {}),
         }).catch((err) => log.warn("Failed to emit tool end", { error: err }));
         updateRuntimeLiveState(sessionName, {
           activity: event.isError ? "blocked" : "thinking",
@@ -1337,14 +1829,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           session.runtimeProvider = runtimeSession.provider;
         }
         clearRuntimeCredentialAttempt(streaming, completedCredentialAttemptId);
-        updateTokens(session.sessionKey, inputTokens, outputTokens);
+        updateTokens(session.sessionKey, inputTokens, outputTokens, inputTokens + cacheRead + cacheCreation);
 
-        const executionModel = resolveCostTrackingModel(
-          runtimeSession.provider,
-          event.execution?.model,
-          model,
-          defaultRuntimeProviderId,
-        );
+        const executionModel = resolveCostTrackingModel(runtimeSession.provider, event.execution?.model, model);
         const cost = executionModel
           ? calculateCost(executionModel, {
               inputTokens,
@@ -1353,7 +1840,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               cacheCreation,
             })
           : null;
-        if (cost && executionModel) {
+        const resolvedCost = cost ? await cost : null;
+        if (resolvedCost && executionModel) {
           dbInsertCostEvent({
             sessionKey: session.sessionKey,
             agentId: agent.id,
@@ -1362,10 +1850,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             outputTokens,
             cacheReadTokens: cacheRead,
             cacheCreationTokens: cacheCreation,
-            inputCostUsd: cost.inputCost,
-            outputCostUsd: cost.outputCost,
-            cacheCostUsd: cost.cacheCost,
-            totalCostUsd: cost.totalCost,
+            inputCostUsd: resolvedCost.inputCost,
+            outputCostUsd: resolvedCost.outputCost,
+            cacheCostUsd: resolvedCost.cacheCost,
+            totalCostUsd: resolvedCost.totalCost,
+            pricingStatus: resolvedCost.pricingStatus,
+            pricingSource: resolvedCost.pricing?.source ?? null,
+            pricingSourceUrl: resolvedCost.pricing?.sourceUrl ?? null,
+            pricingSourceVersion: resolvedCost.pricing?.sourceVersion ?? null,
+            pricingFetchedAt: resolvedCost.pricing?.fetchedAt ?? null,
+            pricingModel: resolvedCost.pricing?.model ?? null,
+            pricingError: resolvedCost.pricingError ?? null,
             createdAt: Date.now(),
           });
         }
@@ -1374,19 +1869,33 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           eventType: "turn.complete",
           providerSessionIdAfter: persistedSessionId ?? event.providerSessionId ?? null,
           usage: event.usage,
-          costUsd: cost?.totalCost ?? null,
+          costUsd: resolvedCost?.totalCost ?? null,
           responseChars: responseText.trim().length,
           payloadJson: {
             execution: event.execution ?? null,
             session: event.session ?? null,
             metadata: event.metadata ?? null,
+            pricing:
+              resolvedCost?.pricingStatus === "priced"
+                ? {
+                    status: resolvedCost.pricingStatus,
+                    source: resolvedCost.pricing?.source ?? null,
+                    model: resolvedCost.pricing?.model ?? null,
+                    sourceVersion: resolvedCost.pricing?.sourceVersion ?? null,
+                    fetchedAt: resolvedCost.pricing?.fetchedAt ?? null,
+                    stale: resolvedCost.pricing?.stale ?? null,
+                  }
+                : {
+                    status: resolvedCost?.pricingStatus ?? "skipped",
+                    error: resolvedCost?.pricingError ?? null,
+                  },
             promptTooLongReset: streaming._promptTooLong ?? false,
           },
         });
         flushObservationEvents("turn.complete", {
           provider: runtimeSession.provider,
           usage: event.usage,
-          costUsd: cost?.totalCost ?? null,
+          costUsd: resolvedCost?.totalCost ?? null,
           responseChars: responseText.trim().length,
           providerSessionIdAfter: persistedSessionId ?? event.providerSessionId ?? null,
           promptTooLongReset: streaming._promptTooLong ?? false,
@@ -1397,7 +1906,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             taskBarrierTaskId: streaming.currentTaskBarrierTaskId,
           })
         ) {
-          applyTaskSessionTtlForAgent(session, agent.id, { source: "runtime.turn.complete" });
+          applyTaskSessionTtlForAgent(session, agent.id, {
+            source: "runtime.turn.complete",
+          });
         }
 
         // Auto-reset session when prompt is too long (compact failed)
@@ -1463,6 +1974,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
         // Signal generator to continue (it will clear or keep queue based on interrupted flag)
         signalTurnComplete();
+        scheduleIdleSessionEviction();
         continue;
       }
 
@@ -1755,7 +2267,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           provider: runtimeSession.provider,
           recoverable: event.recoverable ?? true,
           suppressedRecoverable,
-          error: event.error,
+          error: publicRuntimeFailureDetail(event.error),
           abortReason: null,
         });
         clearTraceTurnState();
@@ -1764,11 +2276,29 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
 
         if (streaming.agentMode !== "sentinel") {
-          await emitResponse(formatUserFacingTurnFailure(event.error));
+          const suppression = shouldSuppressUserFacingRuntimeLimitFailure({
+            error: event.error,
+            scope: buildUserFacingFailureSuppressionScope({
+              sessionKey: session.sessionKey,
+              provider: runtimeSession.provider,
+              source: streaming.currentSource,
+            }),
+          });
+          if (suppression.suppressed) {
+            log.info("Suppressing repeated user-facing runtime limit failure", {
+              runId,
+              sessionName,
+              provider: runtimeSession.provider,
+              windowKey: suppression.classified.windowKey,
+              previousExpiresAt: suppression.previousExpiresAt,
+            });
+          } else {
+            await emitResponse(formatUserFacingTurnFailure(event.error));
+          }
         }
         updateRuntimeLiveState(sessionName, {
           activity: "blocked",
-          summary: truncateLiveSummary(event.error) || "turn failed",
+          summary: truncateLiveSummary(publicRuntimeFailureDetail(event.error)) || "turn failed",
           agentId: agent.id,
           runId,
           provider: runtimeSession.provider,
@@ -1782,8 +2312,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   } finally {
     log.info("Streaming session ended", { runId, sessionName });
 
+    prepareUnterminatedTurnRecovery();
+    recordUnterminatedTurnExit();
+    clearTraceTurnState();
+    clearProviderInactivityWatch();
+    clearIdleSessionEvictionTimer();
+    if (toolStuckTimer !== undefined) {
+      clearTimeout(toolStuckTimer);
+      toolStuckTimer = undefined;
+    }
     streaming.done = true;
     streaming.starting = false;
+    streaming.turnActive = false;
     streaming.compacting = false;
 
     // Unblock generator if it is waiting (between turns or waiting for turn complete)
@@ -1800,6 +2340,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     if (!streaming.abortController.signal.aborted) {
       streaming.abortController.abort();
     }
+    await closeRuntimeSession();
 
     if (streamingSessions.delete(sessionName)) {
       completeRuntimeCredentialAttempt(streaming.currentRuntimeCredential?.attemptId, {
@@ -1807,7 +2348,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         metadata: { phase: "runtime.event_loop.finally" },
       });
       if (restartStashedReason && restartStashedSession) {
-        await restartStashedSession({ sessionName, reason: restartStashedReason });
+        await restartStashedSession({
+          sessionName,
+          reason: restartStashedReason,
+        });
       }
       drainPendingStarts();
     }

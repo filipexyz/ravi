@@ -85,6 +85,16 @@ export interface RecordDeliveryTraceInput {
   timestamp?: number;
 }
 
+export interface RecordPresenceTraceInput {
+  sessionName: string;
+  status: "active" | "inactive" | "skipped" | "failed";
+  reason: string;
+  target?: unknown;
+  timestamp?: number;
+  payloadJson?: unknown;
+  error?: string | null;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -531,6 +541,11 @@ export function recordDeliveryTrace(input: RecordDeliveryTraceInput): SessionEve
       reason,
       emitId: input.delivery.emitId ?? input.response?._emitId,
       deliveryMessageId: outboundMessageId,
+      canonicalMessageId: input.delivery.canonicalMessageId,
+      platformMessageId: input.delivery.platformMessageId,
+      providerMessageId: input.delivery.providerMessageId,
+      providerTimestamp: input.delivery.providerTimestamp,
+      idempotencyKey: input.delivery.idempotencyKey,
       target,
       textLen: input.delivery.textLen,
       deliveredAt: input.delivery.deliveredAt,
@@ -538,6 +553,36 @@ export function recordDeliveryTrace(input: RecordDeliveryTraceInput): SessionEve
       channelChatId: input.delivery.chatId,
     },
     preview: reason ?? outboundMessageId,
+  });
+}
+
+export function recordPresenceTrace(input: RecordPresenceTraceInput): SessionEventRecord | null {
+  const session = getSessionByName(input.sessionName);
+  if (!session) return null;
+
+  const source = normalizeSessionTraceSource({ target: input.target });
+  const sourceFields = eventSourceFields(session.sessionKey, source);
+  const payload =
+    input.payloadJson && typeof input.payloadJson === "object" && !Array.isArray(input.payloadJson)
+      ? { ...(input.payloadJson as Record<string, unknown>) }
+      : {};
+
+  return recordSessionEvent({
+    sessionKey: session.sessionKey,
+    sessionName: input.sessionName,
+    agentId: session.agentId,
+    eventType: "presence.typing",
+    eventGroup: "presence",
+    status: input.status,
+    timestamp: input.timestamp,
+    ...sourceFields,
+    payloadJson: {
+      ...payload,
+      reason: input.reason,
+      target: input.target,
+    },
+    preview: `${input.reason} ${input.status}`,
+    error: input.error ?? null,
   });
 }
 

@@ -43,6 +43,18 @@ class ContextCredentialsCommands {
   }
 }
 
+@Group({ name: "apps", description: "App ops", scope: "open" })
+class AppsCommands {
+  @Command({ name: "run", description: "Run app operation" })
+  run(
+    @Arg("id") _id: string,
+    @Arg("operation", { required: false }) _operation?: string,
+    @Arg("args", { required: false, variadic: true }) _args?: string[],
+  ) {
+    return {};
+  }
+}
+
 @Group({ name: "crm", description: "CRM ops", scope: "open" })
 class CrmCommands {
   @Command({ name: "account", description: "Show account" })
@@ -116,6 +128,14 @@ describe("client-codegen :: emitAll", () => {
     const { output } = emitMockSdk();
     expect(output.client).toMatch(/rotate: async \(agentId: string, paths: string\[\]/);
     expect(output.client).toContain(`body: { agentId, paths, ...(options ?? {}) }`);
+  });
+
+  it("preserves optional variadic args in generated method signatures", () => {
+    const registry = buildRegistry([AppsCommands]);
+    const output = emitAll(registry, { version: FIXED_VERSION });
+
+    expect(output.client).toContain("run: async (id: string, operation?: string, args?: string[])");
+    expect(output.client).toContain(`body: { id, operation, args }`);
   });
 
   it("uses inferred return type when @Returns is declared", () => {

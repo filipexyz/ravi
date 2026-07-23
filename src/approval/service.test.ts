@@ -7,11 +7,17 @@ import {
   setApprovalServiceDependenciesForTest,
   type ApprovalServiceDependencies,
 } from "./service.js";
-import { listPermissionDenials } from "../permissions/denials.js";
+import {
+  flushPermissionAuditEvents,
+  listPermissionDenials,
+  setPermissionAuditPublisherForTest,
+} from "../permissions/denials.js";
 
 let requestReplyResult: { messageId?: string } = { messageId: "msg_1" };
 let subscribeEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
 let emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+let auditEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
+let deliveredRequests: Array<{ topic: string; data: Record<string, unknown> }> = [];
 let stateDir: string | null = null;
 const createdContextIds = new Set<string>();
 
@@ -21,8 +27,16 @@ describe("approval service", () => {
     requestReplyResult = { messageId: "msg_1" };
     subscribeEvents = [];
     emitted = [];
+    auditEvents = [];
+    deliveredRequests = [];
+    setPermissionAuditPublisherForTest(async (topic, data) => {
+      auditEvents.push({ topic, data });
+    });
     setApprovalServiceDependenciesForTest({
-      requestReply: (async <T>() => requestReplyResult as T) satisfies ApprovalServiceDependencies["requestReply"],
+      requestReply: (async <T>(topic: string, data: Record<string, unknown>) => {
+        deliveredRequests.push({ topic, data });
+        return requestReplyResult as T;
+      }) satisfies ApprovalServiceDependencies["requestReply"],
       nats: {
         emit: async (topic: string, data: Record<string, unknown>) => {
           emitted.push({ topic, data });
@@ -43,6 +57,7 @@ describe("approval service", () => {
 
   afterEach(async () => {
     setApprovalServiceDependenciesForTest();
+    setPermissionAuditPublisherForTest();
     for (const contextId of createdContextIds) {
       dbDeleteContext(contextId);
     }
@@ -127,6 +142,12 @@ describe("approval service", () => {
       objectId: "daemon",
       source: "approval",
     });
+    const deliveredText = String(deliveredRequests[0]?.data.text ?? "");
+    expect(deliveredRequests[0]?.topic).toBe("ravi.outbound.deliver");
+    expect(deliveredText).toContain("Capability: execute:group:daemon");
+    expect(deliveredText).toContain("Escopo: contexto atual");
+    expect(deliveredText).toContain("Recorrente: Use a provider-owned permission profile/tag");
+    expect(deliveredText).toContain("Fallback técnico: Use raw capability execute:group:daemon");
     expect(emitted.map((entry) => entry.topic)).toEqual(["ravi.approval.request", "ravi.approval.response"]);
   });
 
@@ -169,6 +190,53 @@ describe("approval service", () => {
         objectType: "group",
         objectId: "daemon",
       }),
+    );
+  });
+
+  it("publishes audit denied events for runtime context denials", async () => {
+    delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    dbCreateAgent({ id: "dev", cwd: "/tmp/dev" });
+    getOrCreateSession("agent:dev:dev-main", "dev", "/tmp/dev", { name: "dev-main" });
+    const context = dbCreateContext({
+      contextId: "ctx_audit_denied",
+      contextKey: "rctx_audit_denied",
+      kind: "agent-runtime",
+      agentId: "dev",
+      sessionKey: "agent:dev:dev-main",
+      sessionName: "dev-main",
+      capabilities: [],
+      createdAt: 1000,
+    });
+    createdContextIds.add(context.contextId);
+
+    const result = await authorizeRuntimeContext({
+      context,
+      permission: "execute",
+      objectType: "group",
+      objectId: "daemon",
+    });
+    await flushPermissionAuditEvents();
+
+    expect(result.allowed).toBe(false);
+    expect(auditEvents).toEqual([
+      {
+        topic: "ravi.audit.denied",
+        data: expect.objectContaining({
+          type: "scope",
+          agentId: "dev",
+          denied: "group:daemon",
+          reason: "No approval source available.",
+          denialId: expect.any(Number),
+          dedupeKey: "audit.denied:scope:dev:group:daemon:No approval source available.",
+          context: expect.objectContaining({
+            contextId: "ctx_audit_denied",
+            sessionName: "dev-main",
+          }),
+        }),
+      },
+    ]);
+    expect(listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false })[0]?.notifiedAt).toEqual(
+      expect.any(Number),
     );
   });
 });

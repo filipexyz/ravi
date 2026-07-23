@@ -1,7 +1,8 @@
 /**
- * Video Analysis via Gemini API
+ * Video Analysis
  *
- * Analyzes videos (YouTube URLs or local files) using Google's Gemini model.
+ * Analyzes videos (YouTube URLs or local files). YouTube defaults to subtitles
+ * via yt-dlp for speed/cost and falls back to Google's Gemini model when needed.
  * Returns structured analysis saved as markdown.
  */
 
@@ -9,6 +10,7 @@ import { GoogleGenAI, createUserContent, createPartFromUri } from "@google/genai
 import { existsSync } from "node:fs";
 import { extname } from "node:path";
 import { logger } from "../utils/logger.js";
+import { type YouTubeSubtitleChapter, extractYouTubeSubtitleAnalysis } from "./youtube-subtitles.js";
 
 const log = logger.child("video");
 
@@ -32,7 +34,7 @@ function getClient(): GoogleGenAI {
   return new GoogleGenAI({ apiKey: key });
 }
 
-function isYouTubeUrl(url: string): boolean {
+export function isYouTubeUrl(url: string): boolean {
   return /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//i.test(url);
 }
 
@@ -67,6 +69,9 @@ export interface VideoAnalysis {
   visualDescription: string;
   source: string;
   markdown: string;
+  strategy: "gemini" | "subtitles";
+  subtitleLanguage?: string;
+  chapters?: YouTubeSubtitleChapter[];
 }
 
 function parseResponse(text: string, source: string): VideoAnalysis {
@@ -108,10 +113,60 @@ function parseResponse(text: string, source: string): VideoAnalysis {
     visualDescription,
   ].join("\n");
 
-  return { title, duration, summary, topics, transcript, visualDescription, source, markdown };
+  return {
+    title,
+    duration,
+    summary,
+    topics,
+    transcript,
+    visualDescription,
+    source,
+    markdown,
+    strategy: "gemini",
+    chapters: [],
+  };
 }
 
-export async function analyzeVideo(urlOrPath: string, customPrompt?: string): Promise<VideoAnalysis> {
+export type VideoAnalyzeStrategy = "auto" | "subtitles" | "gemini";
+
+export interface VideoAnalyzeOptions {
+  strategy?: VideoAnalyzeStrategy;
+  subtitleLanguages?: string[];
+}
+
+export async function analyzeVideo(
+  urlOrPath: string,
+  customPrompt?: string,
+  options: VideoAnalyzeOptions = {},
+): Promise<VideoAnalysis> {
+  const strategy = options.strategy ?? "auto";
+
+  if (strategy === "subtitles" && !isYouTubeUrl(urlOrPath)) {
+    throw new Error("--strategy subtitles is only supported for YouTube URLs");
+  }
+
+  if (isYouTubeUrl(urlOrPath) && strategy !== "gemini") {
+    try {
+      log.info("Extracting YouTube subtitles", {
+        url: urlOrPath,
+        strategy,
+        languages: options.subtitleLanguages,
+      });
+      return await extractYouTubeSubtitleAnalysis(urlOrPath, {
+        preferredLanguages: options.subtitleLanguages,
+      });
+    } catch (error) {
+      if (strategy === "subtitles") {
+        throw error;
+      }
+
+      log.warn("YouTube subtitles unavailable; falling back to Gemini", {
+        url: urlOrPath,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   const client = getClient();
   const model = process.env.GEMINI_VIDEO_MODEL || "gemini-2.5-flash";
   const prompt = customPrompt
@@ -121,7 +176,7 @@ export async function analyzeVideo(urlOrPath: string, customPrompt?: string): Pr
   let response;
 
   if (isYouTubeUrl(urlOrPath)) {
-    log.info("Analyzing YouTube video", { url: urlOrPath, model });
+    log.info("Analyzing YouTube video via Gemini", { url: urlOrPath, model });
     response = await client.models.generateContent({
       model,
       contents: [{ fileData: { fileUri: urlOrPath } }, { text: prompt }],

@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { z } from "zod";
-import { Arg, CliOnly, Command, Group, Option, Returns } from "../decorators.js";
+import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
 import {
@@ -222,6 +222,7 @@ function printSummary(summary: z.infer<typeof returnSchemaSummarySchema>): void 
 })
 export class SdkReturnsCommands {
   @Command({ name: "sync", description: "Sync the local return-schema tracking table with the live CLI registry" })
+  @CommandAccess({ kind: "mutate", resource: "sdk.returns", action: "sync", risk: "medium" })
   @CliOnly()
   @Returns(returnsSyncSchema)
   sync(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
@@ -242,6 +243,7 @@ export class SdkReturnsCommands {
   }
 
   @Command({ name: "status", description: "Show typed-return coverage and migration state" })
+  @CommandAccess({ kind: "mutate", resource: "sdk.returns", action: "status", risk: "low" })
   @CliOnly()
   @Returns(returnSchemaSummarySchema)
   status(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
@@ -263,6 +265,7 @@ export class SdkReturnsCommands {
   }
 
   @Command({ name: "list", description: "List tracked commands by return-schema migration state" })
+  @CommandAccess({ kind: "mutate", resource: "sdk.returns", action: "list", risk: "low" })
   @CliOnly()
   @Returns(returnsListSchema)
   list(
@@ -328,6 +331,7 @@ export class SdkReturnsCommands {
   }
 
   @Command({ name: "show", description: "Show one tracked return-schema command row" })
+  @CommandAccess({ kind: "mutate", resource: "sdk.returns", action: "show", risk: "low", input: ["commandName"] })
   @CliOnly()
   @Returns(returnsShowSchema)
   show(
@@ -356,6 +360,7 @@ export class SdkReturnsCommands {
   }
 
   @Command({ name: "mark", description: "Mark one command's return-schema migration state" })
+  @CommandAccess({ kind: "mutate", resource: "sdk.returns", action: "mark", risk: "medium", input: ["commandName"] })
   @CliOnly()
   @Returns(returnsMarkSchema)
   mark(
@@ -390,6 +395,7 @@ export class SdkReturnsCommands {
   }
 
   @Command({ name: "assign", description: "Assign a filtered batch of return-schema rows to one task" })
+  @CommandAccess({ kind: "mutate", resource: "sdk.returns", action: "assign", risk: "medium", input: ["taskId"] })
   @CliOnly()
   @Returns(returnsAssignSchema)
   assign(
@@ -434,6 +440,7 @@ export class SdkReturnsCommands {
   }
 
   @Command({ name: "validate", description: "Validate tracking rows against the live CLI registry and debt baseline" })
+  @CommandAccess({ kind: "mutate", resource: "sdk.returns", action: "validate", risk: "low" })
   @CliOnly()
   @Returns(returnsValidateSchema)
   validate(
@@ -467,6 +474,7 @@ export class SdkReturnsCommands {
   }
 
   @Command({ name: "plan", description: "Print suggested migration task batches for missing public return schemas" })
+  @CommandAccess({ kind: "mutate", resource: "sdk.returns", action: "plan", risk: "low" })
   @CliOnly()
   @Returns(returnsPlanSchema)
   plan(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {

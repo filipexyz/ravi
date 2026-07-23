@@ -9,7 +9,7 @@ import type {
   TaskRuntimeResolution,
   TaskRuntimeThinking,
 } from "./types.js";
-import { DEFAULT_RUNTIME_EFFORT, RUNTIME_EFFORT_LEVELS, normalizeRuntimeEffort } from "../runtime/effort.js";
+import { DEFAULT_RUNTIME_EFFORT, RUNTIME_EFFORT_LEVELS, parseRuntimeEffort } from "../runtime/effort.js";
 
 export const TASK_RUNTIME_EFFORT_LEVELS = RUNTIME_EFFORT_LEVELS;
 export const TASK_RUNTIME_THINKING_LEVELS = ["off", "normal", "verbose"] as const;
@@ -26,7 +26,7 @@ function normalizeTaskRuntimeString(value?: string | null): string | undefined {
 }
 
 export function normalizeTaskRuntimeEffort(value?: string | null): TaskRuntimeEffort | undefined {
-  return normalizeRuntimeEffort(value) as TaskRuntimeEffort | undefined;
+  return parseRuntimeEffort(value) as TaskRuntimeEffort | undefined;
 }
 
 export function normalizeTaskRuntimeThinking(value?: string | null): TaskRuntimeThinking | undefined {
@@ -96,8 +96,15 @@ export function resolveTaskRuntimeOptions(input: {
   assignment?: Pick<TaskAssignment, "runtimeOverride"> | null;
   launchPlan?: Pick<TaskLaunchPlan, "runtimeOverride"> | null;
   sessionModelOverride?: string | null;
+  sessionEffortOverride?: TaskRuntimeEffort | string | null;
   sessionThinkingLevel?: TaskRuntimeThinking | string | null;
   agentModel?: string | null;
+  /**
+   * Agent-level model selection resolved via a runtime model preset. Occupies the
+   * same precedence level as a direct agent model and is mutually exclusive with it.
+   */
+  agentModelPreset?: { model: string; presetId: string; version: number } | null;
+  agentEffort?: TaskRuntimeEffort | string | null;
   configModel?: string | null;
 }): TaskRuntimeResolution {
   const promptOverride = normalizeTaskRuntimeOptions(input.promptOverride);
@@ -109,9 +116,14 @@ export function resolveTaskRuntimeOptions(input: {
   const sessionThinking = normalizeTaskRuntimeThinking(input.sessionThinkingLevel);
   const sessionOptions = normalizeTaskRuntimeOptions({
     model: input.sessionModelOverride ?? undefined,
+    effort: input.sessionEffortOverride ?? undefined,
     ...(sessionThinking ? { thinking: sessionThinking } : {}),
   });
-  const agentOptions = normalizeTaskRuntimeOptions({ model: input.agentModel ?? undefined });
+  const agentPresetOptions = normalizeTaskRuntimeOptions({ model: input.agentModelPreset?.model ?? undefined });
+  const agentOptions = normalizeTaskRuntimeOptions({
+    model: input.agentModel ?? undefined,
+    effort: input.agentEffort ?? undefined,
+  });
   const configOptions = normalizeTaskRuntimeOptions({ model: input.configModel ?? undefined });
 
   const sources: Array<[TaskRuntimeOptionsSource, TaskRuntimeOptions | undefined]> = [
@@ -120,6 +132,7 @@ export function resolveTaskRuntimeOptions(input: {
     ["task_override", taskOverride],
     ["profile_default", profileDefaults],
     ["session_override", sessionOptions],
+    ["agent_preset", agentPresetOptions],
     ["agent_default", agentOptions],
     ["global_default", configOptions],
   ];
@@ -138,6 +151,8 @@ export function resolveTaskRuntimeOptions(input: {
   const effort = pick("effort");
   const thinking = pick("thinking");
 
+  const usesAgentPreset = model.source === "agent_preset" && input.agentModelPreset;
+
   return {
     options: {
       ...(model.value ? { model: model.value } : {}),
@@ -149,6 +164,12 @@ export function resolveTaskRuntimeOptions(input: {
       effort: effort.source ?? "runtime_default",
       thinking: thinking.source,
     },
+    ...(usesAgentPreset
+      ? {
+          modelPresetId: input.agentModelPreset!.presetId,
+          modelPresetVersion: input.agentModelPreset!.version,
+        }
+      : {}),
     hasTaskRuntimeContext: Boolean(dispatchOverride || taskOverride || profileDefaults),
   };
 }

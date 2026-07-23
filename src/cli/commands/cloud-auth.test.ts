@@ -64,10 +64,11 @@ describe("cloud auth root command handlers", () => {
     const client = {
       getAuthConfig: mock(async () => ({
         configured: true,
-        clientId: "client_123",
+        clientId: "ravi-cli",
+        mode: "console_device",
         endpoints: {
-          deviceAuthorization: "https://api.workos.com/user_management/authorize/device",
-          token: "https://api.workos.com/user_management/authenticate",
+          deviceAuthorization: "https://console.example/api/cli/auth/device",
+          token: null,
         },
       })),
       startDeviceAuthorization: mock(async () => ({
@@ -106,7 +107,7 @@ describe("cloud auth root command handlers", () => {
       scopes: ["artifacts:publish"],
     });
     expect(exchange.mock.calls[0]?.[0]).toMatchObject({
-      workosAccessToken: "provider-secret",
+      deviceCode: "device-secret",
       installation: {
         name: "Test CLI",
       },

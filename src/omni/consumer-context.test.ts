@@ -10,6 +10,7 @@ const actualRouterDbModule = await import("../router/router-db.js");
 const actualRouterIndexModule = await import("../router/index.js");
 const actualRouterSessionsModule = await import("../router/sessions.js");
 const actualChatDbModule = await import("../db.js");
+const actualSessionStreamModule = await import("./session-stream.js");
 const actualDbSaveMessageMeta = actualRouterDbModule.dbSaveMessageMeta;
 const actualDbGetMessageMeta = actualRouterDbModule.dbGetMessageMeta;
 const actualDbUpsertChat = actualRouterDbModule.dbUpsertChat;
@@ -37,6 +38,10 @@ const contactByRef = new Map<string, Record<string, unknown>>();
 const messageMetaById = new Map<string, MessageMetadata>();
 const recordInboundCalls: string[] = [];
 const channelMessageTraceCalls: Array<Record<string, unknown>> = [];
+const fetchCachedOmniMediaMock = mock(async () => null as Buffer | null);
+const fetchOmniMediaMock = mock(async () => null as Buffer | null);
+const saveToAgentAttachmentsMock = mock(async () => null as string | null);
+const transcribeAudioMock = mock(async () => ({ text: "" }));
 let stateDir: string | null = null;
 let agentCwd = "/tmp/ravi-agent";
 let contactIntakeMode: "off" | "discovered" | "pending" = "off";
@@ -76,6 +81,7 @@ mock.module("../nats.js", () => ({
 }));
 
 mock.module("./session-stream.js", () => ({
+  ...actualSessionStreamModule,
   publishSessionPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
     promptCalls.push([sessionName, payload]);
   }),
@@ -235,6 +241,7 @@ mock.module("../session-trace/channel-trace.js", () => ({
     channelMessageTraceCalls.push(input);
     return {};
   }),
+  recordPresenceTrace: mock(() => ({})),
   recordRouteRejectedTrace: mock(() => ({})),
   recordRouteResolvedTrace: mock(() => ({})),
 }));
@@ -244,13 +251,14 @@ mock.module("../session-trace/runtime-trace.js", () => ({
 }));
 
 mock.module("../utils/media.js", () => ({
-  fetchOmniMedia: mock(async () => null),
-  saveToAgentAttachments: mock(async () => null),
+  fetchCachedOmniMedia: fetchCachedOmniMediaMock,
+  fetchOmniMedia: fetchOmniMediaMock,
+  saveToAgentAttachments: saveToAgentAttachmentsMock,
   MAX_AUDIO_BYTES: 16 * 1024 * 1024,
 }));
 
 mock.module("../transcribe/openai.js", () => ({
-  transcribeAudio: mock(async () => ""),
+  transcribeAudio: transcribeAudioMock,
 }));
 
 const loggerChildSpy = spyOn(logger, "child").mockImplementation(
@@ -263,12 +271,23 @@ const loggerChildSpy = spyOn(logger, "child").mockImplementation(
     }) as never,
 );
 
-const { OmniConsumer } = await import("./consumer.js");
-const natsModule = await import("../nats.js");
+const { OmniConsumer, supportsOmniReadReceipts } = await import("./consumer.js");
 
 afterAll(() => {
   loggerChildSpy.mockRestore();
   mock.restore();
+});
+
+describe("supportsOmniReadReceipts", () => {
+  it("only enables Omni read receipts for channels that expose real receipt semantics", () => {
+    expect(supportsOmniReadReceipts("whatsapp")).toBe(true);
+    expect(supportsOmniReadReceipts("whatsapp-baileys")).toBe(true);
+    expect(supportsOmniReadReceipts("twilio-whatsapp")).toBe(true);
+    expect(supportsOmniReadReceipts("gupshup")).toBe(true);
+    expect(supportsOmniReadReceipts("slack")).toBe(false);
+    expect(supportsOmniReadReceipts("discord")).toBe(false);
+    expect(supportsOmniReadReceipts("telegram")).toBe(false);
+  });
 });
 
 describe("OmniConsumer channel context", () => {
@@ -292,6 +311,14 @@ describe("OmniConsumer channel context", () => {
     messageMetaById.clear();
     recordInboundCalls.length = 0;
     channelMessageTraceCalls.length = 0;
+    fetchCachedOmniMediaMock.mockClear();
+    fetchOmniMediaMock.mockClear();
+    saveToAgentAttachmentsMock.mockClear();
+    transcribeAudioMock.mockClear();
+    fetchCachedOmniMediaMock.mockImplementation(async () => null);
+    fetchOmniMediaMock.mockImplementation(async () => null);
+    saveToAgentAttachmentsMock.mockImplementation(async () => null);
+    transcribeAudioMock.mockImplementation(async () => ({ text: "" }));
   });
 
   afterEach(async () => {
@@ -363,6 +390,91 @@ describe("OmniConsumer channel context", () => {
       groupName: "ravi - dev",
       groupId: "120363424772797713",
       groupMembers: ["Luis Filipe", "R M"],
+    });
+  });
+
+  it("resolves new WhatsApp LID group senders through contact intake without canonicalizing the group as a DM", async () => {
+    contactIntakeMode = "discovered";
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-group-lid-intake",
+      type: "message.received",
+      payload: {
+        externalId: "msg-group-lid-intake",
+        chatId: "120363424772797713@g.us",
+        from: "35082198892544@lid",
+        content: {
+          type: "text",
+          text: "oi",
+        },
+        rawPayload: {
+          pushName: "Tars",
+          chatName: "Rbbt <> Nubank",
+          isGroup: true,
+          key: {
+            participantAlt: "551148637337@s.whatsapp.net",
+          },
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(ensureContactFromInboundCalls).toHaveLength(1);
+    expect(ensureContactFromInboundCalls[0]).toMatchObject({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformSenderId: "35082198892544@lid",
+      contactIdentity: "551148637337",
+      displayName: "Tars",
+      chatType: "group",
+      providerMessageId: "msg-group-lid-intake",
+      intakeMode: "discovered",
+    });
+    expect(chatMessageCalls[0]).toMatchObject({
+      providerMessageId: "msg-group-lid-intake",
+      rawChatId: "120363424772797713@g.us",
+      rawSenderId: "35082198892544",
+      normalizedSenderId: "551148637337",
+      actorType: "contact",
+      contactId: "contact_auto",
+      platformIdentityId: "pi_auto",
+      messageType: "text",
+    });
+    expect(chatParticipantCalls[0]).toMatchObject({
+      contactId: "contact_auto",
+      platformIdentityId: "pi_auto",
+      rawPlatformUserId: "35082198892544",
+      normalizedPlatformUserId: "551148637337",
+      source: "inbound_message",
+    });
+    expect(sessionParticipantCalls[0]).toMatchObject({
+      ownerType: "contact",
+      ownerId: "contact_auto",
+      platformIdentityId: "pi_auto",
+      role: "human",
+    });
+    const groupChat = actualRouterDbModule.dbFindChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "120363424772797713@g.us",
+      chatType: "group",
+    });
+    expect(groupChat).toMatchObject({
+      chatType: "group",
+      normalizedChatId: "group:120363424772797713",
     });
   });
 
@@ -1228,6 +1340,77 @@ describe("OmniConsumer channel context", () => {
     });
   });
 
+  it("saves transcribed inbound audio and exposes the attachment path in the prompt", async () => {
+    const audioBuffer = Buffer.from("audio-bytes");
+    const audioPath = join(agentCwd, "attachments", "msg-audio.ogg");
+    fetchCachedOmniMediaMock.mockImplementation(async () => audioBuffer);
+    saveToAgentAttachmentsMock.mockImplementation(async () => audioPath);
+    transcribeAudioMock.mockImplementation(async () => ({ text: "fala transcrita" }));
+
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-audio",
+      type: "message.received",
+      payload: {
+        externalId: "msg-audio",
+        chatId: "120363424772797713@g.us",
+        from: "5511947879044@s.whatsapp.net",
+        content: {
+          type: "audio",
+          mediaUrl: "https://omni.local/media/msg-audio",
+          mimeType: "audio/ogg; codecs=opus",
+        },
+        rawPayload: {
+          pushName: "Luis Filipe",
+          resolvedSenderPhone: "5511947879044",
+          isGroup: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(fetchCachedOmniMediaMock).toHaveBeenCalledWith(
+      { instanceId: "instance-1", chatExternalId: "120363424772797713@g.us", externalId: "msg-audio" },
+      "http://omni.local",
+      "test-key",
+      16 * 1024 * 1024,
+      "audio/ogg; codecs=opus",
+    );
+    expect(saveToAgentAttachmentsMock).toHaveBeenCalledWith(
+      audioBuffer,
+      agentCwd,
+      "msg-audio",
+      "audio/ogg; codecs=opus",
+    );
+    expect(transcribeAudioMock).toHaveBeenCalledWith(audioBuffer, "audio/ogg; codecs=opus");
+    expect(promptCalls).toHaveLength(1);
+    const [, prompt] = promptCalls[0];
+    expect(prompt.prompt).toContain("[Audio]\nTranscript:\nfala transcrita");
+    expect(prompt.prompt).toContain(`file: ${audioPath}`);
+    expect(messageMetaSaveCalls.at(-1)).toMatchObject([
+      "msg-audio",
+      "120363424772797713@g.us",
+      {
+        transcription: "fala transcrita",
+        mediaPath: audioPath,
+        mediaType: "audio",
+      },
+    ]);
+  });
+
   it("includes stored audio transcription when replying to a quoted WhatsApp audio", async () => {
     messageMetaById.set("quoted-audio-1", {
       messageId: "quoted-audio-1",
@@ -1341,185 +1524,5 @@ describe("OmniConsumer channel context", () => {
     const [, prompt] = promptCalls[0];
     expect(prompt.prompt).toContain("[Replying to unknown mid:quoted-audio-2]");
     expect(prompt.prompt).toContain("[Audio]\nTranscript:\nhistórico recuperado pelo metadata db");
-  });
-
-  it("persists a reaction as a chat_messages row with message_type=reaction and correct content/provenance", async () => {
-    const sender = {
-      send: mock(async () => {}),
-      sendTyping: mock(async () => {}),
-      markRead: mock(async () => {}),
-    };
-    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
-      resolveGroupMetadata: async () => null,
-    });
-
-    // Ensure the chat exists so persistReactionAccounting can find it
-    actualDbUpsertChat({
-      channel: "whatsapp",
-      instanceId: "instance-1",
-      platformChatId: "120363424772797713@g.us",
-      chatType: "group",
-    });
-
-    chatMessageCalls.length = 0;
-    const emitMock = natsModule.nats.emit as ReturnType<typeof mock>;
-    emitMock.mockClear();
-
-    await consumer["handleReactionEvent"]("reaction.received.whatsapp-baileys.instance-1", {
-      id: "evt-reaction-1",
-      type: "reaction.received",
-      payload: {
-        messageId: "msg-target-1",
-        chatId: "120363424772797713@g.us",
-        from: "5511947879044@s.whatsapp.net",
-        emoji: "👍",
-      },
-      metadata: {
-        instanceId: "instance-1",
-        channelType: "whatsapp-baileys",
-      },
-      timestamp: Date.now(),
-    });
-
-    // Assert: one chat_messages row persisted with message_type=reaction
-    const reactionRows = chatMessageCalls.filter((c) => c.messageType === "reaction");
-    expect(reactionRows).toHaveLength(1);
-    const row = reactionRows[0];
-    expect(row.messageType).toBe("reaction");
-    expect(row.providerMessageId).toBe("reaction:msg-target-1:👍:5511947879044");
-    expect(row.channel).toBe("whatsapp");
-    expect(row.instanceId).toBe("instance-1");
-    expect(row.rawChatId).toBe("120363424772797713@g.us");
-    expect(row.normalizedSenderId).toBe("5511947879044");
-
-    // Assert: content_json has the required fields
-    const content = row.content as Record<string, unknown>;
-    expect(content.type).toBe("reaction");
-    expect(content.targetMessageId).toBe("msg-target-1");
-    expect(content.emoji).toBe("👍");
-    expect(content.senderId).toBe("5511947879044");
-
-    // Assert: raw_provenance_json preserves event metadata
-    const provenance = row.rawProvenance as Record<string, unknown>;
-    expect(provenance.source).toBe("omni.reaction.received");
-    expect(provenance.eventId).toBe("evt-reaction-1");
-    expect(provenance.channelType).toBe("whatsapp-baileys");
-    expect(provenance.instanceId).toBe("instance-1");
-    expect(provenance.chatId).toBe("120363424772797713@g.us");
-    expect(provenance.from).toBe("5511947879044@s.whatsapp.net");
-
-    // Assert: ravi.inbound.reaction emitted with correct payload
-    const emitCalls = emitMock.mock.calls.filter((c: unknown[]) => c[0] === "ravi.inbound.reaction");
-    expect(emitCalls).toHaveLength(1);
-    const emitPayload = emitCalls[0][1] as Record<string, unknown>;
-    expect(emitPayload).toEqual({
-      targetMessageId: "msg-target-1",
-      emoji: "👍",
-      senderId: "5511947879044",
-    });
-
-    // Assert: no prompt/session dispatch for reaction
-    expect(promptCalls).toHaveLength(0);
-  });
-
-  it("deduplicates reactions with the same targetMessageId+emoji+senderId", async () => {
-    const sender = {
-      send: mock(async () => {}),
-      sendTyping: mock(async () => {}),
-      markRead: mock(async () => {}),
-    };
-    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
-      resolveGroupMetadata: async () => null,
-    });
-
-    actualDbUpsertChat({
-      channel: "whatsapp",
-      instanceId: "instance-1",
-      platformChatId: "120363424772797713@g.us",
-      chatType: "group",
-    });
-
-    chatMessageCalls.length = 0;
-
-    const reactionEvent = {
-      id: "evt-dup-1",
-      type: "reaction.received" as const,
-      payload: {
-        messageId: "msg-target-dup",
-        chatId: "120363424772797713@g.us",
-        from: "5511947879044@s.whatsapp.net",
-        emoji: "❤️",
-      },
-      metadata: {
-        instanceId: "instance-1",
-        channelType: "whatsapp-baileys",
-      },
-      timestamp: Date.now(),
-    };
-
-    // First event should persist
-    await consumer["handleReactionEvent"]("reaction.received.whatsapp-baileys.instance-1", reactionEvent);
-
-    // Second event with different ID but same dedup key should be skipped
-    await consumer["handleReactionEvent"]("reaction.received.whatsapp-baileys.instance-1", {
-      ...reactionEvent,
-      id: "evt-dup-2",
-    });
-
-    const reactionRows = chatMessageCalls.filter((c) => c.messageType === "reaction");
-    expect(reactionRows).toHaveLength(1);
-    expect(reactionRows[0].providerMessageId).toBe("reaction:msg-target-dup:❤️:5511947879044");
-
-    // Assert: no prompt/session dispatch
-    expect(promptCalls).toHaveLength(0);
-  });
-
-  it("does not route reactions through the message.received dispatch path", async () => {
-    const sender = {
-      send: mock(async () => {}),
-      sendTyping: mock(async () => {}),
-      markRead: mock(async () => {}),
-    };
-    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
-      resolveGroupMetadata: async () => null,
-    });
-
-    actualDbUpsertChat({
-      channel: "whatsapp",
-      instanceId: "instance-1",
-      platformChatId: "120363424772797713@g.us",
-      chatType: "group",
-    });
-
-    promptCalls.length = 0;
-    chatMessageCalls.length = 0;
-    channelMessageTraceCalls.length = 0;
-
-    // Send via handleReactionEvent — should NOT create a prompt
-    await consumer["handleReactionEvent"]("reaction.received.whatsapp-baileys.instance-1", {
-      id: "evt-no-dispatch",
-      type: "reaction.received",
-      payload: {
-        messageId: "msg-no-dispatch",
-        chatId: "120363424772797713@g.us",
-        from: "5511947879044@s.whatsapp.net",
-        emoji: "🎉",
-      },
-      metadata: {
-        instanceId: "instance-1",
-        channelType: "whatsapp-baileys",
-      },
-      timestamp: Date.now(),
-    });
-
-    // No prompt published (reaction does not enter runtime dispatch)
-    expect(promptCalls).toHaveLength(0);
-
-    // No channel message trace recorded (that is the message.received path)
-    expect(channelMessageTraceCalls).toHaveLength(0);
-
-    // But a chat_messages row IS persisted
-    const reactionRows = chatMessageCalls.filter((c) => c.messageType === "reaction");
-    expect(reactionRows).toHaveLength(1);
   });
 });

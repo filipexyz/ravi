@@ -15,6 +15,7 @@ import { getDb } from "../router/router-db.js";
 import { canonicalAssetIdsForTag, canonicalTagSlugsForAsset, replaceMirroredTagSlugsForAsset } from "../tags/index.js";
 import { buildSqlWhereClause, countRows, normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
 import { getRaviStateDir } from "../utils/paths.js";
+import { emitArtifactLifecycleEvent } from "./events.js";
 
 const ARTIFACT_ID_PATTERN = /^art_[a-z0-9]+_[a-z0-9]+$/;
 const KIND_PATTERN = /^[a-z][a-z0-9._:-]{0,79}$/;
@@ -315,6 +316,7 @@ export interface ListArtifactsOptions {
   agentId?: string;
   lifecycle?: string;
   tag?: string;
+  orderBy?: "createdAt" | "updatedAt";
   limit?: number;
   offset?: number;
   includeDeleted?: boolean;
@@ -374,6 +376,8 @@ function ensureArtifactSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_artifacts_task_time ON artifacts(task_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_artifacts_sha256 ON artifacts(sha256);
     CREATE INDEX IF NOT EXISTS idx_artifacts_status_time ON artifacts(status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_artifacts_updated_created_id
+      ON artifacts(updated_at DESC, created_at DESC, id DESC);
 
     CREATE TABLE IF NOT EXISTS artifact_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -828,7 +832,7 @@ function insertArtifactEvent(
   options: { status?: string; message?: string; source?: string } = {},
 ): void {
   const now = Date.now();
-  getDb()
+  const result = getDb()
     .prepare(
       "INSERT INTO artifact_events (artifact_id, event_type, status, message, source, actor, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
@@ -842,6 +846,22 @@ function insertArtifactEvent(
       jsonString(payload),
       now,
     );
+  const artifact = getArtifact(artifactIdValue);
+  if (!artifact) return;
+  emitArtifactLifecycleEvent({
+    artifact,
+    event: {
+      id: Number(result.lastInsertRowid),
+      artifactId: artifactIdValue,
+      eventType,
+      ...(options.status ? { status: options.status } : {}),
+      ...(options.message ? { message: options.message } : {}),
+      ...(options.source ? { source: options.source } : {}),
+      ...(actor ? { actor } : {}),
+      ...(payload ? { payload } : {}),
+      createdAt: now,
+    },
+  });
 }
 
 export function createArtifactVersion(
@@ -1365,7 +1385,9 @@ export function listArtifactsPage(options: ListArtifactsOptions = {}): ArtifactL
   const { where, params } = artifactWhere(options);
   const { limit, offset } = normalizeLimitOffsetPage(options, { defaultLimit: 50, maxLimit: 500 });
   const total = countRows({ db, table: "artifacts", where, params });
-  const sql = `SELECT * FROM artifacts ${buildSqlWhereClause(where)} ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+  const orderBy =
+    options.orderBy === "updatedAt" ? "updated_at DESC, created_at DESC, id DESC" : "created_at DESC, id DESC";
+  const sql = `SELECT * FROM artifacts ${buildSqlWhereClause(where)} ORDER BY ${orderBy} LIMIT ? OFFSET ?`;
   const rows = db.prepare(sql).all(...params, limit, offset) as ArtifactRow[];
   return {
     items: rows.map(rowToArtifact),

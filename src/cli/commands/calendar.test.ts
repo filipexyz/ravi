@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
-import { grantRelation } from "../../permissions/relations.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { listCalendarEvents, listCalendarOutbox } from "../../calendar/index.js";
+import { buildRegistry } from "../registry-snapshot.js";
 import {
   CalendarAccountsCommands,
   CalendarCalendarsCommands,
@@ -36,7 +36,24 @@ describe("calendar CLI commands", () => {
     stateDir = null;
   });
 
-  it("creates local accounts and calendars with JSON output", async () => {
+  it("registers calendars as the canonical CLI surface", () => {
+    const registry = buildRegistry([
+      CalendarAccountsCommands,
+      CalendarCalendarsCommands,
+      CalendarCommands,
+      CalendarEventsCommands,
+      CalendarOutboxCommands,
+    ]);
+
+    expect(registry.groups.map((group) => group.name).sort()).toEqual(["calendars", "calendars.events"]);
+    expect(registry.groups.find((group) => group.name === "calendars")?.aliases).toEqual(["calendar"]);
+    expect(registry.commands.map((command) => command.fullName).sort()).toContain("calendars.availability");
+    expect(registry.commands.map((command) => command.fullName).sort()).toContain("calendars.events.create");
+    expect(registry.commands.some((command) => command.fullName.startsWith("calendars.sources."))).toBe(false);
+    expect(registry.commands.some((command) => command.fullName.startsWith("calendars.outbox."))).toBe(false);
+  });
+
+  it("creates local sources and calendars with JSON output", async () => {
     const accounts = new CalendarAccountsCommands();
     const calendars = new CalendarCalendarsCommands();
 
@@ -61,6 +78,7 @@ describe("calendar CLI commands", () => {
     );
     const calendarPayload = JSON.parse(calendarOutput);
 
+    expect(accountPayload.source.provider).toBe("local");
     expect(accountPayload.account.provider).toBe("local");
     expect(calendarPayload.calendar.name).toBe("Luis");
     expect(calendarPayload.calendar.ownerType).toBe("agent");
@@ -173,8 +191,10 @@ describe("calendar CLI commands", () => {
       ),
     );
 
+    await captureConsole(() =>
+      calendars.share(calendarPayload.calendar.id, "agent:agent-freebusy", "free_busy", undefined, true),
+    );
     process.env.RAVI_AGENT_ID = "agent-freebusy";
-    grantRelation("agent", "agent-freebusy", "free-busy", "calendar", calendarPayload.calendar.id, "test");
 
     const { output: listOutput } = await captureConsole(() =>
       events.list(
@@ -204,7 +224,7 @@ describe("calendar CLI commands", () => {
     expect(availabilityPayload.busy[0].redacted).toBe(true);
   });
 
-  it("shares calendars through REBAC and allows the grantee to read events", async () => {
+  it("shares calendars through Permission Provider Runtime and allows the grantee to read events", async () => {
     const accounts = new CalendarAccountsCommands();
     const calendars = new CalendarCalendarsCommands();
     const events = new CalendarEventsCommands();

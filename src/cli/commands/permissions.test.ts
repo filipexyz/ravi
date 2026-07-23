@@ -1,29 +1,18 @@
-import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+
+import { createContact, getContact } from "../../contacts.js";
+import { recordPermissionDenial } from "../../permissions/denials.js";
+import { readAgentRuntimePermissionsConfig } from "../../permissions/agent-default-capabilities-provider.js";
+import { dbCreateAgent } from "../../router/router-db.js";
+import { dbCreateTagDefinition, dbGetTagDefinition } from "../../tags/index.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 
 afterAll(() => mock.restore());
-
-interface TestRelation {
-  id: number;
-  subjectType: string;
-  subjectId: string;
-  relation: string;
-  objectType: string;
-  objectId: string;
-  source: string;
-  createdAt: number;
-}
-
-let relations: TestRelation[] = [];
-let nextRelationId = 1;
-
-function matchesFilter(relation: TestRelation, filter?: Record<string, string>): boolean {
-  if (!filter) return true;
-  return Object.entries(filter).every(([key, value]) => relation[key as keyof TestRelation] === value);
-}
 
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
+  CommandAccess: () => () => {},
   Scope: () => () => {},
   CliOnly: () => () => {},
   Returns: Object.assign(() => () => {}, { binary: () => () => {} }),
@@ -31,166 +20,236 @@ mock.module("../decorators.js", () => ({
   Option: () => () => {},
 }));
 
-mock.module("../context.js", () => ({
-  fail: (message: string) => {
-    throw new Error(message);
-  },
+mock.module("../../permissions/provider-registry.js", () => ({
+  getConfiguredPermissionProviders: () => [
+    { id: "operator-control", version: "operator-control/local-v1", required: true },
+    { id: "context-capabilities", version: "snapshot/v1", required: true },
+  ],
+  getConfiguredCapabilityMaterializers: () => [
+    { id: "runtime-bootstrap", version: "bootstrap/v1", required: true },
+    { id: "agent-default-capabilities", version: "agent-defaults/v1", required: true },
+    { id: "agent-identity-permissions", version: "agent-identity/v1", required: true },
+    { id: "contact-policy-permissions", version: "contact-tags/v1", required: true },
+  ],
 }));
 
-mock.module("../../permissions/relations.js", () => ({
-  grantRelation: (
-    subjectType: string,
-    subjectId: string,
-    relation: string,
-    objectType: string,
-    objectId: string,
-    source: string,
-  ) => {
-    const existing = relations.find((item) =>
-      matchesFilter(item, { subjectType, subjectId, relation, objectType, objectId }),
-    );
-    if (existing) {
-      existing.source = source;
-      return;
-    }
-    relations.push({
-      id: nextRelationId++,
-      subjectType,
-      subjectId,
-      relation,
-      objectType,
-      objectId,
-      source,
-      createdAt: 1,
-    });
-  },
-  revokeRelation: (subjectType: string, subjectId: string, relation: string, objectType: string, objectId: string) => {
-    const before = relations.length;
-    relations = relations.filter(
-      (item) => !matchesFilter(item, { subjectType, subjectId, relation, objectType, objectId }),
-    );
-    return relations.length < before;
-  },
-  hasRelation: (subjectType: string, subjectId: string, relation: string, objectType: string, objectId: string) =>
-    relations.some((item) => matchesFilter(item, { subjectType, subjectId, relation, objectType, objectId })),
-  listRelations: (filter?: Record<string, string>) => relations.filter((relation) => matchesFilter(relation, filter)),
-  clearRelations: (filter?: Record<string, string>) => {
-    const before = relations.length;
-    relations = relations.filter((relation) => !matchesFilter(relation, filter));
-    return before - relations.length;
-  },
-  syncRelationsFromConfig: () => {
-    relations.push({
-      id: nextRelationId++,
-      subjectType: "agent",
-      subjectId: "main",
-      relation: "admin",
-      objectType: "system",
-      objectId: "*",
-      source: "config",
-      createdAt: 1,
-    });
-  },
-}));
-
-mock.module("../../permissions/engine.js", () => ({
-  can: (subjectType: string, subjectId: string, permission: string, objectType: string, objectId: string) =>
-    relations.some((item) =>
-      matchesFilter(item, { subjectType, subjectId, relation: permission, objectType, objectId }),
-    ),
-}));
-
-mock.module("../tool-registry.js", () => ({
-  SDK_TOOLS: ["Bash", "Read"],
-  TOOL_GROUPS: {
-    safe: ["Read"],
-  },
-  resolveToolGroup: (name: string) => (name === "safe" ? ["Read"] : undefined),
-}));
-
-mock.module("../../bash/permissions.js", () => ({
-  getDefaultAllowlist: () => ["git"],
+mock.module("../../permissions/provider-runtime.js", () => ({
+  authorizePermission: (request: {
+    localOperator?: boolean;
+    permission: string;
+    objectType: string;
+    objectId: string;
+  }) => ({
+    decision: request.localOperator ? "allow" : "deny",
+    allowed: request.localOperator === true,
+    providerId: request.localOperator ? "operator-control" : "provider-runtime",
+    providerVersion: request.localOperator ? "operator-control/local-v1" : "runtime",
+    reasonCode: request.localOperator ? "operator_control_local_allow" : "no_permission_provider_configured",
+    permission: request.permission,
+    objectType: request.objectType,
+    objectId: request.objectId,
+  }),
+  materializeSubjectCapabilities: (subjectType: string, subjectId: string) =>
+    subjectType === "agent" && subjectId === "main"
+      ? [{ permission: "view", objectType: "agent", objectId: "*", source: "agent-default-capabilities:agent:main" }]
+      : [],
 }));
 
 const { PermissionsCommands } = await import("./permissions.js");
 
-function captureJson(run: () => void): Record<string, unknown> {
-  const lines: string[] = [];
-  const originalLog = console.log;
-  console.log = (...args: unknown[]) => {
-    lines.push(args.map((arg) => String(arg)).join(" "));
-  };
+describe("PermissionsCommands provider-runtime surface", () => {
+  let stateDir: string | null = null;
 
-  try {
-    run();
-  } finally {
-    console.log = originalLog;
-  }
-
-  return JSON.parse(lines.join("\n")) as Record<string, unknown>;
-}
-
-describe("PermissionsCommands --json", () => {
-  beforeEach(() => {
-    relations = [];
-    nextRelationId = 1;
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-permissions-commands-test-");
   });
 
-  it("returns the granted relation as structured JSON", () => {
-    const payload = captureJson(() => new PermissionsCommands().grant("agent:dev", "execute", "group:contacts", true));
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("reports provider-owned permission orchestration enabled", () => {
+    const commands = new PermissionsCommands();
+    const payload = commands.status(true);
 
     expect(payload).toMatchObject({
-      status: "granted",
-      target: {
-        type: "permission-relation",
-        subject: "agent:dev",
-        relation: "execute",
-        object: "group:contacts",
+      status: "provider-runtime",
+      mutationCommands: { enabled: true },
+      authorizationProviders: [{ id: "operator-control" }, { id: "context-capabilities" }],
+      capabilityMaterializers: [
+        { id: "runtime-bootstrap" },
+        { id: "agent-default-capabilities" },
+        { id: "agent-identity-permissions" },
+        { id: "contact-policy-permissions" },
+      ],
+    });
+  });
+
+  it("checks permissions through provider-runtime only", () => {
+    const commands = new PermissionsCommands();
+    const denied = commands.check("execute", "group", "agents", undefined, true);
+    const allowed = commands.check("execute", "group", "agents", true, true);
+
+    expect(denied.allowed).toBe(false);
+    expect(denied.decision.providerId).toBe("provider-runtime");
+    expect(allowed.allowed).toBe(true);
+    expect(allowed.decision.providerId).toBe("operator-control");
+  });
+
+  it("suggests matching provider-owned permission tags for denied checks", () => {
+    dbCreateTagDefinition({
+      slug: "permission-family",
+      label: "Family Image",
+      kind: "system",
+      source: "permissions",
+      metadata: {
+        permissions: {
+          capabilities: ["mutate:image:generate"],
+        },
       },
-      changedCount: 1,
-      relation: {
-        subject: "agent:dev",
-        relation: "execute",
-        object: "group:contacts",
-        source: "manual",
+    });
+
+    const commands = new PermissionsCommands();
+    const denied = commands.check("mutate", "image", "generate", undefined, true);
+
+    expect(denied.allowed).toBe(false);
+    expect(denied.guidance).toMatchObject({
+      canonicalCapability: "mutate:image:generate",
+      preferredPath: {
+        suggestedTags: [
+          {
+            slug: "permission-family",
+            label: "Family Image",
+            capabilities: ["mutate:image:generate"],
+          },
+        ],
+      },
+      requestShape: {
+        profileOrTag: "permission tag permission-family",
       },
     });
   });
 
-  it("returns permission check decisions as structured JSON", () => {
-    new PermissionsCommands().grant("agent:dev", "execute", "group:contacts");
-
-    const payload = captureJson(() => new PermissionsCommands().check("agent:dev", "execute", "group:contacts", true));
+  it("materializes provider-owned subject capabilities", () => {
+    const commands = new PermissionsCommands();
+    const payload = commands.materialize("agent", "main", true);
 
     expect(payload).toEqual({
-      subject: { raw: "agent:dev", type: "agent", id: "dev" },
-      permission: "execute",
-      object: { raw: "group:contacts", type: "group", id: "contacts" },
-      allowed: true,
+      subject: { type: "agent", id: "main" },
+      capabilities: [
+        {
+          permission: "view",
+          objectType: "agent",
+          objectId: "*",
+          source: "agent-default-capabilities:agent:main",
+        },
+      ],
+      guidance: {
+        recurringAccess:
+          "Recurring access should come from provider-owned agent identity profiles/tags, not ad-hoc capability lists.",
+        breakGlass: "full-access is break-glass and should be explicit.",
+      },
     });
   });
 
-  it("serializes list filters and relation entities in --json mode", () => {
-    new PermissionsCommands().grant("agent:dev", "use", "toolgroup:safe");
+  it("plans permission profile application without mutating provider-owned state", () => {
+    const contact = createContact({ phone: "+15550000001", name: "Permission Test User" });
+    dbCreateAgent({ id: "workflow-agent", cwd: "/tmp" });
 
-    const payload = captureJson(() =>
-      new PermissionsCommands().list("agent:dev", undefined, undefined, undefined, true),
+    const commands = new PermissionsCommands();
+    const payload = commands.allow(
+      "image workflow",
+      `contact:${contact.id}`,
+      "workflow-agent",
+      "mutate:image:generate",
+      undefined,
+      undefined,
+      undefined,
+      true,
     );
 
     expect(payload).toMatchObject({
-      total: 1,
-      filter: {
-        subjectType: "agent",
-        subjectId: "dev",
-      },
-      relations: [
-        {
-          subject: "agent:dev",
-          relation: "use",
-          object: "toolgroup:safe",
-          objectMembers: ["Read"],
-        },
-      ],
+      dryRun: true,
+      tagSlug: "permission-image-workflow",
+      capabilities: [{ permission: "mutate", objectType: "image", objectId: "generate" }],
+      targets: [{ type: "contact", id: contact.id }],
+      agentCeilings: ["workflow-agent"],
     });
+    expect(payload.operations.every((operation) => operation.status === "planned")).toBe(true);
+    expect(dbGetTagDefinition("permission-image-workflow")).toBeNull();
+    expect(getContact(contact.id)?.tags).not.toContain("permission-image-workflow");
+    expect(readAgentRuntimePermissionsConfig("workflow-agent")).toBeNull();
+  });
+
+  it("applies permission profiles through contact policy tags and agent runtime ceilings", () => {
+    const contact = createContact({ phone: "+15550000002", name: "Permission Apply User" });
+    dbCreateAgent({ id: "apply-agent", cwd: "/tmp" });
+
+    const commands = new PermissionsCommands();
+    const payload = commands.allow(
+      "image workflow",
+      `contact:${contact.id}`,
+      "apply-agent",
+      "mutate:image:generate",
+      undefined,
+      undefined,
+      true,
+      true,
+    );
+
+    expect(payload.dryRun).toBe(false);
+    expect(payload.changedCount).toBe(3);
+    expect(dbGetTagDefinition("permission-image-workflow")?.metadata).toMatchObject({
+      permissions: { capabilities: ["mutate:image:generate"] },
+    });
+    expect(getContact(contact.id)?.tags).toContain("permission-image-workflow");
+    expect(readAgentRuntimePermissionsConfig("apply-agent")?.capabilities).toEqual([
+      { permission: "mutate", objectType: "image", objectId: "generate" },
+    ]);
+  });
+
+  it("resolves an agent-identity denial into an agent-owned recurring profile workflow", () => {
+    const contact = createContact({ phone: "+15550000003", name: "Permission Resolve User" });
+    dbCreateAgent({ id: "resolve-agent", cwd: "/tmp" });
+    const denial = recordPermissionDenial({
+      subjectType: "agent",
+      subjectId: "resolve-agent",
+      relation: "execute",
+      objectType: "executable",
+      objectId: "curl",
+      agentId: "resolve-agent",
+      sessionName: "workflow-session",
+      contextId: "ctx_permission_resolve_test",
+      detail: {
+        context: {
+          authorityMode: "agent-identity",
+          actorPrincipal: `contact:${contact.id}`,
+          executorAgentId: "resolve-agent",
+          agentIdentityPrincipal: "agent_identity:resolve-agent:chat:chat_alpha",
+        },
+      },
+    });
+    expect(denial).not.toBeNull();
+
+    const commands = new PermissionsCommands();
+    const payload = commands.resolve(String(denial!.id), "publishing workflow", undefined, true, true);
+
+    expect(payload).toMatchObject({
+      dryRun: false,
+      tagSlug: "permission-publishing-workflow",
+      denial: {
+        id: denial!.id,
+        missingCapability: "execute:executable:curl",
+        subject: "agent:resolve-agent",
+      },
+      capabilities: [{ permission: "execute", objectType: "executable", objectId: "curl" }],
+      targets: [{ type: "agent", id: "resolve-agent" }],
+      agentCeilings: [],
+    });
+    expect(getContact(contact.id)?.tags).not.toContain("permission-publishing-workflow");
+    expect(readAgentRuntimePermissionsConfig("resolve-agent")?.capabilities).toEqual([
+      { permission: "execute", objectType: "executable", objectId: "curl" },
+    ]);
   });
 });

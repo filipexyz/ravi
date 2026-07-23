@@ -133,6 +133,9 @@ Pra edits cirúrgicos: **`change only X` + `keep everything else the same`**, e 
 ### Texto na imagem
 - Coloque texto literal em **aspas** ou **CAIXA ALTA**
 - Especifique tipografia: font style, size, color, placement
+- Para texto em português, escreva as palavras **com acentuação correta no prompt** e adicione uma constraint explícita: `preserve Portuguese accents exactly; do not remove accents or cedilla`.
+- Para labels curtos/importantes em português, inclua uma linha `Texto exato:` com cada label final já acentuado. Se o modelo costuma errar, soletre a palavra acentuada caractere por caractere, incluindo acentos e cedilha. Exemplo: `PERMISSÃO = P E R M I S S Ã O`, `AÇÃO = A Ç Ã O`, `NÃO = N Ã O`.
+- Evite versões sem acento como fallback (`permissao`, `acao`, `nao`) quando o texto final precisa aparecer em português; isso ensina o modelo a renderizar a forma errada.
 - Pra palavras difíceis (nomes de marca, grafia incomum), **soletre letra-por-letra**
 - Use `--quality medium` ou `high` pra texto pequeno, painel denso, multi-font
 

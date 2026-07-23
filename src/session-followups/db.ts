@@ -8,6 +8,7 @@ import type {
   SessionFollowupCadence,
   SessionFollowupCadenceInput,
   SessionFollowupCadenceStatus,
+  SessionFollowupCadenceUpdateInput,
   SessionFollowupListInput,
   SessionFollowupRun,
   SessionFollowupRunInput,
@@ -266,6 +267,72 @@ export function updateSessionFollowupCadenceState(
       input.lastRunAt === undefined ? (current.lastRunAt ?? null) : input.lastRunAt,
       input.lastStatus === undefined ? (current.lastStatus ?? null) : input.lastStatus,
       input.lastError === undefined ? (current.lastError ?? null) : input.lastError,
+      now,
+      id,
+    );
+  return getSessionFollowupCadence(id);
+}
+
+export function updateSessionFollowupCadence(
+  id: string,
+  input: SessionFollowupCadenceUpdateInput,
+): SessionFollowupCadence | null {
+  ensureSessionFollowupTables();
+  const current = getSessionFollowupCadence(id);
+  if (!current) return null;
+  const now = input.now ?? Date.now();
+  const name = input.name === undefined ? current.name : requiredText(input.name, "name");
+  const description =
+    input.description === undefined ? (current.description ?? null) : input.description?.trim() || null;
+  const messageTemplate =
+    input.messageTemplate === undefined
+      ? current.messageTemplate
+      : requiredText(input.messageTemplate, "messageTemplate");
+  const schedule = input.schedule === undefined ? current.schedule : validateSchedule(input.schedule, messageTemplate);
+  const deliveryBarrier =
+    input.deliveryBarrier === undefined
+      ? current.deliveryBarrier
+      : requireDeliveryBarrier(input.deliveryBarrier, "deliveryBarrier");
+  const nextRunAt =
+    input.recalculateNextRun === true
+      ? schedule.type === "every"
+        ? now
+        : (calculateNextRun(schedule, now) ?? null)
+      : (current.nextRunAt ?? null);
+
+  getDb()
+    .prepare(
+      `
+      UPDATE session_followup_cadences
+      SET name = ?,
+          description = ?,
+          schedule_type = ?,
+          schedule_every_ms = ?,
+          schedule_cron = ?,
+          schedule_at = ?,
+          schedule_steps_json = ?,
+          timezone = ?,
+          delivery_barrier = ?,
+          message_template = ?,
+          metadata_json = ?,
+          next_run_at = ?,
+          updated_at = ?
+      WHERE id = ?
+      `,
+    )
+    .run(
+      name,
+      description,
+      schedule.type,
+      schedule.every ?? null,
+      schedule.cron ?? null,
+      schedule.at ?? null,
+      schedule.type === "every" ? stringifyJson(schedule.steps ?? []) : null,
+      schedule.timezone ?? null,
+      deliveryBarrier,
+      messageTemplate,
+      stringifyJson(input.metadata ?? current.metadata),
+      nextRunAt,
       now,
       id,
     );

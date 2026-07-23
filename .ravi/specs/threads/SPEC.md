@@ -444,7 +444,7 @@ Future constraints:
 - `ravi sessions send --thread <existing-thread> "..."` appends a comment and reuses the existing thread.
 - The target agent receives a bounded thread brief and the operator prompt in one delivery.
 - The same thread can later be sent to another session and preserve the same subject context.
-- Thread handoff does not bypass session REBAC, contact policy, or outbound target policy.
+- Thread handoff does not bypass session Permission Provider Runtime, contact policy, or outbound target policy.
 - Thread entries preserve enough actor/source provenance to audit where context came from.
 - Assignee and watcher/subscriber relationships can be represented without granting permissions automatically.
 - Brief construction respects entry/link visibility and source material policy.

@@ -9,7 +9,7 @@ Passos:
 
 1. **Registrar channel** em `src/sdk/gateway/streaming/channels.ts` com:
    - `name` (ex: `events`, `tasks`)
-   - `scope` REBAC (ex: `view system:events`)
+   - `scope` Permission Provider Runtime (ex: `view system:events`)
    - função `subscribe(ctx, match) -> AsyncIterable<{ id?, event, data }>`
 2. **Branch SSE no gateway** já existe em `src/sdk/gateway/server.ts`.
 3. **Auth + audit** já existe em `src/sdk/gateway/streaming/handler.ts`;
@@ -23,7 +23,7 @@ Passos:
         -H "Accept: text/event-stream" \
         "http://127.0.0.1:4211/api/v1/_stream/events?subject=ravi.session.>"
    ```
-6. **Atualizar SPEC.md** com o novo channel ativo e o escopo REBAC.
+6. **Atualizar SPEC.md** com o novo channel ativo e o escopo Permission Provider Runtime.
 
 ## Como Diagnosticar Stream Pendurado
 
@@ -38,7 +38,7 @@ Se um cliente reporta que stream não recebe eventos:
    ```bash
    ravi events stream --filter "<topic>" --no-claude
    ```
-3. Confirmar permissão REBAC do contexto: stream com 0 eventos pode ser
+3. Confirmar permissão Permission Provider Runtime do contexto: stream com 0 eventos pode ser
    silently dropped por scope mismatch.
 4. Inspecionar o keepalive: client que não recebe `: ping` a cada 15s
    sugere conexão morta (load balancer dropou).

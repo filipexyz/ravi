@@ -1,7 +1,18 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { DaemonCommands, findSourceProjectRoot, resolveDaemonRuntimeTarget } from "./daemon.js";
 
 const tempDirs: string[] = [];
@@ -33,6 +44,82 @@ afterAll(() => {
 });
 
 describe("daemon runtime target", () => {
+  it("builds a CLI bundle that PM2 can synchronously require under Bun", () => {
+    const tempRoot = makeTempDir("ravi-daemon-pm2-bootstrap-");
+    const bundleDir = join(tempRoot, "dist", "bundle");
+    const bundlePath = join(bundleDir, "index.js");
+    const wrapperPath = join(tempRoot, "pm2-require-wrapper.cjs");
+    const fakeBinDir = join(tempRoot, "bin");
+    const fakePm2Path = join(fakeBinDir, "pm2");
+
+    mkdirSync(bundleDir, { recursive: true });
+    mkdirSync(fakeBinDir, { recursive: true });
+    writeFileSync(join(tempRoot, "package.json"), JSON.stringify({ name: "ravi.bot", version: "test" }), "utf8");
+    symlinkSync(join(process.cwd(), "node_modules"), join(tempRoot, "node_modules"), "dir");
+    writeFileSync(
+      wrapperPath,
+      [
+        'const Module = require("node:module");',
+        "const originalRequire = Module.prototype.require;",
+        "Module.prototype.require = function patchedRequire() {",
+        "  return originalRequire.apply(this, arguments);",
+        "};",
+        "require(process.env.RAVI_TEST_BUNDLE);",
+      ].join("\n"),
+      "utf8",
+    );
+    writeFileSync(fakePm2Path, '#!/bin/sh\n[ "$1" = "jlist" ] && printf "[]"\nexit 0\n', "utf8");
+    chmodSync(fakePm2Path, 0o755);
+
+    const build = spawnSync(
+      "bun",
+      [
+        "build",
+        "src/cli/index.ts",
+        "--outdir",
+        bundleDir,
+        "--target",
+        "bun",
+        "--minify",
+        "--external",
+        "ink",
+        "--external",
+        "react",
+        "--external",
+        "@anthropic-ai/*",
+        "--external",
+        "openai",
+        "--external",
+        "@google/*",
+        "--external",
+        "nats",
+        "--external",
+        "@elevenlabs/*",
+      ],
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+      },
+    );
+    expect(build.status).toBe(0);
+    expect(build.stderr).not.toContain("error:");
+
+    const result = spawnSync("bun", [wrapperPath, "daemon", "status"], {
+      cwd: tempRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${fakeBinDir}:${process.env.PATH ?? ""}`,
+        RAVI_STATE_DIR: join(tempRoot, "state"),
+        RAVI_TEST_BUNDLE: bundlePath,
+      },
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Ravi Daemon Status");
+    expect(result.stderr).not.toContain("require() async module");
+  });
+
   it("restarts the installed runtime from any operator cwd without requiring a source project root", () => {
     const tempRoot = makeTempDir("ravi-daemon-runtime-");
     const bundlePath = join(tempRoot, "install", "global", "node_modules", "ravi.bot", "dist", "bundle", "index.js");
@@ -127,5 +214,53 @@ describe("DaemonCommands --json", () => {
     );
     expect(payload.stdout).toBeUndefined();
     expect(payload.stderr).toBeUndefined();
+  });
+});
+
+describe("DaemonCommands init-admin-key negated storage", () => {
+  let stateDir: string | null = null;
+  let previousCredentialsPath: string | undefined;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-daemon-admin-key-");
+    previousCredentialsPath = process.env.RAVI_CREDENTIALS_PATH;
+    process.env.RAVI_CREDENTIALS_PATH = join(stateDir, "credentials.json");
+  });
+
+  afterEach(async () => {
+    if (previousCredentialsPath === undefined) delete process.env.RAVI_CREDENTIALS_PATH;
+    else process.env.RAVI_CREDENTIALS_PATH = previousCredentialsPath;
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  async function issueAdminKey(noStore: boolean) {
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      return new DaemonCommands().initAdminKey("test", false, noStore, false, true);
+    } finally {
+      console.log = originalLog;
+    }
+  }
+
+  it("persists credentials by default", async () => {
+    const result = await issueAdminKey(false);
+
+    expect("persisted" in result).toBe(true);
+    if (!("persisted" in result)) throw new Error("expected a newly issued admin key");
+    expect(result.persisted).toBe(true);
+    expect(result.credentialsPath).toBe(process.env.RAVI_CREDENTIALS_PATH!);
+    expect(existsSync(process.env.RAVI_CREDENTIALS_PATH!)).toBe(true);
+  });
+
+  it("does not persist credentials when --no-store is present", async () => {
+    const result = await issueAdminKey(true);
+
+    expect("persisted" in result).toBe(true);
+    if (!("persisted" in result)) throw new Error("expected a newly issued admin key");
+    expect(result.persisted).toBe(false);
+    expect(result.credentialsPath).toBeNull();
+    expect(existsSync(process.env.RAVI_CREDENTIALS_PATH!)).toBe(false);
   });
 });

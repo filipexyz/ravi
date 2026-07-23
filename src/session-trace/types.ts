@@ -6,6 +6,7 @@ export const SESSION_TRACE_EVENT_GROUPS = [
   "routing",
   "prompt",
   "dispatch",
+  "presence",
   "runtime",
   "adapter",
   "tool",

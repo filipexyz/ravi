@@ -51,6 +51,7 @@ The runtime abstraction exists so new execution engines can be added without cop
 - `RuntimeHostStreamingSession`: host-side live state for one session process/stream.
 - `RuntimeSessionContinuity`: resume, fork, rebase, and replay planning from Ravi-owned prompt atoms and provider state.
 - `RuntimeEvent`: canonical event stream consumed by the Ravi host event loop.
+- `TurnProvenance`: canonical cause of the effective turn, independent from actor authority and reply surface.
 - `RuntimeEventLoop`: canonical event consumer that emits NATS events, traces, tool events, responses, cost/tokens, and provider state.
 - `CloudTraceExport`: optional exporter that mirrors selected local runtime traces to a linked remote control plane without making remote storage required for local execution.
 
@@ -73,14 +74,22 @@ The runtime abstraction exists so new execution engines can be added without cop
 - The prompt generator MUST set `turnActive` before yielding a provider prompt and MUST be signaled on every terminal event path.
 - The event loop MUST persist provider session state only from canonical terminal state, not from raw provider events.
 - User prompts MUST be saved before provider handoff; assistant messages MUST be saved only after a non-interrupted terminal turn.
+- Raw runtime failures MUST remain available in internal logs, traces, and runtime events, but user-facing responses, live-state summaries, waited CLI errors, and observation prompts MUST sanitize local paths, runtime exception details, and credential-shaped values while preserving actionable provider guidance.
 - Tool start/end lifecycle MUST be recorded through canonical `tool.started` and `tool.completed` events.
 - Runtime permissions MUST flow through Ravi host services or host hooks. Providers MUST NOT create a parallel permission model.
 - `adapter.request` trace MUST be recorded before provider handoff, including prompt hashes, system prompt hashes, model, provider, resume/fork state, delivery barrier, source, and capability summary.
 - Runtime pool backpressure MUST be represented as its own dispatch state. A session waiting for a pool slot MUST NOT be reported as an in-flight cold start until a slot has actually been reserved.
 - Dispatch trace rows MUST use the canonical `session_key` when a session row exists. `session_name` MAY be included as a secondary lookup field, but MUST NOT replace the canonical key.
 - Cloud trace export MUST be asynchronous and best-effort by default. A failed export MUST NOT fail, block, or delay local runtime execution.
-- Background starts such as task and observation sessions MUST NOT be able to consume all runtime start capacity when interactive channel sessions are waiting. The dispatcher SHOULD reserve a small configurable capacity lane for interactive sessions.
-- Stalled-turn watchdog recovery MUST NOT be used. Missing terminal events are provider/adapter bugs and MUST be fixed at that boundary.
+- Background starts such as cron, trigger, heartbeat, task, and observation turns MUST NOT be able to consume all runtime start capacity when interactive channel sessions are waiting. The dispatcher SHOULD reserve a small configurable capacity lane for interactive sessions.
+- Provider turns that stop emitting runtime events MUST be bounded by a host-side inactivity timeout. On timeout the event loop MUST record `session.timeout` plus a terminal `turn.failed` snapshot with status `timeout`, abort the provider process, preserve pending/current turn messages, and restart from the stashed queue when possible.
+- Stalled-turn recovery MUST be explicit and traceable. Silent clearing of `turnActive` or dropping queued messages is forbidden.
+- External compaction announcements (the user-facing "compacting"/"compacted" runtime responses) are user-facing runtime responses. They MUST NOT be emitted for automation-originated turns (cron, trigger, session followup, heartbeat, and other background automation). Human/channel turns MAY continue to emit them when `announceCompaction` is enabled and sentinel mode does not suppress them.
+- Turn origin MUST be classified once per effective turn and snapshotted as `currentTurnProvenance`. `turn.origin` MUST describe the producer cause (`human`, `cron`, `trigger`, `session-followup`, `heartbeat`, `observer`, `task`, `daemon-restart`, and fallbacks), while actor authority and reply surface remain separate dimensions. A cron replying to a human chat is still a cron turn.
+- Pool admission, external compaction announcements, runtime trace/audit payloads, observer events, and trigger anti-loop checks MUST consume canonical turn provenance. Compatibility checks MAY remain for older event producers, but MUST NOT replace provenance.
+- `adapter.request`, `prompt.received`, and normalized runtime/tool events SHOULD expose the turn provenance snapshot. Observation events MUST retain their own snapshot so delayed/debounced batches do not inherit a later turn's cause.
+- Side-effecting reactions derived from observation events MUST use a durable action ledger keyed by rule, source turn, action type, and normalized action. Target deletion MUST NOT erase that idempotency record.
+- Internal compaction observability (runtime status, the `runtime.status` trace, live state, skill visibility reset, and logs) MUST be preserved for every origin even when the external announcement is suppressed. Suppressing announcements MUST NOT suppress final assistant responses from automations.
 - New providers MUST add provider contract tests, event normalization tests, and runtime capability matrix coverage before live use.
 
 ## Validation
@@ -95,7 +104,8 @@ The runtime abstraction exists so new execution engines can be added without cop
 
 ## Known Failure Modes
 
-- A provider emits a tool result but no terminal event, leaving `turnActive` true until explicit interruption.
+- A provider accepts a turn but emits no runtime events or terminal event, leaving `turnActive` true and causing `after_response`/`after_task` prompts to queue forever unless the inactivity timeout closes the turn.
+- A provider emits a tool result but no terminal event; this is covered by the tighter provider-inactivity watchdog after tool result delivery.
 - Raw provider keepalive/status events update `lastActivity` and mask a logically stuck turn.
 - Multiple assistant messages in one turn are aggregated into one durable assistant message while also being emitted as separate responses; UI consumers can misread boundaries.
 - Host tool tracking currently assumes one active tool at a time. Parallel provider tools would corrupt `currentToolId/currentToolName`.

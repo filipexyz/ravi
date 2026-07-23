@@ -1,0 +1,49 @@
+{
+  "text": "Ravi Tickets",
+  "blocks": [
+    {
+      "type": "header",
+      "block_id": "ravi_ticket_header",
+      "text": {
+        "type": "plain_text",
+        "text": "Ravi Tickets",
+        "emoji": true
+      }
+    },
+    {
+      "type": "section",
+      "block_id": "ravi_ticket_intro",
+      "text": {
+        "type": "mrkdwn",
+        "text": "Abra um ticket. A escolha do tipo de problema aparece em uma mensagem privada para voce."
+      }
+    },
+    {
+      "type": "actions",
+      "block_id": "ravi_ticket_open",
+      "elements": [
+        {
+          "type": "button",
+          "action_id": "ravi_ticket_open",
+          "text": {
+            "type": "plain_text",
+            "text": "Abrir ticket",
+            "emoji": true
+          },
+          "style": "primary",
+          "value": "open"
+        }
+      ]
+    },
+    {
+      "type": "context",
+      "block_id": "ravi_ticket_context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "Demo de workspace: Block Kit -> trigger shell -> Ravi CLI."
+        }
+      ]
+    }
+  ]
+}

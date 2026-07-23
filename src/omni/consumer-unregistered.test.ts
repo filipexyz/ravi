@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:tes
 
 const actualRouterIndexModule = await import("../router/index.js");
 const actualContactsModule = await import("../contacts.js");
+const actualSessionStreamModule = await import("./session-stream.js");
 const { logger } = await import("../utils/logger.js");
 
 const publishCalls: Array<[string, Record<string, unknown>]> = [];
@@ -37,6 +38,7 @@ mock.module("../nats.js", () => ({
 }));
 
 mock.module("./session-stream.js", () => ({
+  ...actualSessionStreamModule,
   publishSessionPrompt: mock(async () => {}),
 }));
 
@@ -82,6 +84,7 @@ const capturedLogger = {
 const loggerChildSpy = spyOn(logger, "child").mockImplementation(() => capturedLogger as never);
 
 mock.module("../utils/media.js", () => ({
+  fetchCachedOmniMedia: mock(async () => null),
   fetchOmniMedia: mock(async () => null),
   saveToAgentAttachments: mock(async () => null),
   MAX_AUDIO_BYTES: 16 * 1024 * 1024,

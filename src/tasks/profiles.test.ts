@@ -54,7 +54,7 @@ function writeTaskProfile(
     artifacts?: Array<Record<string, unknown>>;
     runtimeDefaults?: {
       model?: string;
-      effort?: "low" | "medium" | "high" | "xhigh";
+      effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
       thinking?: "off" | "normal" | "verbose";
     };
     templateTexts?: {
@@ -542,6 +542,39 @@ describe("task profile catalog", () => {
 
     expect(created.task.profileSnapshot?.runtimeDefaults).toEqual(profile.runtimeDefaults);
     expect(getTaskDetails(created.task.id).taskProfile?.runtimeDefaults).toEqual(profile.runtimeDefaults);
+  });
+
+  it("accepts the expanded max and ultra effort values in runtime defaults", async () => {
+    const workspaceDir = makeTempDir("ravi-task-profiles-effort-expanded-");
+    await createIsolatedRaviState("ravi-task-profiles-effort-expanded-state-");
+    process.chdir(workspaceDir);
+
+    const profilesRoot = join(workspaceDir, ".ravi", "task-profiles");
+    writeTaskProfile(profilesRoot, "effort-max", {
+      taskDocumentUsage: "none",
+      runtimeDefaults: { effort: "max" },
+    });
+    writeTaskProfile(profilesRoot, "effort-ultra", {
+      taskDocumentUsage: "none",
+      runtimeDefaults: { effort: "ultra" },
+    });
+
+    expect(requireTaskProfileDefinition("effort-max").runtimeDefaults?.effort).toBe("max");
+    expect(requireTaskProfileDefinition("effort-ultra").runtimeDefaults?.effort).toBe("ultra");
+  });
+
+  it("rejects unknown effort values in runtime defaults", async () => {
+    const workspaceDir = makeTempDir("ravi-task-profiles-effort-invalid-");
+    await createIsolatedRaviState("ravi-task-profiles-effort-invalid-state-");
+    process.chdir(workspaceDir);
+
+    const profilesRoot = join(workspaceDir, ".ravi", "task-profiles");
+    writeTaskProfile(profilesRoot, "effort-invalid", {
+      taskDocumentUsage: "none",
+      runtimeDefaults: { effort: "invalid" as never },
+    });
+
+    expect(() => requireTaskProfileDefinition("effort-invalid")).toThrow();
   });
 
   it.skip("pins profile version, source, and snapshot when creating a task", async () => {

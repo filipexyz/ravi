@@ -60,7 +60,10 @@ program
   .command("doctor")
   .description("Inspect critical Ravi runtime, substrate, and contract health")
   .option("--json", "Print raw JSON result")
-  .action(async (options: { json?: boolean }) => {
+  .option("--full", "Print full informational findings and evidence")
+  .option("--strict", "Exit non-zero on warnings")
+  .option("--domain <domain>", "Run one doctor domain")
+  .action(async (options: { json?: boolean; full?: boolean; strict?: boolean; domain?: string }) => {
     await runWithCliAudit(
       {
         group: "_root",
@@ -69,7 +72,14 @@ program
         input: options,
         closeLazyConnection: true,
       },
-      () => runDoctor({ json: options.json }),
+      () =>
+        runDoctor({
+          json: options.json,
+          full: options.full,
+          strict: options.strict,
+          domain: options.domain,
+          setExitCode: true,
+        }),
     );
   });
 
@@ -93,7 +103,8 @@ program
   .description("Update Ravi CLI to the configured npm channel")
   .option("--next", "Switch to dev builds (npm @next tag)")
   .option("--stable", "Switch to stable releases (npm @latest tag)")
-  .action(async (options: { next?: boolean; stable?: boolean }) => {
+  .option("--no-restart", "Do not restart managed Ravi processes after updating")
+  .action(async (options: { next?: boolean; stable?: boolean; restart?: boolean }) => {
     await runWithCliAudit(
       {
         group: "_root",
@@ -230,12 +241,21 @@ program
 // Parse and execute
 maybeSuggestKnownRootCommand(process.argv.slice(2), program);
 
-const handledByAppAlias = await maybeRunAppAliasRoute(process.argv.slice(2), {
-  staticRootCommands: rootCommandNames(program),
+void bootstrapCli().catch((error: unknown) => {
+  console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+  process.exitCode = 1;
 });
-if (handledByAppAlias) process.exit(process.exitCode ?? 0);
 
-program.parse();
+async function bootstrapCli(): Promise<void> {
+  const handledByAppAlias = await maybeRunAppAliasRoute(process.argv.slice(2), {
+    staticRootCommands: rootCommandNames(program),
+  });
+  if (handledByAppAlias) {
+    process.exit(process.exitCode ?? 0);
+  }
+
+  program.parse();
+}
 
 function maybeSuggestKnownRootCommand(args: string[], command: Command): void {
   const requested = args[0];

@@ -7,6 +7,7 @@ import type { RuntimeEvent, RuntimeStartRequest } from "./types.js";
 let nextMessages: any[] = [];
 let queryCalls: Array<{ prompt: unknown; options: Record<string, unknown> }> = [];
 let querySetModelCalls: Array<string | undefined> = [];
+let queryCloseCalls = 0;
 let queryGate: Promise<void> | null = null;
 let releaseQueryGate: (() => void) | null = null;
 
@@ -26,6 +27,10 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
       interrupt: async () => {},
       setModel: async (model?: string) => {
         querySetModelCalls.push(model);
+      },
+      close: () => {
+        queryCloseCalls++;
+        releaseQueryGate?.();
       },
       async *[Symbol.asyncIterator]() {
         if (queryGate) {
@@ -94,6 +99,7 @@ describe("createClaudeRuntimeProvider", () => {
     nextMessages = [];
     queryCalls = [];
     querySetModelCalls = [];
+    queryCloseCalls = 0;
     queryGate = null;
     releaseQueryGate = null;
     if (tempDir) {
@@ -122,6 +128,35 @@ describe("createClaudeRuntimeProvider", () => {
 
     const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
     expect(settings.PermissionRequest[0].matcher).toBe("*");
+  });
+
+  it("closes the active Claude SDK query idempotently", async () => {
+    nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-close" }];
+    queryGate = new Promise<void>((resolve) => {
+      releaseQueryGate = resolve;
+    });
+
+    const provider = createClaudeRuntimeProvider();
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "close" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+      ),
+    );
+
+    const eventsPromise = collectEvents(session.events);
+    await waitFor(() => queryCalls.length === 1);
+    await session.close?.();
+    await session.close?.();
+    await eventsPromise;
+
+    expect(queryCloseCalls).toBe(1);
   });
 
   it("normalizes assistant/tool/result events", async () => {
@@ -331,6 +366,55 @@ describe("createClaudeRuntimeProvider", () => {
     expect(queryCalls[0]?.options.effort).toBe("max");
   });
 
+  it("omits disabled thinking for Claude Fable 5", async () => {
+    nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-fable-thinking" }];
+
+    const provider = createClaudeRuntimeProvider();
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "hello" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+        { model: "claude-fable-5", thinking: "off" },
+      ),
+    );
+
+    await collectEvents(session.events);
+
+    expect(queryCalls).toHaveLength(1);
+    expect(queryCalls[0]?.options.model).toBe("claude-fable-5");
+    expect(queryCalls[0]?.options.thinking).toBeUndefined();
+  });
+
+  it("keeps summarized adaptive thinking for Claude Fable 5 verbose mode", async () => {
+    nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-fable-verbose" }];
+
+    const provider = createClaudeRuntimeProvider();
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "hello" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+        { model: "claude-fable-5", thinking: "verbose" },
+      ),
+    );
+
+    await collectEvents(session.events);
+
+    expect(queryCalls).toHaveLength(1);
+    expect(queryCalls[0]?.options.thinking).toEqual({ type: "adaptive", display: "summarized" });
+  });
+
   it("updates active and subsequent query models without recreating the provider session", async () => {
     nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-model" }];
     queryGate = new Promise<void>((resolve) => {
@@ -378,6 +462,51 @@ describe("createClaudeRuntimeProvider", () => {
     expect(findEventsByType(events, "turn.complete")).toHaveLength(2);
     expect(queryCalls[0]?.options.model).toBe("model-a");
     expect(queryCalls[1]?.options.model).toBe("model-b");
+  });
+
+  it("refreshes Ravi authority env between turns without resetting conversation history", async () => {
+    nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-authority" }];
+    const env: Record<string, string> = {
+      PATH: "",
+      RAVI_CONTEXT_KEY: "rctx_first",
+      RAVI_TASK_ID: "task_stale",
+    };
+
+    const provider = createClaudeRuntimeProvider();
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "first" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+          env.RAVI_CONTEXT_KEY = "rctx_second";
+          delete env.RAVI_TASK_ID;
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "second" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+        { env },
+      ),
+    );
+
+    const events = await collectEvents(session.events);
+    expect(queryCalls).toHaveLength(2);
+    const firstEnv = queryCalls[0]?.options.env as Record<string, string>;
+    const secondEnv = queryCalls[1]?.options.env as Record<string, string>;
+
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(2);
+    expect(firstEnv.RAVI_CONTEXT_KEY).toBe("rctx_first");
+    expect(firstEnv.RAVI_TASK_ID).toBe("task_stale");
+    expect(secondEnv.RAVI_CONTEXT_KEY).toBe("rctx_second");
+    expect(secondEnv.RAVI_TASK_ID).toBeUndefined();
+    expect(queryCalls[1]?.options.resume).toBe("claude-session-authority");
+    expect(secondEnv).not.toBe(firstEnv);
   });
 
   it("backfills daemon auth env when the runtime env is partial", async () => {

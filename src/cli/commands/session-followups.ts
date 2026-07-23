@@ -1,7 +1,9 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option, Scope } from "../decorators.js";
+import { z } from "zod";
+import { Arg, Command, CommandAccess, Group, Option, Scope } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
+import { jsonObjectSchema } from "../return-schemas.js";
 import {
   commandEnvelopeReturnSchema,
   declareCommandReturns,
@@ -22,6 +24,7 @@ import {
   listSessionFollowupRuns,
   retrySessionFollowupRuns,
   runSessionFollowupNow,
+  updateSessionFollowupCadence,
   updateSessionFollowupCadenceState,
   type SessionFollowupCadence,
   type SessionFollowupStep,
@@ -131,6 +134,66 @@ function requireCadence(id: string): SessionFollowupCadence {
   return cadence;
 }
 
+function resolveSingleStepMessageSchedule(
+  cadence: SessionFollowupCadence,
+  messageTemplate: string | undefined,
+): SessionFollowupCadence["schedule"] | undefined {
+  if (!messageTemplate || cadence.schedule.type !== "every") return undefined;
+  const steps = cadence.schedule.steps ?? [];
+  if (steps.length > 1) return undefined;
+  const afterMs = steps[0]?.afterMs ?? cadence.schedule.every;
+  if (!afterMs) return undefined;
+  return {
+    type: "every",
+    every: afterMs,
+    steps: [{ ...(steps[0] ?? { afterMs }), afterMs, messageTemplate }],
+  };
+}
+
+const sessionFollowupStepReturnSchema = z.object({
+  afterMs: z.number(),
+  messageTemplate: z.string(),
+  label: z.string().optional(),
+});
+
+const sessionFollowupScheduleReturnSchema = z.object({
+  type: z.enum(["every", "at", "cron"]),
+  every: z.number().optional(),
+  at: z.number().optional(),
+  cron: z.string().optional(),
+  timezone: z.string().optional(),
+  steps: z.array(sessionFollowupStepReturnSchema).optional(),
+});
+
+const sessionFollowupCadenceReturnSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  enabled: z.boolean(),
+  ownerType: z.string(),
+  ownerId: z.string(),
+  targetType: z.enum(["session", "chat", "reading_list"]),
+  targetRef: z.string(),
+  schedule: sessionFollowupScheduleReturnSchema,
+  deliveryBarrier: z.enum(["immediate_interrupt", "after_tool", "after_response", "after_task"]),
+  messageTemplate: z.string(),
+  metadata: jsonObjectSchema.optional(),
+  nextRunAt: z.number().optional(),
+  lastRunAt: z.number().optional(),
+  lastStatus: z.enum(["ok", "skipped", "failed"]).optional(),
+  lastError: z.string().optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  scheduleDescription: z.string(),
+  steps: z.array(sessionFollowupStepReturnSchema).optional(),
+  nextRunAtIso: z.string().nullable(),
+  lastRunAtIso: z.string().nullable(),
+});
+
+const sessionFollowupCadenceEnvelopeReturnSchema = z.object({
+  followup: sessionFollowupCadenceReturnSchema,
+});
+
 @Group({
   name: "sessions.followups",
   description: "Manage session followup cadences",
@@ -138,6 +201,7 @@ function requireCadence(id: string): SessionFollowupCadence {
 export class SessionFollowupCommands {
   @Scope("admin")
   @Command({ name: "list", description: "List session followup cadences" })
+  @CommandAccess({ kind: "read", resource: "sessions.followups", action: "list", risk: "low" })
   list(
     @Option({ flags: "--include-disabled", description: "Include paused/disabled cadences" }) includeDisabled?: boolean,
     @Option({ flags: "--target-type <type>", description: "Filter by target type: session|chat|reading_list" })
@@ -184,6 +248,7 @@ export class SessionFollowupCommands {
 
   @Scope("admin")
   @Command({ name: "add", description: "Create a session followup cadence" })
+  @CommandAccess({ kind: "mutate", resource: "sessions.followups", action: "add", risk: "medium" })
   add(
     @Arg("name", { description: "Followup cadence name" }) name: string,
     @Option({ flags: "--target-session <session>", description: "Target one session by name or key" })
@@ -240,7 +305,75 @@ export class SessionFollowupCommands {
   }
 
   @Scope("admin")
+  @Command({ name: "update", description: "Update a session followup cadence without recreating it" })
+  @CommandAccess({ kind: "mutate", resource: "sessions.followups", action: "update", risk: "medium" })
+  update(
+    @Arg("id", { description: "Followup cadence id" }) id: string,
+    @Option({ flags: "--name <name>", description: "Update cadence name" }) name?: string,
+    @Option({ flags: "--description <text>", description: "Update description; pass empty string to clear" })
+    description?: string,
+    @Option({ flags: "--message <text>", description: "Update default followup message template" }) message?: string,
+    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: followup|steer|p0|p1|p2|p3" })
+    barrier?: string,
+    @Option({
+      flags: "--step <duration=message...>",
+      description: "Replace idle followup steps; repeat or quote, e.g. --step '2h=First' --step '3h=Second'",
+    })
+    steps?: string | string[],
+    @Option({ flags: "--recalculate-next", description: "Recalculate next run from the updated schedule" })
+    recalculateNext?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const current = requireCadence(id);
+    const parsedSteps = parseStepSpecs(steps);
+    const messageTemplate = message?.trim() || parsedSteps[0]?.messageTemplate;
+    if (
+      parsedSteps.length === 0 &&
+      messageTemplate &&
+      current.schedule.type === "every" &&
+      (current.schedule.steps?.length ?? 0) > 1
+    ) {
+      fail("Use --step to replace progressive followup messages. --message only updates single-step cadences.");
+    }
+    const schedule =
+      parsedSteps.length > 0
+        ? { type: "every" as const, every: parsedSteps[0]?.afterMs, steps: parsedSteps }
+        : resolveSingleStepMessageSchedule(current, messageTemplate);
+
+    if (
+      name === undefined &&
+      description === undefined &&
+      messageTemplate === undefined &&
+      barrier === undefined &&
+      schedule === undefined &&
+      recalculateNext !== true
+    ) {
+      fail("Nothing to update. Use --name, --description, --message, --barrier, --step, or --recalculate-next.");
+    }
+
+    const cadence = updateSessionFollowupCadence(id, {
+      name,
+      description,
+      messageTemplate,
+      deliveryBarrier: barrier,
+      schedule,
+      recalculateNextRun: recalculateNext === true,
+    });
+    if (!cadence) fail(`Session followup cadence not found: ${id}`);
+    const payload = { followup: serializeCadence(cadence) };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(`Updated session followup: ${cadence.name} (${cadence.id})`);
+    console.log(`Schedule: ${formatFollowupSchedule(cadence)}`);
+    console.log(`Next: ${cadence.nextRunAt ? new Date(cadence.nextRunAt).toLocaleString() : "-"}`);
+    return payload;
+  }
+
+  @Scope("admin")
   @Command({ name: "inspect", description: "Inspect one session followup cadence and recent runs" })
+  @CommandAccess({ kind: "read", resource: "sessions.followups", action: "inspect", risk: "low" })
   inspect(
     @Arg("id", { description: "Followup cadence id" }) id: string,
     @Option({ flags: "--runs <n>", description: "Number of recent runs (default: 20)" }) runs?: string,
@@ -267,6 +400,7 @@ export class SessionFollowupCommands {
 
   @Scope("admin")
   @Command({ name: "runs", description: "List session followup runs" })
+  @CommandAccess({ kind: "read", resource: "sessions.followups", action: "runs", risk: "low" })
   runs(
     @Option({ flags: "--cadence <id>", description: "Filter by cadence id" }) cadenceId?: string,
     @Option({ flags: "--status <status>", description: "Filter by run status" }) status?: string,
@@ -303,6 +437,7 @@ export class SessionFollowupCommands {
 
   @Scope("admin")
   @Command({ name: "run", description: "Run a followup cadence now without consuming its next scheduled time" })
+  @CommandAccess({ kind: "mutate", resource: "sessions.followups", action: "run", risk: "high" })
   async run(
     @Arg("id", { description: "Followup cadence id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -319,6 +454,7 @@ export class SessionFollowupCommands {
 
   @Scope("admin")
   @Command({ name: "pause", description: "Pause a followup cadence" })
+  @CommandAccess({ kind: "mutate", resource: "sessions.followups", action: "pause", risk: "medium" })
   pause(
     @Arg("id", { description: "Followup cadence id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -336,6 +472,7 @@ export class SessionFollowupCommands {
 
   @Scope("admin")
   @Command({ name: "resume", description: "Resume a followup cadence and recalculate next run" })
+  @CommandAccess({ kind: "mutate", resource: "sessions.followups", action: "resume", risk: "medium" })
   resume(
     @Arg("id", { description: "Followup cadence id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -357,6 +494,7 @@ export class SessionFollowupCommands {
 
   @Scope("admin")
   @Command({ name: "snooze", description: "Snooze a followup cadence until a timestamp" })
+  @CommandAccess({ kind: "read", resource: "sessions.followups", action: "snooze", risk: "low" })
   snooze(
     @Arg("id", { description: "Followup cadence id" }) id: string,
     @Option({ flags: "--until <iso>", description: "Wake-up timestamp" }) until?: string,
@@ -378,6 +516,7 @@ export class SessionFollowupCommands {
 
   @Scope("admin")
   @Command({ name: "retry", description: "Retry failed/dead followup runs" })
+  @CommandAccess({ kind: "mutate", resource: "sessions.followups", action: "retry", risk: "medium" })
   retry(
     @Arg("run", { required: false, description: "Optional run id" }) runId?: string,
     @Option({ flags: "--cadence <id>", description: "Retry failed/dead runs for one cadence" }) cadenceId?: string,
@@ -405,4 +544,5 @@ declareCommandReturns(SessionFollowupCommands, {
   run: commandEnvelopeReturnSchema,
   runs: pagedItemsReturnSchema,
   snooze: commandEnvelopeReturnSchema,
+  update: sessionFollowupCadenceEnvelopeReturnSchema,
 });

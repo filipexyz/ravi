@@ -32,7 +32,7 @@ normative: false
 - The emitted prompt includes a bounded thread brief plus the operator prompt.
 - The thread id appears in emitted source/context metadata.
 - A `thread_handoff` row records target session, origin session, prompt, brief entry ids, and status.
-- The command respects the same REBAC restrictions as `ravi sessions send` without `--thread`.
+- The command respects the same Permission Provider Runtime restrictions as `ravi sessions send` without `--thread`.
 - The command fails closed if the caller cannot read the thread or cannot send to the target session.
 
 ## Safety

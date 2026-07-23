@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { ZodTypeAny } from "zod";
 import { Returns } from "../decorators.js";
+import { jsonObjectSchema, jsonValueSchema } from "../return-schemas.js";
+import { RUNTIME_EFFORT_LEVELS } from "../../runtime/effort.js";
 
 export const looseObjectSchema = z.object({}).passthrough();
 export const looseObjectOrNullSchema = looseObjectSchema.nullable();
@@ -46,6 +48,326 @@ export const changedEntityReturnSchema = z
 
 export const commandEnvelopeReturnSchema = looseObjectSchema;
 
+const contextCapabilityReturnSchema = z
+  .object({
+    permission: z.string(),
+    objectType: z.string(),
+    objectId: z.string(),
+    source: z.string().optional(),
+  })
+  .strict();
+
+const contextSourceReturnSchema = z
+  .object({
+    channel: z.string(),
+    accountId: z.string(),
+    chatId: z.string(),
+    threadId: z.string().optional(),
+  })
+  .strict();
+
+const contextLineageSummaryReturnSchema = z
+  .object({
+    parentContextId: z.string().nullable(),
+    parentContextKind: z.string().nullable(),
+    issuedFor: z.string().nullable(),
+    issuedAt: z.number().nullable(),
+    issuanceMode: z.string().nullable(),
+    approvalSource: jsonValueSchema.nullable(),
+  })
+  .strict();
+
+const contextSummaryReturnSchema = z
+  .object({
+    contextId: z.string(),
+    kind: z.string(),
+    status: z.enum(["active", "expired", "revoked"]),
+    agentId: z.string().nullable(),
+    sessionKey: z.string().nullable(),
+    sessionName: z.string().nullable(),
+    createdAt: z.number(),
+    expiresAt: z.number().nullable(),
+    lastUsedAt: z.number().nullable(),
+    revokedAt: z.number().nullable(),
+    capabilitiesCount: z.number(),
+    parentContextId: z.string().nullable(),
+    issuedFor: z.string().nullable(),
+    issuanceMode: z.string().nullable(),
+  })
+  .strict();
+
+const contextDetailReturnSchema = contextSummaryReturnSchema
+  .extend({
+    source: contextSourceReturnSchema.nullable(),
+    metadata: jsonObjectSchema.nullable(),
+    capabilities: z.array(contextCapabilityReturnSchema),
+    lineage: contextLineageSummaryReturnSchema,
+  })
+  .strict();
+
+const contextPaginationReturnSchema = z
+  .object({
+    limit: z.number(),
+    offset: z.number(),
+    returned: z.number(),
+    total: z.number(),
+    hasMore: z.boolean(),
+    nextOffset: z.number().nullable(),
+    nextCommand: z.string().nullable(),
+  })
+  .strict();
+
+export const contextListReturnSchema = z
+  .object({
+    count: z.number(),
+    total: z.number(),
+    pagination: contextPaginationReturnSchema,
+    items: z.array(contextSummaryReturnSchema),
+    contexts: z.array(contextSummaryReturnSchema),
+  })
+  .strict();
+
+export const contextInfoReturnSchema = contextDetailReturnSchema;
+
+export const contextWhoamiReturnSchema = contextDetailReturnSchema;
+
+export const contextCapabilitiesReturnSchema = z
+  .object({
+    contextId: z.string(),
+    kind: z.string(),
+    agentId: z.string().nullable(),
+    sessionKey: z.string().nullable(),
+    sessionName: z.string().nullable(),
+    capabilities: z.array(contextCapabilityReturnSchema),
+  })
+  .strict();
+
+export const contextCheckReturnSchema = z
+  .object({
+    contextId: z.string(),
+    agentId: z.string().nullable(),
+    permission: z.string(),
+    objectType: z.string(),
+    objectId: z.string(),
+    allowed: z.boolean(),
+    capabilitiesCount: z.number(),
+  })
+  .strict();
+
+export const contextAuthorizeReturnSchema = contextCheckReturnSchema
+  .extend({
+    approved: z.boolean(),
+    inherited: z.boolean(),
+    reason: z.string().nullable(),
+  })
+  .strict();
+
+export const contextIssueReturnSchema = z
+  .object({
+    contextId: z.string(),
+    contextKey: z.string(),
+    kind: z.string(),
+    cliName: z.string(),
+    agentId: z.string().nullable(),
+    sessionKey: z.string().nullable(),
+    sessionName: z.string().nullable(),
+    parentContextId: z.string(),
+    createdAt: z.number(),
+    expiresAt: z.number().nullable(),
+    capabilities: z.array(contextCapabilityReturnSchema),
+    capabilitiesCount: z.number(),
+    source: contextSourceReturnSchema.nullable(),
+    metadata: jsonObjectSchema.nullable(),
+    env: z.record(z.string(), z.string()),
+  })
+  .strict();
+
+export const contextRevokeReturnSchema = z
+  .object({
+    context: contextDetailReturnSchema,
+    cascaded: z.array(contextSummaryReturnSchema),
+    revokedAt: z.number(),
+  })
+  .strict();
+
+export const contextCleanupAgentRuntimeReturnSchema = z
+  .object({
+    dryRun: z.boolean(),
+    reason: z.string().nullable(),
+    olderThan: z.string(),
+    olderThanMs: z.number(),
+    cutoffAt: z.number(),
+    scanned: z
+      .object({
+        kind: z.literal("agent-runtime"),
+        agentId: z.string().nullable(),
+        sessionKey: z.string().nullable(),
+      })
+      .strict(),
+    candidatesCount: z.number(),
+    revokedCount: z.number(),
+    candidates: z.array(
+      z
+        .object({
+          context: contextSummaryReturnSchema,
+          lastSeenAt: z.number(),
+          sessionExists: z.boolean(),
+        })
+        .strict(),
+    ),
+    revoked: z.array(
+      z
+        .object({
+          context: contextDetailReturnSchema,
+          cascaded: z.array(contextSummaryReturnSchema),
+          revokedAt: z.number(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export const contextPruneReturnSchema = z
+  .object({
+    status: z.enum(["pruned", "planned"]),
+    dryRun: z.boolean(),
+    olderThan: z.string(),
+    matchedCount: z.number(),
+    changedCount: z.number(),
+  })
+  .strict();
+
+export const contextLineageReturnSchema = z
+  .object({
+    context: contextDetailReturnSchema,
+    ancestors: z.array(contextSummaryReturnSchema),
+    descendants: z.array(contextSummaryReturnSchema),
+  })
+  .strict();
+
+export const contextCodexBashHookReturnSchema = z
+  .object({
+    hookSpecificOutput: z
+      .object({
+        hookEventName: z.literal("PreToolUse"),
+        permissionDecision: z.enum(["deny"]),
+        permissionDecisionReason: z.string(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export const contextVisibilityReturnSchema = z
+  .object({
+    sessionKey: z.string(),
+    agentId: z.string(),
+    provider: z.string().nullable(),
+    tokens: z
+      .object({
+        used: z.number().nullable(),
+        limit: z.number().nullable(),
+        remaining: z.number().nullable(),
+      })
+      .strict(),
+    compact: z
+      .object({
+        threshold: z.number().nullable(),
+        willCompactAt: z.number().nullable(),
+        lastCompactedAt: z.number().nullable(),
+        count: z.number(),
+      })
+      .strict(),
+    skills: z.array(
+      z
+        .object({
+          id: z.string(),
+          provider: z.string(),
+          state: z.string(),
+          confidence: z.string(),
+          source: z.string().optional(),
+          evidence: z
+            .array(
+              z
+                .object({
+                  kind: z.string(),
+                  itemId: z.string().optional(),
+                  detail: z.string().optional(),
+                })
+                .strict(),
+            )
+            .optional(),
+          loadedAt: z.number().nullable().optional(),
+          lastSeenAt: z.number(),
+        })
+        .strict(),
+    ),
+    loadedSkills: z.array(z.string()),
+    lastUpdatedAt: z.number(),
+  })
+  .strict();
+
+export const contextCredentialsListReturnSchema = z
+  .object({
+    path: z.string(),
+    exists: z.boolean(),
+    default: z.string().nullable(),
+    total: z.number(),
+    pagination: contextPaginationReturnSchema,
+    items: z.array(
+      z
+        .object({
+          contextKey: z.string(),
+          contextId: z.string(),
+          agentId: z.string().nullable(),
+          label: z.string().nullable(),
+          kind: z.string().nullable(),
+          issuedAt: z.number(),
+          expiresAt: z.number().nullable(),
+          isDefault: z.boolean(),
+        })
+        .strict(),
+    ),
+    entries: z.array(
+      z
+        .object({
+          contextKey: z.string(),
+          contextId: z.string(),
+          agentId: z.string().nullable(),
+          label: z.string().nullable(),
+          kind: z.string().nullable(),
+          issuedAt: z.number(),
+          expiresAt: z.number().nullable(),
+          isDefault: z.boolean(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export const contextCredentialsAddReturnSchema = z
+  .object({
+    path: z.string(),
+    default: z.string().nullable(),
+    added: z.string(),
+  })
+  .strict();
+
+export const contextCredentialsRemoveReturnSchema = z
+  .object({
+    path: z.string(),
+    default: z.string().nullable(),
+    removed: z.string(),
+  })
+  .strict();
+
+export const contextCredentialsSetDefaultReturnSchema = z
+  .object({
+    path: z.string(),
+    default: z.string().nullable(),
+  })
+  .strict();
+
 export const runtimeControlReturnSchema = z
   .object({
     ok: z.boolean(),
@@ -79,6 +401,79 @@ export const crmBoardReturnSchema = z
 
 export const crmPipelineDetailsReturnSchema = looseObjectSchema;
 export const crmPipelineStageDetailsReturnSchema = looseObjectSchema;
+
+const crmPipelineValidationIssueReturnSchema = z
+  .object({
+    path: z.string(),
+    message: z.string(),
+    severity: z.enum(["warning", "error"]),
+    code: z.string().optional(),
+  })
+  .strict();
+
+export const crmPipelineValidationReturnSchema = z
+  .object({
+    pipelineId: z.string(),
+    ok: z.boolean(),
+    errors: z.array(crmPipelineValidationIssueReturnSchema),
+    warnings: z.array(crmPipelineValidationIssueReturnSchema),
+    schema: jsonObjectSchema.optional(),
+  })
+  .strict();
+
+const crmPipelineReviewFieldReturnSchema = z
+  .object({
+    group: z.enum(["identidade", "estrutura", "politicas", "tags", "comunicacao", "integracoes"]),
+    field: z.string(),
+    present: z.enum(["present", "absent", "partial"]),
+    detail: z.string(),
+    suggestion: z.string().optional(),
+  })
+  .strict();
+
+export const crmPipelineReviewReturnSchema = z
+  .object({
+    pipelineId: z.string(),
+    pipelineName: z.string(),
+    highSeverityGaps: z.number(),
+    totalGaps: z.number(),
+    fields: z.array(crmPipelineReviewFieldReturnSchema),
+  })
+  .strict();
+
+export const crmPipelineSendWindowCheckReturnSchema = z
+  .object({
+    pipelineId: z.string(),
+    ok: z.boolean(),
+    errors: z.array(crmPipelineValidationIssueReturnSchema),
+    warnings: z.array(crmPipelineValidationIssueReturnSchema),
+    decision: z
+      .object({
+        allowed: z.boolean(),
+        reason: z.string(),
+        releaseAtIso: z.string().optional(),
+        evaluatedAtIso: z.string(),
+        timezone: z.string(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const crmPipelineHitlCheckReturnSchema = z
+  .object({
+    pipelineId: z.string(),
+    ok: z.boolean(),
+    errors: z.array(crmPipelineValidationIssueReturnSchema),
+    warnings: z.array(crmPipelineValidationIssueReturnSchema),
+    decision: z
+      .object({
+        hitlRequired: z.boolean(),
+        matchedConditions: z.number(),
+        reasons: z.array(z.string()),
+      })
+      .strict(),
+  })
+  .strict();
 
 export const crmOpportunityContactsReturnSchema = z
   .object({
@@ -332,16 +727,43 @@ export const artifactEventsReturnSchema = z
 
 export const artifactPublishReturnSchema = z
   .object({
-    artifact: z.unknown(),
-    artifactVersion: z.unknown(),
-    publish: z.unknown(),
-    release: z.unknown(),
-    routes: unknownArraySchema,
+    success: z.literal(true),
+    consoleUrl: z.string(),
+    authenticated: z.literal(true),
+    uploadSession: jsonObjectSchema.nullable(),
+    upload: z.object({
+      attempted: z.number(),
+      skipped: z.number(),
+    }),
+    artifact: jsonValueSchema,
+    artifactVersion: jsonValueSchema,
+    site: jsonValueSchema,
+    publish: jsonValueSchema,
+    release: jsonValueSchema,
+    routes: z.array(jsonObjectSchema),
     url: z.string().nullable(),
-    upload: looseObjectSchema,
-    localSync: looseObjectSchema.optional(),
+    localSync: z.union([
+      z.object({
+        status: z.literal("skipped"),
+        reason: z.literal("package_source"),
+      }),
+      z.object({
+        status: z.literal("recorded"),
+        artifactId: z.string(),
+        versionId: z.string(),
+        versionNumber: z.number(),
+        eventType: z.literal("published"),
+      }),
+      z.object({
+        status: z.literal("failed"),
+        artifactId: z.string(),
+        versionId: z.string(),
+        versionNumber: z.number(),
+        error: z.string(),
+      }),
+    ]),
   })
-  .passthrough();
+  .strict();
 
 export const artifactReleaseActivateReturnSchema = z
   .object({
@@ -383,6 +805,148 @@ export const audioGenerateReturnSchema = z
     sent: mediaDeliveryReturnSchema.extend({ voiceNote: z.literal(true) }).optional(),
   })
   .passthrough();
+
+const ttsJsonObjectSchema = z.record(z.string(), jsonValueSchema);
+
+const ttsTargetSchema = z.object({
+  channel: z.string().optional(),
+  accountId: z.string().optional(),
+  instanceId: z.string().optional(),
+  chatId: z.string().optional(),
+  threadId: z.string().optional(),
+  canonicalChatId: z.string().optional(),
+});
+
+const ttsVoiceSettingsSchema = z.object({
+  stability: z.number().optional(),
+  similarityBoost: z.number().optional(),
+  style: z.number().optional(),
+  useSpeakerBoost: z.boolean().optional(),
+  speed: z.number().optional(),
+});
+
+const ttsElevenLabsOptionsSchema = z.object({
+  enableLogging: z.boolean().optional(),
+  optimizeStreamingLatency: z.number().optional(),
+  pronunciationDictionaryLocators: z.array(jsonValueSchema).optional(),
+  seed: z.number().optional(),
+  previousText: z.string().optional(),
+  nextText: z.string().optional(),
+  previousRequestIds: z.array(z.string()).optional(),
+  nextRequestIds: z.array(z.string()).optional(),
+  usePvcAsIvc: z.boolean().optional(),
+  applyTextNormalization: z.enum(["auto", "on", "off"]).optional(),
+  applyLanguageTextNormalization: z.boolean().optional(),
+});
+
+const ttsVoiceConfigSchema = z.object({
+  provider: z.literal("elevenlabs"),
+  voiceId: z.string().optional(),
+  modelId: z.string(),
+  lang: z.string(),
+  outputFormat: z.string(),
+  voiceSettings: ttsVoiceSettingsSchema.optional(),
+  elevenlabs: ttsElevenLabsOptionsSchema.optional(),
+});
+
+const ttsPlaybackSchema = z.object({
+  target: z.enum(["extension", "channel", "none"]),
+  autoplay: z.boolean(),
+  clientId: z.string().optional(),
+});
+
+const ttsRequestSchema = z.object({
+  id: z.string().optional(),
+  requestId: z.string().optional(),
+  text: z.string(),
+  agentId: z.string().optional(),
+  sessionName: z.string().optional(),
+  sessionKey: z.string().optional(),
+  emitId: z.string().optional(),
+  target: ttsTargetSchema.optional(),
+  playback: ttsPlaybackSchema.optional(),
+  voice: ttsVoiceConfigSchema.optional(),
+  metadata: ttsJsonObjectSchema.optional(),
+  createdAt: z.number().optional(),
+  source: ttsJsonObjectSchema.optional(),
+});
+
+const ttsPlaybackItemSchema = z.object({
+  id: z.string(),
+  requestId: z.string(),
+  status: z.enum(["ready", "failed"]),
+  createdAt: z.number(),
+  readyAt: z.number().optional(),
+  failedAt: z.number().optional(),
+  text: z.string(),
+  textPreview: z.string(),
+  agentId: z.string().optional(),
+  sessionName: z.string().optional(),
+  sessionKey: z.string().optional(),
+  emitId: z.string().optional(),
+  target: ttsTargetSchema.optional(),
+  playback: ttsPlaybackSchema,
+  voice: ttsVoiceConfigSchema,
+  audio: z
+    .object({
+      id: z.string(),
+      filePath: z.string(),
+      filename: z.string(),
+      mimeType: z.string(),
+      sizeBytes: z.number(),
+      provider: z.literal("elevenlabs"),
+      voiceId: z.string(),
+      modelId: z.string(),
+      outputFormat: z.string(),
+    })
+    .optional(),
+  error: z.string().optional(),
+  metadata: ttsJsonObjectSchema.optional(),
+});
+
+export const audioTtsReturnSchema = z.object({
+  ok: z.literal(true),
+  topic: z.literal("ravi.tts"),
+  request: ttsRequestSchema,
+});
+
+export const audioPendingReturnSchema = z.object({
+  ok: z.literal(true),
+  generatedAt: z.number(),
+  items: z.array(ttsPlaybackItemSchema),
+});
+
+export const audioVoicesReturnSchema = z.object({
+  ok: z.literal(true),
+  provider: z.literal("elevenlabs"),
+  generatedAt: z.number(),
+  hasMore: z.boolean(),
+  totalCount: z.number().optional(),
+  nextPageToken: z.string().optional(),
+  voices: z.array(
+    z.object({
+      voiceId: z.string(),
+      name: z.string(),
+      category: z.string().optional(),
+      description: z.string().optional(),
+      previewUrl: z.string().optional(),
+      labels: z.record(z.string(), z.string()).optional(),
+      isOwner: z.boolean().optional(),
+      isLegacy: z.boolean().optional(),
+      highQualityBaseModelIds: z.array(z.string()).optional(),
+      verifiedLanguages: z
+        .array(
+          z.object({
+            language: z.string().optional(),
+            locale: z.string().optional(),
+            accent: z.string().optional(),
+            previewUrl: z.string().optional(),
+          }),
+        )
+        .optional(),
+    }),
+  ),
+});
 
 export const imageGenerateReturnSchema = z.union([
   z
@@ -440,12 +1004,15 @@ export const videoAnalyzeReturnSchema = z
     video: z
       .object({
         source: z.string(),
+        strategy: z.enum(["gemini", "subtitles"]),
         title: z.string(),
         duration: z.string(),
         summary: z.string(),
         topics: z.array(z.string()),
         transcript: z.string(),
         visualDescription: z.string(),
+        subtitleLanguage: z.string().nullable().optional(),
+        chapters: z.array(looseObjectSchema).optional(),
       })
       .passthrough(),
     options: looseObjectSchema,
@@ -567,6 +1134,62 @@ export const skillsSyncReturnSchema = z
     total: z.number(),
   })
   .passthrough();
+
+export const skillGrantRecordReturnSchema = z
+  .object({
+    agentId: z.string(),
+    skillName: z.string(),
+    note: z.string().optional(),
+    grantedAt: z.number(),
+  })
+  .strict();
+
+export const skillGrantMutationReturnSchema = z
+  .object({
+    success: z.boolean(),
+    agentId: z.string(),
+    skillName: z.string(),
+    grant: skillGrantRecordReturnSchema.optional(),
+  })
+  .strict();
+
+export const skillGrantWhoReturnSchema = z
+  .object({
+    // Filled with the positional skill argument; omitted for --agent / no-filter scopes.
+    skillName: z.string().optional(),
+    total: z.number(),
+    grants: z.array(skillGrantRecordReturnSchema),
+  })
+  .strict();
+
+export const skillGrantBatchReturnSchema = z
+  .object({
+    op: z.enum(["grant", "revoke"]),
+    dryRun: z.boolean(),
+    agentsTargeted: z.number(),
+    skillsTargeted: z.number(),
+    pairsAffected: z.number(),
+    pairsSkipped: z.number(),
+    errors: z.array(z.object({ agentId: z.string(), skillName: z.string(), error: z.string() }).strict()),
+    sampleAgents: z.array(z.string()),
+    sampleSkills: z.array(z.string()),
+  })
+  .strict();
+
+export const skillInspectReturnSchema = z
+  .object({
+    agentId: z.string(),
+    hasConfiguration: z.boolean(),
+    allowlist: z.array(z.string()),
+    provenance: z
+      .object({
+        baseline: z.array(z.string()),
+        fromCapabilities: z.array(z.string()),
+        fromGrants: z.array(z.string()),
+      })
+      .strict(),
+  })
+  .strict();
 
 export const specsListReturnSchema = pagedItemsReturnSchema
   .extend({
@@ -703,6 +1326,117 @@ export const taskProfileInitReturnSchema = z
     manifestPath: z.string(),
   })
   .passthrough();
+
+export const meetingProfileReturnSchema = z
+  .object({
+    id: z.string(),
+    version: z.string(),
+    label: z.string(),
+    sourceKind: z.string(),
+    source: z.string(),
+    provider: z.string(),
+    chrome: z
+      .object({
+        profileDir: z.string().nullable(),
+        browserChannel: z.string().nullable(),
+      })
+      .strict(),
+    voice: z
+      .object({
+        runtime: z.string(),
+      })
+      .strict(),
+    live: z
+      .object({
+        enabled: z.boolean(),
+        agentId: z.string().nullable(),
+        contextChars: z.number(),
+        includeSessionContext: z.boolean(),
+        initialPromptChars: z.number(),
+        initialPromptDelay: z.string().nullable(),
+        tools: z.array(z.string()),
+      })
+      .strict(),
+    defaults: z
+      .object({
+        name: z.string().optional(),
+        out: z.string().optional(),
+        duration: z.string().optional(),
+        maxDuration: z.string().optional(),
+        emptyGrace: z.string().optional(),
+        capture: z.string().optional(),
+      })
+      .strict(),
+  })
+  .strict();
+
+const meetingOffsetPaginationReturnSchema = z
+  .object({
+    limit: z.number(),
+    offset: z.number(),
+    returned: z.number(),
+    total: z.number(),
+    hasMore: z.boolean(),
+    nextOffset: z.number().nullable(),
+    nextCommand: z.string().nullable(),
+  })
+  .strict();
+
+export const meetingProfilesListReturnSchema = z
+  .object({
+    total: z.number(),
+    pagination: meetingOffsetPaginationReturnSchema,
+    items: z.array(meetingProfileReturnSchema),
+    profiles: z.array(meetingProfileReturnSchema),
+  })
+  .strict();
+
+export const meetingProfileInitReturnSchema = z
+  .object({
+    sourceKind: z.string(),
+    profileDir: z.string(),
+    profilePath: z.string(),
+  })
+  .strict();
+
+export const meetingProfilesValidateReturnSchema = z
+  .object({
+    valid: z.boolean(),
+    results: z.array(
+      z
+        .object({
+          id: z.string(),
+          sourceKind: z.string(),
+          source: z.string(),
+          valid: z.boolean(),
+          error: z.string().optional(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export const meetingVoiceRuntimeCandidateReturnSchema = z
+  .object({
+    id: z.string(),
+    label: z.string(),
+    availability: z.string(),
+    kind: z.string(),
+    defaultModel: z.string().optional(),
+    providerRuntime: z.string().optional(),
+    docsUrl: z.string(),
+    strengths: z.array(z.string()),
+    constraints: z.array(z.string()),
+  })
+  .strict();
+
+export const meetingVoiceRuntimesReturnSchema = z
+  .object({
+    defaultRuntimeId: z.string(),
+    recommendation: z.string(),
+    candidates: z.array(meetingVoiceRuntimeCandidateReturnSchema),
+  })
+  .strict();
 
 export const taskAutomationsListReturnSchema = pagedItemsReturnSchema
   .extend({
@@ -1068,6 +1802,20 @@ export const hookTestReturnSchema = looseObjectSchema;
 
 export const agentRecordReturnSchema = looseObjectSchema;
 
+const runtimeCapabilityReturnSchema = z.object({
+  permission: z.string().optional(),
+  objectType: z.string().optional(),
+  objectId: z.string().optional(),
+  source: z.string().optional(),
+});
+
+const agentRuntimePermissionsConfigReturnSchema = z
+  .object({
+    profile: z.enum(["bootstrap", "full-access"]).optional(),
+    capabilities: z.array(z.union([z.string(), runtimeCapabilityReturnSchema])).optional(),
+  })
+  .nullable();
+
 export const agentsListReturnSchema = pagedItemsReturnSchema
   .extend({
     defaultAgent: z.string(),
@@ -1122,8 +1870,31 @@ export const agentSetReturnSchema = z
     key: z.string(),
     value: z.unknown(),
     agent: agentRecordReturnSchema.optional(),
+    sessionOverrides: z.array(
+      z
+        .object({
+          sessionName: z.string(),
+          model: z.string().optional(),
+          effort: z.enum(RUNTIME_EFFORT_LEVELS).optional(),
+          thinking: z.enum(["off", "normal", "verbose"]).optional(),
+        })
+        .strict(),
+    ),
   })
   .passthrough();
+
+export const agentPermissionsReturnSchema = z.object({
+  action: z.literal("permissions"),
+  changed: z.boolean(),
+  agentId: z.string(),
+  profile: z.string().optional(),
+  runtimePermissions: agentRuntimePermissionsConfigReturnSchema.optional(),
+  before: agentRuntimePermissionsConfigReturnSchema.optional(),
+  after: agentRuntimePermissionsConfigReturnSchema.optional(),
+  defaults: jsonObjectSchema.nullable().optional(),
+  command: z.string().optional(),
+  agent: jsonObjectSchema.optional(),
+});
 
 export const agentDebounceReturnSchema = z
   .object({
@@ -1183,14 +1954,49 @@ export const agentDebugReturnSchema = z.union([
     .passthrough(),
 ]);
 
-export const devinSessionSummaryReturnSchema = looseObjectSchema;
+export const devinSessionSummaryReturnSchema = z
+  .object({
+    devinId: z.string(),
+    title: z.string().nullable(),
+    status: z.string(),
+    statusDetail: z.string().nullable(),
+    url: z.string(),
+    tags: z.array(z.string()),
+    updatedAt: z.number(),
+    id: z.string().optional(),
+    originType: z.string().nullable().optional(),
+    originId: z.string().nullable().optional(),
+    taskId: z.string().nullable().optional(),
+    projectId: z.string().nullable().optional(),
+    proxRunId: z.string().nullable().optional(),
+    lastSyncedAt: z.number().nullable().optional(),
+    devinMode: z.string().nullable().optional(),
+    platform: z.string().nullable().optional(),
+    resumable: z.boolean().nullable().optional(),
+    maxAcuLimit: z.number().nullable().optional(),
+    maxAcuLimitSource: z.string().nullable().optional(),
+    userId: z.string().nullable().optional(),
+    serviceUserId: z.string().nullable().optional(),
+    effectiveCreateAsUserId: z.string().nullable().optional(),
+    isArchived: z.boolean().optional(),
+    acusConsumed: z.number().optional(),
+    origin: z.string().nullable().optional(),
+  })
+  .passthrough();
 
 export const devinAuthCheckReturnSchema = z
   .object({
     ok: z.boolean(),
     baseUrl: z.string(),
     configuredOrgId: z.string().optional(),
-    self: looseObjectSchema,
+    self: z
+      .object({
+        principal_type: z.string().optional(),
+        service_user_id: z.string().optional(),
+        service_user_name: z.string().optional(),
+        org_id: z.string().optional(),
+      })
+      .passthrough(),
   })
   .passthrough();
 
@@ -1199,6 +2005,9 @@ export const devinSessionCreateReturnSchema = z
     status: z.literal("created"),
     maxAcuLimitSource: z.string(),
     maxAcuLimit: z.number().nullable(),
+    devinMode: z.string().nullable().optional(),
+    platform: z.string().nullable().optional(),
+    resumable: z.boolean().nullable().optional(),
     session: devinSessionSummaryReturnSchema,
   })
   .passthrough();
@@ -1213,7 +2022,7 @@ export const devinSessionsListReturnSchema = pagedItemsReturnSchema
 
 export const devinSessionShowReturnSchema = z
   .object({
-    session: looseObjectSchema,
+    session: devinSessionSummaryReturnSchema,
   })
   .passthrough();
 
@@ -1221,7 +2030,16 @@ export const devinSessionMessagesReturnSchema = z
   .object({
     devinId: z.string(),
     total: z.number(),
-    messages: z.array(looseObjectSchema),
+    messages: z.array(
+      z
+        .object({
+          eventId: z.string(),
+          createdAt: z.number(),
+          source: z.string(),
+          message: z.string(),
+        })
+        .passthrough(),
+    ),
   })
   .passthrough();
 
@@ -1236,15 +2054,32 @@ export const devinSessionAttachmentsReturnSchema = z
   .object({
     devinId: z.string(),
     total: z.number(),
-    attachments: z.array(looseObjectSchema),
+    attachments: z.array(
+      z
+        .object({
+          attachmentId: z.string(),
+          name: z.string(),
+          source: z.string(),
+          url: z.string(),
+          contentType: z.string().nullable().optional(),
+        })
+        .passthrough(),
+    ),
   })
   .passthrough();
 
 export const devinSessionInsightsReturnSchema = z
   .object({
     session: devinSessionSummaryReturnSchema,
-    summary: looseObjectOrNullSchema,
-    insights: looseObjectSchema,
+    summary: z.object({}).passthrough().nullable(),
+    insights: z
+      .object({
+        numUserMessages: z.number().optional(),
+        numDevinMessages: z.number().optional(),
+        sessionSize: z.string().nullable().optional(),
+        analysis: z.object({}).passthrough().nullable().optional(),
+      })
+      .passthrough(),
   })
   .passthrough();
 
@@ -1253,7 +2088,7 @@ export const devinSessionSyncReturnSchema = z
     session: devinSessionSummaryReturnSchema,
     messages: z.number(),
     attachments: z.number(),
-    insights: looseObjectOrNullSchema,
+    insights: z.object({}).passthrough().nullable(),
     artifacts: z.array(z.string()),
   })
   .passthrough();
@@ -1338,9 +2173,12 @@ export const observerBindingShowReturnSchema = z
 
 export const observerRefreshReturnSchema = z
   .object({
-    source: looseObjectSchema,
+    source: looseObjectSchema.nullable(),
+    mode: z.enum(["attach-missing", "detach-disabled", "refresh-profile", "full-reconcile"]),
     total: z.number(),
     created: z.array(observerBindingReturnSchema),
+    disabled: z.array(observerBindingReturnSchema),
+    refreshedProfiles: z.array(observerBindingReturnSchema),
     bindings: z.array(observerBindingReturnSchema),
     skipped: z.array(looseObjectSchema),
   })
@@ -1437,6 +2275,7 @@ export const selfWhoamiReturnSchema = z
   .object({
     generatedAt: z.number(),
     identity: looseObjectSchema,
+    actor: selfSectionReturnSchema,
     session: selfSectionReturnSchema,
     chat: selfSectionReturnSchema,
     route: selfSectionReturnSchema,
@@ -1450,6 +2289,7 @@ export const selfContextReturnSchema = z
     depth: z.string(),
     limit: z.number(),
     identity: looseObjectSchema,
+    actor: selfSectionReturnSchema,
     session: selfSectionReturnSchema,
     chat: selfSectionReturnSchema,
     route: selfSectionReturnSchema,
@@ -1624,18 +2464,98 @@ export const toolsSchemaReturnSchema = z
   })
   .passthrough();
 
+const toolAccessSchema = z
+  .object({
+    kind: z.string(),
+    resource: z.string(),
+    action: z.string(),
+    risk: z.string(),
+  })
+  .strict();
+
+const toolSkillGateSchema = z
+  .object({
+    skill: z.string(),
+    source: z.string(),
+  })
+  .strict();
+
+const toolMetadataSchema = z
+  .object({
+    group: z.string(),
+    command: z.string(),
+    method: z.string(),
+    args: z.array(jsonObjectSchema),
+    options: z.array(jsonObjectSchema),
+    scope: z.string().optional(),
+    skillGate: toolSkillGateSchema.optional(),
+    access: toolAccessSchema.optional(),
+  })
+  .strict();
+
+const toolSummarySchema = z
+  .object({
+    name: z.string(),
+    description: z.string(),
+    metadata: toolMetadataSchema,
+  })
+  .strict();
+
+const toolResultContentItemSchema = z
+  .object({
+    type: z.literal("text"),
+    text: z.string(),
+  })
+  .strict();
+
 export const toolTestReturnSchema = z
   .object({
-    tool: looseObjectSchema,
-    args: looseObjectSchema,
+    mode: z.literal("dry_run"),
+    executed: z.literal(false),
+    tool: toolSummarySchema,
+    args: z.record(z.string(), jsonValueSchema),
+    schema: jsonObjectSchema.nullable(),
+    access: toolAccessSchema.nullable(),
+    invokeCommand: z.string(),
+  })
+  .strict();
+
+const toolsSearchItemReturnSchema = z
+  .object({
+    rank: z.number(),
+    score: z.number(),
+    name: z.string(),
+    description: z.string(),
+    group: z.string(),
+    command: z.string(),
+    matchedFields: z.array(z.string()),
+  })
+  .strict();
+
+export const toolsSearchReturnSchema = z
+  .object({
+    query: z.string(),
+    limit: z.number(),
+    total: z.number(),
+    returned: z.number(),
+    items: z.array(toolsSearchItemReturnSchema),
+  })
+  .strict();
+
+export const toolInvokeReturnSchema = z
+  .object({
+    mode: z.literal("executed"),
+    executed: z.literal(true),
+    tool: toolSummarySchema,
+    args: z.record(z.string(), jsonValueSchema),
     result: z
       .object({
         isError: z.boolean(),
-        content: z.array(z.unknown()),
+        content: z.array(toolResultContentItemSchema),
       })
-      .passthrough(),
+      .strict(),
   })
-  .passthrough();
+  .strict();
 
 export const routesListReturnSchema = pagedItemsReturnSchema
   .extend({
@@ -1663,3 +2583,121 @@ export const routeExplainReturnSchema = z
     liveEffect: looseObjectOrNullSchema,
   })
   .passthrough();
+
+const sessionGoalObjectSchema = z
+  .object({
+    sessionKey: z.string(),
+    goalId: z.string(),
+    objective: z.string(),
+    status: z.enum(["active", "paused", "budget_limited", "blocked", "complete"]),
+    tokenBudget: z.number().nullable(),
+    tokensUsed: z.number(),
+    timeUsedSeconds: z.number(),
+    taskId: z.string().nullable(),
+    projectId: z.string().nullable(),
+    blockedReason: z.string().nullable(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+  })
+  .strict();
+
+const sessionGoalSessionSummarySchema = z
+  .object({
+    sessionKey: z.string(),
+    agentId: z.string(),
+    label: z.string(),
+  })
+  .strict();
+
+export const sessionGoalReturnSchema = z
+  .object({
+    action: z.string(),
+    changed: z.boolean(),
+    session: sessionGoalSessionSummarySchema,
+    goal: sessionGoalObjectSchema.nullable(),
+  })
+  .strict();
+
+// ============================================================================
+// Runtime model presets
+// ============================================================================
+
+const strictOffsetPaginationReturnSchema = z
+  .object({
+    limit: z.number(),
+    offset: z.number(),
+    returned: z.number(),
+    total: z.number(),
+    hasMore: z.boolean(),
+    nextOffset: z.number().nullable(),
+    nextCommand: z.string().nullable(),
+  })
+  .strict();
+
+const runtimeModelPresetObjectSchema = z
+  .object({
+    id: z.string(),
+    provider: z.string(),
+    model: z.string(),
+    description: z.string().nullable(),
+    enabled: z.boolean(),
+    version: z.number(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+  })
+  .strict();
+
+const runtimeModelPresetImpactAgentSchema = z
+  .object({
+    agentId: z.string(),
+    name: z.string().nullable(),
+    provider: z.string(),
+    effectiveModel: z.string(),
+    modelSource: z.literal("agent_preset"),
+    shadowingSessions: z.number(),
+  })
+  .strict();
+
+const runtimeModelPresetImpactSchema = z
+  .object({
+    presetId: z.string(),
+    version: z.number(),
+    provider: z.string(),
+    model: z.string(),
+    enabled: z.boolean(),
+    referencingAgentsTotal: z.number(),
+    shadowingSessionsTotal: z.number(),
+    agents: z.array(runtimeModelPresetImpactAgentSchema),
+    limit: z.number(),
+    offset: z.number(),
+    referenced: z.boolean(),
+    correctionCommand: z.string().nullable(),
+    pagination: strictOffsetPaginationReturnSchema,
+  })
+  .strict();
+
+export const runtimeModelPresetsListReturnSchema = z
+  .object({
+    total: z.number(),
+    pagination: strictOffsetPaginationReturnSchema,
+    presets: z.array(runtimeModelPresetObjectSchema),
+  })
+  .strict();
+
+export const runtimeModelPresetShowReturnSchema = z
+  .object({
+    preset: runtimeModelPresetObjectSchema,
+    referencingAgentsTotal: z.number(),
+  })
+  .strict();
+
+export const runtimeModelPresetMutationReturnSchema = z
+  .object({
+    action: z.enum(["create", "set-model", "enable", "disable", "delete"]),
+    changed: z.boolean(),
+    dryRun: z.boolean(),
+    preset: runtimeModelPresetObjectSchema,
+  })
+  .strict();
+
+export const runtimeModelPresetImpactReturnSchema = runtimeModelPresetImpactSchema;

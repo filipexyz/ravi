@@ -43,6 +43,32 @@ describe("TypingPresenceHeartbeat", () => {
     expect(heartbeat.has("session-a")).toBe(false);
   });
 
+  it("observes presence sends with reasons", async () => {
+    const events: Array<{ active: boolean; reason: string; status: string }> = [];
+    const { timers } = makeTimers();
+    const heartbeat = new TypingPresenceHeartbeat(
+      async () => {},
+      20_000,
+      timers,
+      undefined,
+      undefined,
+      undefined,
+      (event) => {
+        events.push({ active: event.active, reason: event.reason, status: event.status });
+      },
+    );
+
+    await heartbeat.start("session-a", { instanceId: "main", to: "chat@g.us" });
+    await heartbeat.renew("session-a");
+    await heartbeat.stop("session-a");
+
+    expect(events).toEqual([
+      { active: true, reason: "start", status: "sent" },
+      { active: true, reason: "renew", status: "sent" },
+      { active: false, reason: "stop", status: "sent" },
+    ]);
+  });
+
   it("replaces the previous heartbeat when the same session receives a new target", async () => {
     const calls: Array<{ to: string; active: boolean }> = [];
     const { handles, timers } = makeTimers();

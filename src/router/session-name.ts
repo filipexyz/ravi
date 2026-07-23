@@ -41,14 +41,21 @@ export interface SessionNameOpts {
  *
  * Examples:
  * - main (agent main, isMain=true)
- * - main-sampa-seeds (agent main, group "Sampa Seeds")
- * - sampa-manager-sampa-seeds (agent sampa-manager, group "Sampa Seeds")
+ * - sampa-seeds (group "Sampa Seeds")
  * - main-dm-5511999 (agent main, DM with 5511999...)
  * - main-cron-daily-report (agent main, cron suffix)
  * - main-trigger-lead-new (agent main, trigger suffix)
  */
 export function generateSessionName(agentId: string, opts: SessionNameOpts = {}): string {
   const agent = slugify(agentId);
+
+  if (opts.groupName) {
+    let group = slugify(opts.groupName);
+    if (opts.threadId) {
+      group = `${group}-t-${opts.threadId.replace(/\./g, "")}`;
+    }
+    if (group) return group.slice(0, 64);
+  }
 
   if (opts.isMain) {
     return agent;

@@ -6,7 +6,7 @@ import "reflect-metadata";
 import { Database } from "bun:sqlite";
 import { existsSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { Arg, Command, CliOnly, Group, Option, Scope } from "../decorators.js";
+import { Arg, Command, CommandAccess, CliOnly, Group, Option, Scope } from "../decorators.js";
 import { getRaviStateDir } from "../../utils/paths.js";
 import { dbPruneStaleRows, type DbPruneResult } from "../../router/router-db.js";
 import { join } from "node:path";
@@ -182,6 +182,7 @@ function printSnapshot(snap: DbLockSnapshot): void {
 export class DbCommands {
   @Scope("superadmin")
   @Command({ name: "locks", description: "Snapshot of ravi.db locks, WAL state and process holders" })
+  @CommandAccess({ kind: "read", resource: "db", action: "locks", risk: "low" })
   @CliOnly()
   async locks(
     @Option({ flags: "--probe-ms <n>", description: "Write-lock probe timeout (default: 1000ms)" })
@@ -226,6 +227,7 @@ export class DbCommands {
 
   @Scope("superadmin")
   @Command({ name: "probe", description: "Quick write-lock probe (lighter than `locks`)" })
+  @CommandAccess({ kind: "read", resource: "db", action: "probe", risk: "low" })
   @CliOnly()
   async probe(
     @Arg("timeoutMs", { description: "Probe timeout in ms", required: false }) timeoutArg?: string,
@@ -250,6 +252,7 @@ export class DbCommands {
     name: "prune",
     description: "Prune stale rows from session_events, session_trace_blobs, audit_log, cost_events, message_metadata",
   })
+  @CommandAccess({ kind: "mutate", resource: "db", action: "prune", risk: "high" })
   @CliOnly()
   async prune(
     @Option({ flags: "--vacuum", description: "Run VACUUM after pruning to reclaim file space (slow)" })

@@ -9,6 +9,7 @@ const updatedTriggers: Array<{ id: string; patch: Record<string, unknown> }> = [
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
+  CommandAccess: () => () => {},
   Scope: () => () => {},
   CliOnly: () => () => {},
   Returns: Object.assign(() => () => {}, { binary: () => () => {} }),
@@ -84,6 +85,11 @@ mock.module("../../triggers/index.js", () => ({
       name: input.name,
       topic: input.topic,
       message: input.message,
+      executionType: input.executionType,
+      shellCommand: input.shellCommand,
+      shellTimeoutMs: input.shellTimeoutMs,
+      shellEnvFile: input.shellEnvFile,
+      onError: input.onError,
       agentId: input.agentId,
       accountId: input.accountId,
       cooldownMs: input.cooldownMs,
@@ -222,6 +228,7 @@ describe("TriggersCommands topic guidance", () => {
         undefined,
         undefined,
         undefined,
+        undefined,
         true,
       ),
     );
@@ -249,6 +256,73 @@ describe("TriggersCommands topic guidance", () => {
     const commands = new TriggersCommands();
 
     await expect(commands.add("custom", "custom.mail.received")).rejects.toThrow("--message is required");
+    expect(createdTriggers).toEqual([]);
+  });
+
+  it("creates shell triggers without a prompt message", async () => {
+    const commands = new TriggersCommands();
+
+    const payload = await captureJson(() =>
+      commands.add(
+        "ticket shell",
+        "ravi.inbound.interaction",
+        undefined,
+        undefined,
+        undefined,
+        "1s",
+        undefined,
+        'data.provider == "slack"',
+        undefined,
+        true,
+        "printf ok",
+        undefined,
+        "30",
+        "/tmp/ticket.env",
+        "notify-session:ravi-channels",
+      ),
+    );
+
+    expect(createdTriggers).toContainEqual(
+      expect.objectContaining({
+        name: "ticket shell",
+        topic: "ravi.inbound.interaction",
+        message: "",
+        executionType: "shell",
+        shellCommand: "printf ok",
+        shellTimeoutMs: 30_000,
+        shellEnvFile: "/tmp/ticket.env",
+        onError: "notify-session:ravi-channels",
+        filter: 'data.provider == "slack"',
+      }),
+    );
+    expect(payload).toMatchObject({
+      status: "created",
+      trigger: {
+        id: "trg_1",
+        name: "ticket shell",
+        executionType: "shell",
+      },
+    });
+  });
+
+  it("rejects shell triggers that also pass --message", async () => {
+    const commands = new TriggersCommands();
+
+    await expect(
+      commands.add(
+        "bad shell",
+        "ravi.inbound.interaction",
+        "hello",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "printf ok",
+      ),
+    ).rejects.toThrow("--message cannot be combined");
     expect(createdTriggers).toEqual([]);
   });
 
@@ -317,6 +391,7 @@ describe("TriggersCommands topic guidance", () => {
         undefined,
         undefined,
         undefined,
+        undefined,
         true,
       ),
     );
@@ -379,5 +454,96 @@ describe("TriggersCommands topic guidance", () => {
 
     await expect(commands.set("trg_1", "filter", `data.ok == "true" &&`)).rejects.toThrow("Invalid filter");
     expect(updatedTriggers).toEqual([]);
+  });
+
+  it("captures --reply-session override on add", async () => {
+    const commands = new TriggersCommands();
+
+    await commands.add(
+      "override",
+      "ravi.external.topic",
+      "hello",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "target-session-name",
+    );
+
+    expect(createdTriggers).toContainEqual(
+      expect.objectContaining({
+        name: "override",
+        replySession: "target-session-name",
+      }),
+    );
+  });
+
+  it("sets replySession on existing trigger", async () => {
+    const commands = new TriggersCommands();
+
+    const payload = await captureJson(() => commands.set("trg_1", "replySession", "gest-o-financeira-sde", true));
+
+    expect(updatedTriggers).toContainEqual({
+      id: "trg_1",
+      patch: { replySession: "gest-o-financeira-sde" },
+    });
+    expect(payload).toMatchObject({
+      status: "updated",
+      property: "replySession",
+      value: "gest-o-financeira-sde",
+    });
+  });
+
+  it("sets shell execution on existing trigger", async () => {
+    const commands = new TriggersCommands();
+
+    const payload = await captureJson(() => commands.set("trg_1", "shell", "printf ok", true));
+
+    expect(updatedTriggers).toContainEqual({
+      id: "trg_1",
+      patch: {
+        executionType: "shell",
+        shellCommand: "printf ok",
+        message: "",
+        messageSource: "manual",
+        messageTemplateId: null,
+      },
+    });
+    expect(payload).toMatchObject({
+      status: "updated",
+      property: "shell",
+    });
+  });
+
+  it("switches back to agent execution when message is set", async () => {
+    const commands = new TriggersCommands();
+
+    await commands.set("trg_1", "message", "agent prompt");
+
+    expect(updatedTriggers).toContainEqual({
+      id: "trg_1",
+      patch: {
+        message: "agent prompt",
+        executionType: "agent",
+        shellCommand: null,
+        shellTimeoutMs: null,
+        shellEnvFile: null,
+        onError: null,
+        messageSource: "manual",
+        messageTemplateId: null,
+      },
+    });
+  });
+
+  it("clears replySession when value is null", async () => {
+    const commands = new TriggersCommands();
+
+    await commands.set("trg_1", "replySession", "null");
+
+    expect(updatedTriggers).toContainEqual({
+      id: "trg_1",
+      patch: { replySession: null },
+    });
   });
 });

@@ -7,6 +7,26 @@
 import { execSync, spawnSync } from "node:child_process";
 
 export const PM2_PROCESS_NAME = "ravi";
+export const CHANNELS_PM2_PROCESS_NAME = "ravi-channels";
+const PM2_ENV_DENYLIST = [
+  "RAVI_CONTEXT_KEY",
+  "RAVI_SESSION_KEY",
+  "RAVI_SESSION_NAME",
+  "RAVI_AGENT_ID",
+  "RAVI_CHANNEL",
+  "RAVI_ACCOUNT_ID",
+  "RAVI_CHAT_ID",
+  "RAVI_THREAD_ID",
+  "RAVI_SLACK_CONNECTION",
+  "RAVI_SLACK_CONNECTIONS",
+  "RAVI_SLACK_CREDENTIAL_CONNECTION",
+] as const;
+
+export function buildPm2Env(envOverrides?: Record<string, string>): Record<string, string> {
+  const env = { ...process.env, ...(envOverrides ?? {}) } as Record<string, string>;
+  for (const key of PM2_ENV_DENYLIST) delete env[key];
+  return env;
+}
 
 /**
  * Check if pm2 is available in PATH.
@@ -28,11 +48,9 @@ export function runPm2(
   envOverrides?: Record<string, string>,
   options: { cwd?: string } = {},
 ): { status: number } {
-  const env = envOverrides ? { ...process.env, ...envOverrides } : process.env;
-
   const result = spawnSync("pm2", args, {
     stdio: "inherit",
-    env: env as Record<string, string>,
+    env: buildPm2Env(envOverrides),
     cwd: options.cwd,
   });
 
@@ -91,18 +109,14 @@ function parsePm2List(): Pm2Process[] {
  * Check if the ravi process is running in PM2.
  */
 export function isRaviRunning(): boolean {
-  const procs = parsePm2List();
-  const ravi = procs.find((p) => p.name === PM2_PROCESS_NAME);
-  return ravi?.status === "online";
+  return isPm2ProcessRunning(PM2_PROCESS_NAME);
 }
 
 /**
  * Get the PID of the ravi PM2 process.
  */
 export function getRaviPid(): number | null {
-  const procs = parsePm2List();
-  const ravi = procs.find((p) => p.name === PM2_PROCESS_NAME);
-  return ravi?.pid ?? null;
+  return getPm2Process(PM2_PROCESS_NAME)?.pid ?? null;
 }
 
 /**
@@ -110,4 +124,12 @@ export function getRaviPid(): number | null {
  */
 export function getPm2Processes(): Pm2Process[] {
   return parsePm2List();
+}
+
+export function getPm2Process(name: string): Pm2Process | undefined {
+  return parsePm2List().find((p) => p.name === name);
+}
+
+export function isPm2ProcessRunning(name: string): boolean {
+  return getPm2Process(name)?.status === "online";
 }

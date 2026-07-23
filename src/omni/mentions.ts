@@ -48,6 +48,8 @@ interface InlineMentionAlias {
   surface: string;
 }
 
+type MentionPlaceholderMode = "display" | "native";
+
 const MIN_WHATSAPP_MENTION_ID_DIGITS = 10;
 const MAX_WHATSAPP_MENTION_ID_DIGITS = 15;
 
@@ -66,6 +68,18 @@ function digitsOnly(value: string): string {
 
 function isPlausibleWhatsAppMentionDigits(value: string): boolean {
   return value.length >= MIN_WHATSAPP_MENTION_ID_DIGITS && value.length <= MAX_WHATSAPP_MENTION_ID_DIGITS;
+}
+
+function isRawChannelIdentifierLabel(value: string): boolean {
+  const cleaned = cleanMentionRef(value)
+    .trim()
+    .replace(/\s+\([^)]*\)\s*$/, "");
+  if (!cleaned) return false;
+  if (/^(?:lid|group):\d+$/i.test(cleaned)) return true;
+  if (/^\d+@(?:s\.whatsapp\.net|lid|g\.us)$/i.test(cleaned)) return true;
+  const base = baseIdentity(cleaned);
+  const digits = digitsOnly(base);
+  return digits === base && isPlausibleWhatsAppMentionDigits(digits);
 }
 
 function asWhatsAppPhoneJid(value: string | null | undefined): string | undefined {
@@ -127,7 +141,13 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 function safeDisplayName(value: string | undefined): string | undefined {
   const trimmed = value?.trim().replace(/^@+/, "");
   if (!trimmed || trimmed === "-") return undefined;
+  if (isRawChannelIdentifierLabel(trimmed)) return undefined;
   return trimmed;
+}
+
+function visibleMentionPlaceholderForDisplayName(value: string | null | undefined): string | undefined {
+  const displayName = safeDisplayName(value ?? undefined);
+  return displayName ? `@${displayName}` : undefined;
 }
 
 function collectMentionedJids(rawPayload: Record<string, unknown> | undefined): string[] {
@@ -265,8 +285,7 @@ function participantIdentityValues(participant: OmniMentionParticipant): string[
   return Array.from(new Set(values.map((value) => (value ? cleanMentionRef(value) : "")).filter(Boolean)));
 }
 
-function participantPreferredPhoneJid(participant: OmniMentionParticipant): string | undefined {
-  const rawBase = baseIdentity(participant.platformUserId);
+function participantPhoneAliasBase(participant: OmniMentionParticipant): string | undefined {
   for (const value of [
     participant.mentionUserId,
     participant.phoneJid,
@@ -274,16 +293,28 @@ function participantPreferredPhoneJid(participant: OmniMentionParticipant): stri
     participant.phoneNumber,
   ]) {
     const jid = asWhatsAppPhoneJid(value);
-    if (jid && baseIdentity(jid) !== rawBase) return jid;
+    if (jid) return baseIdentity(jid);
   }
   return undefined;
 }
 
+function participantNativeMentionId(participant: OmniMentionParticipant): string {
+  const platformUserId = cleanMentionRef(participant.platformUserId);
+  if (!platformUserId) return cleanMentionRef(participant.mentionUserId ?? participant.platformUserId);
+  if (platformUserId.includes("@")) return platformUserId;
+
+  const platformDigits = digitsOnly(platformUserId);
+  const phoneAlias = participantPhoneAliasBase(participant);
+  if (platformDigits && platformDigits === platformUserId) {
+    if (phoneAlias && phoneAlias !== platformDigits) return `${platformDigits}@lid`;
+    if (isPlausibleWhatsAppMentionDigits(platformDigits)) return `${platformDigits}@s.whatsapp.net`;
+  }
+
+  return platformUserId;
+}
+
 function participantMentionId(participant: OmniMentionParticipant): string {
-  return (
-    participantPreferredPhoneJid(participant) ??
-    cleanMentionRef(participant.mentionUserId ?? participant.platformUserId)
-  );
+  return participantNativeMentionId(participant);
 }
 
 function addCandidateKey(keys: Set<string>, value: string | null | undefined): void {
@@ -414,6 +445,10 @@ function inlineAliasRegex(surface: string): RegExp {
   return new RegExp(`(?<=^|\\s)@${escaped}(?![\\p{L}\\p{N}_-])`, "giu");
 }
 
+function isVisiblePlaceholderAt(text: string, offset: number, placeholder: string): boolean {
+  return normalizeLookup(text.slice(offset, offset + placeholder.length)) === normalizeLookup(placeholder);
+}
+
 function resolveMention(
   ref: string,
   participants: readonly OmniMentionParticipant[] = [],
@@ -436,13 +471,16 @@ function resolveMention(
 
 function addResolvedMention(
   resolvedById: Map<string, ResolvedOmniMention>,
-  input: { id: string; displayName?: string; matched: string; source: "explicit" | "inline" },
+  input: { id: string; displayName?: string; matched: string; placeholder?: string; source: "explicit" | "inline" },
 ): ResolvedOmniMention {
   const existing = resolvedById.get(input.id);
   if (existing) return existing;
   const resolved: ResolvedOmniMention = {
     id: input.id,
-    placeholder: mentionPlaceholderForId(input.id),
+    placeholder:
+      input.placeholder ??
+      visibleMentionPlaceholderForDisplayName(input.displayName) ??
+      mentionPlaceholderForId(input.id),
     ...(input.displayName ? { displayName: input.displayName } : {}),
     source: input.source,
     matched: input.matched,
@@ -451,21 +489,38 @@ function addResolvedMention(
   return resolved;
 }
 
+function mentionPlaceholderForMode(
+  id: string,
+  displayName: string | null | undefined,
+  mode: MentionPlaceholderMode,
+): string {
+  return mode === "native"
+    ? mentionPlaceholderForId(id)
+    : (visibleMentionPlaceholderForDisplayName(displayName) ?? mentionPlaceholderForId(id));
+}
+
 function replaceInlineMentions(
   text: string,
   participants: readonly OmniMentionParticipant[],
   resolvedById: Map<string, ResolvedOmniMention>,
+  placeholderMode: MentionPlaceholderMode,
 ): string {
   let out = text;
   for (const alias of buildInlineMentionAliases(participants)) {
-    out = out.replace(inlineAliasRegex(alias.surface), (match) => {
+    out = out.replace(inlineAliasRegex(alias.surface), (match, offset: number, fullText: string) => {
       const id = participantMentionId(alias.participant);
+      if (placeholderMode === "display" && !visibleMentionPlaceholderForDisplayName(alias.participant.displayName)) {
+        return match;
+      }
+      const placeholder = mentionPlaceholderForMode(id, alias.participant.displayName, placeholderMode);
       const resolved = addResolvedMention(resolvedById, {
         id,
         ...(alias.participant.displayName?.trim() ? { displayName: alias.participant.displayName.trim() } : {}),
         matched: match,
+        placeholder,
         source: "inline",
       });
+      if (isVisiblePlaceholderAt(fullText, offset, placeholder)) return match;
       return resolved.placeholder;
     });
   }
@@ -495,12 +550,33 @@ export function prepareOmniMentionMessage(input: {
   explicitTargets?: readonly string[];
   participants?: readonly OmniMentionParticipant[] | null;
   autoResolveInline?: boolean;
+  autoResolvePhoneNumbers?: boolean;
+  placeholderMode?: MentionPlaceholderMode;
 }): PreparedOmniMentionMessage {
   const participants = input.participants ?? [];
+  const placeholderMode = input.placeholderMode ?? "display";
   const explicitTargets = [...(input.explicitTargets ?? [])].map(cleanMentionRef).filter(Boolean);
   const resolvedById = new Map<string, ResolvedOmniMention>();
   let text =
-    input.autoResolveInline === false ? input.text : replaceInlineMentions(input.text, participants, resolvedById);
+    input.autoResolveInline === false
+      ? input.text
+      : replaceInlineMentions(input.text, participants, resolvedById, placeholderMode);
+
+  if (input.autoResolvePhoneNumbers === true) {
+    for (const match of text.matchAll(/(?<=^|\s)@(\d{10,15})(?=\b|$|[,.!?;:])/gu)) {
+      if (Array.from(resolvedById.values()).some((mention) => mention.placeholder === match[0])) continue;
+      const digits = match[1];
+      if (!digits || !isPlausibleWhatsAppMentionDigits(digits)) continue;
+      const id = asWhatsAppPhoneJid(digits);
+      if (!id) continue;
+      addResolvedMention(resolvedById, {
+        id,
+        matched: match[0],
+        placeholder: match[0],
+        source: "inline",
+      });
+    }
+  }
 
   for (const target of explicitTargets) {
     const resolution = resolveMention(target, participants);
@@ -516,6 +592,7 @@ export function prepareOmniMentionMessage(input: {
       id: resolution.id,
       displayName: resolution.displayName,
       matched: target,
+      placeholder: mentionPlaceholderForMode(resolution.id, resolution.displayName, placeholderMode),
       source: "explicit",
     });
     if (!alreadyResolved) {

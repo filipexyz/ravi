@@ -21,10 +21,12 @@ Agents são identidades operacionais do Ravi com configurações específicas: d
 ### 1. Criar o agent
 
 ```bash
-ravi agents create <id> <cwd> [--provider <provider>]
+ravi agents create <id> <cwd> [--provider <provider>] [--model <model>]
 ```
 
 O `cwd` é o diretório onde fica o `AGENTS.md` do agent (suas instruções canônicas). Crie o diretório e o `AGENTS.md` antes. O Ravi materializa um `CLAUDE.md` de compatibilidade quando necessário.
+
+**Regra de criação completa:** agent novo deve nascer com as configurações runtime conhecidas, não ser criado "cru" para depois corrigir manualmente. Quando souber o runtime, passe `--provider` e `--model` no `agents create`; quando estiver criando junto com WhatsApp, passe `--agent-provider` e `--agent-model` no `whatsapp group create --create-agent`. Antes de colocar o agent numa rota live, garanta que o Permission Provider Runtime vai materializar as capabilities necessárias para ele.
 
 ## Runtimes Disponíveis
 
@@ -34,15 +36,18 @@ Providers built-in atuais:
 
 | Provider | Uso esperado | Modelo |
 |----------|--------------|--------|
-| `claude` | Runtime default e mais completo para agents com hooks, plugins, MCP e remote spawn. | Selector nativo do provider, ou default quando vazio. |
-| `codex` | Runtime por subprocess/RPC com CLI Ravi via shell/contexto e controle de runtime. | Ex: `gpt-5.5`, `gpt-5.4`, `gpt-4.1-mini`. |
+| `codex` | Runtime default por subprocess/RPC com CLI Ravi via shell/contexto e controle de runtime. | Ex: `gpt-5.5`, `gpt-5.4`, `gpt-4.1-mini`. |
+| `claude` | Runtime completo para agents que precisam de hooks, plugins, MCP e remote spawn. | Selector nativo do provider, ou default quando vazio. |
 | `pi` | Runtime por Pi coding agent em RPC, bom para agentes rápidos/dev e providers externos. | Use `provider/model`, ex: `kimi-coding/kimi-for-coding` ou `openai/gpt-4.1-mini`. |
 
 Comandos comuns:
 
 ```bash
 # Criar já usando runtime específico
-ravi agents create familia-sp ~/ravi/familia-sp --provider pi
+ravi agents create familia-sp ~/ravi/familia-sp --provider pi --model kimi-coding/kimi-for-coding
+
+# Criar com o runtime default recomendado
+ravi agents create familia-sp ~/ravi/familia-sp --provider codex --model gpt-5.5
 
 # Trocar runtime do agent
 ravi agents set familia-sp provider pi
@@ -59,6 +64,7 @@ Notas operacionais:
 
 - Mudar `provider` ou `model` não requer restart do daemon.
 - Sessões já ativas não mudam retroativamente no meio de um turno; a troca vale para o próximo start/turn compatível.
+- Para agents novos, prefira criar já com provider/model corretos. Use `agents set` para correção ou migração de agent existente, não como etapa normal de criação.
 - Provider ids são abertos em config, mas só providers registrados no daemon executam. Se salvar um provider inexistente, a falha aparece no start da sessão.
 - `pi` exige selector de modelo completo quando o valor também é um provider do Pi. `kimi-coding` sozinho é inválido; use `kimi-coding/<model-id>`.
 - `pi` usa ferramentas nativas do provider no MVP. Se o agent precisa executar tools/comandos, configure permissões coerentes antes de colocar em rota live.
@@ -142,7 +148,7 @@ ravi agents show <id>
 
 ### Criar agent
 ```bash
-ravi agents create <id> <cwd>
+ravi agents create <id> <cwd> --provider codex --model gpt-5.5
 ```
 
 ### Sincronizar instruções legadas
@@ -175,31 +181,76 @@ Keys:
 - `systemPromptAppend` — Texto adicional no system prompt
 - `matrixAccount` — Conta Matrix associada
 
-## Permissões (REBAC)
+## Permissões / Provider Runtime
 
-Permissões de tools e executáveis são gerenciadas via REBAC:
+O Ravi autoriza execução pelo Permission Provider Runtime. Para fluxos
+recorrentes iniciados por humanos, a superfície normal é `ravi permissions`:
+ela monta um plano provider-owned que aplica o profile/tag no ator e garante o
+ceiling do executor agent no mesmo passo.
 
 ```bash
-# Ver permissões de um agent
-ravi permissions list --subject agent:<id>
+# Resolver a partir de um denial real
+ravi permissions resolve <denial-id>
+ravi permissions resolve <denial-id> --apply
 
-# Configurar permissões
-ravi permissions init agent:<id> full-access     # Tudo liberado
-ravi permissions init agent:<id> sdk-tools       # SDK tools padrão
-ravi permissions init agent:<id> safe-executables # Executáveis seguros
+# Criar/aplicar profile quando não há denial id
+ravi permissions allow <profile> \
+  --to contact:<contact-id> \
+  --agent <executor-agent-id> \
+  --capabilities <permission>:<objectType>:<objectId>
 
-# Grants individuais
-ravi permissions grant agent:<id> use tool:Bash
-ravi permissions grant agent:<id> execute executable:git
+ravi permissions allow <profile> ... --apply
 ```
+
+`allow` e `resolve` fazem dry-run por padrão. Use `--apply` só depois de
+conferir o plano.
+
+Para permissões operacionais agent-only, use `ravi agents permissions`: ele
+grava a configuração de runtime em `agent.defaults.runtimePermissions` e o
+provider `agent-default-capabilities` materializa as capabilities no contexto do
+agent.
+
+```bash
+# Ver perfil runtime salvo no agent
+ravi agents permissions <id>
+
+# Inspecionar materialização efetiva antes de pedir nova autoridade
+ravi permissions materialize --subject-type agent --subject-id <id> --json
+
+# Voltar ao bootstrap mínimo
+ravi agents permissions <id> none
+
+# Capability explícita de bootstrap quando ainda não existe profile agent-only
+ravi agents permissions <id> bootstrap --capabilities execute:executable:omni
+```
+
+Para acesso recorrente, prefira criar/aplicar um permission profile ou tag
+provider-owned com `ravi permissions allow/resolve`. Capability solta é
+diagnóstico ou bootstrap de profile novo. `full-access` é break-glass: só use
+quando o operador pedir explicitamente.
+
+Quando um agent recém-criado pedir permissão, não devolva uma lista longa de
+capabilities como primeira opção. Se houver denial id, recomende
+`ravi permissions resolve <denial-id>`. Sem denial id, recomende
+`ravi permissions allow <profile> --to contact:<id> --agent <agent>`. Use
+capability crua só em `--capabilities` para criar um profile/tag estreito
+quando não existir bundle adequado.
 
 Ver skill `permissions-manager` para documentação completa.
 
-### REBAC vs hooks do provider
+Para comandos CLI decorados com `@CommandAccess`, prefira capabilities
+semânticas no formato `<read|mutate>:<resource>:<action>`, por exemplo
+`read:tasks.profiles:list`. `execute:group:*` e `execute:group:<grupo>` são
+compatibilidade ampla; não use como recomendação padrão para agents novos.
 
-`full-access` libera a camada de permissões do Ravi: tools, grupos e executáveis. Isso não desativa automaticamente hooks globais do provider, denylist local, PreToolUse externo ou políticas instaladas fora do Ravi.
+### Provider runtime vs hooks externos
 
-Quando Bash ainda é negado depois de `ravi permissions check` permitir:
+`full-access` em `ravi agents permissions` materializa `admin system:*` como
+capability de snapshot do Ravi para o agent e para automações que rodam em nome
+dele. Isso não desativa automaticamente hooks globais do provider, denylist
+local, PreToolUse externo ou políticas instaladas fora do Ravi.
+
+Quando Bash ainda é negado depois de `ravi agents permissions <id> full-access`:
 
 1. Leia a mensagem de denial e identifique se veio do Ravi ou do provider/hook externo.
 2. Verifique hooks locais do workspace do agent antes de mudar grants.
@@ -289,7 +340,7 @@ Escreva o `AGENTS.md` com a identidade e instruções do agent. Estrutura recome
 #### 2. Criar o agent no sistema
 
 ```bash
-ravi agents create <agent-id> ~/ravi/<agent-id>
+ravi agents create <agent-id> ~/ravi/<agent-id> --provider codex --model gpt-5.5
 ```
 
 #### 3. Criar grupo WhatsApp dedicado
@@ -325,8 +376,8 @@ mkdir -p ~/ravi/comm
 
 # 2. Escrever AGENTS.md (com identidade de coach de comunicação)
 
-# 3. Criar agent
-ravi agents create comm ~/ravi/comm
+# 3. Criar agent já com runtime completo
+ravi agents create comm ~/ravi/comm --provider codex --model gpt-5.5
 
 # 4. Usuário cria grupo "Vida - Comunicação" no WhatsApp e manda msg
 
@@ -346,15 +397,13 @@ mkdir -p ~/ravi/atendimento
 # (crie o AGENTS.md com as instruções do agent)
 
 # 2. Criar agent
-ravi agents create atendimento ~/ravi/atendimento
+ravi agents create atendimento ~/ravi/atendimento --provider codex --model gpt-5.5
 
 # 3. Rotear grupo pro agent
 ravi instances routes add main group:120363425628305127 atendimento
 
-# 4. Configurar permissões (via REBAC)
-ravi permissions init agent:atendimento sdk-tools       # SDK tools padrão
-ravi permissions init agent:atendimento safe-executables # Executáveis seguros
-ravi permissions grant agent:atendimento use tool:Bash   # Liberar Bash
+# 4. Inspecionar autoridade e aplicar o profile/tag mínimo necessário
+ravi permissions materialize --subject-type agent --subject-id atendimento --json
 ```
 
 ### Aprovar contato e associar a agent

@@ -1,39 +1,174 @@
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { execFileSync } from "node:child_process";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statfsSync,
+  statSync,
+  writeFileSync,
+  type Dirent,
+} from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import type { SQLQueryBindings } from "bun:sqlite";
+import { checkAppManifests, discoverAppManifests } from "../../apps/service.js";
+import {
+  getConfiguredCapabilityMaterializers,
+  getConfiguredPermissionProviders,
+} from "../../permissions/provider-registry.js";
+import {
+  authorizePermission,
+  canWithCapabilities,
+  localOperatorCan,
+  materializeSubjectCapabilities,
+} from "../../permissions/provider-runtime.js";
 import { inspectAgentInstructionFiles, type AgentInstructionState } from "../../runtime/agent-instructions.js";
 import { getRuntimeCompatibilityIssues, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
 import type { RuntimeCompatibilityIssue, RuntimeProviderId } from "../../runtime/types.js";
-import { dbGetAgent, dbListAgents, dbListInstances, getDefaultAgentId, getRaviDbPath } from "../../router/router-db.js";
+import {
+  dbGetAgent,
+  dbListAgents,
+  dbListInstances,
+  dbListRoutes,
+  getDb,
+  getDefaultAgentId,
+  getRaviDbPath,
+} from "../../router/router-db.js";
+import {
+  currentCliOnlyCommands,
+  currentWeakPublicReturnCommands,
+} from "../../sdk/client-codegen/return-schema-quality.js";
 import { listTaskAutomations } from "../../tasks/index.js";
 import { getRaviStateDir } from "../../utils/paths.js";
+import { getRegistry, type RegistrySnapshot } from "../registry-snapshot.js";
 import { inspectCliRuntimeTarget, type CliRuntimeTargetSummary } from "../runtime-target.js";
 import { dbListCronJobs } from "../../cron/cron-db.js";
 import { resolveCronTarget, type CronTargetState } from "../../cron/target-resolver.js";
 import { resolveSession } from "../../router/sessions.js";
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 
-export type DoctorCheckStatus = "ok" | "warn" | "fail";
+export type DoctorSeverity = "error" | "warn" | "info";
+export type DoctorCheckStatus = "pass" | "fail" | "skip";
 
-export interface DoctorCheck {
+export interface DoctorEvidence {
+  label: string;
+  value?: string | number | boolean | null;
+  entity?: {
+    type: string;
+    id?: string;
+    name?: string;
+  };
+  source?: string;
+}
+
+export interface DoctorFinding {
   id: string;
+  severity: DoctorSeverity;
+  domain: string;
   title: string;
-  status: DoctorCheckStatus;
   summary: string;
-  details?: string[];
+  evidence: DoctorEvidence[];
   fixHint?: string;
   data?: Record<string, unknown>;
 }
 
+export interface DoctorCheck {
+  id: string;
+  domain: string;
+  title: string;
+  status: DoctorCheckStatus;
+  severity: DoctorSeverity;
+  findings: string[];
+  durationMs: number;
+  data?: Record<string, unknown>;
+}
+
+export interface DoctorRuntimeSnapshot {
+  version?: string;
+  branch?: string;
+  commit?: string;
+  dirty?: boolean;
+  cwd?: string;
+  daemon?: {
+    online?: boolean;
+    version?: string;
+    pid?: number;
+    memoryMb?: number;
+    cpuPercent?: number;
+  };
+  database?: {
+    path?: string;
+    schemaVersion?: string;
+    migrationsKnown?: boolean;
+  };
+}
+
 export interface DoctorReport {
   generatedAt: string;
+  ok: boolean;
   summary: {
-    ok: number;
-    warn: number;
-    fail: number;
-    total: number;
+    errors: number;
+    warnings: number;
+    infos: number;
+    checks: {
+      total: number;
+      passed: number;
+      failed: number;
+      skipped: number;
+    };
+    domains: Record<
+      string,
+      {
+        errors: number;
+        warnings: number;
+        infos: number;
+        totalChecks: number;
+        failedChecks: number;
+        skippedChecks: number;
+      }
+    >;
   };
+  runtime: DoctorRuntimeSnapshot;
+  findings: DoctorFinding[];
   checks: DoctorCheck[];
+}
+
+type LegacyDoctorCheckStatus = "ok" | "warn" | "fail" | "skip";
+
+interface LegacyDoctorCheck {
+  id: string;
+  title: string;
+  status: LegacyDoctorCheckStatus;
+  summary: string;
+  domain?: string;
+  severity?: DoctorSeverity;
+  details?: string[];
+  fixHint?: string;
+  data?: Record<string, unknown>;
+  durationMs?: number;
+}
+
+type GitInfo = {
+  branch?: string;
+  commit?: string;
+  dirty?: boolean;
+  ahead?: number;
+  behind?: number;
+};
+
+type QueryRows = <T extends Record<string, unknown>>(sql: string, params?: SQLQueryBindings[]) => T[];
+
+export interface DiskUsageStat {
+  totalBytes: number;
+  freeBytes: number;
+  deviceId?: number;
+}
+
+export interface DiskProbeResult {
+  ok: boolean;
+  error?: string;
 }
 
 type DoctorDeps = {
@@ -42,6 +177,8 @@ type DoctorDeps = {
   getRaviDbPath: () => string;
   dbListAgents: typeof dbListAgents;
   dbListInstances: typeof dbListInstances;
+  dbListRoutes: typeof dbListRoutes;
+  getDefaultAgentId: typeof getDefaultAgentId;
   inspectAgentInstructionFiles: typeof inspectAgentInstructionFiles;
   listTaskAutomations: typeof listTaskAutomations;
   getRuntimeCompatibilityIssues: (
@@ -53,15 +190,45 @@ type DoctorDeps = {
     },
   ) => RuntimeCompatibilityIssue[];
   listRegisteredRuntimeProviderIds: typeof listRegisteredRuntimeProviderIds;
+  getConfiguredPermissionProviders: typeof getConfiguredPermissionProviders;
+  getConfiguredCapabilityMaterializers: typeof getConfiguredCapabilityMaterializers;
+  authorizePermission: typeof authorizePermission;
+  localOperatorCan: typeof localOperatorCan;
+  materializeSubjectCapabilities: typeof materializeSubjectCapabilities;
+  checkAppManifests: typeof checkAppManifests;
+  discoverAppManifests: typeof discoverAppManifests;
+  getRegistry: typeof getRegistry;
+  currentWeakPublicReturnCommands: typeof currentWeakPublicReturnCommands;
+  currentCliOnlyCommands: typeof currentCliOnlyCommands;
+  queryRows: QueryRows;
+  listSpecFiles: () => string[];
+  listSkillFiles: () => string[];
+  getGitInfo: () => GitInfo;
   dbListCronJobs: typeof dbListCronJobs;
   dbGetAgent: typeof dbGetAgent;
-  getDefaultAgentId: typeof getDefaultAgentId;
   resolveSession: typeof resolveSession;
   deriveSourceFromSessionKey: typeof deriveSourceFromSessionKey;
   exists: (path: string) => boolean;
   readFile: (path: string) => string;
+  readDir: (path: string) => Dirent[];
   homeDir: () => string;
+  cwd: () => string;
+  now: () => Date;
+  tempDir: () => string;
+  statDisk: (path: string) => DiskUsageStat | null;
+  probeDir: (path: string) => DiskProbeResult;
 };
+
+export interface InspectDoctorOptions {
+  domain?: string | null;
+}
+
+export interface RunDoctorOptions extends InspectDoctorOptions {
+  json?: boolean;
+  full?: boolean;
+  strict?: boolean;
+  setExitCode?: boolean;
+}
 
 const DEFAULT_DEPS: DoctorDeps = {
   inspectCliRuntimeTarget,
@@ -69,27 +236,98 @@ const DEFAULT_DEPS: DoctorDeps = {
   getRaviDbPath,
   dbListAgents,
   dbListInstances,
+  dbListRoutes,
+  getDefaultAgentId,
   inspectAgentInstructionFiles,
   listTaskAutomations,
   getRuntimeCompatibilityIssues,
   listRegisteredRuntimeProviderIds,
+  getConfiguredPermissionProviders,
+  getConfiguredCapabilityMaterializers,
+  authorizePermission,
+  localOperatorCan,
+  materializeSubjectCapabilities,
+  checkAppManifests,
+  discoverAppManifests,
+  getRegistry,
+  currentWeakPublicReturnCommands,
+  currentCliOnlyCommands,
+  queryRows: <T extends Record<string, unknown>>(sql: string, params: SQLQueryBindings[] = []) =>
+    getDb()
+      .prepare(sql)
+      .all(...params) as T[],
+  listSpecFiles: () => listFilesUnder(join(process.cwd(), ".ravi", "specs"), "SPEC.md"),
+  listSkillFiles: () => [
+    ...listFilesUnder(join(process.cwd(), "src", "plugins", "internal"), "SKILL.md"),
+    ...listFilesUnder(join(process.cwd(), "src", "skills"), "SKILL.md"),
+  ],
+  getGitInfo: () => readGitInfo(process.cwd()),
   dbListCronJobs,
   dbGetAgent,
-  getDefaultAgentId,
   resolveSession,
   deriveSourceFromSessionKey,
   exists: existsSync,
   readFile: (path: string) => readFileSync(path, "utf8"),
+  readDir: (path: string) => readdirSync(path, { withFileTypes: true }),
   homeDir: homedir,
+  cwd: () => process.cwd(),
+  now: () => new Date(),
+  tempDir: () => tmpdir(),
+  statDisk: defaultStatDisk,
+  probeDir: defaultProbeDir,
 };
 
-const STATUS_LABEL: Record<DoctorCheckStatus, string> = {
-  ok: "OK",
+function defaultStatDisk(path: string): DiskUsageStat | null {
+  try {
+    const stats = statfsSync(path);
+    const blockSize = Number(stats.bsize);
+    const totalBytes = Number(stats.blocks) * blockSize;
+    const freeBytes = Number(stats.bavail) * blockSize;
+    if (!Number.isFinite(totalBytes) || !Number.isFinite(freeBytes)) return null;
+    let deviceId: number | undefined;
+    try {
+      deviceId = Number(statSync(path).dev);
+      if (!Number.isFinite(deviceId)) deviceId = undefined;
+    } catch {
+      deviceId = undefined;
+    }
+    return { totalBytes, freeBytes, ...(deviceId !== undefined ? { deviceId } : {}) };
+  } catch {
+    return null;
+  }
+}
+
+function defaultProbeDir(path: string): DiskProbeResult {
+  // Read-only smoke test: create and immediately remove a minimal temp file to
+  // confirm the directory is writable and can allocate space. Never touches
+  // pre-existing files.
+  let probe: string | undefined;
+  try {
+    probe = mkdtempSync(join(path, ".ravi-doctor-probe-"));
+    const file = join(probe, "probe");
+    writeFileSync(file, "ok");
+    rmSync(probe, { recursive: true, force: true });
+    probe = undefined;
+    return { ok: true };
+  } catch (error) {
+    if (probe) {
+      try {
+        rmSync(probe, { recursive: true, force: true });
+      } catch {
+        // best-effort cleanup
+      }
+    }
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+const SEVERITY_LABEL: Record<DoctorSeverity, string> = {
+  error: "ERROR",
   warn: "WARN",
-  fail: "FAIL",
+  info: "INFO",
 };
 
-const INSTRUCTION_STATE_SEVERITY: Record<AgentInstructionState, DoctorCheckStatus> = {
+const INSTRUCTION_STATE_SEVERITY: Record<AgentInstructionState, LegacyDoctorCheckStatus> = {
   "agents-canonical": "ok",
   "agents-only": "warn",
   "claude-only": "fail",
@@ -102,9 +340,74 @@ const INSTRUCTION_STATE_SEVERITY: Record<AgentInstructionState, DoctorCheckStatu
   "double-bridge": "fail",
 };
 
-export function inspectDoctor(overrides: Partial<DoctorDeps> = {}): DoctorReport {
+const MUTATING_VERBS = new Set([
+  "add",
+  "approve",
+  "archive",
+  "assign",
+  "attach",
+  "block",
+  "clear",
+  "comment",
+  "create",
+  "cleanup",
+  "delete",
+  "demote",
+  "deny",
+  "detach",
+  "disable",
+  "dispatch",
+  "done",
+  "enable",
+  "execute",
+  "fail",
+  "grant",
+  "import",
+  "init",
+  "link",
+  "merge",
+  "mute",
+  "push",
+  "promote",
+  "prune",
+  "refresh",
+  "recompute",
+  "reject",
+  "remove",
+  "rename",
+  "reply",
+  "reset",
+  "resume",
+  "restart",
+  "revoke",
+  "run",
+  "seed",
+  "send",
+  "set",
+  "start",
+  "stop",
+  "sync",
+  "tag",
+  "trigger",
+  "unlink",
+  "unmute",
+  "unarchive",
+  "untag",
+  "update",
+  "upsert",
+  "write",
+]);
+
+const READ_COMMAND_ACCESS_MUTATION_ALLOWLIST = new Set([
+  // This command only renders the plan for a policy materialization and never writes.
+  "permissions.policies.dry-run",
+  // This command only evaluates metadata.send_window and never sends or writes.
+  "crm.pipeline.policy.send-window-check",
+]);
+
+export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: InspectDoctorOptions = {}): DoctorReport {
   const deps = { ...DEFAULT_DEPS, ...overrides };
-  const checks: DoctorCheck[] = [];
+  const checks: LegacyDoctorCheck[] = [];
 
   const runtimeTarget = deps.inspectCliRuntimeTarget();
   const stateDir = deps.getRaviStateDir();
@@ -112,114 +415,342 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}): DoctorReport
   const insightsDbPath = join(stateDir, "insights.db");
   const codexHooksPath = join(deps.homeDir(), ".codex", "hooks.json");
 
-  checks.push(buildDaemonCheck(runtimeTarget));
-  checks.push(buildRuntimeMatchCheck(runtimeTarget));
-  checks.push(buildDaemonCwdCheck(runtimeTarget));
-  checks.push(buildStateDirCheck(stateDir, deps));
-  checks.push(buildRaviDbCheck(raviDbPath, deps));
-  checks.push(buildInsightsDbCheck(insightsDbPath, deps));
-  checks.push(buildProviderCompatibilityCheck(deps));
+  addCheck(checks, () => buildDaemonCheck(runtimeTarget));
+  addCheck(checks, () => buildRuntimeMatchCheck(runtimeTarget));
+  addCheck(checks, () => buildDaemonCwdCheck(runtimeTarget));
+  addCheck(checks, () => buildStateDirCheck(stateDir, deps));
+  addCheck(checks, () => buildDiskSpaceCheck(stateDir, deps));
+  addCheck(checks, () => buildRaviDbCheck(raviDbPath, deps));
+  addCheck(checks, () => buildInsightsDbCheck(insightsDbPath, deps));
+  addCheck(checks, () => buildProviderCompatibilityCheck(deps));
+  addCheck(checks, () => buildGitRuntimeCheck(deps));
 
   const raviDbExists = deps.exists(raviDbPath);
   if (!raviDbExists) {
-    checks.push({
-      id: "instances.main",
-      title: "Main instance",
-      status: "fail",
-      summary: "cannot inspect instances because ravi.db is missing",
-      details: [raviDbPath],
-      fixHint: "restore or initialize ~/.ravi/ravi.db before relying on runtime routing",
-      data: { dbPath: raviDbPath },
-    });
-    checks.push({
-      id: "agents.registered",
-      title: "Registered agents",
-      status: "fail",
-      summary: "cannot inspect agents because ravi.db is missing",
-      details: [raviDbPath],
-      fixHint: "restore or initialize ~/.ravi/ravi.db before inspecting workspace health",
-      data: { dbPath: raviDbPath },
-    });
-    checks.push({
-      id: "agents.instructions",
-      title: "AGENTS-first workspaces",
-      status: "fail",
-      summary: "cannot inspect workspace instructions because ravi.db is missing",
-      details: [raviDbPath],
-      fixHint: "restore or initialize ~/.ravi/ravi.db, then run `ravi agents sync-instructions --all` if needed",
-      data: { dbPath: raviDbPath },
-    });
-    checks.push({
-      id: "tasks.automations",
-      title: "Task automations substrate",
-      status: "fail",
-      summary: "cannot inspect task automations because ravi.db is missing",
-      details: [raviDbPath],
-      fixHint: "restore or initialize ~/.ravi/ravi.db before relying on task automations",
-      data: { dbPath: raviDbPath },
-    });
+    addStaticChecks(checks, [
+      {
+        id: "instances.main",
+        title: "Main instance",
+        status: "fail",
+        summary: "cannot inspect instances because ravi.db is missing",
+        details: [raviDbPath],
+        fixHint: "restore or initialize ~/.ravi/ravi.db before relying on runtime routing",
+        data: { dbPath: raviDbPath },
+      },
+      {
+        id: "runtime.schema_missing",
+        domain: "runtime",
+        title: "Runtime schema",
+        status: "fail",
+        summary: "cannot inspect runtime schema because ravi.db is missing",
+        details: [raviDbPath],
+        fixHint: "restore or initialize ~/.ravi/ravi.db before relying on runtime health checks",
+        data: { dbPath: raviDbPath },
+      },
+      {
+        id: "runtime.migration_unverifiable",
+        domain: "runtime",
+        title: "Runtime migration state",
+        status: "fail",
+        severity: "warn",
+        summary: "cannot verify migration state because ravi.db is missing",
+        details: [raviDbPath],
+        fixHint: "restore or initialize ~/.ravi/ravi.db, then rerun `ravi doctor`",
+        data: { dbPath: raviDbPath },
+      },
+      {
+        id: "agents.registered",
+        title: "Registered agents",
+        status: "fail",
+        summary: "cannot inspect agents because ravi.db is missing",
+        details: [raviDbPath],
+        fixHint: "restore or initialize ~/.ravi/ravi.db before inspecting workspace health",
+        data: { dbPath: raviDbPath },
+      },
+      {
+        id: "agents.instructions",
+        title: "AGENTS-first workspaces",
+        status: "fail",
+        summary: "cannot inspect workspace instructions because ravi.db is missing",
+        details: [raviDbPath],
+        fixHint: "restore or initialize ~/.ravi/ravi.db, then run `ravi agents sync-instructions --all` if needed",
+        data: { dbPath: raviDbPath },
+      },
+      {
+        id: "tasks.automations",
+        title: "Task automations substrate",
+        status: "fail",
+        summary: "cannot inspect task automations because ravi.db is missing",
+        details: [raviDbPath],
+        fixHint: "restore or initialize ~/.ravi/ravi.db before relying on task automations",
+        data: { dbPath: raviDbPath },
+      },
+    ]);
   } else {
     let agents: ReturnType<typeof dbListAgents> | null = null;
     let instances: ReturnType<typeof dbListInstances> | null = null;
+    let routes: ReturnType<typeof dbListRoutes> | null = null;
 
-    try {
+    addCheck(checks, () => {
       instances = deps.dbListInstances();
-      checks.push(buildMainInstanceCheck(instances));
-    } catch (error) {
-      checks.push(buildUnexpectedFailureCheck("instances.main", "Main instance", error));
-    }
+      return buildMainInstanceCheck(instances);
+    });
 
-    try {
+    addCheck(checks, () => {
       agents = deps.dbListAgents();
-      checks.push(buildRegisteredAgentsCheck(agents));
-    } catch (error) {
-      checks.push(buildUnexpectedFailureCheck("agents.registered", "Registered agents", error));
-      agents = null;
-    }
+      return buildRegisteredAgentsCheck(agents);
+    });
+    addCheck(checks, () => {
+      if (!agents) agents = deps.dbListAgents();
+      return buildAgentVisibilityMigrationCheck(agents, deps);
+    });
 
-    if (agents) {
-      try {
-        checks.push(buildAgentInstructionCheck(agents, deps));
-      } catch (error) {
-        checks.push(buildUnexpectedFailureCheck("agents.instructions", "AGENTS-first workspaces", error));
+    addCheck(checks, () => {
+      if (!agents) {
+        agents = deps.dbListAgents();
       }
-    }
+      return buildAgentInstructionCheck(agents, deps);
+    });
 
-    try {
-      checks.push(buildTaskAutomationsCheck(deps));
-    } catch (error) {
-      checks.push(buildUnexpectedFailureCheck("tasks.automations", "Task automations substrate", error));
-    }
-
-    try {
-      checks.push(buildCronTargetsCheck(deps));
-    } catch (error) {
-      checks.push(buildUnexpectedFailureCheck("cron.targets", "Cron target resolution", error));
-    }
+    addCheck(checks, () => buildTaskAutomationsCheck(deps));
+    addCheck(checks, () => buildCronTargetsCheck(deps));
+    addCheck(checks, () => buildRuntimeSchemaCheck(deps));
+    addCheck(checks, () => buildRuntimeMigrationCheck(deps));
+    addCheck(checks, () => {
+      if (!agents) agents = deps.dbListAgents();
+      if (!instances) instances = deps.dbListInstances();
+      routes = deps.dbListRoutes();
+      return buildRouteIntegrityCheck(routes, agents, instances);
+    });
+    addCheck(checks, () => buildSessionIntegrityCheck(deps));
+    addCheck(checks, () => buildChatRouteCoverageCheck(deps));
+    addCheck(checks, () => {
+      if (!instances) instances = deps.dbListInstances();
+      return buildInstanceHealthMetadataCheck(instances);
+    });
+    addCheck(checks, () => buildInboundIdentityResolutionCheck(deps));
+    addCheck(checks, () => buildCostPricingCoverageCheck(deps));
+    addCheck(checks, () => buildCostCompletenessCheck(deps));
   }
 
-  checks.push(buildCodexHookCheck(codexHooksPath, deps));
+  addCheck(checks, () => buildCodexHookCheck(codexHooksPath, deps));
+  addCheck(checks, () => buildAppManifestCheck(deps));
+  addCheck(checks, () => buildAppRegistryCheck(deps));
+  addCheck(checks, () => buildDraftSpecProductionCheck(deps));
+  addCheck(checks, () => buildSkillSpecReferenceCheck(deps));
+  addCheck(checks, () => buildSdkReturnCoverageCheck(deps));
+  addCheck(checks, () => buildCliCommandAccessCoverageCheck(deps));
+  addCheck(checks, () => buildCliMutationMetadataCheck(deps));
+  addCheck(checks, () => buildPermissionProviderRuntimeChainCheck(deps));
+  addCheck(checks, () => buildPermissionProviderRuntimeBoundaryCheck(deps));
+  addCheck(checks, () => buildPermissionLocalOperatorExplicitCheck(deps));
+  addCheck(checks, () => buildPermissionBootstrapScopeCheck(deps));
+  addCheck(checks, () => buildPermissionAgentIdentityReadinessCheck(deps));
+  const filtered = filterChecksByDomain(checks, options.domain);
+  return buildReport(filtered, {
+    generatedAt: deps.now().toISOString(),
+    runtimeTarget,
+    git: deps.getGitInfo(),
+    dbPath: raviDbPath,
+    cwd: deps.cwd(),
+  });
+}
 
-  const summary = summarizeChecks(checks);
+export function runDoctor(options: RunDoctorOptions = {}, overrides: Partial<DoctorDeps> = {}): DoctorReport {
+  const report = inspectDoctor(overrides, { domain: options.domain });
+  if (options.json) {
+    console.log(JSON.stringify(report, null, 2));
+  } else {
+    printDoctorReport(report, { full: options.full === true });
+  }
+
+  if (options.setExitCode) {
+    process.exitCode = doctorExitCode(report, options.strict === true);
+  }
+  return report;
+}
+
+function addCheck(checks: LegacyDoctorCheck[], build: () => LegacyDoctorCheck): void {
+  const started = Date.now();
+  try {
+    const check = build();
+    checks.push({ ...check, durationMs: Date.now() - started });
+  } catch (error) {
+    checks.push({
+      ...buildUnexpectedFailureCheck("doctor.check", "Doctor check", error),
+      durationMs: Date.now() - started,
+    });
+  }
+}
+
+function addStaticChecks(checks: LegacyDoctorCheck[], next: LegacyDoctorCheck[]): void {
+  for (const check of next) {
+    checks.push({ ...check, durationMs: 0 });
+  }
+}
+
+function buildReport(
+  legacyChecks: LegacyDoctorCheck[],
+  input: {
+    generatedAt: string;
+    runtimeTarget: CliRuntimeTargetSummary;
+    git: GitInfo;
+    dbPath: string;
+    cwd: string;
+  },
+): DoctorReport {
+  const findings: DoctorFinding[] = [];
+  const checks: DoctorCheck[] = [];
+
+  for (const legacy of legacyChecks) {
+    const domain = legacy.domain ?? inferDomain(legacy.id);
+    const severity = legacy.severity ?? legacySeverity(legacy.status);
+    const status = legacyStatus(legacy.status);
+    const finding: DoctorFinding = {
+      id: legacy.id,
+      severity,
+      domain,
+      title: legacy.title,
+      summary: legacy.summary,
+      evidence: detailsToEvidence(legacy.details),
+      ...(legacy.fixHint ? { fixHint: legacy.fixHint } : {}),
+      ...(legacy.data ? { data: legacy.data } : {}),
+    };
+    findings.push(finding);
+    checks.push({
+      id: legacy.id,
+      domain,
+      title: legacy.title,
+      status,
+      severity,
+      findings: [legacy.id],
+      durationMs: legacy.durationMs ?? 0,
+      data: legacy.data,
+    });
+  }
+
+  const summary = summarizeReport(checks, findings);
+  const schemaCheck = checks.find((check) => check.id === "runtime.schema_missing");
+  const migrationCheck = checks.find((check) => check.id === "runtime.migration_unverifiable");
+  const schemaVersion =
+    typeof schemaCheck?.data?.userVersion === "number" ? String(schemaCheck.data.userVersion) : undefined;
+  const migrationsKnown = migrationCheck ? migrationCheck.status === "pass" : undefined;
   return {
-    generatedAt: new Date().toISOString(),
+    generatedAt: input.generatedAt,
+    ok: summary.errors === 0,
     summary,
+    runtime: {
+      version: readPackageVersion(),
+      branch: input.git.branch,
+      commit: input.git.commit,
+      dirty: input.git.dirty,
+      cwd: input.cwd,
+      daemon: {
+        online: input.runtimeTarget.daemon.online,
+      },
+      database: {
+        path: input.dbPath,
+        ...(schemaVersion ? { schemaVersion } : {}),
+        ...(migrationsKnown !== undefined ? { migrationsKnown } : {}),
+      },
+    },
+    findings,
     checks,
   };
 }
 
-export function runDoctor(options: { json?: boolean } = {}, overrides: Partial<DoctorDeps> = {}): DoctorReport {
-  const report = inspectDoctor(overrides);
-  if (options.json) {
-    console.log(JSON.stringify(report, null, 2));
-    return report;
+function summarizeReport(checks: DoctorCheck[], findings: DoctorFinding[]): DoctorReport["summary"] {
+  const domains: DoctorReport["summary"]["domains"] = {};
+  const summary: DoctorReport["summary"] = {
+    errors: 0,
+    warnings: 0,
+    infos: 0,
+    checks: {
+      total: checks.length,
+      passed: 0,
+      failed: 0,
+      skipped: 0,
+    },
+    domains,
+  };
+
+  for (const finding of findings) {
+    if (finding.severity === "error") summary.errors++;
+    if (finding.severity === "warn") summary.warnings++;
+    if (finding.severity === "info") summary.infos++;
+    const domain = (domains[finding.domain] ??= {
+      errors: 0,
+      warnings: 0,
+      infos: 0,
+      totalChecks: 0,
+      failedChecks: 0,
+      skippedChecks: 0,
+    });
+    if (finding.severity === "error") domain.errors++;
+    if (finding.severity === "warn") domain.warnings++;
+    if (finding.severity === "info") domain.infos++;
   }
 
-  printDoctorReport(report);
-  return report;
+  for (const check of checks) {
+    if (check.status === "pass") summary.checks.passed++;
+    if (check.status === "fail") summary.checks.failed++;
+    if (check.status === "skip") summary.checks.skipped++;
+    const domain = (domains[check.domain] ??= {
+      errors: 0,
+      warnings: 0,
+      infos: 0,
+      totalChecks: 0,
+      failedChecks: 0,
+      skippedChecks: 0,
+    });
+    domain.totalChecks++;
+    if (check.status === "fail") domain.failedChecks++;
+    if (check.status === "skip") domain.skippedChecks++;
+  }
+
+  return summary;
 }
 
-function buildDaemonCheck(summary: CliRuntimeTargetSummary): DoctorCheck {
+function doctorExitCode(report: DoctorReport, strict: boolean): number {
+  if (report.summary.errors > 0) return 1;
+  if (strict && report.summary.warnings > 0) return 3;
+  return 0;
+}
+
+function filterChecksByDomain(checks: LegacyDoctorCheck[], domain: string | null | undefined): LegacyDoctorCheck[] {
+  const normalized = domain?.trim();
+  if (!normalized) return checks;
+  return checks.filter((check) => (check.domain ?? inferDomain(check.id)) === normalized);
+}
+
+function legacySeverity(status: LegacyDoctorCheckStatus): DoctorSeverity {
+  if (status === "fail") return "error";
+  if (status === "warn") return "warn";
+  return "info";
+}
+
+function legacyStatus(status: LegacyDoctorCheckStatus): DoctorCheckStatus {
+  if (status === "ok") return "pass";
+  if (status === "skip") return "skip";
+  return "fail";
+}
+
+function detailsToEvidence(details: string[] | undefined): DoctorEvidence[] {
+  return (details ?? []).slice(0, 12).map((detail) => ({ label: detail }));
+}
+
+function inferDomain(id: string): string {
+  if (id.startsWith("apps.") || id.startsWith("specs.") || id.startsWith("skills.") || id.startsWith("sdk.")) {
+    return "apps";
+  }
+  if (id.startsWith("permissions.")) return "permissions";
+  if (id.startsWith("costs.")) return "costs";
+  if (id.startsWith("routes.") || id.startsWith("sessions.") || id.startsWith("chats.")) return "sessions";
+  if (id.startsWith("channels.") || id.startsWith("instances.")) return "channels";
+  return "runtime";
+}
+
+function buildDaemonCheck(summary: CliRuntimeTargetSummary): LegacyDoctorCheck {
   if (summary.daemon.online) {
     return {
       id: "runtime.daemon",
@@ -249,12 +780,13 @@ function buildDaemonCheck(summary: CliRuntimeTargetSummary): DoctorCheck {
   };
 }
 
-function buildRuntimeMatchCheck(summary: CliRuntimeTargetSummary): DoctorCheck {
+function buildRuntimeMatchCheck(summary: CliRuntimeTargetSummary): LegacyDoctorCheck {
   if (!summary.daemon.online) {
     return {
       id: "runtime.bundle-match",
       title: "CLI/runtime match",
-      status: "warn",
+      status: "skip",
+      severity: "warn",
       summary: "skipped because the live daemon is offline",
       details: [`cli bundle: ${summary.cliBundlePath ?? "-"}`],
       data: {
@@ -310,12 +842,13 @@ function buildRuntimeMatchCheck(summary: CliRuntimeTargetSummary): DoctorCheck {
   };
 }
 
-function buildDaemonCwdCheck(summary: CliRuntimeTargetSummary): DoctorCheck {
+function buildDaemonCwdCheck(summary: CliRuntimeTargetSummary): LegacyDoctorCheck {
   if (!summary.daemon.online) {
     return {
       id: "runtime.daemon-cwd",
       title: "Daemon cwd trust",
-      status: "warn",
+      status: "skip",
+      severity: "warn",
       summary: "skipped because the live daemon is offline",
       details: [`daemon cwd: ${summary.daemon.cwd ?? "-"}`],
       data: {
@@ -368,7 +901,39 @@ function buildDaemonCwdCheck(summary: CliRuntimeTargetSummary): DoctorCheck {
   };
 }
 
-function buildStateDirCheck(stateDir: string, deps: DoctorDeps): DoctorCheck {
+function buildGitRuntimeCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const git = deps.getGitInfo();
+  const details = [
+    `branch: ${git.branch ?? "-"}`,
+    `commit: ${git.commit ?? "-"}`,
+    `dirty: ${git.dirty === true ? "yes" : "no"}`,
+  ];
+  if (typeof git.behind === "number" && git.behind > 0) details.push(`behind: ${git.behind}`);
+  if (typeof git.ahead === "number" && git.ahead > 0) details.push(`ahead: ${git.ahead}`);
+
+  if ((git.behind ?? 0) > 0) {
+    return {
+      id: "runtime.branch_drift",
+      title: "Git branch drift",
+      status: "warn",
+      summary: `current branch is behind upstream by ${git.behind} commit(s)`,
+      details,
+      fixHint: "pull/rebase before release or deploy work",
+      data: git,
+    };
+  }
+
+  return {
+    id: "runtime.branch_drift",
+    title: "Git branch drift",
+    status: "ok",
+    summary: git.dirty ? "git branch is current, with local dirty worktree context" : "git branch appears current",
+    details,
+    data: git,
+  };
+}
+
+function buildStateDirCheck(stateDir: string, deps: DoctorDeps): LegacyDoctorCheck {
   if (deps.exists(stateDir)) {
     return {
       id: "substrate.state-dir",
@@ -391,7 +956,187 @@ function buildStateDirCheck(stateDir: string, deps: DoctorDeps): DoctorCheck {
   };
 }
 
-function buildRaviDbCheck(dbPath: string, deps: DoctorDeps): DoctorCheck {
+const DISK_CRITICAL_FREE_BYTES = 1 * 1024 ** 3; // 1 GiB
+const DISK_WARN_FREE_BYTES = 5 * 1024 ** 3; // 5 GiB
+const DISK_CRITICAL_PERCENT_USED = 97;
+const DISK_WARN_PERCENT_USED = 90;
+
+interface DiskTargetReport {
+  label: string;
+  path: string;
+  freeBytes: number | null;
+  totalBytes: number | null;
+  percentUsed: number | null;
+  deviceId?: number;
+  probeOk: boolean;
+  probeError?: string;
+  severity: LegacyDoctorCheckStatus;
+  reason?: string;
+}
+
+function redactHomePath(path: string, home: string): string {
+  if (home && (path === home || path.startsWith(`${home}/`))) {
+    return `~${path.slice(home.length)}`;
+  }
+  return path;
+}
+
+function formatBytes(bytes: number | null): string {
+  if (bytes === null || !Number.isFinite(bytes)) return "unknown";
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KiB", "MiB", "GiB", "TiB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(1)} ${units[unit]}`;
+}
+
+function evaluateDiskTarget(label: string, rawPath: string, deps: DoctorDeps): DiskTargetReport {
+  const home = deps.homeDir();
+  const path = redactHomePath(rawPath, home);
+
+  if (!deps.exists(rawPath)) {
+    return {
+      label,
+      path,
+      freeBytes: null,
+      totalBytes: null,
+      percentUsed: null,
+      probeOk: false,
+      probeError: "path does not exist",
+      severity: "warn",
+      reason: "path is not present yet",
+    };
+  }
+
+  const stat = deps.statDisk(rawPath);
+  const probe = deps.probeDir(rawPath);
+
+  const freeBytes = stat ? stat.freeBytes : null;
+  const totalBytes = stat ? stat.totalBytes : null;
+  const percentUsed =
+    stat && stat.totalBytes > 0 ? Math.round(((stat.totalBytes - stat.freeBytes) / stat.totalBytes) * 100) : null;
+
+  let severity: LegacyDoctorCheckStatus = "ok";
+  let reason: string | undefined;
+
+  if (!probe.ok) {
+    severity = "fail";
+    reason = `cannot create/remove a temp file (${probe.error ?? "unknown error"})`;
+  } else if (!stat) {
+    severity = "warn";
+    reason = "free space could not be measured on this platform";
+  } else if (freeBytes !== null && freeBytes < DISK_CRITICAL_FREE_BYTES) {
+    severity = "fail";
+    reason = `free space ${formatBytes(freeBytes)} is below the critical threshold ${formatBytes(DISK_CRITICAL_FREE_BYTES)}`;
+  } else if (percentUsed !== null && percentUsed >= DISK_CRITICAL_PERCENT_USED) {
+    severity = "fail";
+    reason = `usage ${percentUsed}% is at or above the critical threshold ${DISK_CRITICAL_PERCENT_USED}%`;
+  } else if (freeBytes !== null && freeBytes < DISK_WARN_FREE_BYTES) {
+    severity = "warn";
+    reason = `free space ${formatBytes(freeBytes)} is below the operational margin ${formatBytes(DISK_WARN_FREE_BYTES)}`;
+  } else if (percentUsed !== null && percentUsed >= DISK_WARN_PERCENT_USED) {
+    severity = "warn";
+    reason = `usage ${percentUsed}% is at or above the operational margin ${DISK_WARN_PERCENT_USED}%`;
+  }
+
+  return {
+    label,
+    path,
+    freeBytes,
+    totalBytes,
+    percentUsed,
+    ...(stat?.deviceId !== undefined ? { deviceId: stat.deviceId } : {}),
+    probeOk: probe.ok,
+    ...(probe.error ? { probeError: probe.error } : {}),
+    severity,
+    ...(reason ? { reason } : {}),
+  };
+}
+
+function buildDiskSpaceCheck(stateDir: string, deps: DoctorDeps): LegacyDoctorCheck {
+  const targets: Array<{ label: string; path: string }> = [
+    { label: "cwd", path: deps.cwd() },
+    { label: "temp", path: deps.tempDir() },
+    { label: "state", path: stateDir },
+  ];
+
+  const reports = targets.map((target) => evaluateDiskTarget(target.label, target.path, deps));
+
+  let worst: LegacyDoctorCheckStatus = "ok";
+  for (const report of reports) {
+    if (report.severity === "fail") worst = "fail";
+    else if (report.severity === "warn" && worst !== "fail") worst = "warn";
+  }
+
+  const details = reports.map((report) => {
+    const parts = [
+      `${report.label} (${report.path})`,
+      `free ${formatBytes(report.freeBytes)}`,
+      `used ${report.percentUsed === null ? "unknown" : `${report.percentUsed}%`}`,
+      `write-probe ${report.probeOk ? "ok" : "failed"}`,
+    ];
+    if (report.reason) parts.push(report.reason);
+    return parts.join(" · ");
+  });
+
+  const thresholds = {
+    criticalFreeBytes: DISK_CRITICAL_FREE_BYTES,
+    warnFreeBytes: DISK_WARN_FREE_BYTES,
+    criticalPercentUsed: DISK_CRITICAL_PERCENT_USED,
+    warnPercentUsed: DISK_WARN_PERCENT_USED,
+  };
+
+  const data = {
+    thresholds,
+    targets: reports.map((report) => ({
+      label: report.label,
+      path: report.path,
+      freeBytes: report.freeBytes,
+      totalBytes: report.totalBytes,
+      percentUsed: report.percentUsed,
+      ...(report.deviceId !== undefined ? { deviceId: report.deviceId } : {}),
+      writeProbeOk: report.probeOk,
+      ...(report.probeError ? { writeProbeError: report.probeError } : {}),
+      severity: report.severity,
+      ...(report.reason ? { reason: report.reason } : {}),
+    })),
+  };
+
+  if (worst === "ok") {
+    return {
+      id: "runtime.disk_space_low",
+      domain: "runtime",
+      title: "Disk and temp space",
+      status: "ok",
+      summary: "working, temp, and state directories have healthy free space and are writable",
+      details,
+      data,
+    };
+  }
+
+  const pressured = reports.filter((report) => report.severity !== "ok").map((report) => report.label);
+  return {
+    id: "runtime.disk_space_low",
+    domain: "runtime",
+    title: "Disk and temp space",
+    status: worst === "fail" ? "fail" : "warn",
+    severity: worst === "fail" ? "error" : "warn",
+    summary:
+      worst === "fail"
+        ? `disk/temp pressure detected on: ${pressured.join(", ")}`
+        : `disk/temp free space is below the operational margin on: ${pressured.join(", ")}`,
+    details,
+    fixHint:
+      "free space with an operator-approved cleanup (see .ravi/specs/doctor/RUNBOOK.md); ravi doctor never deletes files",
+    data,
+  };
+}
+
+function buildRaviDbCheck(dbPath: string, deps: DoctorDeps): LegacyDoctorCheck {
   if (deps.exists(dbPath)) {
     return {
       id: "substrate.ravi-db",
@@ -414,7 +1159,7 @@ function buildRaviDbCheck(dbPath: string, deps: DoctorDeps): DoctorCheck {
   };
 }
 
-function buildInsightsDbCheck(dbPath: string, deps: DoctorDeps): DoctorCheck {
+function buildInsightsDbCheck(dbPath: string, deps: DoctorDeps): LegacyDoctorCheck {
   if (deps.exists(dbPath)) {
     return {
       id: "substrate.insights-db",
@@ -437,7 +1182,7 @@ function buildInsightsDbCheck(dbPath: string, deps: DoctorDeps): DoctorCheck {
   };
 }
 
-function buildMainInstanceCheck(instances: ReturnType<typeof dbListInstances>): DoctorCheck {
+function buildMainInstanceCheck(instances: ReturnType<typeof dbListInstances>): LegacyDoctorCheck {
   if (instances.length === 0) {
     return {
       id: "instances.main",
@@ -497,7 +1242,7 @@ function buildMainInstanceCheck(instances: ReturnType<typeof dbListInstances>): 
   };
 }
 
-function buildRegisteredAgentsCheck(agents: ReturnType<typeof dbListAgents>): DoctorCheck {
+function buildRegisteredAgentsCheck(agents: ReturnType<typeof dbListAgents>): LegacyDoctorCheck {
   if (agents.length === 0) {
     return {
       id: "agents.registered",
@@ -528,7 +1273,76 @@ function buildRegisteredAgentsCheck(agents: ReturnType<typeof dbListAgents>): Do
   };
 }
 
-function buildAgentInstructionCheck(agents: ReturnType<typeof dbListAgents>, deps: DoctorDeps): DoctorCheck {
+function buildAgentVisibilityMigrationCheck(
+  agents: ReturnType<typeof dbListAgents>,
+  deps: DoctorDeps,
+): LegacyDoctorCheck {
+  if (agents.length === 0) {
+    return {
+      id: "permissions.agents_visibility_migration",
+      domain: "permissions",
+      title: "Agent visibility migration",
+      status: "skip",
+      summary: "no agents are registered",
+      data: { totalAgents: 0 },
+    };
+  }
+
+  const defaultAgentId = deps.getDefaultAgentId();
+  const defaultAgent = agents.find((agent) => agent.id === defaultAgentId);
+  if (!defaultAgent) {
+    return {
+      id: "permissions.agents_visibility_migration",
+      domain: "permissions",
+      title: "Agent visibility migration",
+      status: "fail",
+      severity: "error",
+      summary: `default agent ${defaultAgentId} is missing, so agent visibility backfill cannot protect list/show`,
+      fixHint: "create the default agent or set defaultAgent to an existing agent, then rerun doctor",
+      data: { defaultAgentId, totalAgents: agents.length },
+    };
+  }
+
+  const capabilities = deps.materializeSubjectCapabilities("agent", defaultAgentId);
+  const invisible = agents
+    .filter((agent) => agent.id !== defaultAgentId)
+    .filter((agent) => !canWithCapabilities(capabilities, "view", "agent", agent.id))
+    .map((agent) => agent.id);
+
+  if (invisible.length > 0) {
+    return {
+      id: "permissions.agents_visibility_migration",
+      domain: "permissions",
+      title: "Agent visibility migration",
+      status: "fail",
+      severity: "error",
+      summary: `${invisible.length} agent(s) are not visible to default agent ${defaultAgentId}`,
+      details: limitStrings(invisible, 12),
+      fixHint:
+        "rerun the router DB migration/backfill path; default agent must materialize view agent:* through provider-runtime defaults",
+      data: {
+        defaultAgentId,
+        invisible,
+        totalAgents: agents.length,
+      },
+    };
+  }
+
+  return {
+    id: "permissions.agents_visibility_migration",
+    domain: "permissions",
+    title: "Agent visibility migration",
+    status: "ok",
+    summary: `default agent ${defaultAgentId} can view all ${agents.length} registered agent(s)`,
+    data: {
+      defaultAgentId,
+      totalAgents: agents.length,
+      capabilityCount: capabilities.length,
+    },
+  };
+}
+
+function buildAgentInstructionCheck(agents: ReturnType<typeof dbListAgents>, deps: DoctorDeps): LegacyDoctorCheck {
   if (agents.length === 0) {
     return {
       id: "agents.instructions",
@@ -610,7 +1424,7 @@ function buildAgentInstructionCheck(agents: ReturnType<typeof dbListAgents>, dep
   };
 }
 
-function buildTaskAutomationsCheck(deps: DoctorDeps): DoctorCheck {
+function buildTaskAutomationsCheck(deps: DoctorDeps): LegacyDoctorCheck {
   const automations = deps.listTaskAutomations();
   const enabled = automations.filter((automation) => automation.enabled).length;
   return {
@@ -627,7 +1441,985 @@ function buildTaskAutomationsCheck(deps: DoctorDeps): DoctorCheck {
   };
 }
 
-function buildUnexpectedFailureCheck(id: string, title: string, error: unknown): DoctorCheck {
+function buildRuntimeSchemaCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const requiredTables = ["agents", "instances", "routes", "chats", "message_metadata", "cost_events", "session_turns"];
+  const rows = deps.queryRows<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table'");
+  const existing = new Set(rows.map((row) => row.name).filter(Boolean));
+  const missing = requiredTables.filter((table) => !existing.has(table));
+  const userVersionRows = deps.queryRows<{ user_version?: number }>("PRAGMA user_version");
+  const userVersion = Number(userVersionRows[0]?.user_version ?? 0);
+
+  if (missing.length > 0) {
+    return {
+      id: "runtime.schema_missing",
+      domain: "runtime",
+      title: "Runtime schema",
+      status: "fail",
+      summary: `${missing.length} required runtime table(s) are missing`,
+      details: missing,
+      fixHint:
+        "run the runtime database initialization/migration path before trusting router, sessions, costs or permissions",
+      data: {
+        userVersion,
+        requiredTables,
+        missingTables: missing,
+      },
+    };
+  }
+
+  return {
+    id: "runtime.schema_missing",
+    domain: "runtime",
+    title: "Runtime schema",
+    status: "ok",
+    summary: `${requiredTables.length} required runtime table(s) are present`,
+    data: {
+      userVersion,
+      requiredTables,
+      missingTables: [],
+    },
+  };
+}
+
+function buildRuntimeMigrationCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const knownLedgerTables = ["schema_migrations", "migrations", "migration_ledger", "db_migrations"];
+  const rows = deps.queryRows<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table'");
+  const existing = new Set(rows.map((row) => row.name).filter(Boolean));
+  const ledgers = knownLedgerTables.filter((table) => existing.has(table));
+
+  if (ledgers.length === 0) {
+    return {
+      id: "runtime.migration_unverifiable",
+      domain: "runtime",
+      title: "Runtime migration state",
+      status: "warn",
+      summary: "runtime schema is present but migration state has no verifiable ledger",
+      details: ["no schema_migrations/migrations/migration_ledger/db_migrations table found"],
+      fixHint: "introduce a migration ledger or explicit schema version check before using doctor as a release gate",
+      data: {
+        knownLedgerTables,
+        foundLedgerTables: [],
+      },
+    };
+  }
+
+  return {
+    id: "runtime.migration_unverifiable",
+    domain: "runtime",
+    title: "Runtime migration state",
+    status: "ok",
+    summary: `migration ledger available: ${ledgers.join(", ")}`,
+    data: {
+      knownLedgerTables,
+      foundLedgerTables: ledgers,
+    },
+  };
+}
+
+function buildRouteIntegrityCheck(
+  routes: ReturnType<typeof dbListRoutes>,
+  agents: ReturnType<typeof dbListAgents>,
+  instances: ReturnType<typeof dbListInstances>,
+): LegacyDoctorCheck {
+  const agentIds = new Set(agents.map((agent) => agent.id));
+  const instanceNames = new Set(instances.map((instance) => instance.name));
+  const missingAgents = routes.filter((route) => !agentIds.has(route.agent));
+  const missingInstances = routes.filter((route) => !instanceNames.has(route.accountId));
+  const duplicateKeys = duplicateRouteKeys(routes);
+
+  const details = [
+    ...limitIssueDetails(
+      missingAgents.map((route) => `${route.id ?? "-"} ${route.accountId}/${route.pattern} -> ${route.agent}`),
+      "missing-agent",
+    ),
+    ...limitIssueDetails(
+      missingInstances.map((route) => `${route.id ?? "-"} ${route.accountId}/${route.pattern}`),
+      "missing-instance",
+    ),
+    ...limitIssueDetails(duplicateKeys, "duplicate"),
+  ];
+
+  if (missingAgents.length > 0) {
+    return {
+      id: "routes.agent_missing",
+      domain: "sessions",
+      title: "Route agent integrity",
+      status: "fail",
+      summary: `${missingAgents.length} active route(s) point to missing agents`,
+      details,
+      fixHint: "recreate the missing agent or update/delete the affected route",
+      data: {
+        missingAgents: missingAgents.length,
+        missingInstances: missingInstances.length,
+        duplicateEffectiveRoutes: duplicateKeys.length,
+      },
+    };
+  }
+
+  if (missingInstances.length > 0) {
+    return {
+      id: "routes.instance_missing",
+      domain: "sessions",
+      title: "Route instance integrity",
+      status: "fail",
+      summary: `${missingInstances.length} active route(s) point to missing instances`,
+      details,
+      fixHint: "restore the instance or update/delete the affected route",
+      data: {
+        missingAgents: missingAgents.length,
+        missingInstances: missingInstances.length,
+        duplicateEffectiveRoutes: duplicateKeys.length,
+      },
+    };
+  }
+
+  if (duplicateKeys.length > 0) {
+    return {
+      id: "routes.duplicate_effective_route",
+      domain: "sessions",
+      title: "Route uniqueness",
+      status: "warn",
+      summary: `${duplicateKeys.length} duplicate effective route key(s) found`,
+      details,
+      fixHint: "dedupe route rows with the same effective channel/account/pattern",
+      data: { duplicateEffectiveRoutes: duplicateKeys },
+    };
+  }
+
+  return {
+    id: "routes.integrity",
+    domain: "sessions",
+    title: "Route integrity",
+    status: "ok",
+    summary: `${routes.length} active route(s) have valid agents and instances`,
+    data: { total: routes.length },
+  };
+}
+
+function duplicateRouteKeys(routes: ReturnType<typeof dbListRoutes>): string[] {
+  const counts = new Map<string, number>();
+  for (const route of routes) {
+    const key = `${route.channel ?? ""}:${route.accountId}:${route.pattern}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .filter(([, count]) => count > 1)
+    .map(([key, count]) => `${key} (${count})`)
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function buildSessionIntegrityCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const orphanSessions = deps.queryRows<{ session_key: string; name: string | null; agent_id: string }>(
+    `SELECT s.session_key, s.name, s.agent_id
+       FROM sessions s
+       LEFT JOIN agents a ON a.id = s.agent_id
+      WHERE a.id IS NULL
+      ORDER BY s.updated_at DESC
+      LIMIT 25`,
+  );
+  const aborted =
+    deps.queryRows<{ total: number }>(
+      "SELECT COUNT(*) AS total FROM sessions WHERE COALESCE(aborted_last_run, 0) = 1",
+    )[0]?.total ?? 0;
+  const noProvider =
+    deps.queryRows<{ total: number }>(
+      "SELECT COUNT(*) AS total FROM sessions WHERE runtime_provider IS NULL OR runtime_provider = ''",
+    )[0]?.total ?? 0;
+
+  if (orphanSessions.length > 0) {
+    return {
+      id: "sessions.agent_missing",
+      domain: "sessions",
+      title: "Session agent integrity",
+      status: "fail",
+      summary: `${orphanSessions.length} sampled session(s) point to missing agents`,
+      details: orphanSessions.map((row) => `${row.name ?? row.session_key} -> ${row.agent_id}`),
+      fixHint: "restore the agent or reassign/delete the affected session",
+      data: { sampled: orphanSessions, aborted, noProvider },
+    };
+  }
+
+  if (aborted > 0) {
+    return {
+      id: "sessions.aborted_last_run",
+      domain: "sessions",
+      title: "Aborted session runs",
+      status: "warn",
+      summary: `${aborted} session(s) have aborted_last_run set`,
+      fixHint: "inspect session traces before assuming the agent is healthy",
+      data: { aborted, noProvider },
+    };
+  }
+
+  return {
+    id: "sessions.integrity",
+    domain: "sessions",
+    title: "Session integrity",
+    status: "ok",
+    summary:
+      noProvider > 0
+        ? `sessions are linked to agents; ${noProvider} have no runtime provider`
+        : "sessions are linked to agents",
+    data: { orphanSessions: 0, aborted, noProvider },
+  };
+}
+
+function buildChatRouteCoverageCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const rows = deps.queryRows<{ total: number }>(
+    `SELECT COUNT(*) AS total
+       FROM chats c
+      WHERE c.chat_type IN ('group', 'dm')
+        AND NOT EXISTS (
+          SELECT 1 FROM routes r
+           WHERE r.deleted_at IS NULL
+             AND r.account_id = c.instance_id
+             AND (
+               r.pattern = c.normalized_chat_id
+               OR r.pattern = c.platform_chat_id
+               OR r.pattern = ('group:' || c.normalized_chat_id)
+               OR r.pattern = ('dm:' || c.normalized_chat_id)
+             )
+        )`,
+  );
+  const total = rows[0]?.total ?? 0;
+  if (total > 0) {
+    return {
+      id: "chats.eligible_without_route",
+      domain: "sessions",
+      title: "Chat route coverage",
+      status: "ok",
+      severity: "info",
+      summary: `${total} group/dm chat(s) do not have a direct route`,
+      fixHint: "treat as drift only for chats expected to be actively routed",
+      data: { total },
+    };
+  }
+  return {
+    id: "chats.eligible_without_route",
+    domain: "sessions",
+    title: "Chat route coverage",
+    status: "ok",
+    summary: "all eligible group/dm chats have direct routes",
+    data: { total: 0 },
+  };
+}
+
+function buildInstanceHealthMetadataCheck(instances: ReturnType<typeof dbListInstances>): LegacyDoctorCheck {
+  const enabled = instances.filter((instance) => instance.enabled !== false);
+  const missingInstanceId = enabled.filter((instance) => !instance.instanceId);
+  if (missingInstanceId.length > 0) {
+    return {
+      id: "channels.instance_health_missing",
+      domain: "channels",
+      title: "Instance health metadata",
+      status: "warn",
+      summary: `${missingInstanceId.length} enabled instance(s) have no provider instance id`,
+      details: missingInstanceId.map((instance) => `${instance.name} (${instance.channel})`),
+      fixHint: "configure provider instance ids or mark non-live instances disabled",
+      data: { enabled: enabled.length, missingInstanceId: missingInstanceId.length },
+    };
+  }
+
+  return {
+    id: "channels.instance_health_missing",
+    domain: "channels",
+    title: "Instance health metadata",
+    status: "ok",
+    summary: `${enabled.length} enabled instance(s) expose provider instance ids`,
+    data: { enabled: enabled.length },
+  };
+}
+
+function buildInboundIdentityResolutionCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const since = deps.now().getTime() - 24 * 60 * 60 * 1000;
+  const rows = deps.queryRows<{
+    total: number;
+    unresolved_actor: number;
+    unresolved_owner: number;
+  }>(
+    `SELECT
+       COUNT(*) AS total,
+       SUM(CASE WHEN actor_type IS NULL OR actor_type = '' OR actor_type = 'unknown' THEN 1 ELSE 0 END) AS unresolved_actor,
+       SUM(CASE WHEN contact_id IS NULL AND agent_id IS NULL THEN 1 ELSE 0 END) AS unresolved_owner
+     FROM message_metadata
+     WHERE created_at >= ?`,
+    [since],
+  );
+  const row = rows[0] ?? { total: 0, unresolved_actor: 0, unresolved_owner: 0 };
+  const unresolvedActor = Number(row.unresolved_actor ?? 0);
+  const unresolvedOwner = Number(row.unresolved_owner ?? 0);
+
+  if (unresolvedActor > 0) {
+    return {
+      id: "channels.inbound_actor_unresolved",
+      domain: "channels",
+      title: "Inbound actor resolution",
+      status: "fail",
+      summary: `${unresolvedActor} recent inbound metadata row(s) lack actor resolution`,
+      fixHint: "fix platform identity to actor resolution before routing/policy debugging",
+      data: row,
+    };
+  }
+  if (unresolvedOwner > 0) {
+    return {
+      id: "channels.inbound_contact_unresolved",
+      domain: "channels",
+      title: "Inbound owner resolution",
+      status: "fail",
+      summary: `${unresolvedOwner} recent inbound metadata row(s) lack contact/agent resolution`,
+      fixHint: "fix platform identity to contact/agent resolution before routing/policy debugging",
+      data: row,
+    };
+  }
+  return {
+    id: "channels.inbound_actor_unresolved",
+    domain: "channels",
+    title: "Inbound identity resolution",
+    status: "ok",
+    summary: `${row.total ?? 0} recent inbound metadata row(s) have actor and owner resolution`,
+    data: row,
+  };
+}
+
+function buildCostPricingCoverageCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const since = deps.now().getTime() - 7 * 24 * 60 * 60 * 1000;
+  const rows = deps.queryRows<{
+    model: string;
+    pricing_status: string;
+    events: number;
+    tokens: number;
+    total_cost: number;
+  }>(
+    `SELECT
+       model,
+       pricing_status,
+       COUNT(*) AS events,
+       SUM(input_tokens + output_tokens + COALESCE(cache_read_tokens, 0) + COALESCE(cache_creation_tokens, 0)) AS tokens,
+       SUM(total_cost_usd) AS total_cost
+     FROM cost_events
+     WHERE created_at >= ?
+     GROUP BY model, pricing_status
+     ORDER BY events DESC
+     LIMIT 50`,
+    [since],
+  );
+  const unpriced = rows.filter((row) => row.pricing_status !== "priced" && Number(row.tokens ?? 0) > 0);
+  if (unpriced.length > 0) {
+    return {
+      id: "costs.pricing_unpriced_usage",
+      domain: "costs",
+      title: "Cost pricing coverage",
+      status: "warn",
+      summary: `${unpriced.length} recent provider/model pricing bucket(s) have token usage without pricing`,
+      details: unpriced.slice(0, 8).map((row) => `${row.model}: ${row.events} events, ${row.tokens} tokens`),
+      fixHint: "add pricing aliases/catalog coverage, then recompute pricing metadata explicitly",
+      data: { unpriced, sampledBuckets: rows.length },
+    };
+  }
+  return {
+    id: "costs.pricing_unpriced_usage",
+    domain: "costs",
+    title: "Cost pricing coverage",
+    status: "ok",
+    summary: `${rows.length} recent pricing bucket(s) checked`,
+    data: { buckets: rows.length },
+  };
+}
+
+function buildCostCompletenessCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const since = deps.now().getTime() - 7 * 24 * 60 * 60 * 1000;
+  const row = deps.queryRows<{ total: number }>(
+    `SELECT COUNT(*) AS total
+       FROM cost_events
+      WHERE created_at >= ?
+        AND input_tokens = 0
+        AND output_tokens = 0
+        AND COALESCE(cache_read_tokens, 0) = 0
+        AND COALESCE(cache_creation_tokens, 0) = 0`,
+    [since],
+  )[0];
+  const total = Number(row?.total ?? 0);
+  if (total > 0) {
+    return {
+      id: "costs.event_incomplete_usage",
+      domain: "costs",
+      title: "Cost event completeness",
+      status: "warn",
+      summary: `${total} recent cost event(s) have zero token usage`,
+      fixHint: "verify provider usage extraction before trusting cost rollups",
+      data: { total },
+    };
+  }
+  return {
+    id: "costs.event_incomplete_usage",
+    domain: "costs",
+    title: "Cost event completeness",
+    status: "ok",
+    summary: "recent cost events include token usage",
+    data: { total: 0 },
+  };
+}
+
+function buildAppManifestCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const results = deps.checkAppManifests(undefined, { cwd: deps.cwd() });
+  const invalid = results.filter((result) => !result.ok);
+  if (invalid.length > 0) {
+    return {
+      id: "apps.manifest.invalid",
+      domain: "apps",
+      title: "App manifests",
+      status: "fail",
+      summary: `${invalid.length} app manifest(s) are invalid`,
+      details: invalid.flatMap((app) => [`${app.id}: ${app.path}`, ...app.errors.slice(0, 3)]),
+      fixHint: "run `ravi apps check --json` and fix the manifest errors",
+      data: { checked: results.length, invalid },
+    };
+  }
+  const warnings = results.filter((result) => result.warnings.length > 0);
+  if (warnings.length > 0) {
+    return {
+      id: "apps.manifest.invalid",
+      domain: "apps",
+      title: "App manifests",
+      status: "warn",
+      summary: `${warnings.length} app manifest(s) have warnings`,
+      details: warnings.flatMap((app) => [`${app.id}: ${app.path}`, ...app.warnings.slice(0, 3)]),
+      fixHint: "run `ravi apps check --json` and review manifest warnings",
+      data: { checked: results.length, warnings },
+    };
+  }
+  return {
+    id: "apps.manifest.invalid",
+    domain: "apps",
+    title: "App manifests",
+    status: "ok",
+    summary: `${results.length} app manifest(s) are valid`,
+    data: { checked: results.length },
+  };
+}
+
+function buildAppRegistryCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const records = deps.discoverAppManifests({ cwd: deps.cwd() });
+  const repo = records
+    .filter((record) => record.source === "repo")
+    .map((record) => record.id)
+    .sort();
+  const state = records
+    .filter((record) => record.source === "state")
+    .map((record) => record.id)
+    .sort();
+  if (repo.length === 1 && repo[0] === "apps" && state.length > 0) {
+    return {
+      id: "apps.registry.meta_only",
+      domain: "apps",
+      title: "App registry source coverage",
+      status: "warn",
+      summary: `repo registry only exposes meta-app while state has ${state.length} app(s)`,
+      details: [`repo: ${repo.join(", ")}`, `state: ${state.join(", ")}`],
+      fixHint: "decide whether state apps should be source-controlled or explicitly local-only",
+      data: { repo, state },
+    };
+  }
+  return {
+    id: "apps.registry.meta_only",
+    domain: "apps",
+    title: "App registry source coverage",
+    status: "ok",
+    summary: `${records.length} app manifest(s) discovered across sources`,
+    data: { repo, state, total: records.length },
+  };
+}
+
+function buildDraftSpecProductionCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const draftProduction = deps
+    .listSpecFiles()
+    .map((path) => ({ path, content: safeRead(path, deps) }))
+    .filter((entry) => /^status:\s*draft\s*$/m.test(entry.content))
+    .filter((entry) => specAppliesToProduction(entry.content))
+    .map((entry) => normalizeRelative(deps.cwd(), entry.path))
+    .sort();
+
+  if (draftProduction.length > 0) {
+    return {
+      id: "specs.draft_applies_to_production",
+      domain: "apps",
+      title: "Draft specs on production code",
+      status: "warn",
+      summary: `${draftProduction.length} draft spec(s) apply to production code`,
+      details: limitStrings(draftProduction, 12),
+      fixHint: "promote stable specs or keep draft status intentional for experimental production surfaces",
+      data: { total: draftProduction.length, examples: draftProduction.slice(0, 20) },
+    };
+  }
+  return {
+    id: "specs.draft_applies_to_production",
+    domain: "apps",
+    title: "Draft specs on production code",
+    status: "ok",
+    summary: "no draft specs apply to production code",
+    data: { total: 0 },
+  };
+}
+
+function buildSkillSpecReferenceCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const missing: string[] = [];
+  for (const path of deps.listSkillFiles()) {
+    const content = safeRead(path, deps);
+    for (const specId of extractSpecReferences(content)) {
+      const specPath = join(deps.cwd(), ".ravi", "specs", specId, "SPEC.md");
+      if (!deps.exists(specPath)) {
+        missing.push(`${normalizeRelative(deps.cwd(), path)} -> ${specId}`);
+      }
+    }
+  }
+
+  if (missing.length > 0) {
+    return {
+      id: "skills.spec_reference_missing",
+      domain: "apps",
+      title: "Skill spec references",
+      status: "warn",
+      summary: `${missing.length} skill spec reference(s) point to missing specs`,
+      details: limitStrings(missing, 12),
+      fixHint: "fix the skill reference or create the missing spec before relying on that skill",
+      data: { total: missing.length, examples: missing.slice(0, 20) },
+    };
+  }
+  return {
+    id: "skills.spec_reference_missing",
+    domain: "apps",
+    title: "Skill spec references",
+    status: "ok",
+    summary: "skill spec references resolve",
+    data: { total: 0 },
+  };
+}
+
+function buildSdkReturnCoverageCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const registry = deps.getRegistry();
+  const publicCommands = registry.commands.filter((command) => !command.cliOnly);
+  const missing = publicCommands
+    .filter((command) => !command.binary && !command.returns)
+    .map((command) => command.fullName)
+    .sort();
+  const weak = deps.currentWeakPublicReturnCommands(registry);
+  const cliOnly = deps.currentCliOnlyCommands(registry);
+
+  if (missing.length > 0) {
+    return {
+      id: "sdk.returns.missing_public",
+      domain: "apps",
+      title: "SDK return coverage",
+      status: "fail",
+      summary: `${missing.length} public command(s) lack @Returns`,
+      details: limitStrings(missing, 12),
+      fixHint: "add @Returns or @Returns.binary before exposing the command to SDK/OpenAPI",
+      data: { publicCommands: publicCommands.length, missing, weak, cliOnly },
+    };
+  }
+  if (weak.length > 0) {
+    return {
+      id: "sdk.returns.weak_public_new",
+      domain: "apps",
+      title: "SDK return coverage",
+      status: "warn",
+      summary: `${weak.length} public command(s) have weak return schemas`,
+      details: limitStrings(weak, 12),
+      fixHint: "tighten weak return schemas and run `ravi sdk returns validate --json`",
+      data: { publicCommands: publicCommands.length, missing, weak, cliOnly },
+    };
+  }
+  return {
+    id: "sdk.returns.missing_public",
+    domain: "apps",
+    title: "SDK return coverage",
+    status: "ok",
+    summary: `${publicCommands.length} public command(s) have typed returns`,
+    data: { publicCommands: publicCommands.length, missing: 0, weak: 0, cliOnly: cliOnly.length },
+  };
+}
+
+function buildCliMutationMetadataCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const registry = deps.getRegistry();
+  const missing = openMutatingCandidates(registry);
+  const readMutating = readAccessMutatingCandidates(registry);
+  if (missing.length > 0 || readMutating.length > 0) {
+    const details = [
+      ...missing.map((command) => `missing @CommandAccess: ${command}`),
+      ...readMutating.map((command) => `read access on mutating action: ${command}`),
+    ];
+    return {
+      id: "permissions.command_mutation_unclassified",
+      domain: "permissions",
+      title: "CLI mutation metadata",
+      status: "fail",
+      severity: "error",
+      summary: `${missing.length + readMutating.length} command access metadata issue(s) need review`,
+      details: limitStrings(details, 12),
+      fixHint:
+        'declare mutating commands as @CommandAccess({ kind: "mutate", ... }) or add an explicit allowlist entry for true read-only verbs',
+      data: {
+        total: missing.length + readMutating.length,
+        missing,
+        readMutating,
+        examples: details.slice(0, 20),
+      },
+    };
+  }
+  return {
+    id: "permissions.command_mutation_unclassified",
+    domain: "permissions",
+    title: "CLI mutation metadata",
+    status: "ok",
+    summary: "no open-scope mutating candidates found by heuristic",
+    data: { total: 0 },
+  };
+}
+
+function buildCliCommandAccessCoverageCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const registry = deps.getRegistry();
+  const executableCommands = registry.commands;
+  const missing = executableCommands
+    .filter((command) => !command.access)
+    .map((command) => command.fullName)
+    .sort((a, b) => a.localeCompare(b));
+  const annotated = executableCommands.length - missing.length;
+
+  if (missing.length > 0) {
+    return {
+      id: "permissions.command_access.coverage",
+      domain: "permissions",
+      title: "CLI command access coverage",
+      status: "fail",
+      summary: `${missing.length} executable command(s) lack @CommandAccess`,
+      details: limitStrings(missing, 12),
+      fixHint: "add @CommandAccess to every CLI command before treating CLI authorization as complete",
+      data: {
+        executableCommands: executableCommands.length,
+        publicCommands: executableCommands.filter((command) => !command.cliOnly).length,
+        cliOnlyCommands: executableCommands.filter((command) => command.cliOnly).length,
+        annotated,
+        missing: missing.length,
+        examples: missing.slice(0, 20),
+      },
+    };
+  }
+
+  return {
+    id: "permissions.command_access.coverage",
+    domain: "permissions",
+    title: "CLI command access coverage",
+    status: "ok",
+    summary: `${annotated}/${executableCommands.length} executable command(s) declare @CommandAccess`,
+    data: {
+      executableCommands: executableCommands.length,
+      publicCommands: executableCommands.filter((command) => !command.cliOnly).length,
+      cliOnlyCommands: executableCommands.filter((command) => command.cliOnly).length,
+      annotated,
+      missing: 0,
+      examples: [],
+    },
+  };
+}
+
+function openMutatingCandidates(registry: RegistrySnapshot): string[] {
+  return registry.commands
+    .filter((command) => command.scope === "open")
+    .filter((command) => !command.access)
+    .filter((command) => isLikelyMutatingCommand(command.fullName))
+    .map((command) => command.fullName)
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function readAccessMutatingCandidates(registry: RegistrySnapshot): string[] {
+  return registry.commands
+    .filter((command) => command.access?.kind === "read")
+    .filter((command) => !READ_COMMAND_ACCESS_MUTATION_ALLOWLIST.has(command.fullName))
+    .filter((command) => isLikelyMutatingCommand(command.access?.action ?? command.fullName))
+    .map((command) => command.fullName)
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function isLikelyMutatingCommand(fullName: string): boolean {
+  const parts = fullName.split(/[^a-zA-Z0-9]+/);
+  return parts.some((part) => MUTATING_VERBS.has(part));
+}
+
+function buildPermissionProviderRuntimeChainCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const authorizationProviders = deps.getConfiguredPermissionProviders().map((provider) => provider.id);
+  const capabilityMaterializers = deps.getConfiguredCapabilityMaterializers().map((provider) => provider.id);
+  const expectedAuthorization = ["operator-control", "context-capabilities"];
+  const expectedMaterializers = [
+    "runtime-bootstrap",
+    "agent-default-capabilities",
+    "agent-identity-permissions",
+    "contact-policy-permissions",
+  ];
+  const authOk = sameStringList(authorizationProviders, expectedAuthorization);
+  const materializersOk = sameStringList(capabilityMaterializers, expectedMaterializers);
+
+  if (!authOk || !materializersOk) {
+    return {
+      id: "permissions.provider_runtime_default_chain",
+      domain: "permissions",
+      title: "Permission provider runtime default chain",
+      status: "fail",
+      severity: "error",
+      summary: "default permission provider chain drifted from the provider-runtime contract",
+      details: [
+        `authorization: ${authorizationProviders.join(", ") || "(none)"}`,
+        `materializers: ${capabilityMaterializers.join(", ") || "(none)"}`,
+      ],
+      fixHint: "restore provider-registry defaults or document the explicit production provider configuration",
+      data: {
+        authorizationProviders,
+        capabilityMaterializers,
+        expectedAuthorization,
+        expectedMaterializers,
+      },
+    };
+  }
+
+  return {
+    id: "permissions.provider_runtime_default_chain",
+    domain: "permissions",
+    title: "Permission provider runtime default chain",
+    status: "ok",
+    summary: "default authorization and capability materializer chains match the provider-runtime contract",
+    data: {
+      authorizationProviders,
+      capabilityMaterializers,
+    },
+  };
+}
+
+function buildPermissionProviderRuntimeBoundaryCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const providerRuntimePath = join(deps.cwd(), "src", "permissions", "provider-runtime.ts");
+  const enginePath = join(deps.cwd(), "src", "permissions", "engine.ts");
+  const providerRuntimeSource = deps.exists(providerRuntimePath) ? deps.readFile(providerRuntimePath) : "";
+  const forbiddenImportPattern = /from\s+["']\.\/(?:engine|capability-context)(?:\.js)?["']/;
+  const failures: string[] = [];
+
+  if (deps.exists(enginePath)) {
+    failures.push("src/permissions/engine.ts still exists");
+  }
+  if (!providerRuntimeSource) {
+    failures.push("src/permissions/provider-runtime.ts is missing or unreadable");
+  } else if (forbiddenImportPattern.test(providerRuntimeSource)) {
+    failures.push("provider-runtime imports a retired permission evaluator directly");
+  }
+
+  if (failures.length > 0) {
+    return {
+      id: "permissions.provider_runtime_boundaries",
+      domain: "permissions",
+      title: "Permission provider runtime boundaries",
+      status: "fail",
+      severity: "error",
+      summary: "provider-runtime boundary checks failed",
+      details: failures,
+      fixHint: "keep provider storage behind explicit providers and keep deleted native engines out of source",
+      data: { failures },
+    };
+  }
+
+  return {
+    id: "permissions.provider_runtime_boundaries",
+    domain: "permissions",
+    title: "Permission provider runtime boundaries",
+    status: "ok",
+    summary: "provider-runtime facade is isolated from native engines and provider storage internals",
+    data: { enginePresent: false },
+  };
+}
+
+function buildPermissionLocalOperatorExplicitCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const implicit = deps.authorizePermission({
+    permission: "admin",
+    objectType: "system",
+    objectId: "*",
+  });
+  const explicitAllowed = deps.localOperatorCan("admin", "system", "*");
+
+  if (implicit.allowed || !explicitAllowed) {
+    return {
+      id: "permissions.local_operator_explicit",
+      domain: "permissions",
+      title: "Explicit operator-control authorization",
+      status: "fail",
+      severity: "error",
+      summary: "operator-control authorization is not explicit and fail-closed",
+      details: [
+        `implicit no-subject decision: ${implicit.allowed ? "allowed" : "denied"} (${implicit.reasonCode})`,
+        `explicit operator-control decision: ${explicitAllowed ? "allowed" : "denied"}`,
+      ],
+      fixHint: "missing subject/context requests must deny; direct local CLI must opt into localOperator explicitly",
+      data: {
+        implicitAllowed: implicit.allowed,
+        implicitReasonCode: implicit.reasonCode,
+        explicitAllowed,
+      },
+    };
+  }
+
+  return {
+    id: "permissions.local_operator_explicit",
+    domain: "permissions",
+    title: "Explicit operator-control authorization",
+    status: "ok",
+    summary: "missing subject/context denies unless the caller explicitly requests operator-control mode",
+    data: {
+      implicitAllowed: false,
+      explicitAllowed: true,
+    },
+  };
+}
+
+function buildPermissionBootstrapScopeCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const contactCapabilities = deps.materializeSubjectCapabilities("contact", "doctor-contact");
+  const chatCapabilities = deps.materializeSubjectCapabilities("chat", "doctor-chat");
+  const agentCapabilities = deps.materializeSubjectCapabilities("agent", "doctor-agent");
+  const automationCapabilities = deps.materializeSubjectCapabilities("automation", "doctor-automation");
+  const privilegedBootstrap = [...agentCapabilities, ...automationCapabilities].filter(
+    (capability) =>
+      capability.permission === "admin" ||
+      (capability.objectType === "toolgroup" && capability.permission === "admin") ||
+      (capability.objectType === "group" && capability.permission === "admin"),
+  );
+  const failures: string[] = [];
+
+  if (contactCapabilities.length > 0)
+    failures.push(`contact bootstrap grants ${contactCapabilities.length} capability`);
+  if (chatCapabilities.length > 0) failures.push(`chat bootstrap grants ${chatCapabilities.length} capability`);
+  if (privilegedBootstrap.length > 0) {
+    failures.push(`bootstrap grants ${privilegedBootstrap.length} admin capability`);
+  }
+
+  if (failures.length > 0) {
+    return {
+      id: "permissions.runtime_bootstrap_scope",
+      domain: "permissions",
+      title: "Runtime bootstrap scope",
+      status: "fail",
+      severity: "error",
+      summary: "runtime bootstrap still grants actor/surface or admin authority",
+      details: failures,
+      fixHint:
+        "bootstrap may bridge executor operation only; actor/surface and admin authority must come from real providers",
+      data: {
+        contactCapabilities: contactCapabilities.length,
+        chatCapabilities: chatCapabilities.length,
+        privilegedBootstrap: privilegedBootstrap.length,
+      },
+    };
+  }
+
+  return {
+    id: "permissions.runtime_bootstrap_scope",
+    domain: "permissions",
+    title: "Runtime bootstrap scope",
+    status: "ok",
+    summary: "runtime bootstrap does not grant actor/surface or admin authority",
+    data: {
+      contactCapabilities: 0,
+      chatCapabilities: 0,
+      privilegedBootstrap: 0,
+    },
+  };
+}
+
+function buildPermissionAgentIdentityReadinessCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const now = deps.now().getTime();
+  const rows = deps.queryRows<{
+    context_id: string;
+    kind: string;
+    agent_id: string | null;
+    session_name: string | null;
+    metadata_json: string | null;
+  }>(
+    `SELECT context_id, kind, agent_id, session_name, metadata_json
+     FROM contexts
+     WHERE (revoked_at IS NULL OR revoked_at > ?)
+       AND (expires_at IS NULL OR expires_at > ?)`,
+    [now, now],
+  );
+
+  const nonAgentIdentityTurns = rows.filter((row) => {
+    if (row.kind !== "turn-runtime") return false;
+    const metadata = parseDoctorJsonRecord(row.metadata_json);
+    return metadata.authorityMode !== "agent-identity";
+  });
+  const liveAgentRuntime = rows.filter((row) => row.kind === "agent-runtime");
+  const liveAdminBootstrap = rows.filter((row) => row.kind === "admin-bootstrap");
+
+  const failures: string[] = [];
+  if (nonAgentIdentityTurns.length > 0) {
+    failures.push(`${nonAgentIdentityTurns.length} live turn-runtime context(s) are not agent-identity`);
+  }
+  if (liveAgentRuntime.length > 0) {
+    failures.push(`${liveAgentRuntime.length} live agent-runtime context(s) remain`);
+  }
+  if (liveAdminBootstrap.length > 0) {
+    failures.push(`${liveAdminBootstrap.length} live admin-bootstrap context(s) remain`);
+  }
+
+  const sample = [...nonAgentIdentityTurns, ...liveAgentRuntime, ...liveAdminBootstrap].slice(0, 10).map((row) => ({
+    contextId: row.context_id,
+    kind: row.kind,
+    agentId: row.agent_id,
+    sessionName: row.session_name,
+  }));
+
+  if (failures.length > 0) {
+    return {
+      id: "permissions.agent_identity_readiness",
+      domain: "permissions",
+      title: "Agent identity production readiness",
+      status: "fail",
+      severity: "error",
+      summary: "live context inventory still contains non-agent-identity authority roots",
+      details: failures,
+      fixHint:
+        "new dispatch must issue agent-identity turn-runtime contexts only; revoke or migrate remaining agent-runtime/admin-bootstrap roots before full production cutover",
+      data: {
+        nonAgentIdentityTurns: nonAgentIdentityTurns.length,
+        liveAgentRuntime: liveAgentRuntime.length,
+        liveAdminBootstrap: liveAdminBootstrap.length,
+        sample,
+      },
+    };
+  }
+
+  return {
+    id: "permissions.agent_identity_readiness",
+    domain: "permissions",
+    title: "Agent identity production readiness",
+    status: "ok",
+    summary: "all live runtime authority roots are agent-identity turn-runtime contexts",
+    data: {
+      nonAgentIdentityTurns: 0,
+      liveAgentRuntime: 0,
+      liveAdminBootstrap: 0,
+    },
+  };
+}
+
+function parseDoctorJsonRecord(value: string | null): Record<string, unknown> {
+  if (!value) return {};
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function sameStringList(actual: string[], expected: string[]): boolean {
+  if (actual.length !== expected.length) return false;
+  return actual.every((value, index) => value === expected[index]);
+}
+
+function buildUnexpectedFailureCheck(id: string, title: string, error: unknown): LegacyDoctorCheck {
   return {
     id,
     title,
@@ -641,7 +2433,7 @@ function buildUnexpectedFailureCheck(id: string, title: string, error: unknown):
   };
 }
 
-function buildProviderCompatibilityCheck(deps: DoctorDeps): DoctorCheck {
+function buildProviderCompatibilityCheck(deps: DoctorDeps): LegacyDoctorCheck {
   const providers = deps.listRegisteredRuntimeProviderIds();
   const results = providers.map((provider) => ({
     provider,
@@ -678,7 +2470,7 @@ function buildProviderCompatibilityCheck(deps: DoctorDeps): DoctorCheck {
   };
 }
 
-const FINDING_SEVERITY: Record<CronTargetState, DoctorCheckStatus> = {
+const CRON_TARGET_STATUS: Record<CronTargetState, LegacyDoctorCheckStatus> = {
   ok: "ok",
   agent_missing: "fail",
   reply_session_missing: "warn",
@@ -702,7 +2494,7 @@ const FIX_HINT_MAP: Record<CronTargetState, (job: { id: string }) => string> = {
   unresolved: (job) => `ravi cron show ${job.id}; ravi cron disable ${job.id}`,
 };
 
-function buildCronTargetsCheck(deps: DoctorDeps): DoctorCheck {
+function buildCronTargetsCheck(deps: DoctorDeps): LegacyDoctorCheck {
   const jobs = deps.dbListCronJobs();
   const enabledJobs = jobs.filter((j) => j.enabled);
 
@@ -728,19 +2520,19 @@ function buildCronTargetsCheck(deps: DoctorDeps): DoctorCheck {
     id: string;
     cronId: string;
     cronName: string;
-    severity: DoctorCheckStatus;
+    severity: LegacyDoctorCheckStatus;
     state: CronTargetState;
     detail?: string;
     fixHint: string;
   }> = [];
 
-  let worstSeverity: DoctorCheckStatus = "ok";
+  let worstSeverity: LegacyDoctorCheckStatus = "ok";
 
   for (const job of enabledJobs) {
     const resolution = resolveCronTarget(job, resolverDeps);
     if (resolution.state === "ok") continue;
 
-    const severity = FINDING_SEVERITY[resolution.state];
+    const severity = CRON_TARGET_STATUS[resolution.state];
     if (severity === "fail") worstSeverity = "fail";
     else if (severity === "warn" && worstSeverity !== "fail") worstSeverity = "warn";
 
@@ -773,7 +2565,8 @@ function buildCronTargetsCheck(deps: DoctorDeps): DoctorCheck {
   return {
     id: "cron.targets",
     title: "Cron target resolution",
-    status: worstSeverity,
+    status: worstSeverity === "fail" ? "fail" : "ok",
+    severity: worstSeverity === "warn" ? "warn" : undefined,
     summary: `${totalIssues} enabled cron jobs have stale or unresolved targets`,
     details,
     fixHint: findings[0]?.fixHint,
@@ -785,7 +2578,7 @@ function buildCronTargetsCheck(deps: DoctorDeps): DoctorCheck {
   };
 }
 
-function buildCodexHookCheck(hooksPath: string, deps: DoctorDeps): DoctorCheck {
+function buildCodexHookCheck(hooksPath: string, deps: DoctorDeps): LegacyDoctorCheck {
   if (!deps.exists(hooksPath)) {
     return {
       id: "codex.bash-hook",
@@ -876,28 +2669,36 @@ function hasRaviCodexBashHook(value: unknown): boolean {
   });
 }
 
-function summarizeChecks(checks: DoctorCheck[]): DoctorReport["summary"] {
-  const summary = { ok: 0, warn: 0, fail: 0, total: checks.length };
-  for (const check of checks) {
-    summary[check.status] += 1;
-  }
-  return summary;
-}
-
-function printDoctorReport(report: DoctorReport): void {
+function printDoctorReport(report: DoctorReport, options: { full?: boolean } = {}): void {
   console.log("\nRavi doctor\n");
   console.log(
-    `Summary: ${report.summary.ok} ok, ${report.summary.warn} warn, ${report.summary.fail} fail (${report.summary.total} checks)`,
+    `Summary: ${report.summary.errors} error, ${report.summary.warnings} warn, ${report.summary.infos} info (${report.summary.checks.total} checks)`,
   );
 
-  for (const check of report.checks) {
-    console.log(`\n[${STATUS_LABEL[check.status]}] ${check.title}`);
-    console.log(`  ${check.summary}`);
-    for (const detail of check.details ?? []) {
-      console.log(`  - ${detail}`);
+  if (options.full) {
+    console.log(
+      `Runtime: ${report.runtime.version ?? "-"} ${report.runtime.branch ?? "-"} ${report.runtime.commit ?? "-"}`,
+    );
+  }
+
+  for (const severity of ["error", "warn", "info"] as const) {
+    const findings = report.findings.filter((finding) => finding.severity === severity);
+    if (findings.length === 0) continue;
+    if (severity === "info" && !options.full) {
+      console.log(`\n[INFO] ${findings.length} informational finding(s). Use --full to show them.`);
+      continue;
     }
-    if (check.fixHint) {
-      console.log(`  fix: ${check.fixHint}`);
+    console.log(`\n${SEVERITY_LABEL[severity]}`);
+    for (const finding of findings) {
+      console.log(`- ${finding.id}: ${finding.summary}`);
+      if (options.full) {
+        for (const evidence of finding.evidence) {
+          console.log(`  - ${evidence.label}${evidence.value !== undefined ? `: ${evidence.value}` : ""}`);
+        }
+        if (finding.fixHint) {
+          console.log(`  fix: ${finding.fixHint}`);
+        }
+      }
     }
   }
 
@@ -917,6 +2718,12 @@ function limitIssueDetails(entries: string[], label: string): string[] {
   return selected;
 }
 
+function limitStrings(entries: string[], limit: number): string[] {
+  const selected = entries.slice(0, limit);
+  if (entries.length > limit) selected.push(`+${entries.length - limit} more`);
+  return selected;
+}
+
 function inferProjectRootFromBundlePath(bundlePath: string | null | undefined): string | null {
   if (!bundlePath) return null;
   const normalized = bundlePath.replace(/\\/g, "/");
@@ -927,4 +2734,84 @@ function inferProjectRootFromBundlePath(bundlePath: string | null | undefined): 
     return dirname(dirname(dirname(bundlePath)));
   }
   return null;
+}
+
+function listFilesUnder(root: string, fileName: string): string[] {
+  if (!existsSync(root)) return [];
+  const found: string[] = [];
+  const visit = (dir: string, depth: number) => {
+    if (depth > 8) return;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== "node_modules" && entry.name !== ".git" && entry.name !== "dist") {
+          visit(path, depth + 1);
+        }
+      } else if (entry.isFile() && entry.name === fileName) {
+        found.push(path);
+      }
+    }
+  };
+  visit(root, 0);
+  return found.sort();
+}
+
+function safeRead(path: string, deps: DoctorDeps): string {
+  try {
+    return deps.readFile(path);
+  } catch {
+    return "";
+  }
+}
+
+function specAppliesToProduction(content: string): boolean {
+  const appliesToMatch = content.match(/applies_to:\n([\s\S]*?)(?:\n[a-zA-Z_]+:|\n---)/);
+  const body = appliesToMatch?.[1] ?? "";
+  return /-\s+(src\/|packages\/|bin\/)/.test(body);
+}
+
+function extractSpecReferences(content: string): string[] {
+  const refs = new Set<string>();
+  const patterns = [/ravi\s+specs\s+get\s+([a-z0-9][a-z0-9/-]*)/gi, /specs\s+get\s+([a-z0-9][a-z0-9/-]*)/gi];
+  for (const pattern of patterns) {
+    for (const match of content.matchAll(pattern)) {
+      if (match[1]) refs.add(match[1]);
+    }
+  }
+  return Array.from(refs).sort((a, b) => a.localeCompare(b));
+}
+
+function normalizeRelative(root: string, path: string): string {
+  const normalizedRoot = resolve(root);
+  const normalizedPath = resolve(path);
+  return normalizedPath.startsWith(normalizedRoot) ? normalizedPath.slice(normalizedRoot.length + 1) : normalizedPath;
+}
+
+function readGitInfo(cwd: string): GitInfo {
+  try {
+    const branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd, encoding: "utf8" }).trim();
+    const commit = execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd, encoding: "utf8" }).trim();
+    const porcelain = execFileSync("git", ["status", "--porcelain"], { cwd, encoding: "utf8" });
+    const branchLine = execFileSync("git", ["status", "-sb"], { cwd, encoding: "utf8" }).split("\n")[0] ?? "";
+    const ahead = Number(branchLine.match(/ahead (\d+)/)?.[1] ?? 0);
+    const behind = Number(branchLine.match(/behind (\d+)/)?.[1] ?? 0);
+    return {
+      branch,
+      commit,
+      dirty: porcelain.trim().length > 0,
+      ahead,
+      behind,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function readPackageVersion(): string | undefined {
+  try {
+    const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")) as { version?: string };
+    return typeof pkg.version === "string" ? pkg.version : undefined;
+  } catch {
+    return undefined;
+  }
 }

@@ -14,16 +14,35 @@ import { ArtifactsCommands } from "../../cli/commands/artifacts.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
 import { createArtifact } from "../../artifacts/store.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import type { ContextRecord } from "../../router/router-db.js";
 import { startGateway, type GatewayHandle } from "./server.js";
 
 const registry = buildRegistry([ArtifactsCommands]);
+const allowedContext: ContextRecord = {
+  contextId: "ctx_artifacts_gateway_test",
+  contextKey: "rctx_artifacts_gateway_test",
+  kind: "test-runtime",
+  agentId: "gateway-artifacts-agent",
+  capabilities: [{ permission: "execute", objectType: "group", objectId: "artifacts", source: "test" }],
+  metadata: { authorityMode: "delegated" },
+  createdAt: Date.now(),
+};
 
 let stateDir: string | null = null;
 let handle: GatewayHandle | null = null;
 
 beforeEach(async () => {
   stateDir = await createIsolatedRaviState("ravi-sdk-gateway-artifacts-show-");
-  handle = startGateway({ host: "127.0.0.1", port: 0, registry });
+  handle = startGateway({
+    host: "127.0.0.1",
+    port: 0,
+    registry,
+    auth: {
+      resolveContext(token) {
+        return token === allowedContext.contextKey ? { ...allowedContext } : null;
+      },
+    },
+  });
 });
 
 afterEach(async () => {
@@ -46,7 +65,10 @@ describe("gateway piloto — artifacts.show", () => {
 
     const res = await fetch(`${handle!.url}/api/v1/artifacts/show`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        authorization: `Bearer ${allowedContext.contextKey}`,
+        "content-type": "application/json",
+      },
       body: JSON.stringify({ id: artifact.id }),
     });
 

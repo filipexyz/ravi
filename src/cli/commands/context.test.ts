@@ -137,6 +137,7 @@ let commandSkillGateCalls: Array<Record<string, unknown>> = [];
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
+  CommandAccess: () => () => {},
   Scope: () => () => {},
   CliOnly: () => () => {},
   Returns: Object.assign(() => () => {}, { binary: () => () => {} }),
@@ -247,6 +248,7 @@ mock.module("../../nats.js", () => ({
 }));
 
 const { ContextCommands } = await import("./context.js");
+const { setPermissionAuditPublisherForTest } = await import("../../permissions/denials.js");
 
 function callCodexBashHook(payload: Record<string, unknown>): Record<string, unknown> {
   return (new ContextCommands() as any).handleCodexBashHook(payload);
@@ -254,9 +256,14 @@ function callCodexBashHook(payload: Record<string, unknown>): Record<string, unk
 
 describe("ContextCommands", () => {
   const originalKey = process.env.RAVI_CONTEXT_KEY;
+  const originalAuditSuppression = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
 
   beforeEach(() => {
     process.env.RAVI_CONTEXT_KEY = "rctx_test_123";
+    delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    setPermissionAuditPublisherForTest(async (topic, data) => {
+      publishedAuditEvents.push({ topic, data });
+    });
     inlineContext = undefined;
     authorizeResult = undefined;
     issuedContext = undefined;
@@ -286,6 +293,12 @@ describe("ContextCommands", () => {
   });
 
   afterEach(() => {
+    setPermissionAuditPublisherForTest();
+    if (originalAuditSuppression === undefined) {
+      delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    } else {
+      process.env.RAVI_SUPPRESS_AUDIT_EVENTS = originalAuditSuppression;
+    }
     if (originalKey === undefined) {
       delete process.env.RAVI_CONTEXT_KEY;
     } else {
@@ -731,15 +744,21 @@ describe("ContextCommands", () => {
 
     const command = new ContextCommands();
     const lines: string[] = [];
+    const errors: string[] = [];
     const originalLog = console.log;
+    const originalError = console.error;
     console.log = (value?: unknown) => {
       lines.push(String(value));
+    };
+    console.error = (value?: unknown) => {
+      errors.push(String(value));
     };
 
     try {
       command.revoke("ctx_123", true, undefined, true);
     } finally {
       console.log = originalLog;
+      console.error = originalError;
     }
 
     const payload = JSON.parse(lines[0] ?? "{}");
@@ -752,6 +771,8 @@ describe("ContextCommands", () => {
       cascaded: [],
       revokedAt: 5000,
     });
+    expect(revokedCalls.at(-1)).toEqual({ contextId: "ctx_123", options: { cascade: false, reason: undefined } });
+    expect(errors.join("\n")).toContain("--no-cascade leaves descendant contexts active");
   });
 
   it("fails on malformed capability specs", () => {
@@ -885,10 +906,10 @@ describe("ContextCommands", () => {
       expect(commandSkillGateCalls).toEqual([]);
     });
 
-    it("publishes executable deny audit events for git status", () => {
+    it("publishes executable deny audit events for non-bootstrap executables", () => {
       const result = callCodexBashHook({
         tool_input: {
-          command: "git status",
+          command: "node -v",
         },
       });
 
@@ -896,21 +917,31 @@ describe("ContextCommands", () => {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",
           permissionDecision: "deny",
-          permissionDecisionReason: "Permission denied: agent:codex cannot execute: git",
+          permissionDecisionReason: "Permission denied: agent:codex cannot execute: node",
         },
       });
       expect(publishedAuditEvents).toEqual([
         {
           topic: "ravi.audit.denied",
-          data: {
+          data: expect.objectContaining({
             type: "executable",
             agentId: "codex",
-            denied: "git",
-            reason: "Permission denied: agent:codex cannot execute: git",
-            detail: "git status",
-          },
+            denied: "node",
+            reason: "Permission denied: agent:codex cannot execute: node",
+            dedupeKey: "audit.denied:executable:codex:node:Permission denied: agent:codex cannot execute: node",
+            detail: "node -v",
+            context: expect.objectContaining({
+              contextId: "ctx_codex",
+              kind: "agent-runtime",
+              agentId: "codex",
+              sessionKey: "agent:codex:main",
+              sessionName: "codex-main",
+              capabilitiesCount: 1,
+            }),
+          }),
         },
       ]);
+      expect(JSON.stringify(publishedAuditEvents[0].data)).not.toContain("rctx_codex");
     });
 
     it("publishes env spoofing audit events", () => {
@@ -929,13 +960,21 @@ describe("ContextCommands", () => {
       expect(publishedAuditEvents).toEqual([
         {
           topic: "ravi.audit.denied",
-          data: {
+          data: expect.objectContaining({
             type: "env_spoofing",
             agentId: "codex",
             denied: "RAVI_* override",
             reason: "Cannot override RAVI environment variables",
             detail: "RAVI_AGENT_ID=main ravi sessions list",
-          },
+            context: expect.objectContaining({
+              contextId: "ctx_codex",
+              kind: "agent-runtime",
+              agentId: "codex",
+              sessionKey: "agent:codex:main",
+              sessionName: "codex-main",
+              capabilitiesCount: 1,
+            }),
+          }),
         },
       ]);
     });
@@ -956,15 +995,94 @@ describe("ContextCommands", () => {
       expect(publishedAuditEvents).toEqual([
         {
           topic: "ravi.audit.denied",
-          data: {
+          data: expect.objectContaining({
             type: "session_scope",
             agentId: "codex",
             denied: "main",
             reason: "Permission denied: agent:codex cannot access session:main",
             detail: "ravi sessions send main 'hello'",
-          },
+            context: expect.objectContaining({
+              contextId: "ctx_codex",
+              kind: "agent-runtime",
+              agentId: "codex",
+              sessionKey: "agent:codex:main",
+              sessionName: "codex-main",
+              capabilitiesCount: 1,
+            }),
+          }),
         },
       ]);
+    });
+  });
+
+  describe("return schema conformance", () => {
+    it("codex-bash-hook allow payload conforms to contextCodexBashHookReturnSchema", async () => {
+      const { contextCodexBashHookReturnSchema } = await import("./operational-return-schemas.js");
+      const result = callCodexBashHook({ tool_input: { command: "ravi context whoami" } });
+      const parsed = contextCodexBashHookReturnSchema.safeParse(result);
+      expect(parsed.success).toBe(true);
+    });
+
+    it("codex-bash-hook deny payload conforms to contextCodexBashHookReturnSchema", async () => {
+      const { contextCodexBashHookReturnSchema } = await import("./operational-return-schemas.js");
+      const result = callCodexBashHook({ tool_input: { command: "node -v" } });
+      const parsed = contextCodexBashHookReturnSchema.safeParse(result);
+      expect(parsed.success).toBe(true);
+    });
+
+    it("list payload conforms to contextListReturnSchema", async () => {
+      const { contextListReturnSchema } = await import("./operational-return-schemas.js");
+      listedContexts = [resolvedContext!];
+      const command = new ContextCommands();
+      const lines: string[] = [];
+      const originalLog = console.log;
+      console.log = (value?: unknown) => {
+        lines.push(String(value));
+      };
+      try {
+        command.list(undefined, undefined, undefined, false, true);
+      } finally {
+        console.log = originalLog;
+      }
+      const payload = JSON.parse(lines[0] ?? "{}");
+      const parsed = contextListReturnSchema.safeParse(payload);
+      expect(parsed.success).toBe(true);
+    });
+
+    it("info payload conforms to contextInfoReturnSchema", async () => {
+      const { contextInfoReturnSchema } = await import("./operational-return-schemas.js");
+      const command = new ContextCommands();
+      const lines: string[] = [];
+      const originalLog = console.log;
+      console.log = (value?: unknown) => {
+        lines.push(String(value));
+      };
+      try {
+        command.info("ctx_123", true);
+      } finally {
+        console.log = originalLog;
+      }
+      const payload = JSON.parse(lines[0] ?? "{}");
+      const parsed = contextInfoReturnSchema.safeParse(payload);
+      expect(parsed.success).toBe(true);
+    });
+
+    it("issue payload conforms to contextIssueReturnSchema", async () => {
+      const { contextIssueReturnSchema } = await import("./operational-return-schemas.js");
+      const command = new ContextCommands();
+      const lines: string[] = [];
+      const originalLog = console.log;
+      console.log = (value?: unknown) => {
+        lines.push(String(value));
+      };
+      try {
+        command.issue("sync-cli", "execute:group:daemon", "2h", false, true);
+      } finally {
+        console.log = originalLog;
+      }
+      const payload = JSON.parse(lines[0] ?? "{}");
+      const parsed = contextIssueReturnSchema.safeParse(payload);
+      expect(parsed.success).toBe(true);
     });
   });
 });

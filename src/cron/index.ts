@@ -28,6 +28,9 @@ export {
   dbUpdateJobState,
 } from "./cron-db.js";
 
+export { createCronJobIdempotently } from "./idempotency.js";
+export type { CronCreationIdempotency, CronCreationResult } from "./idempotency.js";
+
 // Schedule utilities
 export {
   calculateNextRun,

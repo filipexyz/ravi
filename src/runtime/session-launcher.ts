@@ -13,7 +13,7 @@ import { DEFAULT_RUNTIME_PROVIDER_ID, assertRuntimeCompatibility } from "./provi
 import { completeRuntimeCredentialAttempt, markRuntimeCredentialAttemptStarted } from "./credential-store.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
-import { formatUserFacingTurnFailure, runRuntimeEventLoop, type RuntimeSafeEmit } from "./host-event-loop.js";
+import { runRuntimeEventLoop, type RuntimeSafeEmit } from "./host-event-loop.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import {
   createPendingRuntimeHandle,
@@ -27,6 +27,7 @@ import { resolveRuntimeSession } from "./session-resolver.js";
 import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
 import { updateRuntimeLiveState } from "./live-state.js";
 import { ensureObserverBindingsForSession } from "./observation-plane.js";
+import { formatUserFacingTurnFailure, publicRuntimeFailureDetail } from "./public-failure.js";
 
 const log = logger.child("runtime:session-launcher");
 
@@ -225,6 +226,9 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
         model,
         effort: runtimeResolution.options.effort ?? null,
         thinking: runtimeResolution.options.thinking ?? null,
+        modelSource: runtimeResolution.sources.model,
+        effortSource: runtimeResolution.sources.effort,
+        thinkingSource: runtimeResolution.sources.thinking,
         cwd: sessionCwd,
         canResumeStoredSession,
         storedProviderSessionId: canResumeStoredSession ? storedProviderSessionId : null,
@@ -252,6 +256,8 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       effort: runtimeResolution.options.effort ?? null,
       thinking: runtimeResolution.options.thinking ?? null,
       modelSource: runtimeResolution.sources.model,
+      effortSource: runtimeResolution.sources.effort,
+      thinkingSource: runtimeResolution.sources.thinking,
       providerSessionId: resumableProviderSessionId ?? null,
       resuming: !!resumableProviderSessionId,
     });
@@ -357,7 +363,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     drainPendingStarts();
     updateRuntimeLiveState(sessionName, {
       activity: "blocked",
-      summary: errorMessage,
+      summary: publicRuntimeFailureDetail(err),
       agentId: agent.id,
       runId,
       provider: runtimeProviderId,
@@ -393,7 +399,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
 
     if (resolvedSource && agent.mode !== "sentinel") {
       await nats.emit(`ravi.session.${sessionName}.response`, {
-        response: formatUserFacingTurnFailure(errorMessage),
+        response: formatUserFacingTurnFailure(err),
         target: resolvedSource,
         _emitId: Math.random().toString(36).slice(2, 8),
         _instanceId: instanceId,

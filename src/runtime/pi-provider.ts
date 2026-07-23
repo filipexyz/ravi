@@ -251,6 +251,11 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
             await safePiCommand(transport, { type: "abort" });
           }
         },
+        close: async () => {
+          const transport = state.transport;
+          state.transport = undefined;
+          await transport?.close();
+        },
         setModel: async (model) => {
           const parsed = parsePiModelSelector(model);
           await sendPiCommand(requireTransport(), {

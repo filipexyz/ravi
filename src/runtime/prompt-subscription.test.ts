@@ -70,7 +70,7 @@ describe("RuntimePromptSubscription", () => {
 
     await waitUntil(() => consumeCalls.length === 1 && !subscription.active);
 
-    expect(ensureInfrastructureMock).toHaveBeenCalled();
+    expect(ensureInfrastructureMock).toHaveBeenCalledWith({ force: true });
     expect(fakeJetStream.consumers.get).toHaveBeenCalledWith("SESSION_PROMPTS", "ravi-prompts");
     expect(consumeCalls[0]).toMatchObject({
       expires: 2000,

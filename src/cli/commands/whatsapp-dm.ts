@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { Group, Command, CommandAccess, Arg, Option } from "../decorators.js";
 import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
 import { nats } from "../../nats.js";
 import { getContact, getContactIdentities, normalizePhone, formatPhone } from "../../contacts.js";
@@ -55,6 +55,7 @@ function resolveWhatsAppJid(contactRef: string): { jid: string; displayName: str
 })
 export class WhatsAppDmCommands {
   @Command({ name: "send", description: "Send a direct message to a contact" })
+  @CommandAccess({ kind: "mutate", resource: "whatsapp.dm", action: "send", risk: "high" })
   async send(
     @Arg("contact", { description: "Contact ID, phone, or WhatsApp identity" }) contactRef: string,
     @Arg("message", { description: "Message text" }) message: string,
@@ -94,6 +95,7 @@ export class WhatsAppDmCommands {
   }
 
   @Command({ name: "read", description: "Read recent messages from a DM chat" })
+  @CommandAccess({ kind: "read", resource: "whatsapp.dm", action: "read", risk: "low" })
   async read(
     @Arg("contact", { description: "Contact ID, phone, or WhatsApp identity" }) contactRef: string,
     @Option({ flags: "--last <n>", description: "Number of messages to read (default: 10)" }) last?: string,
@@ -175,6 +177,7 @@ export class WhatsAppDmCommands {
   }
 
   @Command({ name: "ack", description: "Send read receipt (blue ticks) for a specific message" })
+  @CommandAccess({ kind: "mutate", resource: "whatsapp.dm", action: "ack", risk: "high" })
   async ack(
     @Arg("contact", { description: "Contact ID, phone, or WhatsApp identity" }) contactRef: string,
     @Arg("messageId", { description: "Message ID to mark as read" }) messageId: string,

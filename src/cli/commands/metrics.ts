@@ -4,7 +4,7 @@
 
 import "reflect-metadata";
 import { z } from "zod";
-import { Command, Group, Option, Scope } from "../decorators.js";
+import { Command, CommandAccess, Group, Option, Scope } from "../decorators.js";
 import {
   type DailyMetricsRow,
   getDailyMetrics,
@@ -109,6 +109,7 @@ export class MetricsCommands {
     name: "rollup",
     description: "Aggregate cost_events + session_events into daily_metrics for a date range",
   })
+  @CommandAccess({ kind: "read", resource: "metrics", action: "rollup", risk: "low" })
   async rollup(
     @Option({ flags: "--since <date|days>", description: "Start date YYYY-MM-DD or N days ago" })
     sinceRaw?: string,
@@ -134,6 +135,7 @@ export class MetricsCommands {
 
   @Scope("superadmin")
   @Command({ name: "show", description: "Display daily metrics rolled up to date" })
+  @CommandAccess({ kind: "read", resource: "metrics", action: "show", risk: "low" })
   async show(
     @Option({ flags: "--agent <id>", description: "Filter to one agent" }) agentId?: string,
     @Option({ flags: "--days <n>", description: "Last N days (default: 7)" }) daysRaw?: string,
@@ -191,6 +193,7 @@ export class MetricsCommands {
 
   @Scope("superadmin")
   @Command({ name: "dates", description: "List dates that have already been rolled up" })
+  @CommandAccess({ kind: "read", resource: "metrics", action: "dates", risk: "low" })
   async dates(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean): Promise<string[]> {
     const dates = getRolledUpDates();
     if (asJson) {

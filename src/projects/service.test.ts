@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { getDb } from "../router/router-db.js";
 import {
   attachProjectWorkflowRun,
@@ -80,6 +81,7 @@ describe("projects service", () => {
   it("updates projects without introducing task or workflow ownership columns", () => {
     const created = createProject({
       title: "Project Surface",
+      slug: `project-surface-${randomUUID().slice(0, 8)}`,
       summary: "Initial summary",
       hypothesis: "Initial hypothesis",
       nextStep: "Initial next step",
@@ -237,8 +239,9 @@ describe("projects service", () => {
   });
 
   it("enriches project details with linked workflow runtime state", () => {
+    const fixtureSuffix = randomUUID().slice(0, 8);
     const spec = createWorkflowSpec({
-      id: "wf-spec-project-runtime",
+      id: `wf-spec-project-runtime-${fixtureSuffix}`,
       title: "Project runtime",
       createdBy: "test",
       nodes: [
@@ -253,7 +256,7 @@ describe("projects service", () => {
     });
     createdWorkflowSpecIds.push(spec.id);
     const run = startWorkflowRun(spec.id, {
-      runId: "wf-run-project-runtime",
+      runId: `wf-run-project-runtime-${fixtureSuffix}`,
       createdBy: "test",
     });
     createdWorkflowRunIds.push(run.run.id);

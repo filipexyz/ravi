@@ -9,6 +9,7 @@ import {
 } from "../router/index.js";
 import { logger } from "../utils/logger.js";
 import { createRuntimeProvider } from "./provider-registry.js";
+import { resolveAgentModelSelection } from "./model-preset-resolver.js";
 import type { RuntimeProviderId } from "./types.js";
 import { resolveStoredRuntimeProvider } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
@@ -71,10 +72,19 @@ export function resolveRuntimeSession(options: {
   }
 
   const agentCwd = expandHome(agent.cwd);
+  const agentSelection = resolveAgentModelSelection(agent);
+  const sessionRuntimeProviderOverride =
+    options.prompt._observation && options.prompt._runtimeProviderId
+      ? undefined
+      : sessionEntry?.runtimeProviderOverride;
   const runtimeProviderId: RuntimeProviderId =
     options.prompt._observation && options.prompt._runtimeProviderId
       ? options.prompt._runtimeProviderId
-      : (agent.provider ?? options.defaultRuntimeProviderId);
+      : sessionRuntimeProviderOverride
+        ? sessionRuntimeProviderOverride
+        : agentSelection.modelSource === "agent_preset"
+          ? agentSelection.effectiveProvider
+          : (agent.provider ?? options.defaultRuntimeProviderId);
   const runtimeProvider = createRuntimeProvider(runtimeProviderId);
   const runtimeCapabilities = runtimeProvider.getCapabilities();
 
@@ -88,7 +98,7 @@ export function resolveRuntimeSession(options: {
   let storedRuntimeSessionParams = session.runtimeSessionParams;
   let storedProviderSessionId =
     session.runtimeSessionDisplayId ?? session.providerSessionId ?? session.sdkSessionId ?? undefined;
-  const storedRuntimeProvider = resolveStoredRuntimeProvider(session, options.defaultRuntimeProviderId);
+  const storedRuntimeProvider = resolveStoredRuntimeProvider(session);
   const providerMatches = storedRuntimeProvider === runtimeProviderId;
   const sessionStateValidation = validateRuntimeSessionState({
     capabilities: runtimeCapabilities,

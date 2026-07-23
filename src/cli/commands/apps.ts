@@ -1,17 +1,23 @@
 import "reflect-metadata";
 import { z } from "zod";
-import { Arg, Command, Group, Option, Returns } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   buildAppsGuide,
   checkAppManifests,
+  deleteApp,
   discoverAppManifests,
   getAppManifest,
+  importCliApp,
   normalizeAppSource,
+  RaviAppError,
   scaffoldApp,
   printAppRunResult,
   runAppOperation,
+  assertCanUseApp,
+  filterVisibleAppChecks,
+  filterVisibleAppManifests,
   type RaviAppManifestRecord,
 } from "../../apps/index.js";
 
@@ -19,10 +25,42 @@ function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
 
+const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(jsonValueSchema),
+    z.record(z.string(), jsonValueSchema),
+  ]),
+);
+
+const appPermissionProviderSchemaSummarySchema = z.object({
+  kind: z.enum(["ref", "inline", "unknown"]),
+  ref: z.string().nullable(),
+  schema: z.string().nullable(),
+  type: z.string().nullable(),
+});
+
+const appPermissionProviderSchema = z.object({
+  id: z.string(),
+  version: z.string(),
+  interface: z.enum(["builtin", "cli", "sdk", "tool"]),
+  operation: z.string(),
+  decisionSchema: appPermissionProviderSchemaSummarySchema,
+  requestSchema: appPermissionProviderSchemaSummarySchema,
+  timeoutMs: z.number().optional(),
+  cacheTtlSec: z.number().optional(),
+  failClosed: z.literal(true),
+  scope: z.array(z.string()).optional(),
+});
+
 const appPermissionsSchema = z.object({
   required: z.array(z.string()),
   optional: z.array(z.string()),
   mutating: z.array(z.string()),
+  provider: appPermissionProviderSchema.nullable(),
 });
 
 const appSummarySchema = z.object({
@@ -100,8 +138,46 @@ const appsScaffoldReturnSchema = z.object({
   skillPath: z.string().nullable(),
   skill: z.string().nullable(),
   files: z.array(appScaffoldFileSchema),
-  manifest: z.unknown(),
+  manifest: z.record(z.string(), jsonValueSchema),
   nextCommands: z.array(z.string()),
+});
+
+const appDeleteFileSchema = z.object({
+  kind: z.enum(["manifest", "spec", "skill"]),
+  path: z.string(),
+  action: z.enum(["planned", "deleted", "not_found"]),
+});
+
+const appsDeleteReturnSchema = z.object({
+  id: z.string(),
+  dryRun: z.boolean(),
+  files: z.array(appDeleteFileSchema),
+  removedDirs: z.array(z.string()),
+  nextCommands: z.array(z.string()),
+});
+
+const appImportCliOperationCandidateSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  command: z.string(),
+  description: z.string().nullable(),
+  json: z.boolean(),
+  mutating: z.boolean(),
+  destructive: z.boolean(),
+  streaming: z.boolean(),
+  interactive: z.boolean(),
+  confidence: z.enum(["high", "medium", "low"]),
+  reviewRequired: z.array(z.string()),
+});
+
+const appsImportCliReturnSchema = appsScaffoldReturnSchema.extend({
+  sourceCommand: z.string(),
+  source: z.enum(["manifest", "registry", "help"]),
+  confidence: z.enum(["high", "medium", "low"]),
+  operationCandidates: z.array(appImportCliOperationCandidateSchema),
+  debugCandidates: z.array(appImportCliOperationCandidateSchema),
+  warnings: z.array(z.string()),
+  reviewRequired: z.array(z.string()),
 });
 
 const appGuidePromptSchema = z.object({
@@ -140,7 +216,54 @@ const appsRunReturnSchema = z.object({
   exitCode: z.number().nullable().optional(),
   stdout: z.string().optional(),
   stderr: z.string().optional(),
+  permissionProvider: z
+    .object({
+      providerId: z.string(),
+      providerVersion: z.string(),
+      providerOperationId: z.string(),
+      interface: z.enum(["builtin", "cli", "sdk", "tool"]),
+      requestId: z.string(),
+      decision: z.enum(["allow", "deny", "needs_grant", "not_applicable", "error", "invalid"]),
+      reasonCode: z.string().nullable(),
+      reason: z.string().optional(),
+      durationMs: z.number(),
+      cache: z.object({
+        hit: z.boolean(),
+        ttlSec: z.number().optional(),
+      }),
+      grantSuggestion: jsonValueSchema.optional(),
+      audit: jsonValueSchema.optional(),
+      error: z.string().optional(),
+    })
+    .optional(),
 });
+
+function toProviderSchemaSummary(value: unknown): z.infer<typeof appPermissionProviderSchemaSummarySchema> {
+  if (typeof value === "string") {
+    return { kind: "ref", ref: value, schema: null, type: null };
+  }
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    return {
+      kind: "inline",
+      ref: null,
+      schema: typeof record.schema === "string" ? record.schema : null,
+      type: typeof record.type === "string" ? record.type : null,
+    };
+  }
+  return { kind: "unknown", ref: null, schema: null, type: null };
+}
+
+function toPermissionsSummary(record: RaviAppManifestRecord): z.infer<typeof appPermissionsSchema> {
+  const provider = record.permissions.provider
+    ? {
+        ...record.permissions.provider,
+        decisionSchema: toProviderSchemaSummary(record.permissions.provider.decisionSchema),
+        requestSchema: toProviderSchemaSummary(record.permissions.provider.requestSchema),
+      }
+    : null;
+  return { ...record.permissions, provider };
+}
 
 function toSummary(record: RaviAppManifestRecord): z.infer<typeof appSummarySchema> {
   return {
@@ -154,7 +277,7 @@ function toSummary(record: RaviAppManifestRecord): z.infer<typeof appSummarySche
     relativePath: record.relativePath,
     rootPath: record.rootPath,
     interfaceNames: record.interfaceNames,
-    permissions: record.permissions,
+    permissions: toPermissionsSummary(record),
     valid: record.valid,
     errors: record.errors,
     warnings: record.warnings,
@@ -181,6 +304,7 @@ function printAppLine(record: z.infer<typeof appSummarySchema>): void {
 })
 export class AppsCommands {
   @Command({ name: "list", description: "List discovered Ravi apps" })
+  @CommandAccess({ kind: "read", resource: "apps", action: "list", risk: "low" })
   @Returns(appsListReturnSchema)
   list(
     @Option({ flags: "--source <source>", description: "Filter by source: repo|plugin|state" }) source?: string,
@@ -190,7 +314,9 @@ export class AppsCommands {
   ) {
     try {
       const normalizedSource = normalizeAppSource(source);
-      const records = discoverAppManifests({ ...(normalizedSource ? { source: normalizedSource } : {}) });
+      const records = filterVisibleAppManifests(
+        discoverAppManifests({ ...(normalizedSource ? { source: normalizedSource } : {}) }),
+      );
       const page = paginateCliItems(records.map(toSummary), { limit, offset });
       const pagination = buildCliOffsetPagination({
         baseCommand: ["ravi", "apps", "list"],
@@ -226,12 +352,14 @@ export class AppsCommands {
   }
 
   @Command({ name: "show", description: "Show a Ravi app manifest" })
+  @CommandAccess({ kind: "read", resource: "apps", action: "show", risk: "low" })
   @Returns(appsShowReturnSchema)
   show(
     @Arg("id", { description: "App id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     try {
+      assertCanUseApp(id);
       const app = toDetail(getAppManifest(id));
       const payload = { app };
 
@@ -256,18 +384,25 @@ export class AppsCommands {
       }
       return payload;
     } catch (error) {
+      if (error instanceof RaviAppError && asJson) {
+        printJson(error.toJSON());
+        if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
+        return;
+      }
       fail(error instanceof Error ? error.message : String(error));
     }
   }
 
   @Command({ name: "check", description: "Validate Ravi app manifests without executing app code" })
+  @CommandAccess({ kind: "read", resource: "apps", action: "check", risk: "low" })
   @Returns(appsCheckReturnSchema)
   check(
     @Arg("id", { required: false, description: "Optional app id. Omit to check all discovered apps." }) id?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     try {
-      const results = checkAppManifests(id);
+      if (id?.trim()) assertCanUseApp(id);
+      const results = filterVisibleAppChecks(checkAppManifests(id));
       const payload = {
         ok: results.every((result) => result.ok),
         checked: results.length,
@@ -301,11 +436,17 @@ export class AppsCommands {
       if (!payload.ok && getContext()?.suppressCliOutput !== true) process.exitCode = 1;
       return payload;
     } catch (error) {
+      if (error instanceof RaviAppError && asJson) {
+        printJson(error.toJSON());
+        if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
+        return;
+      }
       fail(error instanceof Error ? error.message : String(error));
     }
   }
 
   @Command({ name: "run", description: "Run a Ravi app operation through the runtime app router" })
+  @CommandAccess({ kind: "mutate", resource: "apps", action: "run", risk: "high" })
   @Returns(appsRunReturnSchema)
   async run(
     @Arg("id", { description: "App id" }) id: string,
@@ -327,6 +468,7 @@ export class AppsCommands {
   }
 
   @Command({ name: "scaffold", description: "Create a Ravi app scaffold from the app contract" })
+  @CommandAccess({ kind: "mutate", resource: "apps", action: "scaffold", risk: "medium" })
   @Returns(appsScaffoldReturnSchema)
   scaffold(
     @Arg("id", { description: "Stable app id, e.g. music or music/player" }) id: string,
@@ -367,11 +509,109 @@ export class AppsCommands {
       for (const nextCommand of payload.nextCommands) console.log(`  ${nextCommand}`);
       return payload;
     } catch (error) {
+      if (error instanceof RaviAppError && asJson) {
+        printJson(error.toJSON());
+        if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
+        return;
+      }
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  @Command({ name: "delete", description: "Delete scaffold-owned artifacts for a Ravi app" })
+  @CommandAccess({ kind: "mutate", resource: "apps", action: "delete", risk: "high" })
+  @Returns(appsDeleteReturnSchema)
+  delete(
+    @Arg("id", { description: "App id to delete" }) id: string,
+    @Option({ flags: "--dry-run", description: "Print planned deletions without removing files" }) dryRun?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    try {
+      const payload = deleteApp({ id, dryRun });
+
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+
+      console.log(`${payload.dryRun ? "Planned" : "Deleted"} scaffold artifacts for app: ${payload.id}`);
+      for (const file of payload.files) {
+        console.log(`- ${file.action} ${file.kind}: ${file.path}`);
+      }
+      for (const dir of payload.removedDirs) {
+        console.log(`- removed empty dir: ${dir}`);
+      }
+      if (payload.nextCommands.length > 0) {
+        console.log("\nNext commands:");
+        for (const nextCommand of payload.nextCommands) console.log(`  ${nextCommand}`);
+      }
+      return payload;
+    } catch (error) {
+      if (error instanceof RaviAppError && asJson) {
+        printJson(error.toJSON());
+        if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
+        return;
+      }
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  @Command({ name: "import-cli", description: "Create a Ravi app draft from an existing CLI contract" })
+  @CommandAccess({ kind: "mutate", resource: "apps", action: "import-cli", risk: "high" })
+  @Returns(appsImportCliReturnSchema)
+  importCli(
+    @Arg("command", { description: "CLI command to import, e.g. 'ravi apps' or 'my-cli'" }) command: string,
+    @Option({ flags: "--id <id>", description: "Stable app id to generate" }) id?: string,
+    @Option({ flags: "--name <name>", description: "Human display name" }) name?: string,
+    @Option({ flags: "--description <text>", description: "Short app description" }) description?: string,
+    @Option({ flags: "--source <source>", description: "Import source: auto|manifest|registry|help" }) source?: string,
+    @Option({ flags: "--dry-run", description: "Print planned files without writing" }) dryRun?: boolean,
+    @Option({ flags: "--force", description: "Overwrite existing scaffold files" }) force?: boolean,
+    @Option({ flags: "--skip-ui", description: "Do not include interfaces.ui in the manifest" }) skipUi?: boolean,
+    @Option({ flags: "--skip-skill", description: "Do not create a skill skeleton" }) skipSkill?: boolean,
+    @Option({ flags: "--skip-spec", description: "Do not create an app spec skeleton" }) skipSpec?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    try {
+      const appId = id?.trim();
+      if (!appId) throw new Error("Missing --id <app-id> for CLI import.");
+      const normalizedSource = normalizeImportSource(source);
+      const payload = importCliApp({
+        id: appId,
+        command,
+        name,
+        description,
+        ...(normalizedSource ? { source: normalizedSource } : {}),
+        dryRun,
+        force,
+        includeUi: skipUi !== true,
+        includeSkill: skipSkill !== true,
+        includeSpec: skipSpec !== true,
+      });
+
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+
+      console.log(`${payload.dryRun ? "Planned" : "Created"} Ravi app import: ${payload.id}`);
+      console.log(`source: ${payload.source} (${payload.confidence})`);
+      console.log(`command: ${payload.sourceCommand}`);
+      console.log(`operations: ${payload.operationCandidates.length}`);
+      if (payload.debugCandidates.length > 0) console.log(`debug candidates: ${payload.debugCandidates.length}`);
+      for (const warning of payload.warnings) console.log(`warning: ${warning}`);
+      for (const item of payload.reviewRequired) console.log(`review: ${item}`);
+      for (const file of payload.files) console.log(`- ${file.action} ${file.kind}: ${file.path}`);
+      console.log("\nNext commands:");
+      for (const nextCommand of payload.nextCommands) console.log(`  ${nextCommand}`);
+      return payload;
+    } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }
   }
 
   @Command({ name: "guide", description: "Print agent guidance for discovering, scaffolding, and operating Ravi apps" })
+  @CommandAccess({ kind: "read", resource: "apps", action: "guide", risk: "low" })
   @Returns(appsGuideReturnSchema)
   guide(
     @Arg("id", { required: false, description: "Optional app id for app-specific prompts" }) id?: string,
@@ -381,6 +621,7 @@ export class AppsCommands {
   }
 
   @Command({ name: "prompts", description: "Print all built-in Ravi apps agent prompts" })
+  @CommandAccess({ kind: "read", resource: "apps", action: "prompts", risk: "low" })
   @Returns(appsGuideReturnSchema)
   prompts(
     @Arg("id", { required: false, description: "Optional app id for app-specific prompts" }) id?: string,
@@ -418,4 +659,13 @@ export class AppsCommands {
       fail(error instanceof Error ? error.message : String(error));
     }
   }
+}
+
+function normalizeImportSource(value?: string): "auto" | "manifest" | "registry" | "help" | undefined {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (normalized === "auto" || normalized === "manifest" || normalized === "registry" || normalized === "help") {
+    return normalized;
+  }
+  throw new Error(`Invalid import source: ${value}. Use auto|manifest|registry|help.`);
 }

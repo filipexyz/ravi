@@ -8,11 +8,21 @@
  * Plugins extend agent capabilities with skills, commands, agents, and hooks.
  */
 
-import { readdirSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { createHash } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { logger } from "../utils/logger.js";
-import { loadInternalPlugins } from "./internal-loader.js";
+import { type InternalPlugin, loadInternalPlugins } from "./internal-loader.js";
 
 const log = logger.child("plugins");
 
@@ -22,28 +32,95 @@ export interface PluginSpec {
   path: string;
 }
 
-/** Directory where internal plugins are extracted (cache, regenerated on start) */
+/** Root cache for internal plugin snapshots. */
 const INTERNAL_PLUGINS_DIR = join(homedir(), ".cache", "ravi", "plugins");
 
 /** User plugins directory (custom plugins) */
 const USER_PLUGINS_DIR = join(homedir(), "ravi", "plugins");
 
-/** Track if internal plugins have been extracted this session */
-let internalPluginsExtracted = false;
+/** Process-local view of the immutable internal plugin snapshot. */
+let internalPluginSpecs: PluginSpec[] | undefined;
 let lastPluginDiscoveryLogKey: string | undefined;
 
 /**
- * Extract internal plugins to temp directory.
- * SDK needs real filesystem paths, so we write embedded content to disk.
+ * Materialize embedded plugins into an immutable, content-addressed snapshot.
+ *
+ * Multiple Ravi processes share this cache. Each process writes to a private
+ * staging directory and publishes with one atomic rename, so readers never see
+ * a plugin tree while another process is replacing it.
  */
-function extractInternalPlugins(): void {
-  if (internalPluginsExtracted) return;
+export function materializeInternalPluginsSnapshot(
+  internalPlugins: InternalPlugin[],
+  options: { cacheDir?: string } = {},
+): string {
+  const cacheDir = options.cacheDir ?? INTERNAL_PLUGINS_DIR;
+  validateInternalPlugins(internalPlugins);
+  const fingerprint = fingerprintInternalPlugins(internalPlugins);
+  const snapshotsDir = join(cacheDir, ".snapshots");
+  const snapshotDir = join(snapshotsDir, fingerprint);
+  const completionMarker = join(snapshotDir, ".complete");
 
-  const internalPlugins = loadInternalPlugins();
+  if (hasCompleteSnapshot(completionMarker, fingerprint)) {
+    return snapshotDir;
+  }
 
+  mkdirSync(snapshotsDir, { recursive: true });
+  const stagingDir = mkdtempSync(join(snapshotsDir, `.staging-${fingerprint}-`));
+
+  try {
+    writeInternalPlugins(internalPlugins, stagingDir);
+    writeFileSync(join(stagingDir, ".complete"), `${fingerprint}\n`);
+
+    try {
+      renameSync(stagingDir, snapshotDir);
+    } catch (error) {
+      // Another process may have published the same complete snapshot first.
+      if (!hasCompleteSnapshot(completionMarker, fingerprint)) {
+        throw error;
+      }
+    }
+  } finally {
+    rmSync(stagingDir, { recursive: true, force: true });
+  }
+
+  return snapshotDir;
+}
+
+function validateInternalPlugins(internalPlugins: InternalPlugin[]): void {
   for (const plugin of internalPlugins) {
-    const pluginDir = join(INTERNAL_PLUGINS_DIR, plugin.name);
-    rmSync(pluginDir, { recursive: true, force: true });
+    if (!plugin.files.some((file) => file.path === ".claude-plugin/plugin.json")) {
+      throw new Error(`Internal plugin ${plugin.name} is missing .claude-plugin/plugin.json`);
+    }
+  }
+}
+
+function hasCompleteSnapshot(completionMarker: string, fingerprint: string): boolean {
+  try {
+    return readFileSync(completionMarker, "utf8").trim() === fingerprint;
+  } catch {
+    return false;
+  }
+}
+
+function fingerprintInternalPlugins(internalPlugins: InternalPlugin[]): string {
+  const content = internalPlugins
+    .map((plugin) => ({
+      name: plugin.name,
+      files: plugin.files
+        .map((file) => ({ path: file.path, content: file.content }))
+        .sort((left, right) => left.path.localeCompare(right.path)),
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+
+  return createHash("sha256")
+    .update("ravi-internal-plugin-snapshot-v1\0")
+    .update(JSON.stringify(content))
+    .digest("hex");
+}
+
+function writeInternalPlugins(internalPlugins: InternalPlugin[], rootDir: string): void {
+  for (const plugin of internalPlugins) {
+    const pluginDir = join(rootDir, plugin.name);
 
     for (const file of plugin.files) {
       const filePath = join(pluginDir, file.path);
@@ -56,27 +133,30 @@ function extractInternalPlugins(): void {
       writeFileSync(filePath, file.content);
     }
 
-    log.debug("Extracted internal plugin", { name: plugin.name, path: pluginDir });
+    log.debug("Materialized internal plugin", { name: plugin.name, path: pluginDir });
   }
-
-  internalPluginsExtracted = true;
-  log.info("Internal plugins extracted", {
-    count: internalPlugins.length,
-    dir: INTERNAL_PLUGINS_DIR,
-  });
 }
 
 /**
- * Get internal plugins (embedded, extracted to temp).
+ * Get internal plugins from the process-local immutable snapshot.
  */
 function getInternalPlugins(): PluginSpec[] {
-  const internalPlugins = loadInternalPlugins();
-  extractInternalPlugins();
+  if (internalPluginSpecs) {
+    return internalPluginSpecs;
+  }
 
-  return internalPlugins.map((plugin) => ({
+  const internalPlugins = loadInternalPlugins();
+  const snapshotDir = materializeInternalPluginsSnapshot(internalPlugins);
+
+  internalPluginSpecs = internalPlugins.map((plugin) => ({
     type: "local" as const,
-    path: join(INTERNAL_PLUGINS_DIR, plugin.name),
+    path: join(snapshotDir, plugin.name),
   }));
+  log.info("Internal plugins loaded", {
+    count: internalPlugins.length,
+    dir: snapshotDir,
+  });
+  return internalPluginSpecs;
 }
 
 /**

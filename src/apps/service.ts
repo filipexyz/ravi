@@ -1,24 +1,31 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { loadInternalPlugins } from "../plugins/internal-loader.js";
+import { discoverPlugins } from "../plugins/index.js";
 import { getRaviStateDir } from "../utils/paths.js";
-import type {
-  RaviAppCheckResult,
-  RaviAppDiscoveryOptions,
-  RaviAppDiscoveryRoot,
-  RaviAppListOptions,
-  RaviAppManifest,
-  RaviAppManifestRecord,
-  RaviAppManifestSource,
-  RaviAppPermissions,
+import {
+  RaviAppError,
+  type RaviAppCheckResult,
+  type RaviAppDiscoveryOptions,
+  type RaviAppDiscoveryRoot,
+  type RaviAppListOptions,
+  type RaviAppManifest,
+  type RaviAppManifestRecord,
+  type RaviAppManifestSource,
+  type RaviAppPermissionProviderDeclaration,
+  type RaviAppPermissions,
 } from "./types.js";
 
 export const RAVI_APP_MANIFEST_FILE = "ravi.app.json";
 export const RAVI_APP_MANIFEST_SCHEMA = "ravi.app/v1";
+export const RAVI_APP_PERMISSION_PROVIDER_MAX_TIMEOUT_MS = 5_000;
+export const RAVI_APP_PERMISSION_PROVIDER_MAX_CACHE_TTL_SEC = 300;
 
 const APP_ID_PATTERN = /^[a-z][a-z0-9-]*(\/[a-z][a-z0-9-]*)*$/;
 const APP_LOCAL_ID_PATTERN = /^[a-z][a-z0-9-]*$/;
 const APP_OPERATION_ID_PATTERN = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/;
+const APP_PROVIDER_ID_PATTERN = /^[a-z][a-z0-9._-]*$/;
 const VALID_SOURCES = new Set<RaviAppManifestSource>(["repo", "plugin", "state"]);
 const VALID_INTERFACES = new Set(["cli", "sdk", "stream", "tool", "ui"]);
 export const RAVI_APP_BUILTIN_OPERATION_HANDLERS = new Set([
@@ -29,6 +36,7 @@ export const RAVI_APP_BUILTIN_OPERATION_HANDLERS = new Set([
 ]);
 
 const VALID_OPERATION_INTERFACES = new Set(["builtin", "cli", "sdk", "tool", "stream"]);
+const VALID_PERMISSION_PROVIDER_INTERFACES = new Set(["builtin", "cli"]);
 const VALID_STORAGE_KINDS = new Set(["state", "cache", "artifact-index", "config", "ledger"]);
 const VALID_EVENT_DURABILITY = new Set(["ephemeral", "logged", "replayable"]);
 const VALID_UI_VIEW_TYPES = new Set([
@@ -46,6 +54,7 @@ const VALID_UI_VIEW_TYPES = new Set([
 ]);
 const VALID_UI_ACTION_PLACEMENTS = new Set(["toolbar", "row", "primary", "inline", "danger", "menu"]);
 const VALID_UI_DENSITIES = new Set(["compact", "comfortable", "spacious"]);
+const VALID_UI_ARTIFACT_KINDS = new Set(["ui.catalog", "ui.component", "ui.spec"]);
 const FORBIDDEN_UI_KEYS = new Set([
   "bundle",
   "className",
@@ -111,11 +120,15 @@ export function getAppManifest(id: string, options: RaviAppDiscoveryOptions = {}
   const normalizedId = normalizeAppId(id);
   const matches = discoverAppManifests(options).filter((record) => record.manifest?.id === normalizedId);
   if (matches.length === 0) {
-    throw new Error(`App not found: ${normalizedId}`);
+    throw new RaviAppError("not_found", `App not found: ${normalizedId}`, [{ kind: "app", detail: normalizedId }]);
   }
   if (matches.length > 1) {
     const paths = matches.map((record) => record.path).join(", ");
-    throw new Error(`Duplicate app id "${normalizedId}" found at: ${paths}`);
+    throw new RaviAppError(
+      "already_exists",
+      `Duplicate app id "${normalizedId}" found at: ${paths}`,
+      matches.map((record) => ({ kind: "manifest", detail: record.path })),
+    );
   }
   return matches[0]!;
 }
@@ -137,10 +150,13 @@ export function discoverAppRoots(options: RaviAppDiscoveryOptions = {}): RaviApp
   const env = options.env ?? process.env;
   const roots: RaviAppDiscoveryRoot[] = [];
   const repoRoot = findRepoRoot(cwd);
+  const packagedRuntime = isPackagedAppRuntime();
 
-  roots.push({ source: "repo", rootPath: join(repoRoot, "src", "apps") });
+  if (!packagedRuntime) {
+    roots.push({ source: "repo", rootPath: join(repoRoot, "src", "apps") });
+  }
 
-  for (const pluginRoot of discoverPluginRoots(repoRoot)) {
+  for (const pluginRoot of discoverPluginRoots(repoRoot, packagedRuntime, env.HOME?.trim() || homedir())) {
     roots.push({ source: "plugin", rootPath: join(pluginRoot, "apps") });
   }
 
@@ -161,11 +177,32 @@ function findRepoRoot(cwd: string): string {
   }
 }
 
-function discoverPluginRoots(repoRoot: string): string[] {
+export function isPackagedAppRuntime(entrypoint = process.argv[1] ?? ""): boolean {
+  return entrypoint.split("\\").join("/").includes("/dist/bundle/");
+}
+
+function discoverPluginRoots(
+  repoRoot: string,
+  packagedRuntime = isPackagedAppRuntime(),
+  homeDir = homedir(),
+): string[] {
+  if (packagedRuntime) {
+    return discoverPlugins().map((plugin) => plugin.path);
+  }
+
   const roots: string[] = [];
-  roots.push(...childDirectories(join(repoRoot, "src", "plugins", "internal")));
-  roots.push(...childDirectories(join(homedir(), "ravi", "plugins")));
-  roots.push(...childDirectories(join(homedir(), ".cache", "ravi", "plugins")));
+  const internalRoots = childDirectories(join(repoRoot, "src", "plugins", "internal"));
+  const internalNames = new Set([
+    ...internalRoots.map((root) => basename(root)),
+    ...loadInternalPlugins().map((plugin) => plugin.name),
+  ]);
+  roots.push(...internalRoots);
+  roots.push(...childDirectories(join(homeDir, "ravi", "plugins")));
+  roots.push(
+    ...childDirectories(join(homeDir, ".cache", "ravi", "plugins")).filter(
+      (root) => !internalNames.has(basename(root)),
+    ),
+  );
   return roots;
 }
 
@@ -235,7 +272,7 @@ function readManifestRecord(path: string, root: RaviAppDiscoveryRoot): RaviAppMa
     id:
       typeof manifest.id === "string" && manifest.id.trim()
         ? manifest.id.trim().toLowerCase()
-        : manifestIdFromPath(path),
+        : manifestIdFromPath(path, root.rootPath),
     name: stringOrNull(manifest.name),
     version: stringOrNull(manifest.version),
     description: stringOrNull(manifest.description),
@@ -295,7 +332,7 @@ function validateManifest(
   if (manifest.permissions !== undefined && !isObject(manifest.permissions)) {
     errors.push("permissions must be an object when present.");
   } else {
-    validatePermissions(manifest.permissions, errors);
+    validatePermissions(manifest.permissions, manifest.operations, errors);
   }
 
   validateStorage(manifest.storage, errors, warnings);
@@ -314,7 +351,7 @@ function validateManifest(
     warnings.push("versioning should be an object when present.");
   }
 
-  const expectedId = manifestIdFromPath(path);
+  const expectedId = manifestIdFromPath(path, root.rootPath);
   if (manifest.id && APP_ID_PATTERN.test(manifest.id) && expectedId !== manifest.id && root.source !== "plugin") {
     warnings.push(`Manifest id "${manifest.id}" does not match path-derived id "${expectedId}".`);
   }
@@ -343,7 +380,11 @@ function validateInterfaceBlocks(
       if (value.json !== true) {
         warnings.push("interfaces.cli.json should be true for machine-consumed CLI apps.");
       }
-      if (typeof value.health === "string" && isRecursiveDynamicAppCommand(manifest.id, value.health)) {
+      if (
+        typeof value.health === "string" &&
+        isRecursiveDynamicAppCommand(manifest.id, value.health) &&
+        !isRouterHealthCommand(manifest.id, value.health)
+      ) {
         errors.push(`interfaces.cli.health must not recursively invoke ravi ${manifest.id.split("/").join(" ")}.`);
       }
     }
@@ -414,6 +455,55 @@ function validateOperations(
     validateOperationTarget(operation, path, typeof appId === "string" ? appId.trim() : "", errors, warnings);
     validateOperationSchemaReference(operation.inputSchema, `${path}.inputSchema`, errors);
     validateOperationSchemaReference(operation.outputSchema, `${path}.outputSchema`, errors);
+    validateOperationAuthorization(operation.authorization, `${path}.authorization`, errors);
+  }
+}
+
+function validateOperationAuthorization(value: unknown, path: string, errors: string[]): void {
+  if (value === undefined) return;
+  if (!isObject(value)) {
+    errors.push(`${path} must be an object when present.`);
+    return;
+  }
+
+  if (value.resource !== undefined) {
+    if (!isObject(value.resource)) {
+      errors.push(`${path}.resource must be an object when present.`);
+    } else {
+      if (value.resource.type !== undefined && !isNonEmptyString(value.resource.type)) {
+        errors.push(`${path}.resource.type must be a non-empty string when present.`);
+      }
+      if (value.resource.id !== undefined && !isNonEmptyString(value.resource.id)) {
+        errors.push(`${path}.resource.id must be a non-empty string when present.`);
+      }
+      if (value.resource.idFromArg !== undefined && !isNonNegativeInteger(value.resource.idFromArg)) {
+        errors.push(`${path}.resource.idFromArg must be a non-negative integer when present.`);
+      }
+      if (value.resource.idFromOption !== undefined && !isNonEmptyString(value.resource.idFromOption)) {
+        errors.push(`${path}.resource.idFromOption must be a non-empty string when present.`);
+      }
+      if (
+        value.resource.ownerFrom !== undefined &&
+        value.resource.ownerFrom !== "actor" &&
+        value.resource.ownerFrom !== "surface" &&
+        value.resource.ownerFrom !== "executorAgent"
+      ) {
+        errors.push(`${path}.resource.ownerFrom must be actor|surface|executorAgent when present.`);
+      }
+    }
+  }
+
+  if (value.input !== undefined) {
+    if (!isObject(value.input)) {
+      errors.push(`${path}.input must be an object when present.`);
+    } else {
+      if (value.input.includeArgs !== undefined && typeof value.input.includeArgs !== "boolean") {
+        errors.push(`${path}.input.includeArgs must be a boolean when present.`);
+      }
+      if (value.input.includeOptions !== undefined && !isStringArray(value.input.includeOptions)) {
+        errors.push(`${path}.input.includeOptions must be an array of strings when present.`);
+      }
+    }
   }
 }
 
@@ -487,7 +577,7 @@ function validateHealth(value: Record<string, unknown>, appId: unknown, errors: 
     }
     if (check.type === "cli" && typeof check.command === "string") {
       const id = typeof appId === "string" ? appId.trim() : "";
-      if (isRecursiveDynamicAppCommand(id, check.command)) {
+      if (isRecursiveDynamicAppCommand(id, check.command) && !isRouterHealthCommand(id, check.command)) {
         errors.push(`health.checks[${index}].command must not recursively invoke ravi ${id.split("/").join(" ")}.`);
       }
     }
@@ -653,6 +743,34 @@ function validateUiView(
   if (view.components !== undefined && !Array.isArray(view.components)) {
     errors.push(`${path}.components must be an array when present.`);
   }
+  if (view.uiArtifact !== undefined) {
+    validateUiArtifactReference(view.uiArtifact, `${path}.uiArtifact`, errors);
+  }
+}
+
+function validateUiArtifactReference(value: unknown, path: string, errors: string[]): void {
+  if (!isObject(value)) {
+    errors.push(`${path} must be an object when present.`);
+    return;
+  }
+
+  if (typeof value.kind !== "string" || !VALID_UI_ARTIFACT_KINDS.has(value.kind)) {
+    errors.push(`${path}.kind must be one of ${Array.from(VALID_UI_ARTIFACT_KINDS).join("|")}.`);
+  }
+
+  if (typeof value.artifactId !== "string" || !/^art_[A-Za-z0-9_-]+$/.test(value.artifactId)) {
+    errors.push(`${path}.artifactId must be an artifact id such as art_123.`);
+  }
+
+  if (
+    value.version !== undefined &&
+    !(
+      (typeof value.version === "number" && Number.isInteger(value.version) && value.version > 0) ||
+      (typeof value.version === "string" && value.version.trim().length > 0)
+    )
+  ) {
+    errors.push(`${path}.version must be a positive integer or non-empty string when present.`);
+  }
 }
 
 function validateUiAction(
@@ -748,13 +866,100 @@ function collectUiViewIds(value: unknown): Set<string> {
   return ids;
 }
 
-function validatePermissions(value: unknown, errors: string[]): void {
+function validatePermissions(value: unknown, operations: unknown, errors: string[]): void {
   if (value === undefined) return;
   if (!isObject(value)) return;
   for (const key of ["required", "optional", "mutating"]) {
     const raw = value[key];
     if (raw !== undefined && !isStringArray(raw)) {
       errors.push(`permissions.${key} must be an array of strings.`);
+    }
+  }
+  validatePermissionProvider(value.provider, operations, errors);
+}
+
+function validatePermissionProvider(value: unknown, operations: unknown, errors: string[]): void {
+  if (value === undefined) return;
+  const path = "permissions.provider";
+  if (!isObject(value)) {
+    errors.push(`${path} must be an object when present.`);
+    return;
+  }
+
+  if (typeof value.id !== "string" || !value.id.trim()) {
+    errors.push(`${path}.id is required.`);
+  } else if (!APP_PROVIDER_ID_PATTERN.test(value.id.trim())) {
+    errors.push(`${path}.id must match ${APP_PROVIDER_ID_PATTERN.source}.`);
+  }
+
+  if (typeof value.version !== "string" || !value.version.trim()) {
+    errors.push(`${path}.version is required.`);
+  }
+
+  const interfaceName = value.interface;
+  if (typeof interfaceName !== "string" || !VALID_PERMISSION_PROVIDER_INTERFACES.has(interfaceName)) {
+    errors.push(`${path}.interface must be one of ${Array.from(VALID_PERMISSION_PROVIDER_INTERFACES).join("|")}.`);
+  }
+
+  let providerOperation: Record<string, unknown> | null = null;
+  if (typeof value.operation !== "string" || !value.operation.trim()) {
+    errors.push(`${path}.operation is required.`);
+  } else {
+    const operationId = value.operation.trim();
+    const operationMap = isObject(operations) ? operations : {};
+    const declared = operationMap[operationId];
+    if (!isObject(declared)) {
+      errors.push(`${path}.operation references undeclared operation "${operationId}".`);
+    } else {
+      providerOperation = declared;
+      if (typeof interfaceName === "string" && declared.interface !== interfaceName) {
+        errors.push(`${path}.operation must reference an operation with interface ${interfaceName}.`);
+      }
+      if (declared.interface === "stream") {
+        errors.push(`${path}.operation must not reference a stream operation.`);
+      }
+      if (declared.mutating === true) {
+        errors.push(`${path}.operation must not reference a mutating operation.`);
+      }
+      if (declared.permission !== undefined || declared.permissions !== undefined) {
+        errors.push(`${path}.operation must not reference an operation that declares permission or permissions.`);
+      }
+    }
+  }
+
+  validateOperationSchemaReference(value.decisionSchema, `${path}.decisionSchema`, errors);
+  validateOperationSchemaReference(value.requestSchema, `${path}.requestSchema`, errors);
+  if (value.decisionSchema === undefined) errors.push(`${path}.decisionSchema is required.`);
+  if (value.requestSchema === undefined) errors.push(`${path}.requestSchema is required.`);
+
+  if (value.timeoutMs === undefined) {
+    errors.push(`${path}.timeoutMs is required.`);
+  } else if (!isPositiveInteger(value.timeoutMs)) {
+    errors.push(`${path}.timeoutMs must be a positive integer.`);
+  } else if (value.timeoutMs > RAVI_APP_PERMISSION_PROVIDER_MAX_TIMEOUT_MS) {
+    errors.push(`${path}.timeoutMs must be <= ${RAVI_APP_PERMISSION_PROVIDER_MAX_TIMEOUT_MS}.`);
+  }
+
+  if (value.cacheTtlSec !== undefined) {
+    if (!isPositiveInteger(value.cacheTtlSec)) {
+      errors.push(`${path}.cacheTtlSec must be a positive integer when present.`);
+    } else if (value.cacheTtlSec > RAVI_APP_PERMISSION_PROVIDER_MAX_CACHE_TTL_SEC) {
+      errors.push(`${path}.cacheTtlSec must be <= ${RAVI_APP_PERMISSION_PROVIDER_MAX_CACHE_TTL_SEC}.`);
+    }
+  }
+
+  if (value.failClosed !== true) {
+    errors.push(`${path}.failClosed must be true.`);
+  }
+
+  if (value.scope !== undefined && !isStringArray(value.scope)) {
+    errors.push(`${path}.scope must be an array of strings when present.`);
+  }
+
+  if (providerOperation?.interface === "cli" && providerOperation.command !== undefined) {
+    const command = String(providerOperation.command);
+    if (/\bRAVI_CONTEXT_KEY\b/.test(command)) {
+      errors.push(`${path}.operation command must not interpolate or expose RAVI_CONTEXT_KEY.`);
     }
   }
 }
@@ -1020,11 +1225,54 @@ function isApprovedTokenPath(value: string): boolean {
   return APPROVED_PATH_TOKENS.some((token) => value.startsWith(token));
 }
 
+function isPositiveInteger(value: unknown): value is number {
+  return Number.isInteger(value) && typeof value === "number" && value > 0;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return Number.isInteger(value) && typeof value === "number" && value >= 0;
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
 function normalizePermissions(value: Record<string, unknown> | undefined): RaviAppPermissions {
   return {
     required: isStringArray(value?.required) ? value.required : [],
     optional: isStringArray(value?.optional) ? value.optional : [],
     mutating: isStringArray(value?.mutating) ? value.mutating : [],
+    provider: normalizePermissionProvider(isObject(value?.provider) ? value.provider : undefined),
+  };
+}
+
+function normalizePermissionProvider(
+  value: Record<string, unknown> | undefined,
+): RaviAppPermissionProviderDeclaration | null {
+  if (!value) return null;
+  if (
+    typeof value.id !== "string" ||
+    typeof value.version !== "string" ||
+    typeof value.interface !== "string" ||
+    !VALID_PERMISSION_PROVIDER_INTERFACES.has(value.interface) ||
+    typeof value.operation !== "string" ||
+    value.failClosed !== true
+  ) {
+    return null;
+  }
+
+  return {
+    ...value,
+    id: value.id,
+    version: value.version,
+    interface: value.interface as RaviAppPermissionProviderDeclaration["interface"],
+    operation: value.operation,
+    decisionSchema: value.decisionSchema,
+    requestSchema: value.requestSchema,
+    failClosed: true,
+    ...(isPositiveInteger(value.timeoutMs) ? { timeoutMs: value.timeoutMs } : {}),
+    ...(isPositiveInteger(value.cacheTtlSec) ? { cacheTtlSec: value.cacheTtlSec } : {}),
+    ...(isStringArray(value.scope) ? { scope: value.scope } : {}),
   };
 }
 
@@ -1056,7 +1304,7 @@ function markDuplicateIds(records: RaviAppManifestRecord[]): void {
 
 function invalidRecord(path: string, root: RaviAppDiscoveryRoot, error: string): RaviAppManifestRecord {
   return {
-    id: manifestIdFromPath(path),
+    id: manifestIdFromPath(path, root.rootPath),
     name: null,
     version: null,
     description: null,
@@ -1066,7 +1314,7 @@ function invalidRecord(path: string, root: RaviAppDiscoveryRoot, error: string):
     relativePath: relative(root.rootPath, path),
     rootPath: root.rootPath,
     interfaceNames: [],
-    permissions: { required: [], optional: [], mutating: [] },
+    permissions: { required: [], optional: [], mutating: [], provider: null },
     valid: false,
     errors: [error],
     warnings: [],
@@ -1074,12 +1322,18 @@ function invalidRecord(path: string, root: RaviAppDiscoveryRoot, error: string):
   };
 }
 
-function manifestIdFromPath(path: string): string {
-  return (
-    basename(dirname(path))
-      .toLowerCase()
-      .replace(/[^a-z0-9-]+/g, "-") || "unknown"
-  );
+function manifestIdFromPath(path: string, rootPath?: string): string {
+  const manifestDir = dirname(resolve(path));
+  const root = rootPath ? resolve(rootPath) : null;
+  const candidate =
+    root && !relative(root, manifestDir).startsWith("..") ? relative(root, manifestDir) : basename(manifestDir);
+  const segments = candidate
+    .split(/[\\/]+/)
+    .filter(Boolean)
+    .map((segment) => segment.toLowerCase().replace(/[^a-z0-9-]+/g, "-"))
+    .filter(Boolean);
+
+  return segments.join("/") || "unknown";
 }
 
 function requireString(manifest: Record<string, unknown>, key: string, errors: string[]): void {
@@ -1161,4 +1415,18 @@ function isRecursiveDynamicAppCommand(appId: string, command: string): boolean {
 
   const appSegments = appId.split("/");
   return appSegments.every((segment, index) => tokens[index + 1] === segment);
+}
+
+function isRouterHealthCommand(appId: string, command: string): boolean {
+  if (!appId) return false;
+  const tokens = command.trim().split(/\s+/).filter(Boolean);
+  if (tokens[0] !== "ravi") return false;
+
+  const appSegments = appId.split("/");
+  const matchesSlashForm = tokens[1] === appId;
+  const offset = matchesSlashForm ? 2 : appSegments.length + 1;
+  if (!matchesSlashForm && !appSegments.every((segment, index) => tokens[index + 1] === segment)) return false;
+
+  const operation = tokens[offset];
+  return operation === "check" || operation === "--help" || operation === "-h";
 }

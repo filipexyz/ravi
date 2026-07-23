@@ -1,12 +1,16 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { normalizeAppId, RAVI_APP_MANIFEST_FILE, RAVI_APP_MANIFEST_SCHEMA } from "./service.js";
-import type {
-  RaviAppManifest,
-  RaviAppScaffoldFileKind,
-  RaviAppScaffoldFileResult,
-  RaviAppScaffoldOptions,
-  RaviAppScaffoldResult,
+import {
+  RaviAppError,
+  type RaviAppDeleteFileResult,
+  type RaviAppDeleteOptions,
+  type RaviAppDeleteResult,
+  type RaviAppManifest,
+  type RaviAppScaffoldFileKind,
+  type RaviAppScaffoldFileResult,
+  type RaviAppScaffoldOptions,
+  type RaviAppScaffoldResult,
 } from "./types.js";
 
 interface ScaffoldTarget {
@@ -35,16 +39,18 @@ export function scaffoldApp(options: RaviAppScaffoldOptions): RaviAppScaffoldRes
   const specPath = includeSpec ? join(repoRoot, ".ravi", "specs", "apps", ...id.split("/"), "SPEC.md") : null;
   const skillSourcePath = join(repoRoot, "src", "plugins", "internal", "ravi-system");
   const skillPath = includeSkill ? join(skillSourcePath, "skills", appSlug, "SKILL.md") : null;
-  const manifest = buildScaffoldManifest({
-    id,
-    appSlug,
-    operationPrefix,
-    name,
-    description,
-    command,
-    includeUi,
-    skill,
-  });
+  const manifest =
+    options.manifest ??
+    buildScaffoldManifest({
+      id,
+      appSlug,
+      operationPrefix,
+      name,
+      description,
+      command,
+      includeUi,
+      skill,
+    });
 
   const targets: ScaffoldTarget[] = [
     {
@@ -70,8 +76,10 @@ export function scaffoldApp(options: RaviAppScaffoldOptions): RaviAppScaffoldRes
 
   const existing = targets.filter((target) => existsSync(target.path));
   if (existing.length > 0 && !dryRun && !force) {
-    throw new Error(
-      `Scaffold target already exists: ${existing.map((target) => target.path).join(", ")}. Use --force to overwrite or --dry-run to inspect.`,
+    throw new RaviAppError(
+      "already_exists",
+      `Scaffold target already exists for app "${id}". Use --force to overwrite or --dry-run to inspect.`,
+      existing.map((target) => ({ kind: target.kind, detail: target.path })),
     );
   }
 
@@ -104,6 +112,7 @@ export function scaffoldApp(options: RaviAppScaffoldOptions): RaviAppScaffoldRes
     nextCommands: buildNextCommands({
       id,
       appSlug,
+      command,
       includeSpec,
       skill,
       skillSourcePath,
@@ -126,7 +135,7 @@ function buildScaffoldManifest(input: {
     cli: {
       command: input.command,
       json: true,
-      health: `ravi apps run ${input.id} check --json`,
+      health: `${input.command} check --json`,
     },
   };
 
@@ -286,7 +295,7 @@ ${input.description}
 
 - \`ravi apps check ${input.id} --json\`
 - \`ravi apps show ${input.id} --json\`
-- \`ravi apps run ${input.id} check --json\`
+- \`${input.command} check --json\`
 `;
 }
 
@@ -323,18 +332,16 @@ ravi apps show ${input.id} --json
 
 \`\`\`bash
 ravi apps check ${input.id} --json
-ravi apps run ${input.id} check --json
+${input.command} check --json
 \`\`\`
 
 3. Leia \`manifest.interfaces\`, \`manifest.operations\`, \`manifest.permissions\`, \`manifest.storage\` e \`manifest.events\`.
 
-4. Use apenas operations declaradas. Para CLI, prefira comandos com \`--json\`.
+4. Use apenas operations declaradas. Para operar o app, use o alias \`${input.command} <operation>\`. Para CLI, prefira comandos com \`--json\`.
 
 ## Comandos Iniciais
 
 \`\`\`bash
-ravi apps run ${input.id} list --json
-ravi apps run ${input.id} check --json
 ${input.command} list --json
 ${input.command} check --json
 \`\`\`
@@ -351,16 +358,17 @@ ${input.command} check --json
 function buildNextCommands(input: {
   id: string;
   appSlug: string;
+  command: string;
   includeSpec: boolean;
   skill: string | null;
   skillSourcePath: string;
 }): string[] {
-  const { id, appSlug, includeSpec, skill, skillSourcePath } = input;
+  const { id, appSlug, command, includeSpec, skill, skillSourcePath } = input;
   const commands = [
     `ravi apps show ${id} --json`,
     `ravi apps check ${id} --json`,
-    `ravi apps run ${id} check --json`,
-    `ravi apps run ${id} list --json`,
+    `${command} check --json`,
+    `${command} list --json`,
     `ravi apps guide ${id} --json`,
   ];
   if (includeSpec) commands.push(`ravi specs get apps/${id} --mode rules --json`);
@@ -394,6 +402,64 @@ function slugFromAppId(id: string): string {
 
 function operationPrefixForAppId(id: string): string {
   return id.replace(/\//g, ".");
+}
+
+export function deleteApp(options: RaviAppDeleteOptions): RaviAppDeleteResult {
+  const id = normalizeAppId(options.id);
+  const repoRoot = findRepoRoot(resolve(options.cwd ?? process.cwd()));
+  const appSlug = slugFromAppId(id);
+  const dryRun = options.dryRun === true;
+
+  const candidates: { kind: RaviAppScaffoldFileKind; path: string }[] = [
+    { kind: "manifest", path: join(repoRoot, "src", "apps", ...id.split("/"), RAVI_APP_MANIFEST_FILE) },
+    { kind: "spec", path: join(repoRoot, ".ravi", "specs", "apps", ...id.split("/"), "SPEC.md") },
+    { kind: "skill", path: join(repoRoot, "src", "plugins", "internal", "ravi-system", "skills", appSlug, "SKILL.md") },
+  ];
+
+  const anyExists = candidates.some((c) => existsSync(c.path));
+  if (!anyExists) {
+    throw new RaviAppError("not_found", `App not found: ${id}. No scaffold-owned artifacts exist.`, [
+      { kind: "app", detail: id },
+    ]);
+  }
+
+  const files: RaviAppDeleteFileResult[] = candidates.map((c) => {
+    const exists = existsSync(c.path);
+    if (!exists) return { kind: c.kind, path: c.path, action: "not_found" as const };
+    if (!dryRun) rmSync(c.path, { force: true });
+    return { kind: c.kind, path: c.path, action: dryRun ? ("planned" as const) : ("deleted" as const) };
+  });
+
+  const removedDirs: string[] = [];
+  if (!dryRun) {
+    const scaffoldDirs = [
+      join(repoRoot, "src", "apps", ...id.split("/")),
+      join(repoRoot, ".ravi", "specs", "apps", ...id.split("/")),
+      join(repoRoot, "src", "plugins", "internal", "ravi-system", "skills", appSlug),
+    ];
+    for (const dir of scaffoldDirs) {
+      if (existsSync(dir) && isEmptyDir(dir)) {
+        rmSync(dir, { recursive: true, force: true });
+        removedDirs.push(dir);
+      }
+    }
+  }
+
+  return {
+    id,
+    dryRun,
+    files,
+    removedDirs,
+    nextCommands: ["ravi apps list --json", "ravi apps check --json"],
+  };
+}
+
+function isEmptyDir(dirPath: string): boolean {
+  try {
+    return readdirSync(dirPath).length === 0;
+  } catch {
+    return false;
+  }
 }
 
 function quoteYaml(value: string): string {

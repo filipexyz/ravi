@@ -52,7 +52,7 @@ The existing `sessions send` behavior remains the base behavior:
 
 - target resolution still uses session name/key plus optional `--agent`;
 - `--channel`, `--to`, `--barrier`, `--wait`, and `--json` should keep their existing semantics unless explicitly incompatible;
-- REBAC and scope enforcement MUST match normal `sessions send`.
+- Permission Provider Runtime and scope enforcement MUST match normal `sessions send`.
 
 ## Resolution Flow
 

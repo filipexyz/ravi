@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { readFileSync, statSync } from "node:fs";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import {
   declareCommandReturns,
@@ -76,6 +76,7 @@ function summarizeOutcome(outcome: ApplyRuleResult): Record<string, unknown> {
 })
 export class TagRulesCommands {
   @Command({ name: "list", description: "List loaded tag rules from .ravi/tag-rules" })
+  @CommandAccess({ kind: "read", resource: "tag-rules", action: "list", risk: "low" })
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50)" }) limit?: string,
@@ -109,6 +110,7 @@ export class TagRulesCommands {
   }
 
   @Command({ name: "show", description: "Show a single rule definition" })
+  @CommandAccess({ kind: "read", resource: "tag-rules", action: "show", risk: "low" })
   show(
     @Arg("id", { description: "Rule id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -125,6 +127,7 @@ export class TagRulesCommands {
   }
 
   @Command({ name: "validate", description: "Validate all rule files without applying" })
+  @CommandAccess({ kind: "read", resource: "tag-rules", action: "validate", risk: "low" })
   validate(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean): unknown {
     const loaded = loadTagRulesFromDirectory();
     const ok = loaded.errors.length === 0;
@@ -146,6 +149,7 @@ export class TagRulesCommands {
   }
 
   @Command({ name: "explain", description: "Explain which rules currently match a target asset (dry-run)" })
+  @CommandAccess({ kind: "read", resource: "tag-rules", action: "explain", risk: "low" })
   explain(
     @Option({ flags: "--target <ref>", description: "Target (e.g. contact:<id>)" }) target?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -195,6 +199,7 @@ export class TagRulesCommands {
   }
 
   @Command({ name: "tick", description: "Run all rules against all contacts (use for cron/periodic schedules)" })
+  @CommandAccess({ kind: "read", resource: "tag-rules", action: "tick", risk: "low" })
   async tick(
     @Option({ flags: "--apply", description: "Apply tag changes (default: dry-run)" }) applyChanges?: boolean,
     @Option({ flags: "--limit <n>", description: "Limit number of contacts processed" }) limit?: string,
@@ -223,6 +228,7 @@ export class TagRulesCommands {
   }
 
   @Command({ name: "evaluate", description: "Evaluate a rule against a target asset" })
+  @CommandAccess({ kind: "read", resource: "tag-rules", action: "evaluate", risk: "low" })
   evaluate(
     @Arg("ruleId", { description: "Rule id to evaluate" }) ruleId: string,
     @Option({ flags: "--target <ref>", description: "Target (e.g. contact:<id>)" }) target?: string,

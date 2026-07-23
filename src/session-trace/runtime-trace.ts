@@ -1,5 +1,6 @@
 import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barriers.js";
 import type { RuntimeMessageTarget } from "../runtime/host-session.js";
+import type { TurnProvenance } from "../runtime/turn-provenance.js";
 import type {
   RuntimeCapabilities,
   RuntimeEffort,
@@ -49,6 +50,9 @@ export interface RuntimeTraceAdapterRequestInput extends RuntimeTraceIdentity {
   cwd: string;
   effort?: RuntimeEffort | null;
   thinking?: RuntimeThinking | null;
+  modelSource?: string | null;
+  effortSource?: string | null;
+  thinkingSource?: string | null;
   resume: boolean;
   fork: boolean;
   providerSessionIdBefore?: string | null;
@@ -68,6 +72,7 @@ export interface RuntimeTraceAdapterRequestInput extends RuntimeTraceIdentity {
   pendingIds?: string[];
   commands?: unknown[];
   runtimeCredential?: Record<string, unknown> | null;
+  turnProvenance?: TurnProvenance | null;
 }
 
 export interface RuntimeTraceTerminalTurnInput extends RuntimeTraceIdentity {
@@ -195,6 +200,9 @@ export function recordAdapterRequestTrace(input: RuntimeTraceAdapterRequestInput
       model: input.model ?? null,
       effort: input.effort ?? null,
       thinking: input.thinking ?? null,
+      model_source: input.modelSource ?? null,
+      effort_source: input.effortSource ?? null,
+      thinking_source: input.thinkingSource ?? null,
       cwd: input.cwd,
       resume: input.resume,
       fork: input.fork,
@@ -223,6 +231,7 @@ export function recordAdapterRequestTrace(input: RuntimeTraceAdapterRequestInput
       pending_ids: input.pendingIds ?? [],
       commands: input.commands ?? [],
       runtime_credential: input.runtimeCredential ?? null,
+      turn_provenance: input.turnProvenance ?? null,
     };
     const request = recordSessionBlob({
       kind: "adapter_request",

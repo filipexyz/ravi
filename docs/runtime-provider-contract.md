@@ -37,6 +37,7 @@ Providers own:
 
 - translating `RuntimeStartRequest` into the provider transport
 - normalizing native transport output into `RuntimeEvent`
+- releasing provider-owned transports and subprocesses through the runtime session handle
 - declaring capability support through `RuntimeCapabilities`
 - exposing optional controls such as interrupt, model switch, or thread controls
 
@@ -97,6 +98,13 @@ Message edits require current-session rebase: replace the edited prompt atom, pr
 - `remoteSpawn`
 
 Unsupported fields are omitted before calling the provider based on capabilities.
+
+## Session Handle Lifecycle
+
+`RuntimeSessionHandle` owns the live provider resources for one Ravi runtime session. Providers that open
+subprocesses, sockets, SDK queries, or other external transports must implement idempotent `close()` cleanup.
+The host calls `close()` and closes the event iterator before releasing the session slot or starting recovery.
+Provider cleanup must not depend exclusively on natural exhaustion of the event iterator.
 
 ## Request Assembly Boundary
 

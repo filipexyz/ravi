@@ -2,6 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import {
   RuntimeSessionDispatcher,
+  buildStashedRestartPrompt,
   canUseNativeRuntimeSteer,
   stashPromptForStartingSession,
 } from "./session-dispatcher.js";
@@ -10,7 +11,7 @@ import { RuntimeHostSubscriptions } from "./host-subscriptions.js";
 import type { RuntimeUserMessage } from "./host-session.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { PendingRuntimeSessionStart } from "./session-launcher.js";
-import { getOrCreateSession } from "../router/sessions.js";
+import { deleteSession, getOrCreateSession, getSessionByName, setSessionEphemeral } from "../router/sessions.js";
 import {
   dbGetDaemonRestartPendingMessages,
   dbListEligibleDaemonRestartSessionSnapshots,
@@ -200,6 +201,50 @@ describe("RuntimeSessionDispatcher debounce", () => {
     expect(second[0]?.deliveryBarrier).toBe("after_tool");
     expect(second[0]?.taskBarrierTaskId).toBe("task-1");
     expect(second[1]?.deliveryBarrier).toBe("after_response");
+  });
+});
+
+describe("RuntimeSessionDispatcher runtime recovery", () => {
+  it("stops replaying a stashed turn after repeated event-loop closures", async () => {
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async (topic, data) => {
+        emitted.push({ topic, data });
+      },
+      getConfigModel: () => "test-model",
+    });
+    dispatcher.stashedMessages.set("recovery-loop", [
+      createQueuedRuntimeUserMessage({
+        prompt: "retry me",
+        _agentId: "main",
+      }),
+    ]);
+
+    let starts = 0;
+    dispatcher.startStreamingSession = mock(async () => {
+      starts++;
+    });
+    const recovery = dispatcher as unknown as {
+      restartStashedSession(sessionName: string, reason: string): Promise<void>;
+    };
+
+    await recovery.restartStashedSession("recovery-loop", "runtime_event_loop_closed");
+    await recovery.restartStashedSession("recovery-loop", "runtime_event_loop_closed");
+    await recovery.restartStashedSession("recovery-loop", "runtime_event_loop_closed");
+
+    expect(starts).toBe(2);
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]).toMatchObject({
+      topic: "ravi.session.recovery-loop.runtime",
+      data: {
+        type: "dispatch.restart_suppressed",
+        reason: "runtime_event_loop_closed",
+        restartAttempts: 2,
+      },
+    });
   });
 });
 
@@ -400,6 +445,17 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
         createActiveSession({
           turnActive: true,
           lastActivity: now - 1_000,
+          currentSource: {
+            channel: "whatsapp",
+            accountId: "main",
+            chatId: "120363424772797713@g.us",
+            canonicalChatId: "chat_dev",
+            sourceMessageId: "wamid-active",
+            actorType: "contact",
+            contactId: "contact_luis",
+            rawSenderId: "178035101794451",
+            normalizedSenderId: "5511947879044",
+          },
           pendingMessages: [
             createQueuedRuntimeUserMessage({
               prompt: "queued user work",
@@ -431,9 +487,263 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       });
       expect(eligible.map((snapshot) => snapshot.sessionName)).toEqual(["restart-active"]);
       expect(eligible[0]?.pendingMessageCount).toBe(1);
+      expect(eligible[0]?.metadata?.currentSource).toMatchObject({
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "120363424772797713@g.us",
+        canonicalChatId: "chat_dev",
+        sourceMessageId: "wamid-active",
+        actorType: "contact",
+        contactId: "contact_luis",
+      });
 
       const pending = dbGetDaemonRestartPendingMessages("epoch-active", "agent:dev:test:restart-active");
       expect((pending[0] as RuntimeUserMessage | undefined)?.message.content).toBe("queued user work");
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("preserves actor metadata when a daemon restart resume envelope is appended to persisted work", () => {
+    const original = createQueuedRuntimeUserMessage({
+      prompt: "continue the user work",
+      source: {
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "120363424772797713@g.us",
+        canonicalChatId: "chat_dev",
+        sourceMessageId: "wamid-original",
+        actorType: "contact",
+        contactId: "contact_luis",
+      },
+      context: {
+        channelId: "whatsapp",
+        channelName: "WhatsApp",
+        accountId: "main",
+        chatId: "120363424772797713@g.us",
+        canonicalChatId: "chat_dev",
+        messageId: "wamid-original",
+        senderId: "178035101794451",
+        senderName: "Luís Filipe",
+        isGroup: true,
+        groupName: "ravi - dev",
+        timestamp: Date.now(),
+        actorType: "contact",
+        contactId: "contact_luis",
+      },
+    });
+    const resume = createQueuedRuntimeUserMessage({
+      prompt: "[System] Daemon reiniciou (test). Continue de onde parou.",
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
+      _daemonRestartResume: {
+        restartEpoch: "restart-test",
+        sessionKey: "agent:dev:whatsapp:main:group:120363424772797713",
+      },
+    });
+
+    const restartPrompt = buildStashedRestartPrompt([original, resume]);
+
+    expect(restartPrompt?.source).toMatchObject({
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "120363424772797713@g.us",
+      canonicalChatId: "chat_dev",
+      actorType: "contact",
+      contactId: "contact_luis",
+    });
+    expect(restartPrompt?.context).toMatchObject({
+      actorType: "contact",
+      contactId: "contact_luis",
+      senderName: "Luís Filipe",
+    });
+    expect(restartPrompt?._resumeStashedMessages).toBe(true);
+    expect(restartPrompt?.prompt).toContain("continue the user work");
+    expect(restartPrompt?.prompt).toContain("Daemon reiniciou");
+  });
+
+  it("selects the stashed agent envelope when daemon restart metadata is appended", () => {
+    const original = createQueuedRuntimeUserMessage({
+      prompt: "continue agent handoff",
+      source: {
+        channel: "slack",
+        accountId: "ravi-slack",
+        chatId: "C123",
+        canonicalChatId: "chat_slack",
+        sourceMessageId: "1713000130.000200",
+        actorType: "agent",
+        actorAgentId: "foreign-agent",
+      },
+      context: {
+        channelId: "slack",
+        channelName: "Slack",
+        accountId: "ravi-slack",
+        chatId: "C123",
+        canonicalChatId: "chat_slack",
+        messageId: "1713000130.000200",
+        senderId: "UFOREIGN",
+        isGroup: true,
+        timestamp: Date.now(),
+        actorType: "agent",
+        actorAgentId: "foreign-agent",
+      },
+    });
+    const resume = createQueuedRuntimeUserMessage({
+      prompt: "[System] Daemon reiniciou (test). Continue de onde parou.",
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
+      _daemonRestartResume: {
+        restartEpoch: "restart-agent-test",
+        sessionKey: "agent:dev:slack:ravi-slack:group:C123",
+      },
+    });
+
+    const restartPrompt = buildStashedRestartPrompt([original, resume]);
+
+    expect(restartPrompt?.source).toMatchObject({
+      channel: "slack",
+      canonicalChatId: "chat_slack",
+      actorType: "agent",
+      actorAgentId: "foreign-agent",
+    });
+    expect(restartPrompt?.context).toMatchObject({
+      actorType: "agent",
+      actorAgentId: "foreign-agent",
+      senderId: "UFOREIGN",
+    });
+    expect(restartPrompt?._resumeStashedMessages).toBe(true);
+  });
+
+  it("does not replace the active turn source when an after_response session followup is queued", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-followup-source-");
+    try {
+      getOrCreateSession("agent:main:test:followup-source", "main", stateDir, { name: "followup-source" });
+      const activeSource: NonNullable<RuntimeHostStreamingSession["currentSource"]> = {
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "120363424239734858@g.us",
+        canonicalChatId: "chat_audit",
+        sourceMessageId: "wamid-active",
+        actorType: "contact",
+        contactId: "contact_luis",
+        rawSenderId: "178035101794451",
+        normalizedSenderId: "5511947879044",
+      };
+      const followupSource: NonNullable<RuntimeHostStreamingSession["currentSource"]> = {
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "120363424239734858@g.us",
+        canonicalChatId: "chat_audit",
+        actorType: "automation",
+        automationId: "session-followup:sfup_source_probe",
+        identityProvenance: { source: "session-followup" },
+      };
+      const dispatcher = createDispatcher(2);
+      const activeSession = createActiveSession({
+        agentId: "main",
+        turnActive: true,
+        currentEffort: "xhigh",
+        currentSource: activeSource,
+      });
+      dispatcher.streamingSessions.set("followup-source", activeSession);
+
+      await dispatcher.handlePromptImmediate("followup-source", {
+        prompt: "[Session Followup: source probe] Respond exactly @@SILENT@@.",
+        _agentId: "main",
+        deliveryBarrier: "after_response",
+        deliveryBarrierSource: "default",
+        _sessionFollowup: true,
+        _sessionFollowupCadenceId: "sfup_source_probe",
+        _sessionFollowupRunId: "sfr_source_probe",
+        source: followupSource,
+        context: {
+          channelId: "whatsapp",
+          channelName: "WhatsApp",
+          accountId: "main",
+          chatId: "120363424239734858@g.us",
+          canonicalChatId: "chat_audit",
+          messageId: "session-followup:sfup_source_probe",
+          senderId: "session-followup:sfup_source_probe",
+          senderName: "Session Followup",
+          isGroup: true,
+          groupName: "Ravi - Audit",
+          timestamp: Date.now(),
+          actorType: "automation",
+          automationId: "session-followup:sfup_source_probe",
+          identityProvenance: { source: "session-followup" },
+        },
+      });
+
+      expect(activeSession.currentSource).toEqual(activeSource);
+      expect(activeSession.pendingMessages).toHaveLength(1);
+      expect(activeSession.pendingMessages[0]?.deliveryBarrier).toBe("after_response");
+      expect(activeSession.pendingMessages[0]?.launchPrompt?.source).toEqual(followupSource);
+      expect(activeSession.pendingMessages[0]?.launchPrompt?._sessionFollowup).toBe(true);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("does not replace the active turn source before an after_tool interrupt starts the next turn", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-interrupt-source-");
+    try {
+      getOrCreateSession("agent:main:test:interrupt-source", "main", stateDir, { name: "interrupt-source" });
+      const activeSource: NonNullable<RuntimeHostStreamingSession["currentSource"]> = {
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "5511947879044",
+        canonicalChatId: "chat_dm",
+        sourceMessageId: "wamid-active",
+      };
+      const slackSource: NonNullable<RuntimeHostStreamingSession["currentSource"]> = {
+        channel: "slack",
+        accountId: "ravi-rbbt-slack",
+        chatId: "C0BFAB90FUG",
+        canonicalChatId: "chat_slack",
+        sourceMessageId: "1783105248.141999",
+      };
+      const interrupt = mock(async () => {});
+      const dispatcher = createDispatcher(2);
+      const activeSession = createActiveSession({
+        agentId: "main",
+        turnActive: true,
+        currentEffort: "xhigh",
+        currentSource: activeSource,
+        queryHandle: {
+          provider: "codex",
+          events: (async function* () {})(),
+          interrupt,
+        },
+      });
+      dispatcher.streamingSessions.set("interrupt-source", activeSession);
+
+      await dispatcher.handlePromptImmediate("interrupt-source", {
+        prompt: "[Slack C0BFAB90FUG mid:1783105248.141999] <@U0BAA2B1LTS>: oi",
+        _agentId: "main",
+        deliveryBarrier: "after_tool",
+        deliveryBarrierSource: "default",
+        source: slackSource,
+        context: {
+          channelId: "slack",
+          channelName: "Slack",
+          accountId: "ravi-rbbt-slack",
+          chatId: "C0BFAB90FUG",
+          canonicalChatId: "chat_slack",
+          messageId: "1783105248.141999",
+          senderId: "U0BAA2B1LTS",
+          senderName: "<@U0BAA2B1LTS>",
+          isGroup: true,
+          groupName: "C0BFAB90FUG",
+          timestamp: Date.now(),
+        },
+      });
+
+      expect(activeSession.currentSource).toEqual(activeSource);
+      expect(activeSession.pendingMessages).toHaveLength(1);
+      expect(activeSession.pendingMessages[0]?.deliveryBarrier).toBe("after_tool");
+      expect(activeSession.pendingMessages[0]?.launchPrompt?.source).toEqual(slackSource);
+      expect(activeSession.interrupted).toBe(true);
+      expect(interrupt).toHaveBeenCalledTimes(1);
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }
@@ -768,6 +1078,61 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     expect(interrupted).toBe(true);
     expect(pendingResolved).toBe(true);
     expect(dispatcher.pendingStarts).toHaveLength(0);
+  });
+
+  it("deletes ephemeral task-work sessions from DB on task terminal events", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-zombie-task-work-");
+    try {
+      const sessionName = "task-zombie-fix-work";
+      const entry = getOrCreateSession("agent:dev:test:zombie-fix", "dev", stateDir, { name: sessionName });
+      setSessionEphemeral(entry.sessionKey, 24 * 60 * 60_000);
+      expect(getSessionByName(sessionName)?.ephemeral).toBe(true);
+
+      const dispatcher = createDispatcher(1);
+      const runtime = new RuntimeHostSubscriptions({
+        isRunning: () => true,
+        dispatcher,
+        safeEmit: async () => {},
+      });
+
+      await runtime.handleTaskEventForRuntime({
+        taskId: "task-zombie-fix",
+        assigneeSessionName: sessionName,
+        event: { id: 7, type: "task.done", sessionName: "main" },
+      });
+
+      expect(getSessionByName(sessionName)).toBeNull();
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("does not delete non-ephemeral task-work sessions on terminal events", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-zombie-task-work-permanent-");
+    try {
+      const sessionName = "task-permanent-work";
+      const entry = getOrCreateSession("agent:dev:test:permanent", "dev", stateDir, { name: sessionName });
+      // Do NOT call setSessionEphemeral — session stays permanent
+      expect(getSessionByName(sessionName)?.ephemeral).toBeFalsy();
+
+      const dispatcher = createDispatcher(1);
+      const runtime = new RuntimeHostSubscriptions({
+        isRunning: () => true,
+        dispatcher,
+        safeEmit: async () => {},
+      });
+
+      await runtime.handleTaskEventForRuntime({
+        taskId: "task-permanent",
+        assigneeSessionName: sessionName,
+        event: { id: 8, type: "task.done", sessionName: "main" },
+      });
+
+      expect(getSessionByName(sessionName)?.sessionKey).toBe(entry.sessionKey);
+      deleteSession(entry.sessionKey);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
   });
 
   it("releases blocked task runtime sessions without aborting normal sessions", async () => {

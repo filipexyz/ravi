@@ -11,8 +11,33 @@ const log = logger.child("transcribe");
 
 export interface TranscriptionResult {
   text: string;
+  provider?: string;
+  model?: string;
   duration?: number;
   chunks?: number;
+  segments?: TranscriptionSegment[];
+}
+
+export interface TranscriptionSegment {
+  index: number;
+  text: string;
+  startSec: number;
+  endSec?: number;
+  duration?: number;
+  provider: string;
+  model: string;
+}
+
+interface ProviderTranscriptionSegment {
+  text: string;
+  startSec: number;
+  endSec?: number;
+}
+
+interface TranscribeChunkResult {
+  text: string;
+  duration?: number;
+  segments?: ProviderTranscriptionSegment[];
 }
 
 const EXT_MAP: Record<string, string> = {
@@ -22,6 +47,8 @@ const EXT_MAP: Record<string, string> = {
   "audio/mp4": "m4a",
   "audio/wav": "wav",
   "audio/webm": "webm",
+  "audio/webm;codecs=opus": "webm",
+  "audio/webm; codecs=opus": "webm",
 };
 
 interface TranscribeProvider {
@@ -32,6 +59,11 @@ interface TranscribeProvider {
 
 /** Max duration in seconds before chunking (10 minutes) */
 const CHUNK_THRESHOLD_SEC = 600;
+
+export interface TranscriptionOptions {
+  language?: string;
+  durationHintSec?: number;
+}
 
 function getProvider(): TranscribeProvider {
   const groqKey = process.env.GROQ_API_KEY;
@@ -58,18 +90,31 @@ function getProvider(): TranscribeProvider {
 /**
  * Transcribe a single audio buffer (no chunking).
  */
-async function transcribeChunk(provider: TranscribeProvider, buffer: Buffer, mimetype: string): Promise<string> {
-  const ext = EXT_MAP[mimetype] ?? "ogg";
+async function transcribeChunk(
+  provider: TranscribeProvider,
+  buffer: Buffer,
+  mimetype: string,
+  options: TranscriptionOptions = {},
+): Promise<TranscribeChunkResult> {
+  const ext = extensionForMimeType(mimetype);
   const filename = `audio.${ext}`;
   const file = new File([buffer], filename, { type: mimetype });
 
   const response = await provider.client.audio.transcriptions.create({
     file,
     model: provider.model,
-    language: "pt",
+    language: options.language ?? "pt",
+    response_format: "verbose_json",
+    timestamp_granularities: ["segment"],
   });
 
-  return response.text;
+  return normalizeTranscriptionResponse(response);
+}
+
+function extensionForMimeType(mimetype: string): string {
+  const normalized = mimetype.toLowerCase().replace(/\s*;\s*/g, "; ");
+  const base = normalized.split(";")[0]?.trim();
+  return EXT_MAP[mimetype] ?? EXT_MAP[normalized] ?? (base ? EXT_MAP[base] : undefined) ?? "ogg";
 }
 
 function isAudioTooShortError(err: unknown): boolean {
@@ -77,13 +122,88 @@ function isAudioTooShortError(err: unknown): boolean {
   return /audio file is too short|minimum audio length/i.test(message);
 }
 
+function normalizeTranscriptionResponse(response: unknown): TranscribeChunkResult {
+  if (!isRecord(response)) return { text: "" };
+  const text = typeof response.text === "string" ? response.text : "";
+  return {
+    text,
+    ...(typeof response.duration === "number" && Number.isFinite(response.duration)
+      ? { duration: response.duration }
+      : {}),
+    segments: normalizeProviderSegments(response.segments),
+  };
+}
+
+function normalizeProviderSegments(value: unknown): ProviderTranscriptionSegment[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((segment): ProviderTranscriptionSegment | null => {
+      if (!isRecord(segment)) return null;
+      const text = typeof segment.text === "string" ? segment.text.trim() : "";
+      const start = typeof segment.start === "number" && Number.isFinite(segment.start) ? segment.start : undefined;
+      const end = typeof segment.end === "number" && Number.isFinite(segment.end) ? segment.end : undefined;
+      if (!text || start === undefined) return null;
+      return { text, startSec: start, ...(end !== undefined ? { endSec: end } : {}) };
+    })
+    .filter((segment): segment is ProviderTranscriptionSegment => Boolean(segment));
+}
+
+function transcriptionSegmentsFromChunk(input: {
+  chunk: TranscribeChunkResult;
+  provider: TranscribeProvider;
+  offsetSec: number;
+  fallbackDuration?: number;
+  startIndex?: number;
+}): TranscriptionSegment[] {
+  const startIndex = input.startIndex ?? 0;
+  const providerSegments = input.chunk.segments ?? [];
+  if (providerSegments.length > 0) {
+    return providerSegments.map((segment, index) => ({
+      index: startIndex + index,
+      text: segment.text,
+      startSec: input.offsetSec + segment.startSec,
+      ...(segment.endSec !== undefined
+        ? {
+            endSec: input.offsetSec + segment.endSec,
+            duration: Math.max(0, segment.endSec - segment.startSec),
+          }
+        : {}),
+      provider: input.provider.name,
+      model: input.provider.model,
+    }));
+  }
+
+  const text = input.chunk.text.trim();
+  if (!text) return [];
+  return [
+    {
+      index: startIndex,
+      text,
+      startSec: input.offsetSec,
+      ...(input.fallbackDuration !== undefined
+        ? { endSec: input.offsetSec + input.fallbackDuration, duration: input.fallbackDuration }
+        : {}),
+      provider: input.provider.name,
+      model: input.provider.model,
+    },
+  ];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
 /**
  * Transcribe audio using Groq (preferred) or OpenAI.
  * Automatically chunks audio longer than 10 minutes.
  */
-export async function transcribeAudio(buffer: Buffer, mimetype: string): Promise<TranscriptionResult> {
+export async function transcribeAudio(
+  buffer: Buffer,
+  mimetype: string,
+  options: TranscriptionOptions = {},
+): Promise<TranscriptionResult> {
   const provider = getProvider();
-  const ext = EXT_MAP[mimetype] ?? "ogg";
+  const ext = extensionForMimeType(mimetype);
 
   log.debug("Transcribing audio", { provider: provider.name, model: provider.model, mimetype, size: buffer.length });
 
@@ -95,12 +215,28 @@ export async function transcribeAudio(buffer: Buffer, mimetype: string): Promise
   } catch (err) {
     log.warn("Could not detect audio duration, attempting direct transcription", { error: err });
   }
+  duration = sanitizeDuration(duration) ?? sanitizeDuration(options.durationHintSec);
 
   // Short audio or unknown duration — transcribe directly
   if (!duration || duration <= CHUNK_THRESHOLD_SEC) {
-    const text = await transcribeChunk(provider, buffer, mimetype);
+    const chunkResult = await transcribeChunk(provider, buffer, mimetype, options);
+    const text = chunkResult.text;
+    const detectedDuration = duration ?? chunkResult.duration;
+    const segments = transcriptionSegmentsFromChunk({
+      chunk: chunkResult,
+      provider,
+      offsetSec: 0,
+      fallbackDuration: detectedDuration,
+    });
     log.info("Transcription complete", { provider: provider.name, textLength: text.length, duration });
-    return { text, duration };
+    return {
+      text,
+      provider: provider.name,
+      model: provider.model,
+      duration: detectedDuration,
+      chunks: 1,
+      segments,
+    };
   }
 
   // Long audio — split into chunks and transcribe each
@@ -108,9 +244,11 @@ export async function transcribeAudio(buffer: Buffer, mimetype: string): Promise
   const chunks = await splitAudioChunks(buffer, ext, {
     chunkDuration: CHUNK_THRESHOLD_SEC,
     overlap: 15,
+    durationHintSec: duration,
   });
 
   const texts: string[] = [];
+  const segments: TranscriptionSegment[] = [];
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
     log.debug("Transcribing chunk", {
@@ -119,9 +257,9 @@ export async function transcribeAudio(buffer: Buffer, mimetype: string): Promise
       size: chunk.buffer.length,
       startSec: chunk.startSec,
     });
-    let text = "";
+    let chunkResult: TranscribeChunkResult;
     try {
-      text = await transcribeChunk(provider, chunk.buffer, chunk.mimetype ?? mimetype);
+      chunkResult = await transcribeChunk(provider, chunk.buffer, chunk.mimetype ?? mimetype, options);
     } catch (err) {
       if (isAudioTooShortError(err)) {
         log.warn("Skipping too-short audio chunk rejected by provider", {
@@ -134,10 +272,20 @@ export async function transcribeAudio(buffer: Buffer, mimetype: string): Promise
       }
       throw err;
     }
-    if (text.trim()) {
-      texts.push(text.trim());
+    const trimmed = chunkResult.text.trim();
+    if (trimmed) {
+      texts.push(trimmed);
+      segments.push(
+        ...transcriptionSegmentsFromChunk({
+          chunk: chunkResult,
+          provider,
+          offsetSec: chunk.startSec,
+          fallbackDuration: chunk.duration,
+          startIndex: segments.length,
+        }),
+      );
     }
-    log.debug("Chunk transcribed", { index: i, textLength: text.length });
+    log.debug("Chunk transcribed", { index: i, textLength: chunkResult.text.length });
   }
 
   const fullText = texts.join(" ");
@@ -148,5 +296,17 @@ export async function transcribeAudio(buffer: Buffer, mimetype: string): Promise
     duration,
   });
 
-  return { text: fullText, duration, chunks: chunks.length };
+  return {
+    text: fullText,
+    provider: provider.name,
+    model: provider.model,
+    duration,
+    chunks: chunks.length,
+    segments,
+  };
+}
+
+function sanitizeDuration(value: number | undefined): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined;
+  return value;
 }
