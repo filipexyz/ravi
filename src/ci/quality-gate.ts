@@ -57,6 +57,13 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/skill-gate.test.ts",
     "src/runtime/claude-local-skills.test.ts",
     "src/runtime/claude-provider.test.ts",
+    // Provider continuity: policy, orchestration, effects, recovery, and contracts.
+    "src/runtime/provider-continuity/context-effects.test.ts",
+    "src/runtime/provider-continuity/coordinator.test.ts",
+    "src/runtime/provider-continuity/policy.test.ts",
+    "src/runtime/provider-continuity/recovery.test.ts",
+    "src/runtime/provider-continuity/runtime-continuity.test.ts",
+    "src/runtime/provider-continuity/types.test.ts",
   ],
   "src/session-trace/": ["src/session-trace/session-trace.test.ts"],
   "src/triggers/": ["src/triggers/triggers.test.ts"],

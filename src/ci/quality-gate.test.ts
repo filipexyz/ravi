@@ -348,6 +348,34 @@ describe("runCoverageGate", () => {
     expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
   });
 
+  it("passes when provider continuity changes include a focused test in the diff", () => {
+    const result = runCoverageGate([
+      "src/runtime/provider-continuity/policy.ts",
+      "src/runtime/provider-continuity/policy.test.ts",
+    ]);
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
+  });
+
+  it("fails when the same provider continuity change omits its focused test from the diff", () => {
+    const result = runCoverageGate(["src/runtime/provider-continuity/policy.ts"]);
+
+    expect(result.ok).toBe(false);
+    expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain("no focused test in the diff");
+  });
+
+  it("continues to fail for another runtime change without a focused test in the diff", () => {
+    const result = runCoverageGate(["src/runtime/host-services.ts"]);
+
+    expect(result.ok).toBe(false);
+    expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain("no focused test in the diff");
+  });
+
   it("fails for runtime change without focused test", () => {
     const cwd = makeWorkspace();
 
