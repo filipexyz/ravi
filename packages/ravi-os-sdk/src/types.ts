@@ -9798,13 +9798,13 @@ export type RuntimeContinuityApplyInput = {
 /** Return shape for `runtime.continuity.apply`. */
 export type RuntimeContinuityApplyReturn = {
   changed: boolean;
-  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  compatibilitySnapshotId: "provider-continuity-1.0.0";
   outcome: "applied" | "no_op" | "invalid" | "stale" | "temporary_failure" | "permanent_failure";
   plan: ({
-    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    compatibilitySnapshotId: "provider-continuity-1.0.0";
     createdAt: number;
     desiredPolicy: ({
-      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      compatibilitySnapshotId: "provider-continuity-1.0.0";
       deadlineMs: number;
       enabled: boolean;
       specVersion: "1.0.0";
@@ -9832,7 +9832,7 @@ export type RuntimeContinuityApplyReturn = {
   }) | null;
   policy: ({
     agentId: string;
-    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    compatibilitySnapshotId: "provider-continuity-1.0.0";
     createdAt: number;
     deadlineMs: number;
     enabled: boolean;
@@ -9862,7 +9862,7 @@ export type RuntimeContinuityBatchApplyReturn = {
     appliedAt: number | null;
     approvalRef: string | null;
     batchId: string;
-    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    compatibilitySnapshotId: "provider-continuity-1.0.0";
     createdAt: number;
     idempotencyKey: string | null;
     outcomes: Array<{
@@ -9873,10 +9873,10 @@ export type RuntimeContinuityBatchApplyReturn = {
       outcome: "applied" | "no_op" | "invalid" | "stale" | "temporary_failure" | "permanent_failure";
     }>;
     plan: {
-      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      compatibilitySnapshotId: "provider-continuity-1.0.0";
       createdAt: number;
       desiredPolicy: ({
-        compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+        compatibilitySnapshotId: "provider-continuity-1.0.0";
         deadlineMs: number;
         enabled: boolean;
         specVersion: "1.0.0";
@@ -9905,7 +9905,7 @@ export type RuntimeContinuityBatchApplyReturn = {
     requestFingerprint: string | null;
     status: "preview" | "success" | "partial_success" | "failed" | "stale" | "expired";
   };
-  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  compatibilitySnapshotId: "provider-continuity-1.0.0";
   specVersion: "1.0.0";
 };
 
@@ -9924,7 +9924,7 @@ export type RuntimeContinuityBatchPreviewReturn = {
     appliedAt: number | null;
     approvalRef: string | null;
     batchId: string;
-    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    compatibilitySnapshotId: "provider-continuity-1.0.0";
     createdAt: number;
     idempotencyKey: string | null;
     outcomes: Array<{
@@ -9935,10 +9935,10 @@ export type RuntimeContinuityBatchPreviewReturn = {
       outcome: "applied" | "no_op" | "invalid" | "stale" | "temporary_failure" | "permanent_failure";
     }>;
     plan: {
-      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      compatibilitySnapshotId: "provider-continuity-1.0.0";
       createdAt: number;
       desiredPolicy: ({
-        compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+        compatibilitySnapshotId: "provider-continuity-1.0.0";
         deadlineMs: number;
         enabled: boolean;
         specVersion: "1.0.0";
@@ -9967,7 +9967,7 @@ export type RuntimeContinuityBatchPreviewReturn = {
     requestFingerprint: string | null;
     status: "preview" | "success" | "partial_success" | "failed" | "stale" | "expired";
   };
-  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  compatibilitySnapshotId: "provider-continuity-1.0.0";
   specVersion: "1.0.0";
 };
 
@@ -9982,7 +9982,7 @@ export type RuntimeContinuityBatchStatusReturn = {
     appliedAt: number | null;
     approvalRef: string | null;
     batchId: string;
-    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    compatibilitySnapshotId: "provider-continuity-1.0.0";
     createdAt: number;
     idempotencyKey: string | null;
     outcomes: Array<{
@@ -9993,10 +9993,10 @@ export type RuntimeContinuityBatchStatusReturn = {
       outcome: "applied" | "no_op" | "invalid" | "stale" | "temporary_failure" | "permanent_failure";
     }>;
     plan: {
-      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      compatibilitySnapshotId: "provider-continuity-1.0.0";
       createdAt: number;
       desiredPolicy: ({
-        compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+        compatibilitySnapshotId: "provider-continuity-1.0.0";
         deadlineMs: number;
         enabled: boolean;
         specVersion: "1.0.0";
@@ -10025,7 +10025,7 @@ export type RuntimeContinuityBatchStatusReturn = {
     requestFingerprint: string | null;
     status: "preview" | "success" | "partial_success" | "failed" | "stale" | "expired";
   };
-  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  compatibilitySnapshotId: "provider-continuity-1.0.0";
   specVersion: "1.0.0";
 };
 
@@ -10040,13 +10040,13 @@ export type RuntimeContinuityClearInput = {
 /** Return shape for `runtime.continuity.clear`. */
 export type RuntimeContinuityClearReturn = {
   changed: boolean;
-  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  compatibilitySnapshotId: "provider-continuity-1.0.0";
   outcome: "applied" | "no_op" | "invalid" | "stale" | "temporary_failure" | "permanent_failure";
   plan: ({
-    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    compatibilitySnapshotId: "provider-continuity-1.0.0";
     createdAt: number;
     desiredPolicy: ({
-      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      compatibilitySnapshotId: "provider-continuity-1.0.0";
       deadlineMs: number;
       enabled: boolean;
       specVersion: "1.0.0";
@@ -10074,7 +10074,7 @@ export type RuntimeContinuityClearReturn = {
   }) | null;
   policy: ({
     agentId: string;
-    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    compatibilitySnapshotId: "provider-continuity-1.0.0";
     createdAt: number;
     deadlineMs: number;
     enabled: boolean;
@@ -10097,10 +10097,10 @@ export type RuntimeContinuityDecisionInput = {
 
 /** Return shape for `runtime.continuity.decision`. */
 export type RuntimeContinuityDecisionReturn = {
-  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  compatibilitySnapshotId: "provider-continuity-1.0.0";
   decision: ({
     action: "start" | "retry_same_target" | "recover_credential" | "switch_target" | "skip_target" | "wait" | "wake" | "probe" | "failback" | "hold" | "success" | "composed_failure" | "exhausted" | "reconcile";
-    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    compatibilitySnapshotId: "provider-continuity-1.0.0";
     createdAt: number;
     decisionId: string;
     fromTargetIndex: number | null;
@@ -10140,7 +10140,7 @@ export type RuntimeContinuityDecisionReturn = {
       };
       targetIndex: number;
     }>;
-    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    compatibilitySnapshotId: "provider-continuity-1.0.0";
     contextSnapshot: {
       attachments: Array<{
         fingerprint: string | null;
@@ -10182,7 +10182,7 @@ export type RuntimeContinuityDecisionReturn = {
     deadlineAt: number;
     decisions: Array<{
       action: "start" | "retry_same_target" | "recover_credential" | "switch_target" | "skip_target" | "wait" | "wake" | "probe" | "failback" | "hold" | "success" | "composed_failure" | "exhausted" | "reconcile";
-      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      compatibilitySnapshotId: "provider-continuity-1.0.0";
       createdAt: number;
       decisionId: string;
       fromTargetIndex: number | null;
@@ -10201,7 +10201,7 @@ export type RuntimeContinuityDecisionReturn = {
     logicalRequestId: string;
     normalAttemptsRemaining: number[];
     policySnapshot: {
-      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      compatibilitySnapshotId: "provider-continuity-1.0.0";
       deadlineMs: number;
       enabled: boolean;
       specVersion: "1.0.0";
@@ -10230,7 +10230,7 @@ export type RuntimeContinuityExplainInput = {
 /** Return shape for `runtime.continuity.explain`. */
 export type RuntimeContinuityExplainReturn = {
   agentId: string;
-  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  compatibilitySnapshotId: "provider-continuity-1.0.0";
   decision: string;
   enabled: boolean;
   orderedTargets: Array<{
@@ -10274,12 +10274,12 @@ export type RuntimeContinuityPreviewInput = {
 
 /** Return shape for `runtime.continuity.preview`. */
 export type RuntimeContinuityPreviewReturn = {
-  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  compatibilitySnapshotId: "provider-continuity-1.0.0";
   plan: {
-    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    compatibilitySnapshotId: "provider-continuity-1.0.0";
     createdAt: number;
     desiredPolicy: ({
-      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      compatibilitySnapshotId: "provider-continuity-1.0.0";
       deadlineMs: number;
       enabled: boolean;
       specVersion: "1.0.0";
@@ -10318,9 +10318,9 @@ export type RuntimeContinuityReconcileInput = {
 /** Return shape for `runtime.continuity.reconcile`. */
 export type RuntimeContinuityReconcileReturn = {
   changed: boolean;
-  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  compatibilitySnapshotId: "provider-continuity-1.0.0";
   effect: {
-    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    compatibilitySnapshotId: "provider-continuity-1.0.0";
     createdAt: number;
     effectId: string;
     evidenceFingerprint: string | null;
@@ -10361,7 +10361,7 @@ export type RuntimeContinuityReconcileReturn = {
       };
       targetIndex: number;
     }>;
-    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    compatibilitySnapshotId: "provider-continuity-1.0.0";
     contextSnapshot: {
       attachments: Array<{
         fingerprint: string | null;
@@ -10403,7 +10403,7 @@ export type RuntimeContinuityReconcileReturn = {
     deadlineAt: number;
     decisions: Array<{
       action: "start" | "retry_same_target" | "recover_credential" | "switch_target" | "skip_target" | "wait" | "wake" | "probe" | "failback" | "hold" | "success" | "composed_failure" | "exhausted" | "reconcile";
-      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      compatibilitySnapshotId: "provider-continuity-1.0.0";
       createdAt: number;
       decisionId: string;
       fromTargetIndex: number | null;
@@ -10422,7 +10422,7 @@ export type RuntimeContinuityReconcileReturn = {
     logicalRequestId: string;
     normalAttemptsRemaining: number[];
     policySnapshot: {
-      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      compatibilitySnapshotId: "provider-continuity-1.0.0";
       deadlineMs: number;
       enabled: boolean;
       specVersion: "1.0.0";
@@ -10456,13 +10456,13 @@ export type RuntimeContinuityReorderInput = {
 /** Return shape for `runtime.continuity.reorder`. */
 export type RuntimeContinuityReorderReturn = {
   changed: boolean;
-  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  compatibilitySnapshotId: "provider-continuity-1.0.0";
   outcome: "applied" | "no_op" | "invalid" | "stale" | "temporary_failure" | "permanent_failure";
   plan: ({
-    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    compatibilitySnapshotId: "provider-continuity-1.0.0";
     createdAt: number;
     desiredPolicy: ({
-      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      compatibilitySnapshotId: "provider-continuity-1.0.0";
       deadlineMs: number;
       enabled: boolean;
       specVersion: "1.0.0";
@@ -10490,7 +10490,7 @@ export type RuntimeContinuityReorderReturn = {
   }) | null;
   policy: ({
     agentId: string;
-    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    compatibilitySnapshotId: "provider-continuity-1.0.0";
     createdAt: number;
     deadlineMs: number;
     enabled: boolean;
@@ -10513,7 +10513,7 @@ export type RuntimeContinuityResumeInput = {
 
 /** Return shape for `runtime.continuity.resume`. */
 export type RuntimeContinuityResumeReturn = {
-  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  compatibilitySnapshotId: "provider-continuity-1.0.0";
   journal: {
     activeEffectId: string | null;
     agentId: string;
@@ -10543,7 +10543,7 @@ export type RuntimeContinuityResumeReturn = {
       };
       targetIndex: number;
     }>;
-    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    compatibilitySnapshotId: "provider-continuity-1.0.0";
     contextSnapshot: {
       attachments: Array<{
         fingerprint: string | null;
@@ -10585,7 +10585,7 @@ export type RuntimeContinuityResumeReturn = {
     deadlineAt: number;
     decisions: Array<{
       action: "start" | "retry_same_target" | "recover_credential" | "switch_target" | "skip_target" | "wait" | "wake" | "probe" | "failback" | "hold" | "success" | "composed_failure" | "exhausted" | "reconcile";
-      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      compatibilitySnapshotId: "provider-continuity-1.0.0";
       createdAt: number;
       decisionId: string;
       fromTargetIndex: number | null;
@@ -10604,7 +10604,7 @@ export type RuntimeContinuityResumeReturn = {
     logicalRequestId: string;
     normalAttemptsRemaining: number[];
     policySnapshot: {
-      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      compatibilitySnapshotId: "provider-continuity-1.0.0";
       deadlineMs: number;
       enabled: boolean;
       specVersion: "1.0.0";
@@ -10645,13 +10645,13 @@ export type RuntimeContinuitySetInput = {
 /** Return shape for `runtime.continuity.set`. */
 export type RuntimeContinuitySetReturn = {
   changed: boolean;
-  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  compatibilitySnapshotId: "provider-continuity-1.0.0";
   outcome: "applied" | "no_op" | "invalid" | "stale" | "temporary_failure" | "permanent_failure";
   plan: ({
-    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    compatibilitySnapshotId: "provider-continuity-1.0.0";
     createdAt: number;
     desiredPolicy: ({
-      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      compatibilitySnapshotId: "provider-continuity-1.0.0";
       deadlineMs: number;
       enabled: boolean;
       specVersion: "1.0.0";
@@ -10679,7 +10679,7 @@ export type RuntimeContinuitySetReturn = {
   }) | null;
   policy: ({
     agentId: string;
-    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    compatibilitySnapshotId: "provider-continuity-1.0.0";
     createdAt: number;
     deadlineMs: number;
     enabled: boolean;
@@ -10702,7 +10702,7 @@ export type RuntimeContinuityShowInput = {
 
 /** Return shape for `runtime.continuity.show`. */
 export type RuntimeContinuityShowReturn = {
-  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  compatibilitySnapshotId: "provider-continuity-1.0.0";
   health: Array<{
     agentId: string;
     consecutiveQualifiedFailures: number;
@@ -10726,7 +10726,7 @@ export type RuntimeContinuityShowReturn = {
   };
   policy: ({
     agentId: string;
-    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    compatibilitySnapshotId: "provider-continuity-1.0.0";
     createdAt: number;
     deadlineMs: number;
     enabled: boolean;
@@ -10751,10 +10751,10 @@ export type RuntimeContinuityTraceInput = {
 
 /** Return shape for `runtime.continuity.trace`. */
 export type RuntimeContinuityTraceReturn = {
-  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  compatibilitySnapshotId: "provider-continuity-1.0.0";
   events: Array<{
     agentId: string | null;
-    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    compatibilitySnapshotId: "provider-continuity-1.0.0";
     createdAt: number;
     eventId: number;
     logicalRequestId: string | null;
@@ -10791,7 +10791,7 @@ export type RuntimeContinuityTraceReturn = {
       };
       targetIndex: number;
     }>;
-    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    compatibilitySnapshotId: "provider-continuity-1.0.0";
     contextSnapshot: {
       attachments: Array<{
         fingerprint: string | null;
@@ -10833,7 +10833,7 @@ export type RuntimeContinuityTraceReturn = {
     deadlineAt: number;
     decisions: Array<{
       action: "start" | "retry_same_target" | "recover_credential" | "switch_target" | "skip_target" | "wait" | "wake" | "probe" | "failback" | "hold" | "success" | "composed_failure" | "exhausted" | "reconcile";
-      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      compatibilitySnapshotId: "provider-continuity-1.0.0";
       createdAt: number;
       decisionId: string;
       fromTargetIndex: number | null;
@@ -10852,7 +10852,7 @@ export type RuntimeContinuityTraceReturn = {
     logicalRequestId: string;
     normalAttemptsRemaining: number[];
     policySnapshot: {
-      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      compatibilitySnapshotId: "provider-continuity-1.0.0";
       deadlineMs: number;
       enabled: boolean;
       specVersion: "1.0.0";
@@ -10889,7 +10889,7 @@ export type RuntimeContinuityWaitInput = {
 /** Return shape for `runtime.continuity.wait`. */
 export type RuntimeContinuityWaitReturn = {
   changed: boolean;
-  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  compatibilitySnapshotId: "provider-continuity-1.0.0";
   journal: {
     activeEffectId: string | null;
     agentId: string;
@@ -10919,7 +10919,7 @@ export type RuntimeContinuityWaitReturn = {
       };
       targetIndex: number;
     }>;
-    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    compatibilitySnapshotId: "provider-continuity-1.0.0";
     contextSnapshot: {
       attachments: Array<{
         fingerprint: string | null;
@@ -10961,7 +10961,7 @@ export type RuntimeContinuityWaitReturn = {
     deadlineAt: number;
     decisions: Array<{
       action: "start" | "retry_same_target" | "recover_credential" | "switch_target" | "skip_target" | "wait" | "wake" | "probe" | "failback" | "hold" | "success" | "composed_failure" | "exhausted" | "reconcile";
-      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      compatibilitySnapshotId: "provider-continuity-1.0.0";
       createdAt: number;
       decisionId: string;
       fromTargetIndex: number | null;
@@ -10980,7 +10980,7 @@ export type RuntimeContinuityWaitReturn = {
     logicalRequestId: string;
     normalAttemptsRemaining: number[];
     policySnapshot: {
-      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      compatibilitySnapshotId: "provider-continuity-1.0.0";
       deadlineMs: number;
       enabled: boolean;
       specVersion: "1.0.0";
@@ -11009,7 +11009,7 @@ export type RuntimeContinuityWakeInput = {
 /** Return shape for `runtime.continuity.wake`. */
 export type RuntimeContinuityWakeReturn = {
   changed: boolean;
-  compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+  compatibilitySnapshotId: "provider-continuity-1.0.0";
   journal: {
     activeEffectId: string | null;
     agentId: string;
@@ -11039,7 +11039,7 @@ export type RuntimeContinuityWakeReturn = {
       };
       targetIndex: number;
     }>;
-    compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+    compatibilitySnapshotId: "provider-continuity-1.0.0";
     contextSnapshot: {
       attachments: Array<{
         fingerprint: string | null;
@@ -11081,7 +11081,7 @@ export type RuntimeContinuityWakeReturn = {
     deadlineAt: number;
     decisions: Array<{
       action: "start" | "retry_same_target" | "recover_credential" | "switch_target" | "skip_target" | "wait" | "wake" | "probe" | "failback" | "hold" | "success" | "composed_failure" | "exhausted" | "reconcile";
-      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      compatibilitySnapshotId: "provider-continuity-1.0.0";
       createdAt: number;
       decisionId: string;
       fromTargetIndex: number | null;
@@ -11100,7 +11100,7 @@ export type RuntimeContinuityWakeReturn = {
     logicalRequestId: string;
     normalAttemptsRemaining: number[];
     policySnapshot: {
-      compatibilitySnapshotId: "provider-continuity-1.0.0-rm-20260722";
+      compatibilitySnapshotId: "provider-continuity-1.0.0";
       deadlineMs: number;
       enabled: boolean;
       specVersion: "1.0.0";

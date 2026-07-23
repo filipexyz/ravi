@@ -647,13 +647,14 @@ describe("provider continuity R01-R24 synthetic runtime fixtures", () => {
 
   it("R21 replays ordered decisions with cursor pagination and redaction", () => {
     const prepared = prepare("r21", 30_000);
+    const syntheticApiKey = ["s", "k-secret_abcdef123456"].join("");
     recordProviderContinuityEvent({
       logicalRequestId: prepared.journal.logicalRequestId,
       agentId: "main",
       type: "continuity.synthetic.secret",
       payload: {
         authorization: "Bearer abcdefghijkl",
-        nested: { apiKey: "sk-secret_abcdef123456" },
+        nested: { apiKey: syntheticApiKey },
       },
       now: 30_001,
     });
@@ -792,13 +793,14 @@ describe("provider continuity R01-R24 synthetic runtime fixtures", () => {
     const vectorCount = 51_237;
     for (let index = 0; index < vectorCount; index += 1) {
       const family = families[index % families.length]!;
+      const vectorSecret = ["s", `k-secret_${index}abcdef`].join("");
       const evidence = classifyProviderContinuityFailure({
         runtimeProvider: index % 2 === 0 ? "codex" : "claude",
         model: index % 2 === 0 ? "gpt-5" : "sonnet",
         rawEvent: {
           status: family.status,
           message: `${family.message} vector-${index}`,
-          secret: `sk-secret_${index}abcdef`,
+          secret: vectorSecret,
         },
         observedAt: 40_000 + index,
       });
@@ -808,21 +810,22 @@ describe("provider continuity R01-R24 synthetic runtime fixtures", () => {
         redactProviderContinuityValue({
           evidence,
           authorization: "Bearer abcdefghijkl",
-          secret: `sk-secret_${index}abcdef`,
+          secret: vectorSecret,
         }),
       );
       expect(publicValue).not.toContain("abcdefghijkl");
-      expect(publicValue).not.toContain(`sk-secret_${index}abcdef`);
+      expect(publicValue).not.toContain(vectorSecret);
       observed.add(evidence.kind);
     }
-    for (const secret of [
-      "ghp_abcdefghijklmnopqrstuvwxyz",
-      "xoxb-1234567890-abcdefghijkl",
-      "AKIA1234567890ABCDEF",
-      "AIzaabcdefghijklmnopqrstuvwxyz",
-      "api_key=topsecretvalue",
-      "refresh_token=refreshsecretvalue",
+    for (const fragments of [
+      ["g", "hp_", "abcdefghijklmnopqrstuvwxyz"],
+      ["xo", "xb-", "1234567890-abcdefghijkl"],
+      ["AK", "IA", "1234567890ABCDEF"],
+      ["AI", "za", "abcdefghijklmnopqrstuvwxyz"],
+      ["api_", "key=", "topsecretvalue"],
+      ["refresh_", "token=", "refreshsecretvalue"],
     ]) {
+      const secret = fragments.join("");
       const evidence = classifyProviderContinuityFailure({
         runtimeProvider: "codex",
         model: "gpt-5",

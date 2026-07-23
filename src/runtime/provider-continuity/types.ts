@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const PROVIDER_CONTINUITY_SPEC_VERSION = "1.0.0" as const;
-export const PROVIDER_CONTINUITY_SNAPSHOT = "provider-continuity-1.0.0-rm-20260722" as const;
+export const PROVIDER_CONTINUITY_SNAPSHOT = "provider-continuity-1.0.0" as const;
 export const PROVIDER_CONTINUITY_TRANSLATION_VERSION = "ravi-portable-context-v1" as const;
 
 export const PROVIDER_CONTINUITY_LIVE_GATE_ENV = "RAVI_PROVIDER_CONTINUITY_LIVE";

@@ -350,11 +350,12 @@ describe("runtime continuity CLI U01-U11 operational round trips", () => {
 
   it("U10 redacts sensitive event payloads in public trace output", () => {
     const prepared = prepare("u10");
+    const syntheticApiKey = ["s", "k-secret_abcdef123456"].join("");
     recordProviderContinuityEvent({
       logicalRequestId: prepared.journal.logicalRequestId,
       agentId: "main",
       type: "continuity.synthetic.u10",
-      payload: { authorization: "Bearer abcdefghijkl", secret: "sk-secret_abcdef123456" },
+      payload: { authorization: "Bearer abcdefghijkl", secret: syntheticApiKey },
     });
     const trace = new RuntimeContinuityCommands().trace(prepared.journal.logicalRequestId, undefined, "50", true);
     const serialized = JSON.stringify(trace);

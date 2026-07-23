@@ -48599,7 +48599,7 @@ export const RuntimeContinuityApplyReturnSchema = {
       "type": "boolean"
     },
     "compatibilitySnapshotId": {
-      "const": "provider-continuity-1.0.0-rm-20260722",
+      "const": "provider-continuity-1.0.0",
       "type": "string"
     },
     "outcome": {
@@ -48619,7 +48619,7 @@ export const RuntimeContinuityApplyReturnSchema = {
           "additionalProperties": false,
           "properties": {
             "compatibilitySnapshotId": {
-              "const": "provider-continuity-1.0.0-rm-20260722",
+              "const": "provider-continuity-1.0.0",
               "type": "string"
             },
             "createdAt": {
@@ -48633,7 +48633,7 @@ export const RuntimeContinuityApplyReturnSchema = {
                   "additionalProperties": false,
                   "properties": {
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "deadlineMs": {
@@ -48810,7 +48810,7 @@ export const RuntimeContinuityApplyReturnSchema = {
               "type": "string"
             },
             "compatibilitySnapshotId": {
-              "const": "provider-continuity-1.0.0-rm-20260722",
+              "const": "provider-continuity-1.0.0",
               "type": "string"
             },
             "createdAt": {
@@ -48966,7 +48966,7 @@ export const RuntimeContinuityBatchApplyReturnSchema = {
           "type": "string"
         },
         "compatibilitySnapshotId": {
-          "const": "provider-continuity-1.0.0-rm-20260722",
+          "const": "provider-continuity-1.0.0",
           "type": "string"
         },
         "createdAt": {
@@ -49034,7 +49034,7 @@ export const RuntimeContinuityBatchApplyReturnSchema = {
           "additionalProperties": false,
           "properties": {
             "compatibilitySnapshotId": {
-              "const": "provider-continuity-1.0.0-rm-20260722",
+              "const": "provider-continuity-1.0.0",
               "type": "string"
             },
             "createdAt": {
@@ -49048,7 +49048,7 @@ export const RuntimeContinuityBatchApplyReturnSchema = {
                   "additionalProperties": false,
                   "properties": {
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "deadlineMs": {
@@ -49248,7 +49248,7 @@ export const RuntimeContinuityBatchApplyReturnSchema = {
       "type": "object"
     },
     "compatibilitySnapshotId": {
-      "const": "provider-continuity-1.0.0-rm-20260722",
+      "const": "provider-continuity-1.0.0",
       "type": "string"
     },
     "specVersion": {
@@ -49327,7 +49327,7 @@ export const RuntimeContinuityBatchPreviewReturnSchema = {
           "type": "string"
         },
         "compatibilitySnapshotId": {
-          "const": "provider-continuity-1.0.0-rm-20260722",
+          "const": "provider-continuity-1.0.0",
           "type": "string"
         },
         "createdAt": {
@@ -49395,7 +49395,7 @@ export const RuntimeContinuityBatchPreviewReturnSchema = {
           "additionalProperties": false,
           "properties": {
             "compatibilitySnapshotId": {
-              "const": "provider-continuity-1.0.0-rm-20260722",
+              "const": "provider-continuity-1.0.0",
               "type": "string"
             },
             "createdAt": {
@@ -49409,7 +49409,7 @@ export const RuntimeContinuityBatchPreviewReturnSchema = {
                   "additionalProperties": false,
                   "properties": {
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "deadlineMs": {
@@ -49609,7 +49609,7 @@ export const RuntimeContinuityBatchPreviewReturnSchema = {
       "type": "object"
     },
     "compatibilitySnapshotId": {
-      "const": "provider-continuity-1.0.0-rm-20260722",
+      "const": "provider-continuity-1.0.0",
       "type": "string"
     },
     "specVersion": {
@@ -49675,7 +49675,7 @@ export const RuntimeContinuityBatchStatusReturnSchema = {
           "type": "string"
         },
         "compatibilitySnapshotId": {
-          "const": "provider-continuity-1.0.0-rm-20260722",
+          "const": "provider-continuity-1.0.0",
           "type": "string"
         },
         "createdAt": {
@@ -49743,7 +49743,7 @@ export const RuntimeContinuityBatchStatusReturnSchema = {
           "additionalProperties": false,
           "properties": {
             "compatibilitySnapshotId": {
-              "const": "provider-continuity-1.0.0-rm-20260722",
+              "const": "provider-continuity-1.0.0",
               "type": "string"
             },
             "createdAt": {
@@ -49757,7 +49757,7 @@ export const RuntimeContinuityBatchStatusReturnSchema = {
                   "additionalProperties": false,
                   "properties": {
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "deadlineMs": {
@@ -49957,7 +49957,7 @@ export const RuntimeContinuityBatchStatusReturnSchema = {
       "type": "object"
     },
     "compatibilitySnapshotId": {
-      "const": "provider-continuity-1.0.0-rm-20260722",
+      "const": "provider-continuity-1.0.0",
       "type": "string"
     },
     "specVersion": {
@@ -50008,7 +50008,7 @@ export const RuntimeContinuityClearReturnSchema = {
       "type": "boolean"
     },
     "compatibilitySnapshotId": {
-      "const": "provider-continuity-1.0.0-rm-20260722",
+      "const": "provider-continuity-1.0.0",
       "type": "string"
     },
     "outcome": {
@@ -50028,7 +50028,7 @@ export const RuntimeContinuityClearReturnSchema = {
           "additionalProperties": false,
           "properties": {
             "compatibilitySnapshotId": {
-              "const": "provider-continuity-1.0.0-rm-20260722",
+              "const": "provider-continuity-1.0.0",
               "type": "string"
             },
             "createdAt": {
@@ -50042,7 +50042,7 @@ export const RuntimeContinuityClearReturnSchema = {
                   "additionalProperties": false,
                   "properties": {
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "deadlineMs": {
@@ -50219,7 +50219,7 @@ export const RuntimeContinuityClearReturnSchema = {
               "type": "string"
             },
             "compatibilitySnapshotId": {
-              "const": "provider-continuity-1.0.0-rm-20260722",
+              "const": "provider-continuity-1.0.0",
               "type": "string"
             },
             "createdAt": {
@@ -50366,7 +50366,7 @@ export const RuntimeContinuityDecisionReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "compatibilitySnapshotId": {
-      "const": "provider-continuity-1.0.0-rm-20260722",
+      "const": "provider-continuity-1.0.0",
       "type": "string"
     },
     "decision": {
@@ -50394,7 +50394,7 @@ export const RuntimeContinuityDecisionReturnSchema = {
               "type": "string"
             },
             "compatibilitySnapshotId": {
-              "const": "provider-continuity-1.0.0-rm-20260722",
+              "const": "provider-continuity-1.0.0",
               "type": "string"
             },
             "createdAt": {
@@ -50695,7 +50695,7 @@ export const RuntimeContinuityDecisionReturnSchema = {
           "type": "array"
         },
         "compatibilitySnapshotId": {
-          "const": "provider-continuity-1.0.0-rm-20260722",
+          "const": "provider-continuity-1.0.0",
           "type": "string"
         },
         "contextSnapshot": {
@@ -50987,7 +50987,7 @@ export const RuntimeContinuityDecisionReturnSchema = {
                 "type": "string"
               },
               "compatibilitySnapshotId": {
-                "const": "provider-continuity-1.0.0-rm-20260722",
+                "const": "provider-continuity-1.0.0",
                 "type": "string"
               },
               "createdAt": {
@@ -51152,7 +51152,7 @@ export const RuntimeContinuityDecisionReturnSchema = {
           "additionalProperties": false,
           "properties": {
             "compatibilitySnapshotId": {
-              "const": "provider-continuity-1.0.0-rm-20260722",
+              "const": "provider-continuity-1.0.0",
               "type": "string"
             },
             "deadlineMs": {
@@ -51340,7 +51340,7 @@ export const RuntimeContinuityExplainReturnSchema = {
       "type": "string"
     },
     "compatibilitySnapshotId": {
-      "const": "provider-continuity-1.0.0-rm-20260722",
+      "const": "provider-continuity-1.0.0",
       "type": "string"
     },
     "decision": {
@@ -51617,14 +51617,14 @@ export const RuntimeContinuityPreviewReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "compatibilitySnapshotId": {
-      "const": "provider-continuity-1.0.0-rm-20260722",
+      "const": "provider-continuity-1.0.0",
       "type": "string"
     },
     "plan": {
       "additionalProperties": false,
       "properties": {
         "compatibilitySnapshotId": {
-          "const": "provider-continuity-1.0.0-rm-20260722",
+          "const": "provider-continuity-1.0.0",
           "type": "string"
         },
         "createdAt": {
@@ -51638,7 +51638,7 @@ export const RuntimeContinuityPreviewReturnSchema = {
               "additionalProperties": false,
               "properties": {
                 "compatibilitySnapshotId": {
-                  "const": "provider-continuity-1.0.0-rm-20260722",
+                  "const": "provider-continuity-1.0.0",
                   "type": "string"
                 },
                 "deadlineMs": {
@@ -51877,14 +51877,14 @@ export const RuntimeContinuityReconcileReturnSchema = {
       "type": "boolean"
     },
     "compatibilitySnapshotId": {
-      "const": "provider-continuity-1.0.0-rm-20260722",
+      "const": "provider-continuity-1.0.0",
       "type": "string"
     },
     "effect": {
       "additionalProperties": false,
       "properties": {
         "compatibilitySnapshotId": {
-          "const": "provider-continuity-1.0.0-rm-20260722",
+          "const": "provider-continuity-1.0.0",
           "type": "string"
         },
         "createdAt": {
@@ -52159,7 +52159,7 @@ export const RuntimeContinuityReconcileReturnSchema = {
           "type": "array"
         },
         "compatibilitySnapshotId": {
-          "const": "provider-continuity-1.0.0-rm-20260722",
+          "const": "provider-continuity-1.0.0",
           "type": "string"
         },
         "contextSnapshot": {
@@ -52451,7 +52451,7 @@ export const RuntimeContinuityReconcileReturnSchema = {
                 "type": "string"
               },
               "compatibilitySnapshotId": {
-                "const": "provider-continuity-1.0.0-rm-20260722",
+                "const": "provider-continuity-1.0.0",
                 "type": "string"
               },
               "createdAt": {
@@ -52616,7 +52616,7 @@ export const RuntimeContinuityReconcileReturnSchema = {
           "additionalProperties": false,
           "properties": {
             "compatibilitySnapshotId": {
-              "const": "provider-continuity-1.0.0-rm-20260722",
+              "const": "provider-continuity-1.0.0",
               "type": "string"
             },
             "deadlineMs": {
@@ -52830,7 +52830,7 @@ export const RuntimeContinuityReorderReturnSchema = {
       "type": "boolean"
     },
     "compatibilitySnapshotId": {
-      "const": "provider-continuity-1.0.0-rm-20260722",
+      "const": "provider-continuity-1.0.0",
       "type": "string"
     },
     "outcome": {
@@ -52850,7 +52850,7 @@ export const RuntimeContinuityReorderReturnSchema = {
           "additionalProperties": false,
           "properties": {
             "compatibilitySnapshotId": {
-              "const": "provider-continuity-1.0.0-rm-20260722",
+              "const": "provider-continuity-1.0.0",
               "type": "string"
             },
             "createdAt": {
@@ -52864,7 +52864,7 @@ export const RuntimeContinuityReorderReturnSchema = {
                   "additionalProperties": false,
                   "properties": {
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "deadlineMs": {
@@ -53041,7 +53041,7 @@ export const RuntimeContinuityReorderReturnSchema = {
               "type": "string"
             },
             "compatibilitySnapshotId": {
-              "const": "provider-continuity-1.0.0-rm-20260722",
+              "const": "provider-continuity-1.0.0",
               "type": "string"
             },
             "createdAt": {
@@ -53188,7 +53188,7 @@ export const RuntimeContinuityResumeReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "compatibilitySnapshotId": {
-      "const": "provider-continuity-1.0.0-rm-20260722",
+      "const": "provider-continuity-1.0.0",
       "type": "string"
     },
     "journal": {
@@ -53392,7 +53392,7 @@ export const RuntimeContinuityResumeReturnSchema = {
           "type": "array"
         },
         "compatibilitySnapshotId": {
-          "const": "provider-continuity-1.0.0-rm-20260722",
+          "const": "provider-continuity-1.0.0",
           "type": "string"
         },
         "contextSnapshot": {
@@ -53684,7 +53684,7 @@ export const RuntimeContinuityResumeReturnSchema = {
                 "type": "string"
               },
               "compatibilitySnapshotId": {
-                "const": "provider-continuity-1.0.0-rm-20260722",
+                "const": "provider-continuity-1.0.0",
                 "type": "string"
               },
               "createdAt": {
@@ -53849,7 +53849,7 @@ export const RuntimeContinuityResumeReturnSchema = {
           "additionalProperties": false,
           "properties": {
             "compatibilitySnapshotId": {
-              "const": "provider-continuity-1.0.0-rm-20260722",
+              "const": "provider-continuity-1.0.0",
               "type": "string"
             },
             "deadlineMs": {
@@ -54094,7 +54094,7 @@ export const RuntimeContinuitySetReturnSchema = {
       "type": "boolean"
     },
     "compatibilitySnapshotId": {
-      "const": "provider-continuity-1.0.0-rm-20260722",
+      "const": "provider-continuity-1.0.0",
       "type": "string"
     },
     "outcome": {
@@ -54114,7 +54114,7 @@ export const RuntimeContinuitySetReturnSchema = {
           "additionalProperties": false,
           "properties": {
             "compatibilitySnapshotId": {
-              "const": "provider-continuity-1.0.0-rm-20260722",
+              "const": "provider-continuity-1.0.0",
               "type": "string"
             },
             "createdAt": {
@@ -54128,7 +54128,7 @@ export const RuntimeContinuitySetReturnSchema = {
                   "additionalProperties": false,
                   "properties": {
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "deadlineMs": {
@@ -54305,7 +54305,7 @@ export const RuntimeContinuitySetReturnSchema = {
               "type": "string"
             },
             "compatibilitySnapshotId": {
-              "const": "provider-continuity-1.0.0-rm-20260722",
+              "const": "provider-continuity-1.0.0",
               "type": "string"
             },
             "createdAt": {
@@ -54419,7 +54419,7 @@ export const RuntimeContinuityShowReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "compatibilitySnapshotId": {
-      "const": "provider-continuity-1.0.0-rm-20260722",
+      "const": "provider-continuity-1.0.0",
       "type": "string"
     },
     "health": {
@@ -54604,7 +54604,7 @@ export const RuntimeContinuityShowReturnSchema = {
               "type": "string"
             },
             "compatibilitySnapshotId": {
-              "const": "provider-continuity-1.0.0-rm-20260722",
+              "const": "provider-continuity-1.0.0",
               "type": "string"
             },
             "createdAt": {
@@ -54758,7 +54758,7 @@ export const RuntimeContinuityTraceReturnSchema = {
   "additionalProperties": false,
   "properties": {
     "compatibilitySnapshotId": {
-      "const": "provider-continuity-1.0.0-rm-20260722",
+      "const": "provider-continuity-1.0.0",
       "type": "string"
     },
     "events": {
@@ -54777,7 +54777,7 @@ export const RuntimeContinuityTraceReturnSchema = {
             ]
           },
           "compatibilitySnapshotId": {
-            "const": "provider-continuity-1.0.0-rm-20260722",
+            "const": "provider-continuity-1.0.0",
             "type": "string"
           },
           "createdAt": {
@@ -55034,7 +55034,7 @@ export const RuntimeContinuityTraceReturnSchema = {
           "type": "array"
         },
         "compatibilitySnapshotId": {
-          "const": "provider-continuity-1.0.0-rm-20260722",
+          "const": "provider-continuity-1.0.0",
           "type": "string"
         },
         "contextSnapshot": {
@@ -55326,7 +55326,7 @@ export const RuntimeContinuityTraceReturnSchema = {
                 "type": "string"
               },
               "compatibilitySnapshotId": {
-                "const": "provider-continuity-1.0.0-rm-20260722",
+                "const": "provider-continuity-1.0.0",
                 "type": "string"
               },
               "createdAt": {
@@ -55491,7 +55491,7 @@ export const RuntimeContinuityTraceReturnSchema = {
           "additionalProperties": false,
           "properties": {
             "compatibilitySnapshotId": {
-              "const": "provider-continuity-1.0.0-rm-20260722",
+              "const": "provider-continuity-1.0.0",
               "type": "string"
             },
             "deadlineMs": {
@@ -55763,7 +55763,7 @@ export const RuntimeContinuityWaitReturnSchema = {
       "type": "boolean"
     },
     "compatibilitySnapshotId": {
-      "const": "provider-continuity-1.0.0-rm-20260722",
+      "const": "provider-continuity-1.0.0",
       "type": "string"
     },
     "journal": {
@@ -55967,7 +55967,7 @@ export const RuntimeContinuityWaitReturnSchema = {
           "type": "array"
         },
         "compatibilitySnapshotId": {
-          "const": "provider-continuity-1.0.0-rm-20260722",
+          "const": "provider-continuity-1.0.0",
           "type": "string"
         },
         "contextSnapshot": {
@@ -56259,7 +56259,7 @@ export const RuntimeContinuityWaitReturnSchema = {
                 "type": "string"
               },
               "compatibilitySnapshotId": {
-                "const": "provider-continuity-1.0.0-rm-20260722",
+                "const": "provider-continuity-1.0.0",
                 "type": "string"
               },
               "createdAt": {
@@ -56424,7 +56424,7 @@ export const RuntimeContinuityWaitReturnSchema = {
           "additionalProperties": false,
           "properties": {
             "compatibilitySnapshotId": {
-              "const": "provider-continuity-1.0.0-rm-20260722",
+              "const": "provider-continuity-1.0.0",
               "type": "string"
             },
             "deadlineMs": {
@@ -56644,7 +56644,7 @@ export const RuntimeContinuityWakeReturnSchema = {
       "type": "boolean"
     },
     "compatibilitySnapshotId": {
-      "const": "provider-continuity-1.0.0-rm-20260722",
+      "const": "provider-continuity-1.0.0",
       "type": "string"
     },
     "journal": {
@@ -56848,7 +56848,7 @@ export const RuntimeContinuityWakeReturnSchema = {
           "type": "array"
         },
         "compatibilitySnapshotId": {
-          "const": "provider-continuity-1.0.0-rm-20260722",
+          "const": "provider-continuity-1.0.0",
           "type": "string"
         },
         "contextSnapshot": {
@@ -57140,7 +57140,7 @@ export const RuntimeContinuityWakeReturnSchema = {
                 "type": "string"
               },
               "compatibilitySnapshotId": {
-                "const": "provider-continuity-1.0.0-rm-20260722",
+                "const": "provider-continuity-1.0.0",
                 "type": "string"
               },
               "createdAt": {
@@ -57305,7 +57305,7 @@ export const RuntimeContinuityWakeReturnSchema = {
           "additionalProperties": false,
           "properties": {
             "compatibilitySnapshotId": {
-              "const": "provider-continuity-1.0.0-rm-20260722",
+              "const": "provider-continuity-1.0.0",
               "type": "string"
             },
             "deadlineMs": {

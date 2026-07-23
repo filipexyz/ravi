@@ -132,7 +132,7 @@ The compatibility snapshot carried by requests, responses, events, OpenAPI, and
 the generated SDK is:
 
 ```text
-provider-continuity-1.0.0-rm-20260722
+provider-continuity-1.0.0
 ```
 
 Local setup uses the normal Ravi gateway variables:

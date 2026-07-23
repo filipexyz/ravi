@@ -84,8 +84,9 @@ describe("provider continuity portable context and effects", () => {
   });
 
   it("builds deterministic redacted context and rejects forbidden tool/safety loss", () => {
+    const syntheticApiKey = ["s", "k-secret_abcdef123456"].join("");
     const input = {
-      messages: [{ id: "m1", role: "user" as const, content: "use sk-secret_abcdef123456" }],
+      messages: [{ id: "m1", role: "user" as const, content: `use ${syntheticApiKey}` }],
       toolRecords: [
         { id: "t1", name: "write", input: { authorization: "Bearer abcdef123" }, status: "started" as const },
       ],

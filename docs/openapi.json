@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "248124692b64202c"
+    "version": "10c69ebb6cccbd52"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -60870,7 +60870,7 @@
                       "type": "boolean"
                     },
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "outcome": {
@@ -60890,7 +60890,7 @@
                           "additionalProperties": false,
                           "properties": {
                             "compatibilitySnapshotId": {
-                              "const": "provider-continuity-1.0.0-rm-20260722",
+                              "const": "provider-continuity-1.0.0",
                               "type": "string"
                             },
                             "createdAt": {
@@ -60904,7 +60904,7 @@
                                   "additionalProperties": false,
                                   "properties": {
                                     "compatibilitySnapshotId": {
-                                      "const": "provider-continuity-1.0.0-rm-20260722",
+                                      "const": "provider-continuity-1.0.0",
                                       "type": "string"
                                     },
                                     "deadlineMs": {
@@ -61081,7 +61081,7 @@
                               "type": "string"
                             },
                             "compatibilitySnapshotId": {
-                              "const": "provider-continuity-1.0.0-rm-20260722",
+                              "const": "provider-continuity-1.0.0",
                               "type": "string"
                             },
                             "createdAt": {
@@ -61275,7 +61275,7 @@
                           "type": "string"
                         },
                         "compatibilitySnapshotId": {
-                          "const": "provider-continuity-1.0.0-rm-20260722",
+                          "const": "provider-continuity-1.0.0",
                           "type": "string"
                         },
                         "createdAt": {
@@ -61343,7 +61343,7 @@
                           "additionalProperties": false,
                           "properties": {
                             "compatibilitySnapshotId": {
-                              "const": "provider-continuity-1.0.0-rm-20260722",
+                              "const": "provider-continuity-1.0.0",
                               "type": "string"
                             },
                             "createdAt": {
@@ -61357,7 +61357,7 @@
                                   "additionalProperties": false,
                                   "properties": {
                                     "compatibilitySnapshotId": {
-                                      "const": "provider-continuity-1.0.0-rm-20260722",
+                                      "const": "provider-continuity-1.0.0",
                                       "type": "string"
                                     },
                                     "deadlineMs": {
@@ -61557,7 +61557,7 @@
                       "type": "object"
                     },
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "specVersion": {
@@ -61674,7 +61674,7 @@
                           "type": "string"
                         },
                         "compatibilitySnapshotId": {
-                          "const": "provider-continuity-1.0.0-rm-20260722",
+                          "const": "provider-continuity-1.0.0",
                           "type": "string"
                         },
                         "createdAt": {
@@ -61742,7 +61742,7 @@
                           "additionalProperties": false,
                           "properties": {
                             "compatibilitySnapshotId": {
-                              "const": "provider-continuity-1.0.0-rm-20260722",
+                              "const": "provider-continuity-1.0.0",
                               "type": "string"
                             },
                             "createdAt": {
@@ -61756,7 +61756,7 @@
                                   "additionalProperties": false,
                                   "properties": {
                                     "compatibilitySnapshotId": {
-                                      "const": "provider-continuity-1.0.0-rm-20260722",
+                                      "const": "provider-continuity-1.0.0",
                                       "type": "string"
                                     },
                                     "deadlineMs": {
@@ -61956,7 +61956,7 @@
                       "type": "object"
                     },
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "specVersion": {
@@ -62060,7 +62060,7 @@
                           "type": "string"
                         },
                         "compatibilitySnapshotId": {
-                          "const": "provider-continuity-1.0.0-rm-20260722",
+                          "const": "provider-continuity-1.0.0",
                           "type": "string"
                         },
                         "createdAt": {
@@ -62128,7 +62128,7 @@
                           "additionalProperties": false,
                           "properties": {
                             "compatibilitySnapshotId": {
-                              "const": "provider-continuity-1.0.0-rm-20260722",
+                              "const": "provider-continuity-1.0.0",
                               "type": "string"
                             },
                             "createdAt": {
@@ -62142,7 +62142,7 @@
                                   "additionalProperties": false,
                                   "properties": {
                                     "compatibilitySnapshotId": {
-                                      "const": "provider-continuity-1.0.0-rm-20260722",
+                                      "const": "provider-continuity-1.0.0",
                                       "type": "string"
                                     },
                                     "deadlineMs": {
@@ -62342,7 +62342,7 @@
                       "type": "object"
                     },
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "specVersion": {
@@ -62431,7 +62431,7 @@
                       "type": "boolean"
                     },
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "outcome": {
@@ -62451,7 +62451,7 @@
                           "additionalProperties": false,
                           "properties": {
                             "compatibilitySnapshotId": {
-                              "const": "provider-continuity-1.0.0-rm-20260722",
+                              "const": "provider-continuity-1.0.0",
                               "type": "string"
                             },
                             "createdAt": {
@@ -62465,7 +62465,7 @@
                                   "additionalProperties": false,
                                   "properties": {
                                     "compatibilitySnapshotId": {
-                                      "const": "provider-continuity-1.0.0-rm-20260722",
+                                      "const": "provider-continuity-1.0.0",
                                       "type": "string"
                                     },
                                     "deadlineMs": {
@@ -62642,7 +62642,7 @@
                               "type": "string"
                             },
                             "compatibilitySnapshotId": {
-                              "const": "provider-continuity-1.0.0-rm-20260722",
+                              "const": "provider-continuity-1.0.0",
                               "type": "string"
                             },
                             "createdAt": {
@@ -62827,7 +62827,7 @@
                   "additionalProperties": false,
                   "properties": {
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "decision": {
@@ -62855,7 +62855,7 @@
                               "type": "string"
                             },
                             "compatibilitySnapshotId": {
-                              "const": "provider-continuity-1.0.0-rm-20260722",
+                              "const": "provider-continuity-1.0.0",
                               "type": "string"
                             },
                             "createdAt": {
@@ -63156,7 +63156,7 @@
                           "type": "array"
                         },
                         "compatibilitySnapshotId": {
-                          "const": "provider-continuity-1.0.0-rm-20260722",
+                          "const": "provider-continuity-1.0.0",
                           "type": "string"
                         },
                         "contextSnapshot": {
@@ -63448,7 +63448,7 @@
                                 "type": "string"
                               },
                               "compatibilitySnapshotId": {
-                                "const": "provider-continuity-1.0.0-rm-20260722",
+                                "const": "provider-continuity-1.0.0",
                                 "type": "string"
                               },
                               "createdAt": {
@@ -63613,7 +63613,7 @@
                           "additionalProperties": false,
                           "properties": {
                             "compatibilitySnapshotId": {
-                              "const": "provider-continuity-1.0.0-rm-20260722",
+                              "const": "provider-continuity-1.0.0",
                               "type": "string"
                             },
                             "deadlineMs": {
@@ -63839,7 +63839,7 @@
                       "type": "string"
                     },
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "decision": {
@@ -64154,14 +64154,14 @@
                   "additionalProperties": false,
                   "properties": {
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "plan": {
                       "additionalProperties": false,
                       "properties": {
                         "compatibilitySnapshotId": {
-                          "const": "provider-continuity-1.0.0-rm-20260722",
+                          "const": "provider-continuity-1.0.0",
                           "type": "string"
                         },
                         "createdAt": {
@@ -64175,7 +64175,7 @@
                               "additionalProperties": false,
                               "properties": {
                                 "compatibilitySnapshotId": {
-                                  "const": "provider-continuity-1.0.0-rm-20260722",
+                                  "const": "provider-continuity-1.0.0",
                                   "type": "string"
                                 },
                                 "deadlineMs": {
@@ -64452,14 +64452,14 @@
                       "type": "boolean"
                     },
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "effect": {
                       "additionalProperties": false,
                       "properties": {
                         "compatibilitySnapshotId": {
-                          "const": "provider-continuity-1.0.0-rm-20260722",
+                          "const": "provider-continuity-1.0.0",
                           "type": "string"
                         },
                         "createdAt": {
@@ -64734,7 +64734,7 @@
                           "type": "array"
                         },
                         "compatibilitySnapshotId": {
-                          "const": "provider-continuity-1.0.0-rm-20260722",
+                          "const": "provider-continuity-1.0.0",
                           "type": "string"
                         },
                         "contextSnapshot": {
@@ -65026,7 +65026,7 @@
                                 "type": "string"
                               },
                               "compatibilitySnapshotId": {
-                                "const": "provider-continuity-1.0.0-rm-20260722",
+                                "const": "provider-continuity-1.0.0",
                                 "type": "string"
                               },
                               "createdAt": {
@@ -65191,7 +65191,7 @@
                           "additionalProperties": false,
                           "properties": {
                             "compatibilitySnapshotId": {
-                              "const": "provider-continuity-1.0.0-rm-20260722",
+                              "const": "provider-continuity-1.0.0",
                               "type": "string"
                             },
                             "deadlineMs": {
@@ -65443,7 +65443,7 @@
                       "type": "boolean"
                     },
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "outcome": {
@@ -65463,7 +65463,7 @@
                           "additionalProperties": false,
                           "properties": {
                             "compatibilitySnapshotId": {
-                              "const": "provider-continuity-1.0.0-rm-20260722",
+                              "const": "provider-continuity-1.0.0",
                               "type": "string"
                             },
                             "createdAt": {
@@ -65477,7 +65477,7 @@
                                   "additionalProperties": false,
                                   "properties": {
                                     "compatibilitySnapshotId": {
-                                      "const": "provider-continuity-1.0.0-rm-20260722",
+                                      "const": "provider-continuity-1.0.0",
                                       "type": "string"
                                     },
                                     "deadlineMs": {
@@ -65654,7 +65654,7 @@
                               "type": "string"
                             },
                             "compatibilitySnapshotId": {
-                              "const": "provider-continuity-1.0.0-rm-20260722",
+                              "const": "provider-continuity-1.0.0",
                               "type": "string"
                             },
                             "createdAt": {
@@ -65839,7 +65839,7 @@
                   "additionalProperties": false,
                   "properties": {
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "journal": {
@@ -66043,7 +66043,7 @@
                           "type": "array"
                         },
                         "compatibilitySnapshotId": {
-                          "const": "provider-continuity-1.0.0-rm-20260722",
+                          "const": "provider-continuity-1.0.0",
                           "type": "string"
                         },
                         "contextSnapshot": {
@@ -66335,7 +66335,7 @@
                                 "type": "string"
                               },
                               "compatibilitySnapshotId": {
-                                "const": "provider-continuity-1.0.0-rm-20260722",
+                                "const": "provider-continuity-1.0.0",
                                 "type": "string"
                               },
                               "createdAt": {
@@ -66500,7 +66500,7 @@
                           "additionalProperties": false,
                           "properties": {
                             "compatibilitySnapshotId": {
-                              "const": "provider-continuity-1.0.0-rm-20260722",
+                              "const": "provider-continuity-1.0.0",
                               "type": "string"
                             },
                             "deadlineMs": {
@@ -66783,7 +66783,7 @@
                       "type": "boolean"
                     },
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "outcome": {
@@ -66803,7 +66803,7 @@
                           "additionalProperties": false,
                           "properties": {
                             "compatibilitySnapshotId": {
-                              "const": "provider-continuity-1.0.0-rm-20260722",
+                              "const": "provider-continuity-1.0.0",
                               "type": "string"
                             },
                             "createdAt": {
@@ -66817,7 +66817,7 @@
                                   "additionalProperties": false,
                                   "properties": {
                                     "compatibilitySnapshotId": {
-                                      "const": "provider-continuity-1.0.0-rm-20260722",
+                                      "const": "provider-continuity-1.0.0",
                                       "type": "string"
                                     },
                                     "deadlineMs": {
@@ -66994,7 +66994,7 @@
                               "type": "string"
                             },
                             "compatibilitySnapshotId": {
-                              "const": "provider-continuity-1.0.0-rm-20260722",
+                              "const": "provider-continuity-1.0.0",
                               "type": "string"
                             },
                             "createdAt": {
@@ -67146,7 +67146,7 @@
                   "additionalProperties": false,
                   "properties": {
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "health": {
@@ -67331,7 +67331,7 @@
                               "type": "string"
                             },
                             "compatibilitySnapshotId": {
-                              "const": "provider-continuity-1.0.0-rm-20260722",
+                              "const": "provider-continuity-1.0.0",
                               "type": "string"
                             },
                             "createdAt": {
@@ -67523,7 +67523,7 @@
                   "additionalProperties": false,
                   "properties": {
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "events": {
@@ -67542,7 +67542,7 @@
                             ]
                           },
                           "compatibilitySnapshotId": {
-                            "const": "provider-continuity-1.0.0-rm-20260722",
+                            "const": "provider-continuity-1.0.0",
                             "type": "string"
                           },
                           "createdAt": {
@@ -67799,7 +67799,7 @@
                           "type": "array"
                         },
                         "compatibilitySnapshotId": {
-                          "const": "provider-continuity-1.0.0-rm-20260722",
+                          "const": "provider-continuity-1.0.0",
                           "type": "string"
                         },
                         "contextSnapshot": {
@@ -68091,7 +68091,7 @@
                                 "type": "string"
                               },
                               "compatibilitySnapshotId": {
-                                "const": "provider-continuity-1.0.0-rm-20260722",
+                                "const": "provider-continuity-1.0.0",
                                 "type": "string"
                               },
                               "createdAt": {
@@ -68256,7 +68256,7 @@
                           "additionalProperties": false,
                           "properties": {
                             "compatibilitySnapshotId": {
-                              "const": "provider-continuity-1.0.0-rm-20260722",
+                              "const": "provider-continuity-1.0.0",
                               "type": "string"
                             },
                             "deadlineMs": {
@@ -68566,7 +68566,7 @@
                       "type": "boolean"
                     },
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "journal": {
@@ -68770,7 +68770,7 @@
                           "type": "array"
                         },
                         "compatibilitySnapshotId": {
-                          "const": "provider-continuity-1.0.0-rm-20260722",
+                          "const": "provider-continuity-1.0.0",
                           "type": "string"
                         },
                         "contextSnapshot": {
@@ -69062,7 +69062,7 @@
                                 "type": "string"
                               },
                               "compatibilitySnapshotId": {
-                                "const": "provider-continuity-1.0.0-rm-20260722",
+                                "const": "provider-continuity-1.0.0",
                                 "type": "string"
                               },
                               "createdAt": {
@@ -69227,7 +69227,7 @@
                           "additionalProperties": false,
                           "properties": {
                             "compatibilitySnapshotId": {
-                              "const": "provider-continuity-1.0.0-rm-20260722",
+                              "const": "provider-continuity-1.0.0",
                               "type": "string"
                             },
                             "deadlineMs": {
@@ -69485,7 +69485,7 @@
                       "type": "boolean"
                     },
                     "compatibilitySnapshotId": {
-                      "const": "provider-continuity-1.0.0-rm-20260722",
+                      "const": "provider-continuity-1.0.0",
                       "type": "string"
                     },
                     "journal": {
@@ -69689,7 +69689,7 @@
                           "type": "array"
                         },
                         "compatibilitySnapshotId": {
-                          "const": "provider-continuity-1.0.0-rm-20260722",
+                          "const": "provider-continuity-1.0.0",
                           "type": "string"
                         },
                         "contextSnapshot": {
@@ -69981,7 +69981,7 @@
                                 "type": "string"
                               },
                               "compatibilitySnapshotId": {
-                                "const": "provider-continuity-1.0.0-rm-20260722",
+                                "const": "provider-continuity-1.0.0",
                                 "type": "string"
                               },
                               "createdAt": {
@@ -70146,7 +70146,7 @@
                           "additionalProperties": false,
                           "properties": {
                             "compatibilitySnapshotId": {
-                              "const": "provider-continuity-1.0.0-rm-20260722",
+                              "const": "provider-continuity-1.0.0",
                               "type": "string"
                             },
                             "deadlineMs": {
