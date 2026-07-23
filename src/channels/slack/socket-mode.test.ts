@@ -1258,12 +1258,13 @@ describe("Slack Socket Mode routing", () => {
     ]);
   });
 
-  it("routes Slack audio file_share events as media prompts", async () => {
+  it("hydrates Slack Connect audio metadata before downloading and transcribing", async () => {
+    const audioAgentCwd = stateDir!;
     const config: RouterConfig = {
       agents: {
         "ravi-hil": {
           id: "ravi-hil",
-          cwd: "/tmp/ravi-hil",
+          cwd: audioAgentCwd,
           dmScope: "per-peer",
         },
       },
@@ -1285,6 +1286,28 @@ describe("Slack Socket Mode routing", () => {
       instances: {},
     };
     const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const filesInfo = mock(async () => ({
+      ok: true,
+      file: {
+        id: "F123",
+        name: "audio_message.m4a",
+        title: "audio_message.m4a",
+        mimetype: "audio/mp4",
+        filetype: "m4a",
+        size: 2_558_655,
+        media_display_type: "audio",
+        url_private_download: "https://files.slack.test/private/F123",
+      },
+    }));
+    const downloadFile = mock(async () => ({
+      buffer: Buffer.from("audio-bytes"),
+      contentType: "audio/mp4",
+    }));
+    const transcribe = mock(async () => ({
+      text: "fala transcrita",
+      provider: "groq",
+      model: "whisper-large-v3-turbo",
+    }));
     const service = new SlackSocketModeService({
       appToken: "xapp-test",
       botToken: "xoxb-test",
@@ -1295,7 +1318,8 @@ describe("Slack Socket Mode routing", () => {
       publishPrompt: async (sessionName, payload) => {
         published.push({ sessionName, payload });
       },
-      webClient: {} as never,
+      webClient: { filesInfo, downloadFile } as never,
+      transcribeAudio: transcribe,
     });
     const envelope: SlackSocketEnvelope = {
       envelope_id: "env-audio-1",
@@ -1305,7 +1329,6 @@ describe("Slack Socket Mode routing", () => {
         event_time: 1_713_000_010,
         event: {
           type: "message",
-          subtype: "file_share",
           channel: "C123",
           channel_type: "channel",
           user: "U123",
@@ -1314,13 +1337,9 @@ describe("Slack Socket Mode routing", () => {
           files: [
             {
               id: "F123",
-              name: "audio_message.m4a",
-              title: "audio_message.m4a",
-              mimetype: "audio/mp4",
+              mode: "file_access",
+              file_access: "check_file_info",
               filetype: "m4a",
-              size: 2_558_655,
-              media_display_type: "audio",
-              url_private_download: "https://files.slack.test/private/F123",
             },
           ],
         },
@@ -1329,9 +1348,16 @@ describe("Slack Socket Mode routing", () => {
 
     await service.handleEnvelope(envelope);
 
+    expect(filesInfo).toHaveBeenCalledWith({ file: "F123" });
+    expect(downloadFile).toHaveBeenCalledWith({
+      url: "https://files.slack.test/private/F123",
+      maxBytes: 20 * 1024 * 1024,
+    });
+    expect(transcribe).toHaveBeenCalledWith(Buffer.from("audio-bytes"), "audio/mp4");
     expect(published).toHaveLength(1);
     expect(String(published[0]?.payload.prompt)).toContain("[Audio: audio_message.m4a, audio/mp4, 2.4 MB]");
-    expect(String(published[0]?.payload.prompt)).toContain("Transcript: unavailable");
+    expect(String(published[0]?.payload.prompt)).toContain("Transcript:\nfala transcrita");
+    expect(String(published[0]?.payload.prompt)).toContain(`file: ${audioAgentCwd}/attachments/`);
 
     const canonicalChatId = (published[0]?.payload.source as { canonicalChatId?: string } | undefined)?.canonicalChatId;
     expect(typeof canonicalChatId).toBe("string");
@@ -1347,9 +1373,16 @@ describe("Slack Socket Mode routing", () => {
       files: [
         {
           id: "F123",
+          mode: "file_access",
+          fileAccess: "check_file_info",
           name: "audio_message.m4a",
           mimeType: "audio/mp4",
           mediaDisplayType: "audio",
+          transcript: "fala transcrita",
+          transcriptionProvider: "groq",
+          transcriptionModel: "whisper-large-v3-turbo",
+          downloadError: null,
+          transcriptionError: null,
         },
       ],
     });

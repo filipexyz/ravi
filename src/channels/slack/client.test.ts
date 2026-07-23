@@ -69,6 +69,39 @@ describe("Slack Web API client", () => {
     });
   });
 
+  it("hydrates Slack Connect file metadata through files.info", async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const fetchImpl = mock(async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), init: init ?? {} });
+      return jsonResponse({
+        ok: true,
+        file: {
+          id: "F123",
+          name: "audio_message.m4a",
+          mimetype: "audio/mp4",
+          url_private_download: "https://files.slack.test/private/F123",
+        },
+      });
+    }) as unknown as typeof fetch;
+    const client = new SlackWebApiClient({
+      appToken: "xapp-secret",
+      botToken: "xoxb-secret",
+      fetchImpl,
+    });
+
+    await expect(client.filesInfo({ file: "F123" })).resolves.toMatchObject({
+      file: { id: "F123", mimetype: "audio/mp4" },
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe("https://slack.com/api/files.info");
+    expect(calls[0]?.init.headers).toMatchObject({
+      authorization: "Bearer xoxb-secret",
+      "content-type": "application/x-www-form-urlencoded",
+    });
+    expect(formBody(calls[0]?.init.body)).toEqual({ file: "F123" });
+  });
+
   it("creates, renames and invites to conversations through explicit methods", async () => {
     const methods: string[] = [];
     const requests: Array<{ method: string; body: Record<string, unknown> }> = [];

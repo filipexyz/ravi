@@ -74,6 +74,7 @@ const DEFAULT_SLACK_AUTH_TEST_TIMEOUT_MS = 5_000;
 const DEFAULT_SLACK_HEARTBEAT_INTERVAL_MS = 10_000;
 const DEFAULT_SLACK_PONG_TIMEOUT_MS = 5_000;
 const DEFAULT_SLACK_HELLO_TIMEOUT_MS = 10_000;
+const SLACK_FILE_INFO_RETRY_DELAYS_MS = [0, 250, 750, 1_500] as const;
 
 type PublishPrompt = typeof publishSessionPrompt;
 type PublishInteraction = (topic: string, payload: Record<string, unknown>) => Promise<void>;
@@ -153,6 +154,7 @@ export interface SlackSocketModeServiceOptions {
   readonly authTestTimeoutMs?: number;
   /** Clock injection for bounded auth.test retry tests. */
   readonly now?: () => number;
+  readonly transcribeAudio?: typeof transcribeAudio;
 }
 
 export interface SlackNativeRuntime {
@@ -1365,22 +1367,32 @@ export class SlackSocketModeService {
     index: number,
     agentCwd: string,
   ): Promise<ProcessedSlackFile> {
-    const downloadUrl = file.privateDownloadUrl ?? file.privateUrl;
-    if (!downloadUrl) return file;
+    const hydrated = await this.hydrateFileMetadata(file);
+    const resolvedFile = hydrated.file;
+    const downloadUrl = slackFileDownloadUrl(resolvedFile);
+    if (!downloadUrl) {
+      const downloadError = hydrated.error ?? "Slack file metadata did not include a private download URL";
+      log.warn("Slack file metadata unavailable", {
+        fileId: resolvedFile.id,
+        fileAccess: resolvedFile.fileAccess,
+        error: downloadError,
+      });
+      return { ...resolvedFile, downloadError };
+    }
 
-    const isAudio = isSlackAudioFile(file);
+    const isAudio = isSlackAudioFile(resolvedFile);
     const maxBytes = isAudio ? MAX_AUDIO_BYTES : MAX_MEDIA_BYTES;
     try {
       const download = await this.webClient.downloadFile({ url: downloadUrl, maxBytes });
-      const mimeType = file.mimeType ?? download.contentType ?? "application/octet-stream";
-      const messageId = `${message.ts}-${file.id || index}`;
+      const mimeType = resolvedFile.mimeType ?? download.contentType ?? "application/octet-stream";
+      const messageId = `${message.ts}-${resolvedFile.id || index}`;
       const localPath = await saveToAgentAttachments(download.buffer, agentCwd, messageId, mimeType);
-      if (!isAudio) return { ...file, mimeType, localPath };
+      if (!isAudio) return { ...resolvedFile, mimeType, localPath };
 
       try {
-        const transcription = await transcribeAudio(download.buffer, mimeType);
+        const transcription = await (this.options.transcribeAudio ?? transcribeAudio)(download.buffer, mimeType);
         return {
-          ...file,
+          ...resolvedFile,
           mimeType,
           localPath,
           transcript: transcription.text,
@@ -1389,12 +1401,12 @@ export class SlackSocketModeService {
         };
       } catch (error) {
         log.warn("Slack audio transcription failed", {
-          fileId: file.id,
+          fileId: resolvedFile.id,
           mimeType,
           error: error instanceof Error ? error.message : String(error),
         });
         return {
-          ...file,
+          ...resolvedFile,
           mimeType,
           localPath,
           transcriptionError: error instanceof Error ? error.message : String(error),
@@ -1402,16 +1414,54 @@ export class SlackSocketModeService {
       }
     } catch (error) {
       log.warn("Slack file download failed", {
-        fileId: file.id,
-        mimeType: file.mimeType,
-        sizeBytes: file.sizeBytes,
+        fileId: resolvedFile.id,
+        mimeType: resolvedFile.mimeType,
+        sizeBytes: resolvedFile.sizeBytes,
         error: error instanceof Error ? error.message : String(error),
       });
       return {
-        ...file,
+        ...resolvedFile,
         downloadError: error instanceof Error ? error.message : String(error),
       };
     }
+  }
+
+  private async hydrateFileMetadata(
+    file: SlackNormalizedFile,
+  ): Promise<{ readonly file: SlackNormalizedFile; readonly error?: string }> {
+    if (slackFileDownloadUrl(file)) return { file };
+    if (!file.id || file.id.startsWith("file-")) {
+      return { file, error: "Slack file metadata is missing a stable file ID" };
+    }
+
+    const filesInfo = (this.webClient as Partial<SlackWebApiClient>).filesInfo;
+    if (typeof filesInfo !== "function") {
+      return { file, error: "Slack Web API client cannot hydrate file metadata" };
+    }
+
+    let hydrated = file;
+    let lastError = "Slack files.info returned no private download URL";
+    for (const [attempt, delayMs] of SLACK_FILE_INFO_RETRY_DELAYS_MS.entries()) {
+      if (delayMs > 0) await delay(delayMs);
+      try {
+        const response = await filesInfo.call(this.webClient, { file: file.id });
+        const resolved = normalizeSlackFile(response.file, 0);
+        if (resolved) hydrated = { ...hydrated, ...resolved, id: file.id };
+        if (slackFileDownloadUrl(hydrated)) {
+          log.info("Slack file metadata hydrated", {
+            fileId: file.id,
+            fileAccess: file.fileAccess,
+            attempts: attempt + 1,
+          });
+          return { file: hydrated };
+        }
+        lastError = "Slack files.info returned no private download URL";
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+      }
+    }
+
+    return { file: hydrated, error: lastError };
   }
 }
 
@@ -2011,6 +2061,10 @@ function positiveDuration(value: number | undefined, fallback: number): number {
   return value !== undefined && Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function normalizeSlackFiles(value: unknown): SlackNormalizedFile[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -2024,6 +2078,8 @@ function normalizeSlackFile(value: unknown, index: number): SlackNormalizedFile 
   const id = firstString(record.id) ?? `file-${index}`;
   return {
     id,
+    ...(firstString(record.mode) ? { mode: firstString(record.mode) } : {}),
+    ...(firstString(record.file_access) ? { fileAccess: firstString(record.file_access) } : {}),
     ...(firstString(record.name) ? { name: firstString(record.name) } : {}),
     ...(firstString(record.title) ? { title: firstString(record.title) } : {}),
     ...(firstString(record.mimetype) ? { mimeType: firstString(record.mimetype) } : {}),
@@ -2070,6 +2126,8 @@ function buildSlackMessageContent(
 function publicSlackFileMetadata(file: ProcessedSlackFile): Record<string, unknown> {
   return {
     id: file.id,
+    mode: file.mode ?? null,
+    fileAccess: file.fileAccess ?? null,
     name: file.name ?? null,
     title: file.title ?? null,
     mimeType: file.mimeType ?? null,
@@ -2080,6 +2138,8 @@ function publicSlackFileMetadata(file: ProcessedSlackFile): Record<string, unkno
     transcript: file.transcript ?? null,
     transcriptionProvider: file.transcriptionProvider ?? null,
     transcriptionModel: file.transcriptionModel ?? null,
+    downloadError: file.downloadError ?? null,
+    transcriptionError: file.transcriptionError ?? null,
   };
 }
 
@@ -2132,4 +2192,8 @@ function isSlackAudioFile(file: Pick<SlackNormalizedFile, "mimeType" | "fileType
       fileType === "wav" ||
       fileType === "webm",
   );
+}
+
+function slackFileDownloadUrl(file: SlackNormalizedFile): string | undefined {
+  return file.privateDownloadUrl ?? file.privateUrl;
 }
