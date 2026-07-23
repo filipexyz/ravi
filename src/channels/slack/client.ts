@@ -142,6 +142,10 @@ export interface SlackFilesListInput {
   readonly tsTo?: string;
 }
 
+export interface SlackFileInfoInput {
+  readonly file: string;
+}
+
 export interface SlackCanvasCreateInput {
   readonly title?: string;
   readonly markdown?: string;
@@ -287,6 +291,10 @@ export interface SlackFilesListResponse extends SlackApiResponse {
   readonly files?: unknown[];
   readonly paging?: unknown;
   readonly response_metadata?: SlackCursorPaging;
+}
+
+export interface SlackFileInfoResponse extends SlackApiResponse {
+  readonly file?: unknown;
 }
 
 export interface SlackCanvasCreateResponse extends SlackApiResponse {
@@ -615,6 +623,12 @@ export class SlackWebApiClient {
         ts_to: input.tsTo,
       }),
     );
+  }
+
+  async filesInfo(input: SlackFileInfoInput): Promise<SlackFileInfoResponse> {
+    return this.apiRequest<SlackFileInfoResponse>("files.info", this.botToken, {
+      file: input.file,
+    });
   }
 
   async canvasesCreate(input: SlackCanvasCreateInput): Promise<SlackCanvasCreateResponse> {
