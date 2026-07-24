@@ -1038,6 +1038,96 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
+  it("restarts an in-flight thread prompt after an external model change", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-thread-model-change-");
+    try {
+      const sessionKey = "agent:dev:slack:test:group:C123:thread:1784907646.950319";
+      const sessionName = "dev-t-1784907646950319";
+      getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
+      const dispatcher = createDispatcher(1);
+      const restartedPrompts: RuntimeLaunchPrompt[] = [];
+      let interrupted = false;
+      dispatcher.startStreamingSession = mock(async (restartedName, prompt) => {
+        expect(restartedName).toBe(sessionName);
+        restartedPrompts.push(prompt);
+        dispatcher.streamingSessions.set(
+          sessionName,
+          createActiveSession({
+            currentModel: "next-model",
+          }),
+        );
+      });
+      dispatcher.streamingSessions.set(
+        sessionName,
+        createActiveSession({
+          turnActive: true,
+          traceRunId: "run-thread-model-change",
+          currentTraceTurnId: "turn-thread-model-change",
+          currentTraceTurnStartedAt: Date.now() - 1_000,
+          currentTraceTurnTerminalRecorded: false,
+          pendingMessages: [
+            createQueuedRuntimeUserMessage({
+              prompt: "continue this thread",
+              source: {
+                channel: "slack",
+                accountId: "test",
+                chatId: "C123",
+                threadId: "1784907646.950319",
+                sourceMessageId: "1784907662.660409",
+              },
+              _agentId: "dev",
+            }),
+          ],
+          queryHandle: {
+            provider: "codex",
+            events: (async function* () {})(),
+            interrupt: async () => {
+              interrupted = true;
+            },
+          },
+        }),
+      );
+
+      const result = await dispatcher.applySessionModelChange(sessionName, "next-model", {
+        restartStashedMessages: true,
+      });
+
+      expect(result).toBe("restart-next-turn");
+      expect(interrupted).toBe(true);
+      expect(restartedPrompts).toHaveLength(1);
+      expect(restartedPrompts[0]).toMatchObject({
+        prompt: "continue this thread",
+        _agentId: "dev",
+        _resumeStashedMessages: true,
+        source: {
+          channel: "slack",
+          accountId: "test",
+          chatId: "C123",
+          threadId: "1784907646.950319",
+          sourceMessageId: "1784907662.660409",
+        },
+      });
+
+      const trace = querySessionTrace({ sessionKey, sessionName });
+      const modelRestartEvents = trace.events.filter((event) =>
+        ["dispatch.restart_requested", "turn.interrupted"].includes(event.eventType),
+      );
+      expect(modelRestartEvents.map((event) => event.eventType)).toEqual([
+        "dispatch.restart_requested",
+        "turn.interrupted",
+        "dispatch.restart_requested",
+      ]);
+      expect(modelRestartEvents.every((event) => event.sessionKey === sessionKey)).toBe(true);
+      expect(modelRestartEvents.map((event) => (event.payloadJson as { reason?: string } | null)?.reason)).toEqual([
+        "model_change_restart",
+        "model_change_restart",
+        "model_change_restart",
+      ]);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
   it("releases task runtime sessions when task terminal events are emitted", async () => {
     const dispatcher = createDispatcher(1);
     let interrupted = false;

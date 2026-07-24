@@ -1696,4 +1696,24 @@ describe("runtime session trace instrumentation", () => {
     ]);
     expect(streaming.done).toBe(true);
   });
+
+  it("does not remove a replacement runtime when the previous event loop exits", async () => {
+    const streaming = makeStreamingSession({ turnActive: false });
+    const replacement = makeStreamingSession({ turnActive: false });
+    const streamingSessions = new Map([[SESSION_NAME, streaming]]);
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: PROVIDER,
+      events: (async function* () {
+        streamingSessions.set(SESSION_NAME, replacement);
+        yield* [];
+      })(),
+      interrupt: async () => {},
+    };
+    streaming.queryHandle = runtimeSession;
+
+    await runTraceLoop(streaming, runtimeSession, { streamingSessions });
+
+    expect(streamingSessions.get(SESSION_NAME)).toBe(replacement);
+    expect(replacement.done).toBe(false);
+  });
 });

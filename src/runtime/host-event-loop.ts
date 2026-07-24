@@ -2342,11 +2342,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
     await closeRuntimeSession();
 
-    if (streamingSessions.delete(sessionName)) {
-      completeRuntimeCredentialAttempt(streaming.currentRuntimeCredential?.attemptId, {
-        status: "abandoned",
-        metadata: { phase: "runtime.event_loop.finally" },
-      });
+    const stillOwnsRuntimeSlot = streamingSessions.get(sessionName) === streaming;
+    if (stillOwnsRuntimeSlot) {
+      streamingSessions.delete(sessionName);
+    }
+    completeRuntimeCredentialAttempt(streaming.currentRuntimeCredential?.attemptId, {
+      status: "abandoned",
+      metadata: { phase: "runtime.event_loop.finally" },
+    });
+    if (stillOwnsRuntimeSlot) {
       if (restartStashedReason && restartStashedSession) {
         await restartStashedSession({
           sessionName,
