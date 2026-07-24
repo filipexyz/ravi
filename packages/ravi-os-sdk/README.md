@@ -118,6 +118,7 @@ Deep imports are available when you want smaller bundles:
 
 ```ts
 import { RaviClient } from "@ravi-os/sdk/client";
+import type { NativeChannelDriver } from "@ravi-os/sdk/native-channel-driver";
 import { createHttpTransport } from "@ravi-os/sdk/transport/http";
 ```
 

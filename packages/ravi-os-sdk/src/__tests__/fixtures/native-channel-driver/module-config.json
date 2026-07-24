@@ -1,0 +1,6 @@
+{
+  "moduleSpecifier": "@example/native-channel-driver",
+  "protocol": "ravi.channel.native-driver",
+  "provider": "example",
+  "schemaVersion": 1
+}

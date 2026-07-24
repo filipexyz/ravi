@@ -93,3 +93,8 @@ export type {
   SlackThreadContext,
   SlackThreadReplyMode,
 } from "./types.js";
+export {
+  createSlackNativeChannelDriver,
+  slackNativeRuntimeHealth,
+} from "./driver.js";
+export type { SlackNativeChannelDriverOptions } from "./driver.js";

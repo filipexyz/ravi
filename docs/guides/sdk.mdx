@@ -212,6 +212,78 @@ The projected runtime schema and fixtures live beside the backend capsule under
 `packages/ravi-os-sdk/src/generated` and
 `packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events`.
 
+## Native Channel Drivers
+
+An installed provider can run inside the channel runner through the versioned
+`NativeChannelDriver` ABI. The driver receives a channel-scoped host for
+ingress, runtime readback and interrupt, output sinks, and lifecycle event
+sinks. Optional text delivery, chat actions, and presence surfaces join the
+same outbound consumers as built-in channels.
+
+Each module must expose the named `nativeChannelDriver` export:
+
+```ts
+import type {
+  NativeChannelDriver,
+} from "@ravi-os/sdk/native-channel-driver";
+
+export const nativeChannelDriver: NativeChannelDriver = {
+  descriptor: {
+    protocol: "ravi.channel.native-driver",
+    schemaVersion: 1,
+    driverId: "example.native",
+    provider: "example",
+    capabilities: ["inbound"],
+  },
+  createRuntime({ channel }) {
+    return {
+      descriptor: {
+        protocol: "ravi.channel.native-driver",
+        schemaVersion: 1,
+        driverId: "example.native",
+        provider: "example",
+        runtimeId: channel.name,
+        channelInstanceId: channel.name,
+        capabilities: ["inbound"],
+      },
+      start() {},
+      stop() {},
+      health: () => ({ status: "connected" }),
+    };
+  },
+};
+```
+
+Operators declare local modules explicitly:
+
+```bash
+RAVI_NATIVE_CHANNEL_DRIVERS='[
+  {
+    "protocol": "ravi.channel.native-driver",
+    "schemaVersion": 1,
+    "provider": "example",
+    "moduleSpecifier": "@example/native-channel-driver"
+  }
+]'
+```
+
+Installed package names and absolute `file:///` URLs are accepted. Ravi never
+derives a module name from the provider, searches for plugins, or downloads
+driver code. ABI version, provider ownership, runtime identity, capabilities,
+and optional surfaces are validated before start. Duplicate or incompatible
+drivers fail closed.
+
+Drivers start sequentially with enabled channel instances and stop in reverse
+order. Health projection includes only lifecycle state, stable reason codes,
+timestamps, and reconnect counts; provider payloads, secrets, and thrown error
+details are excluded. The ABI introduces no new Ravi capability. Local driver
+code runs inside the channel runner, so installation remains an explicit
+operator trust decision.
+
+The generated driver schema and neutral fixtures live under
+`packages/ravi-os-sdk/src/generated` and
+`packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver`.
+
 ## Wire Contract
 
 Every command call is a POST:
@@ -348,6 +420,7 @@ The published TypeScript package exports:
 import { RaviClient } from "@ravi-os/sdk/client";
 import { createChannelBackendClient } from "@ravi-os/sdk/channel-backend";
 import { createChannelRuntimeClient } from "@ravi-os/sdk/channel-runtime-events";
+import type { NativeChannelDriver } from "@ravi-os/sdk/native-channel-driver";
 import { createHttpTransport } from "@ravi-os/sdk/transport/http";
 import { createStreamClient } from "@ravi-os/sdk/streaming";
 import { RaviError } from "@ravi-os/sdk/errors";

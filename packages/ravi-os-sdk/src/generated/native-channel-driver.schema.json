@@ -1,0 +1,159 @@
+{
+  "$defs": {
+    "NativeChannelDriverCapabilities": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "enum": [
+          "inbound",
+          "text_delivery",
+          "chat_actions",
+          "presence"
+        ],
+        "type": "string"
+      },
+      "maxItems": 4,
+      "minItems": 1,
+      "type": "array"
+    },
+    "NativeChannelDriverCapability": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        "inbound",
+        "text_delivery",
+        "chat_actions",
+        "presence"
+      ],
+      "type": "string"
+    },
+    "NativeChannelDriverDescriptor": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "capabilities": {
+          "items": {
+            "enum": [
+              "inbound",
+              "text_delivery",
+              "chat_actions",
+              "presence"
+            ],
+            "type": "string"
+          },
+          "maxItems": 4,
+          "minItems": 1,
+          "type": "array"
+        },
+        "driverId": {
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "type": "string"
+        },
+        "protocol": {
+          "const": "ravi.channel.native-driver",
+          "type": "string"
+        },
+        "provider": {
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "protocol",
+        "schemaVersion",
+        "driverId",
+        "provider",
+        "capabilities"
+      ],
+      "type": "object"
+    },
+    "NativeChannelDriverModuleConfig": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "moduleSpecifier": {
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*\\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*|file:\\/\\/\\/[^\\u0000-\\u001f\\u007f]+)$",
+          "type": "string"
+        },
+        "protocol": {
+          "const": "ravi.channel.native-driver",
+          "type": "string"
+        },
+        "provider": {
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "protocol",
+        "schemaVersion",
+        "provider",
+        "moduleSpecifier"
+      ],
+      "type": "object"
+    },
+    "NativeChannelRuntimeDescriptor": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "capabilities": {
+          "items": {
+            "enum": [
+              "inbound",
+              "text_delivery",
+              "chat_actions",
+              "presence"
+            ],
+            "type": "string"
+          },
+          "maxItems": 4,
+          "minItems": 1,
+          "type": "array"
+        },
+        "channelInstanceId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "driverId": {
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "type": "string"
+        },
+        "protocol": {
+          "const": "ravi.channel.native-driver",
+          "type": "string"
+        },
+        "provider": {
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "type": "string"
+        },
+        "runtimeId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "protocol",
+        "schemaVersion",
+        "driverId",
+        "provider",
+        "runtimeId",
+        "channelInstanceId",
+        "capabilities"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:ravi:channel-capsule:native-channel-driver:v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "capsuleVersion": 1,
+  "compatibilityProfile": "additive-v1",
+  "sourceDigest": "816c67787b76c5b98f6ab356b0f178fdeda35cf0d81f92aa9b2a75655b370464",
+  "title": "native-channel-driver channel capability"
+}

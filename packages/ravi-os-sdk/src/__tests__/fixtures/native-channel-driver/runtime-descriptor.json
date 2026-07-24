@@ -1,0 +1,14 @@
+{
+  "capabilities": [
+    "inbound",
+    "text_delivery",
+    "chat_actions",
+    "presence"
+  ],
+  "channelInstanceId": "example-channel-a",
+  "driverId": "example.native",
+  "protocol": "ravi.channel.native-driver",
+  "provider": "example",
+  "runtimeId": "example-runtime-a",
+  "schemaVersion": 1
+}

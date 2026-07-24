@@ -3,16 +3,17 @@ import { CHANNEL_OUTBOUND_PUBLISH_RETENTION_MS } from "./outbound-publish-outbox
 import { CHANNEL_OUTBOUND_RECEIPT_RETENTION_MS } from "./outbound-receipts.js";
 import {
   CHANNEL_OUTBOUND_RECEIPT_PRUNE_INTERVAL_MS,
-  collectSlackRuntimeDeliveries,
+  collectNativeRuntimeDeliveries,
   pruneChannelOutboundPublishOutbox,
   pruneChannelOutboundReceiptLedger,
   runChannelOutboundLedgerMaintenance,
   slackAdapterHealth,
   startChannelOutboundReceiptPruner,
 } from "./runner.js";
+import { createSlackNativeChannelDriver } from "./slack/driver.js";
 
 describe("channel runner native delivery registry", () => {
-  it("registers Slack text, chat action, and presence adapters together", () => {
+  it("registers optional text, chat action, and presence adapters together", () => {
     const delivery = {
       channelId: "slack",
       supports: () => true,
@@ -30,7 +31,7 @@ describe("channel runner native delivery registry", () => {
     };
 
     expect(
-      collectSlackRuntimeDeliveries([
+      collectNativeRuntimeDeliveries([
         {
           delivery,
           actions,
@@ -42,6 +43,77 @@ describe("channel runner native delivery registry", () => {
       actionDeliveries: [actions],
       presenceDeliveries: [presence],
     });
+  });
+
+  it("runs Slack through the same versioned driver lifecycle", async () => {
+    const start = mock(() => {});
+    const stop = mock(async () => {});
+    const status = mock(() => ({
+      state: "connecting" as const,
+      reconnectCount: 0,
+      reason: "opening_socket" as const,
+    }));
+    const delivery = {
+      channelId: "slack",
+      supports: () => true,
+      deliverText: mock(async () => ({ provider: "slack" })),
+    };
+    const actions = {
+      channelId: "slack",
+      supports: () => true,
+      executeChatAction: mock(async () => ({ provider: "slack" })),
+    };
+    const presence = {
+      channelId: "slack",
+      supports: () => true,
+      sendPresence: mock(async () => ({ provider: "slack", status: "active" as const })),
+    };
+    const driver = createSlackNativeChannelDriver(
+      {},
+      {
+        createRuntime: mock(async () => ({
+          id: "slack-a",
+          accountId: "slack-a",
+          instanceId: "slack-a",
+          connection: "connection-a",
+          delivery,
+          actions,
+          presence,
+          socketMode: { start, stop, status } as never,
+        })),
+      },
+    );
+    const runtime = await driver.createRuntime({
+      channel: {
+        name: "slack-a",
+        provider: "slack",
+        credentialConnection: "connection-a",
+      },
+      host: {} as never,
+    });
+
+    expect(driver.descriptor).toMatchObject({
+      protocol: "ravi.channel.native-driver",
+      schemaVersion: 1,
+      provider: "slack",
+    });
+    expect(runtime.descriptor).toMatchObject({
+      provider: "slack",
+      runtimeId: "slack-a",
+      channelInstanceId: "slack-a",
+    });
+    expect(runtime.delivery).toBe(delivery);
+    expect(runtime.actions).toBe(actions);
+    expect(runtime.presence).toBe(presence);
+    await runtime.start();
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(runtime.health()).toMatchObject({
+      status: "starting",
+      reason: "opening_socket",
+      reconnectCount: 0,
+    });
+    await runtime.stop();
+    expect(stop).toHaveBeenCalledTimes(1);
   });
 });
 

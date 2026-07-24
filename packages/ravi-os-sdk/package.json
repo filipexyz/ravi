@@ -42,6 +42,10 @@
       "types": "./dist/channel-runtime-events.d.ts",
       "default": "./dist/channel-runtime-events.js"
     },
+    "./native-channel-driver": {
+      "types": "./dist/native-channel-driver.d.ts",
+      "default": "./dist/native-channel-driver.js"
+    },
     "./transport/http": {
       "types": "./dist/transport/http.d.ts",
       "default": "./dist/transport/http.js"
