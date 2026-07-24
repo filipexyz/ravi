@@ -14,7 +14,9 @@ tags:
   - sessions
   - providers
   - codex
+  - claude
   - context-window
+  - missing-session
 applies_to:
   - src/runtime/context-window-recovery.ts
   - src/runtime/host-event-loop.ts
@@ -31,15 +33,21 @@ normative: true
 
 ## Intent
 
-Runtime Context Recovery lets Ravi recover when a provider cannot continue because its active context window is exhausted.
+Runtime Context Recovery lets Ravi recover when a provider cannot continue because its active context window is exhausted or the provider-native session it was asked to resume no longer exists.
 
-The first supported live case is Codex returning:
+The first supported live cases are Codex returning:
 
 ```text
 Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying.
 ```
 
-Ravi must handle that as a provider-state failure, not as a user-facing task failure. The local SQLite session history and trace ledger remain the source of truth.
+and Claude returning:
+
+```text
+No conversation found with session ID: <id>
+```
+
+Ravi must handle both as provider-state failures, not as user-facing task failures. The local SQLite session history and trace ledger remain the source of truth.
 
 ## Boundary
 
@@ -50,14 +58,16 @@ Providers own native compaction, thread/session ids, and raw error strings. Prov
 ## Rules
 
 - Context-window exhaustion MUST be classified from canonical `turn.failed` events or provider-local failure metadata.
-- Codex-specific error text MAY seed the classifier, but the recovery flow MUST be provider-agnostic once the failure is classified.
+- A missing provider-native conversation MUST be classified from canonical `turn.failed` events or provider-local failure metadata.
+- Provider-specific error text MAY seed the classifier, but the recovery flow MUST be provider-agnostic once the failure is classified.
+- Missing-session recovery MUST run only when the failed turn had stored provider session state to resume. The same error from an already-fresh session MUST surface normally instead of starting an unbounded restart loop.
 - Recovery MUST clear provider session state only. It MUST NOT delete the Ravi session row, chat subscriptions, durable messages, prompt atom data, traces, tasks, or local history.
 - Recovery MUST revoke live runtime context keys for the session so the next provider start receives fresh child CLI context.
 - Recovery MUST NOT emit the raw provider error as the assistant response.
 - Recovery MUST restart the session with a synthetic same-session prompt.
 - The synthetic prompt MUST be plain text, compact, and human-readable. It MUST NOT be JSON.
 - The synthetic prompt MUST include:
-  - a clear recovery notice for the agent;
+  - a clear cause-specific recovery notice for the agent;
   - the latest user request from local history when available;
   - a compact recent transcript;
   - continuation instructions telling the agent not to treat historical messages as new requests.
@@ -65,6 +75,7 @@ Providers own native compaction, thread/session ids, and raw error strings. Prov
 - The recovery prompt MUST strip internal session surface headers, route hints, raw chat ids where possible, and message ids that are not useful to continue.
 - The recovery prompt MUST be bounded by message count and total character budget.
 - Recovery MUST record trace data showing the failure, reset, provider, model, classifier match, prompt size, and restart reason.
+- Recovery MUST distinguish `runtime_context_window_exhausted` from `runtime_provider_session_missing` in restart reasons and session trace events.
 - If recovery prompt construction fails or no restart prompt can be built, Ravi MUST fail closed with a normal terminal failure.
 
 ## Provider Notes
@@ -75,17 +86,25 @@ Codex currently exposes native thread controls, but a context-window exhaustion 
 
 Codex native compaction events are still preferred when they happen before failure. This feature handles the failure path where no successful native compaction occurred.
 
+### Claude
+
+Claude provider sessions may disappear from local provider storage while Ravi still has their opaque ids in SQLite. When Claude rejects a resumed id with `No conversation found with session ID`, Ravi should clear the stale provider state and recreate the conversation from durable local history.
+
 ### Other Providers
 
-Other providers should enter this recovery path only after their adapters or classifiers produce a context-window/context-limit classification. No provider-specific branching should be added to `bot.ts`, request building, or delivery routing.
+Other providers should enter this recovery path only after their adapters or shared classifiers produce a supported recovery classification. No provider-specific branching should be added to `bot.ts`, request building, or delivery routing.
 
 ## Acceptance Criteria
 
 - A Codex `turn.failed` with the exact context-window error resets provider state and schedules a restart.
+- A Claude `turn.failed` with the exact missing-conversation error resets stale provider state and schedules one fresh restart.
 - The user does not receive `Error: Codex ran out of room...`.
+- The user does not receive `Error: No conversation found with session ID...` when stale provider state was resumed.
 - The next provider turn starts with `resume=false` because provider state was cleared.
 - The restart prompt contains recent local history and the latest user request.
 - The restart prompt is plain text and not JSON.
 - The session trace includes `turn.failed` with `autoRecovered=true` and `session.context_window_exhausted`.
+- Missing Claude state records `turn.failed` with `autoRecovered=true` and `session.provider_session_missing`.
+- A missing-conversation error without stored provider state does not trigger another recovery restart.
 - Durable local messages remain readable after recovery.
 - Credential retry logic does not treat context-window exhaustion as a credential retry.

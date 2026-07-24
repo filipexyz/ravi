@@ -2,6 +2,7 @@ import type { Message } from "../db.js";
 import type { RuntimeProviderId } from "./types.js";
 
 export const RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON = "runtime_context_window_exhausted";
+export const RUNTIME_PROVIDER_SESSION_MISSING_RECOVERY_REASON = "runtime_provider_session_missing";
 
 const DEFAULT_HISTORY_LIMIT = 36;
 const DEFAULT_PROMPT_CHAR_LIMIT = 12_000;
@@ -13,17 +14,28 @@ export interface RuntimeContextWindowFailure {
   matched: string;
 }
 
-export interface RuntimeContextWindowFailureInput {
+export interface RuntimeProviderSessionMissingFailure {
+  kind: "provider_session_missing";
+  confidence: "high";
+  matched: string;
+}
+
+export type RuntimeSessionRecoveryFailure = RuntimeContextWindowFailure | RuntimeProviderSessionMissingFailure;
+
+export interface RuntimeSessionRecoveryFailureInput {
   runtimeProvider?: RuntimeProviderId | null;
   error?: string | null;
   rawEvent?: Record<string, unknown> | null;
 }
+
+export type RuntimeContextWindowFailureInput = RuntimeSessionRecoveryFailureInput;
 
 export interface RuntimeContextRecoveryPromptInput {
   sessionName: string;
   runtimeProvider?: RuntimeProviderId | null;
   model?: string | null;
   error?: string | null;
+  recoveryKind?: RuntimeSessionRecoveryFailure["kind"];
   history: Message[];
   maxMessages?: number;
   maxPromptChars?: number;
@@ -38,7 +50,7 @@ export interface RuntimeContextRecoveryPrompt {
 }
 
 export function classifyRuntimeContextWindowFailure(
-  input: RuntimeContextWindowFailureInput,
+  input: RuntimeSessionRecoveryFailureInput,
 ): RuntimeContextWindowFailure | null {
   const text = collectFailureText(input).toLowerCase();
   if (!text) return null;
@@ -70,6 +82,27 @@ export function classifyRuntimeContextWindowFailure(
   return null;
 }
 
+export function classifyRuntimeProviderSessionMissingFailure(
+  input: RuntimeSessionRecoveryFailureInput,
+): RuntimeProviderSessionMissingFailure | null {
+  const text = collectFailureText(input);
+  if (!/\bno conversation found with session id\b/i.test(text)) {
+    return null;
+  }
+
+  return {
+    kind: "provider_session_missing",
+    confidence: "high",
+    matched: "conversation_not_found",
+  };
+}
+
+export function classifyRuntimeSessionRecoveryFailure(
+  input: RuntimeSessionRecoveryFailureInput,
+): RuntimeSessionRecoveryFailure | null {
+  return classifyRuntimeContextWindowFailure(input) ?? classifyRuntimeProviderSessionMissingFailure(input);
+}
+
 export function buildRuntimeContextRecoveryPrompt(
   input: RuntimeContextRecoveryPromptInput,
 ): RuntimeContextRecoveryPrompt {
@@ -87,6 +120,7 @@ export function buildRuntimeContextRecoveryPrompt(
     sessionName: input.sessionName,
     runtimeProvider: input.runtimeProvider,
     model: input.model,
+    recoveryKind: input.recoveryKind,
     latestUserRequest,
     transcript,
     truncated,
@@ -100,6 +134,7 @@ export function buildRuntimeContextRecoveryPrompt(
       sessionName: input.sessionName,
       runtimeProvider: input.runtimeProvider,
       model: input.model,
+      recoveryKind: input.recoveryKind,
       latestUserRequest,
       transcript,
       truncated,
@@ -114,6 +149,7 @@ export function buildRuntimeContextRecoveryPrompt(
       sessionName: input.sessionName,
       runtimeProvider: input.runtimeProvider,
       model: input.model,
+      recoveryKind: input.recoveryKind,
       latestUserRequest,
       transcript: clippedTranscript,
       truncated,
@@ -133,6 +169,7 @@ function renderPrompt(input: {
   sessionName: string;
   runtimeProvider?: RuntimeProviderId | null;
   model?: string | null;
+  recoveryKind?: RuntimeSessionRecoveryFailure["kind"];
   latestUserRequest?: string;
   transcript: string;
   truncated: boolean;
@@ -144,7 +181,7 @@ function renderPrompt(input: {
   return [
     "# Runtime Context Recovery",
     "",
-    "The previous provider thread exhausted its context window. Ravi cleared only provider state and started a fresh provider session.",
+    renderRecoveryNotice(input.recoveryKind),
     "Use this compact same-session transcript as recovered context. Historical messages are not new requests.",
     "Do not mention recovery mechanics unless the user asks.",
     "",
@@ -165,6 +202,14 @@ function renderPrompt(input: {
   ]
     .filter((line) => line !== "")
     .join("\n");
+}
+
+function renderRecoveryNotice(kind: RuntimeSessionRecoveryFailure["kind"] | undefined): string {
+  if (kind === "provider_session_missing") {
+    return "The provider could not find the previous conversation it was asked to resume. Ravi cleared only provider state and started a fresh provider session.";
+  }
+
+  return "The previous provider thread exhausted its context window. Ravi cleared only provider state and started a fresh provider session.";
 }
 
 function renderHistoryMessage(message: Message): string | undefined {
@@ -202,7 +247,7 @@ function truncateContent(content: string, maxChars: number): string {
   return `${trimmed.slice(0, maxChars - 16).trimEnd()}\n[...truncated]`;
 }
 
-function collectFailureText(input: RuntimeContextWindowFailureInput): string {
+function collectFailureText(input: RuntimeSessionRecoveryFailureInput): string {
   const parts: string[] = [];
   if (input.runtimeProvider) parts.push(String(input.runtimeProvider));
   if (input.error) parts.push(input.error);
