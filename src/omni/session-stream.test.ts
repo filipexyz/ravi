@@ -1,30 +1,17 @@
-import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import {
   ensureSessionConsumer,
   ensureSessionPromptInfrastructure,
   ensureSessionPromptsStream,
-  publishSessionPrompt,
   resetSessionPromptInfrastructureCacheForTests,
-  setSessionPromptPublishHooksForTests,
 } from "./session-stream.js";
+import { publishSessionPromptPublication } from "./session-prompt-publication.js";
 
 let currentJsm: PromptJsm;
-const promptPublishMock = mock(async (_subject: string, _payload: Uint8Array) => ({}));
-const runtimeEmitMock = mock(async (_topic: string, _payload: Record<string, unknown>) => {});
-const recordPromptPublishedTraceMock = mock(() => null);
-
-afterAll(() => {
-  setSessionPromptPublishHooksForTests();
-  mock.restore();
-});
 
 beforeEach(() => {
   resetSessionPromptInfrastructureCacheForTests();
-  setSessionPromptPublishHooksForTests();
   currentJsm = makePromptJsm();
-  promptPublishMock.mockClear();
-  runtimeEmitMock.mockClear();
-  recordPromptPublishedTraceMock.mockClear();
 });
 
 describe("session prompt JetStream infrastructure", () => {
@@ -151,19 +138,11 @@ describe("session prompt JetStream infrastructure", () => {
   });
 
   it("announces a sourced prompt to the runtime after its durable publish", async () => {
+    const publishGate = deferred<void>();
     const callOrder: string[] = [];
-    promptPublishMock.mockImplementationOnce(async () => {
-      callOrder.push("prompt");
-      return {};
-    });
-    runtimeEmitMock.mockImplementationOnce(async () => {
-      callOrder.push("runtime");
-    });
-    setSessionPromptPublishHooksForTests({
-      publishPrompt: promptPublishMock,
-      emitRuntimeEvent: runtimeEmitMock,
-      recordPublishedTrace: recordPromptPublishedTraceMock,
-    });
+    const runtimeEvents: Array<{ topic: string; payload: Record<string, unknown> }> = [];
+    const publishedTraces: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const errors: unknown[] = [];
     const source = {
       channel: "slack",
       accountId: "hana-slack",
@@ -171,25 +150,65 @@ describe("session prompt JetStream infrastructure", () => {
       chatId: "C123",
       sourceMessageId: "1784824412.623669",
     };
-
-    await publishSessionPrompt("ravi-slack-channel", {
-      prompt: "deixa eu testar",
-      source,
-      deliveryBarrier: "after_tool",
-      deliveryBarrierSource: "default",
-    });
-
-    expect(callOrder).toEqual(["prompt", "runtime"]);
-    expect(runtimeEmitMock).toHaveBeenCalledWith(
-      "ravi.session.ravi-slack-channel.runtime",
-      expect.objectContaining({
-        type: "prompt.published",
-        sessionName: "ravi-slack-channel",
-        _source: source,
+    const publish = publishSessionPromptPublication({
+      sessionName: "ravi-slack-channel",
+      payload: {
+        prompt: "deixa eu testar",
+        source,
         deliveryBarrier: "after_tool",
         deliveryBarrierSource: "default",
-      }),
-    );
+      },
+      publishDurably: async () => {
+        callOrder.push("prompt:start");
+        await publishGate.promise;
+        callOrder.push("prompt:durable");
+      },
+      emitRuntimeEvent: async (topic, payload) => {
+        callOrder.push("runtime");
+        runtimeEvents.push({ topic, payload });
+      },
+      recordPublishedTrace: (input) => {
+        publishedTraces.push(input);
+      },
+      onRuntimeEventError: (error) => {
+        errors.push(error);
+      },
+      onTraceError: (error) => {
+        errors.push(error);
+      },
+    });
+    await waitUntil(() => callOrder.includes("prompt:start"));
+
+    expect(callOrder).toEqual(["prompt:start"]);
+
+    publishGate.resolve();
+    await publish;
+
+    expect(callOrder).toEqual(["prompt:start", "prompt:durable", "runtime"]);
+    expect(runtimeEvents).toEqual([
+      {
+        topic: "ravi.session.ravi-slack-channel.runtime",
+        payload: expect.objectContaining({
+          type: "prompt.published",
+          sessionName: "ravi-slack-channel",
+          _source: source,
+          deliveryBarrier: "after_tool",
+          deliveryBarrierSource: "default",
+        }),
+      },
+    ]);
+    expect(publishedTraces).toEqual([
+      {
+        sessionName: "ravi-slack-channel",
+        payload: expect.objectContaining({
+          prompt: "deixa eu testar",
+          source,
+          deliveryBarrier: "after_tool",
+          deliveryBarrierSource: "default",
+        }),
+      },
+    ]);
+    expect(errors).toEqual([]);
   });
 });
 
