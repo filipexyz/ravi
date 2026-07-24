@@ -1,169 +1,1338 @@
-name: Version And Publish
+name: Publish Ravi Package
 
-on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [main, dev]
-  workflow_dispatch:
+"on":
+  push:
+    tags:
+      - "v*"
+  workflow_call:
     inputs:
-      branch:
-        description: "Branch to version and publish"
+      release_kind:
         required: true
-        type: choice
-        options: [dev, main]
-        default: dev
+        type: string
+      expected_package:
+        required: true
+        type: string
+      package_path:
+        required: true
+        type: string
+      package_dir:
+        required: true
+        type: string
+    secrets:
+      NPM_TOKEN:
+        required: true
 
+# Version changes are ordinary reviewed PRs. An operator pushes a lightweight
+# v<version> tag only after merge. Distinct tags deliberately use distinct
+# concurrency groups: GitHub keeps at most one pending run per group, so a
+# package-global group can silently discard the middle of three rapid tags.
 permissions:
-  contents: write
+  contents: read
+  pull-requests: read
 
 concurrency:
-  group: version-${{ github.event.workflow_run.head_branch || github.event.inputs.branch || 'manual' }}
+  group: ravi-package-${{ github.ref_name }}
   cancel-in-progress: false
 
-jobs:
-  check-changes:
-    name: Check For Publishable Changes
-    runs-on: ubuntu-latest
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.event == 'push' &&
-        !contains(github.event.workflow_run.head_commit.message, '[skip ci]')
-      )
-    outputs:
-      should_publish: ${{ steps.filter.outputs.publish }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.event.workflow_run.head_sha || github.event.inputs.branch }}
-          fetch-depth: 0
+env:
+  RELEASE_KIND: ${{ inputs.release_kind || 'root' }}
+  EXPECTED_PACKAGE: ${{ inputs.expected_package || 'ravi.bot' }}
+  PACKAGE_PATH: ${{ inputs.package_path || 'package.json' }}
+  PACKAGE_DIR: ${{ inputs.package_dir || '.' }}
+  NPM_REGISTRY: https://registry.npmjs.org/
 
-      - name: Detect publishable changes
-        id: filter
-        shell: bash
+jobs:
+  verify:
+    name: Verify, Test, And Seal Exact Tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      artifact_name: ${{ steps.seal.outputs.artifact_name }}
+      base: ${{ steps.provenance.outputs.base }}
+      current_base_sha: ${{ steps.provenance.outputs.current_base_sha }}
+      immutable_npm_tag: ${{ steps.provenance.outputs.immutable_npm_tag }}
+      pr_number: ${{ steps.provenance.outputs.pr_number }}
+      tag: ${{ steps.provenance.outputs.tag }}
+      target_sha: ${{ steps.provenance.outputs.target_sha }}
+      version: ${{ steps.provenance.outputs.version }}
+
+    # This is the only job that checks out or executes repository code. It has
+    # no npm credential in its job, step, config, or generated npmrc.
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org/
+
+      - name: Resolve trusted npm before repository code
+        id: npm
         run: |
           set -euo pipefail
-
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-            echo "Manual dispatch: publish forced."
-            exit 0
+          NPM_BIN="$(realpath "$(command -v npm)")"
+          NODE_BIN="$(realpath "$(command -v node)")"
+          TOOLCHAIN_DIR="$(dirname "$NODE_BIN")"
+          TOOLCHAIN_ROOT="$(dirname "$TOOLCHAIN_DIR")"
+          case "$NPM_BIN" in
+            "$TOOLCHAIN_ROOT"/*) ;;
+            *)
+              echo "npm is outside the freshly configured Node toolchain." >&2
+              exit 1
+              ;;
+          esac
+          if [ ! -x "$NPM_BIN" ] || [ ! -x "$NODE_BIN" ]; then
+            echo "Trusted Node toolchain is not executable." >&2
+            exit 1
           fi
-
-          BASE="$(git describe --tags --match 'v*' --abbrev=0 HEAD^ 2>/dev/null || true)"
-          if [ -z "$BASE" ]; then
-            BASE="$(git rev-list --max-parents=0 HEAD)"
-          fi
-
-          echo "Detecting publishable changes between ${BASE} and HEAD"
-          CHANGED_FILES="$(mktemp)"
-          git diff --name-only "${BASE}"..HEAD | tee "$CHANGED_FILES"
-
-          if grep -Eq '^(src/|bin/|scripts/|package\.json$|bun\.lock$|tsconfig\.json$)' "$CHANGED_FILES"; then
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-            echo "Publishable changes detected."
-          else
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "No publishable changes detected."
-          fi
-
-  version-and-publish:
-    name: Version And Publish
-    runs-on: ubuntu-latest
-    needs: check-changes
-    timeout-minutes: 15
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      needs.check-changes.outputs.should_publish == 'true'
-
-    steps:
-      - name: Resolve target
-        id: target
-        run: |
-          BRANCH="${{ github.event.workflow_run.head_branch || github.event.inputs.branch }}"
-          if [ "$BRANCH" = "main" ]; then
-            echo "branch=main" >> "$GITHUB_OUTPUT"
-            echo "npm_tag=latest" >> "$GITHUB_OUTPUT"
-          else
-            echo "branch=dev" >> "$GITHUB_OUTPUT"
-            echo "npm_tag=next" >> "$GITHUB_OUTPUT"
-          fi
-          echo "prefix=3" >> "$GITHUB_OUTPUT"
+          echo "binary=${NPM_BIN}" >> "$GITHUB_OUTPUT"
+          echo "path=${TOOLCHAIN_DIR}:/usr/bin:/bin" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v5
         with:
-          ref: ${{ steps.target.outputs.branch }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: false
+
+      - name: Verify tag, reviewed PR delta, and current base
+        id: provenance
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_REF_NAME: ${{ github.ref_name }}
+          EVENT_REF_TYPE: ${{ github.ref_type }}
+          EVENT_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_NPM: ${{ steps.npm.outputs.binary }}
+          TRUSTED_PATH: ${{ steps.npm.outputs.path }}
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+          export PATH="$TRUSTED_PATH"
+
+          semver_valid() {
+            [[ "$1" =~ ^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$ ]]
+          }
+
+          semver_gt() {
+            local newer="$1"
+            local older="$2"
+            local newer_a newer_b newer_c older_a older_b older_c left right
+            semver_valid "$newer" && semver_valid "$older" || return 1
+            IFS=. read -r newer_a newer_b newer_c <<<"$newer"
+            IFS=. read -r older_a older_b older_c <<<"$older"
+            for pair in \
+              "$newer_a:$older_a" \
+              "$newer_b:$older_b" \
+              "$newer_c:$older_c"; do
+              left="${pair%%:*}"
+              right="${pair#*:}"
+              if [ "${#left}" -gt "${#right}" ]; then return 0; fi
+              if [ "${#left}" -lt "${#right}" ]; then return 1; fi
+              if [[ "$left" > "$right" ]]; then return 0; fi
+              if [[ "$left" < "$right" ]]; then return 1; fi
+            done
+            return 1
+          }
+
+          case "$RELEASE_KIND" in
+            root)
+              if [ "$EXPECTED_PACKAGE" != "ravi.bot" ] ||
+                [ "$PACKAGE_PATH" != "package.json" ] ||
+                [ "$PACKAGE_DIR" != "." ]; then
+                echo "Root release inputs are outside the fixed package contract." >&2
+                exit 1
+              fi
+              TAG_PATTERN='^v((0|[1-9][0-9]{0,8})\.([0-9]{6})\.([1-9][0-9]{0,8}))$'
+              ;;
+            sdk)
+              if [ "$EXPECTED_PACKAGE" != "@ravi-os/sdk" ] ||
+                [ "$PACKAGE_PATH" != "packages/ravi-os-sdk/package.json" ] ||
+                [ "$PACKAGE_DIR" != "packages/ravi-os-sdk" ]; then
+                echo "SDK release inputs are outside the fixed package contract." >&2
+                exit 1
+              fi
+              TAG_PATTERN='^ravi-os-sdk-v((0|[1-9][0-9]{0,8})\.([0-9]{6})\.([1-9][0-9]{0,8}))$'
+              ;;
+            *)
+              echo "Release kind '${RELEASE_KIND}' is invalid." >&2
+              exit 1
+              ;;
+          esac
+
+          TAG="$EVENT_REF_NAME"
+          if [ "$EVENT_NAME" != "push" ] ||
+            [ "$EVENT_REF_TYPE" != "tag" ] ||
+            [ "$EVENT_REF" != "refs/tags/${TAG}" ]; then
+            echo "This workflow accepts tag push events only." >&2
+            exit 1
+          fi
+          if [[ ! "$TAG" =~ $TAG_PATTERN ]]; then
+            echo "Tag '${TAG}' does not match the bounded ${RELEASE_KIND} release namespace." >&2
+            exit 1
+          fi
+          VERSION="${BASH_REMATCH[1]}"
+          DATE_PART="${BASH_REMATCH[3]}"
+          NORMALIZED_DATE="$(
+            date -u \
+              -d "20${DATE_PART:0:2}-${DATE_PART:2:2}-${DATE_PART:4:2}" \
+              +%y%m%d 2>/dev/null
+          )" || {
+            echo "Version date '${DATE_PART}' is not a real UTC calendar date." >&2
+            exit 1
+          }
+          if [ "$NORMALIZED_DATE" != "$DATE_PART" ]; then
+            echo "Version date '${DATE_PART}' is not a real UTC calendar date." >&2
+            exit 1
+          fi
+
+          if [[ ! "$EVENT_SHA" =~ ^[0-9a-f]{40}$ ]] ||
+            [ "$(git cat-file -t "refs/tags/${TAG}")" != "commit" ]; then
+            echo "The event must identify a full SHA and a lightweight commit tag." >&2
+            exit 1
+          fi
+          TAG_SHA="$(git rev-parse "refs/tags/${TAG}")"
+          if [ "$TAG_SHA" != "$EVENT_SHA" ] || [ "$(git rev-parse HEAD)" != "$EVENT_SHA" ]; then
+            echo "Tag, event, and checkout do not resolve to the same commit." >&2
+            exit 1
+          fi
+
+          if [ "$(git ls-files -- '.npmrc' '*/.npmrc' | wc -l | tr -d ' ')" -ne 0 ]; then
+            echo "Repository-controlled .npmrc files are forbidden in a release payload." >&2
+            exit 1
+          fi
+          if [ "$(jq -er '.name' "$PACKAGE_PATH")" != "$EXPECTED_PACKAGE" ] ||
+            [ "$(jq -er '.version' "$PACKAGE_PATH")" != "$VERSION" ] ||
+            ! jq -e '
+              (.publishConfig // {}) == {"access":"public"}
+              and (.gitHead == null)
+            ' "$PACKAGE_PATH" >/dev/null; then
+            echo "Package identity or publishConfig is outside the release contract." >&2
+            exit 1
+          fi
+
+          REMOTE_REF="$(
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}"
+          )"
+          if ! jq -e \
+            --arg ref "refs/tags/${TAG}" \
+            --arg sha "$TAG_SHA" \
+            '.ref == $ref and .object.type == "commit" and .object.sha == $sha' \
+            >/dev/null \
+            <<<"$REMOTE_REF"; then
+            echo "Remote tag '${TAG}' does not target the event commit." >&2
+            exit 1
+          fi
+
+          ASSOCIATED_PRS="$(
+            gh api \
+              --paginate \
+              --slurp \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/commits/${TAG_SHA}/pulls?per_page=100"
+          )"
+          if ! jq -e \
+            'type == "array" and all(.[]; type == "array" and all(.[]; type == "object"))' \
+            >/dev/null \
+            <<<"$ASSOCIATED_PRS"; then
+            echo "Associated pull request response was ambiguous." >&2
+            exit 1
+          fi
+          MATCHING_PRS="$(
+            jq -c \
+              --arg repo "$GITHUB_REPOSITORY" \
+              --arg sha "$TAG_SHA" \
+              '[
+                (add // [])[]
+                | select(
+                    .merged_at != null
+                    and .merge_commit_sha == $sha
+                    and .head.repo.full_name == $repo
+                    and .base.repo.full_name == $repo
+                    and (.base.ref == "dev" or .base.ref == "main")
+                    and (.number | type == "number")
+                  )
+              ]' \
+              <<<"$ASSOCIATED_PRS"
+          )"
+          if [ "$(jq -er 'length' <<<"$MATCHING_PRS")" -ne 1 ]; then
+            echo "Expected one same-repository merged PR for exact tag target ${TAG_SHA}." >&2
+            exit 1
+          fi
+          BASE="$(jq -er '.[0].base.ref' <<<"$MATCHING_PRS")"
+          PR_NUMBER="$(jq -er '.[0].number | tostring' <<<"$MATCHING_PRS")"
+          if [[ ! "$PR_NUMBER" =~ ^[1-9][0-9]{0,9}$ ]]; then
+            echo "Associated pull request number is invalid." >&2
+            exit 1
+          fi
+
+          PR_JSON="$(
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}"
+          )"
+          if ! jq -e \
+            --argjson number "$PR_NUMBER" \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg base "$BASE" \
+            --arg target "$TAG_SHA" \
+            '
+              .number == $number
+              and .merged_at != null
+              and .merge_commit_sha == $target
+              and .head.repo.full_name == $repo
+              and .base.repo.full_name == $repo
+              and .base.ref == $base
+            ' \
+            >/dev/null \
+            <<<"$PR_JSON"; then
+            echo "Merged pull request provenance is ambiguous." >&2
+            exit 1
+          fi
+
+          # The fully paginated PR file list is the reviewed-delta authority.
+          # Historical PR base metadata is not treated as a merge base.
+          PR_FILE_PAGES="$(
+            gh api \
+              --paginate \
+              --slurp \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100"
+          )"
+          if ! jq -e \
+            --arg path "$PACKAGE_PATH" \
+            '
+              type == "array"
+              and all(.[]; type == "array" and all(.[]; type == "object"))
+              and ((add // []) | length) == 1
+              and (add // [])[0].filename == $path
+              and (add // [])[0].status == "modified"
+              and ((add // [])[0].previous_filename == null)
+            ' \
+            >/dev/null \
+            <<<"$PR_FILE_PAGES"; then
+            echo "Release PR must modify only ${PACKAGE_PATH} across its full paginated delta." >&2
+            exit 1
+          fi
+
+          BRANCH_REF="$(
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/git/ref/heads/${BASE}"
+          )"
+          if ! jq -e \
+            --arg ref "refs/heads/${BASE}" \
+            '.ref == $ref and .object.type == "commit" and (.object.sha | test("^[0-9a-f]{40}$"))' \
+            >/dev/null \
+            <<<"$BRANCH_REF"; then
+            echo "Current base branch ref is ambiguous." >&2
+            exit 1
+          fi
+          CURRENT_BASE_SHA="$(jq -er '.object.sha' <<<"$BRANCH_REF")"
+          REACHABILITY="$(
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/compare/${TAG_SHA}...${CURRENT_BASE_SHA}"
+          )"
+          if ! jq -e \
+            --arg target "$TAG_SHA" \
+            --arg current "$CURRENT_BASE_SHA" \
+            '
+              .base_commit.sha == $target
+              and .merge_base_commit.sha == $target
+              and .head_commit.sha == $current
+              and (.status == "ahead" or .status == "identical")
+            ' \
+            >/dev/null \
+            <<<"$REACHABILITY"; then
+            echo "Tagged commit is not reachable from the current ${BASE} tip." >&2
+            exit 1
+          fi
+
+          CURRENT_CONTENT="$(
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/contents/${PACKAGE_PATH}?ref=${CURRENT_BASE_SHA}"
+          )"
+          if ! jq -e \
+            '.type == "file" and .encoding == "base64" and (.content | type == "string")' \
+            >/dev/null \
+            <<<"$CURRENT_CONTENT"; then
+            echo "Current base manifest response is ambiguous." >&2
+            exit 1
+          fi
+          CURRENT_MANIFEST="${RUNNER_TEMP}/current-base-package.json"
+          jq -er '.content' <<<"$CURRENT_CONTENT" \
+            | tr -d '\n' \
+            | base64 --decode > "$CURRENT_MANIFEST"
+          if ! jq -e 'type == "object"' "$CURRENT_MANIFEST" >/dev/null ||
+            [ "$(jq -er '.name' "$CURRENT_MANIFEST")" != "$EXPECTED_PACKAGE" ] ||
+            ! diff -u \
+              <(jq -S 'del(.version)' "$PACKAGE_PATH") \
+              <(jq -S 'del(.version)' "$CURRENT_MANIFEST"); then
+            echo "Current base manifest diverges outside the reviewed version field." >&2
+            exit 1
+          fi
+          CURRENT_VERSION="$(jq -er '.version' "$CURRENT_MANIFEST")"
+          if ! semver_valid "$CURRENT_VERSION" ||
+            { [ "$CURRENT_VERSION" != "$VERSION" ] && ! semver_gt "$CURRENT_VERSION" "$VERSION"; }; then
+            echo "Current base version must be equal to or newer than the tagged version." >&2
+            exit 1
+          fi
+
+          case "$BASE" in
+            dev) CHANNEL_PREFIX="next" ;;
+            main) CHANNEL_PREFIX="stable" ;;
+            *)
+              echo "Unsupported release base '${BASE}'." >&2
+              exit 1
+              ;;
+          esac
+          # A version-qualified immutable dist-tag cannot be downgraded by an
+          # inverted publication order. No run mutates shared latest/next.
+          IMMUTABLE_NPM_TAG="${CHANNEL_PREFIX}-v${VERSION//./-}"
+
+          echo "base=${BASE}" >> "$GITHUB_OUTPUT"
+          echo "current_base_sha=${CURRENT_BASE_SHA}" >> "$GITHUB_OUTPUT"
+          echo "immutable_npm_tag=${IMMUTABLE_NPM_TAG}" >> "$GITHUB_OUTPUT"
+          echo "pr_number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "target_sha=${TAG_SHA}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Registry monotonicity and retry preflight
+        env:
+          TARGET_SHA: ${{ steps.provenance.outputs.target_sha }}
+          TRUSTED_NPM: ${{ steps.npm.outputs.binary }}
+          TRUSTED_PATH: ${{ steps.npm.outputs.path }}
+          VERSION: ${{ steps.provenance.outputs.version }}
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+          export PATH="$TRUSTED_PATH"
+
+          semver_valid() {
+            [[ "$1" =~ ^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$ ]]
+          }
+
+          SAFE_NPMRC="${RUNNER_TEMP}/verify-read-only.npmrc"
+          printf 'registry=%s\nignore-scripts=true\n' "$NPM_REGISTRY" > "$SAFE_NPMRC"
+          REGISTRY_VERSIONS="${RUNNER_TEMP}/registry-versions.json"
+          NPM_CONFIG_USERCONFIG="$SAFE_NPMRC" \
+            NPM_CONFIG_GLOBALCONFIG=/dev/null \
+            "$TRUSTED_NPM" view "$EXPECTED_PACKAGE" versions --json \
+            --registry="$NPM_REGISTRY" > "$REGISTRY_VERSIONS"
+          if ! jq -e '
+            (if type == "string" then [.] elif type == "array" then . else error("invalid registry response") end)
+            | length > 0 and all(.[]; type == "string")
+          ' "$REGISTRY_VERSIONS" >/dev/null; then
+            echo "Registry versions are empty or ambiguous." >&2
+            exit 1
+          fi
+
+          VERSION_EXISTS=false
+          while IFS= read -r REGISTRY_VERSION; do
+            if ! semver_valid "$REGISTRY_VERSION"; then
+              echo "Registry version '${REGISTRY_VERSION}' is not bounded stable semver." >&2
+              exit 1
+            fi
+            if [ "$REGISTRY_VERSION" = "$VERSION" ]; then VERSION_EXISTS=true; fi
+          done < <(jq -er 'if type == "string" then . else .[] end' "$REGISTRY_VERSIONS")
+
+          # An existing version is only a retry candidate here. It is not
+          # accepted until the sealed tarball exists and its authoritative
+          # SSRI can be compared with npm's dist.integrity in the publish job.
+          # An absent version remains publishable even when newer versions
+          # already exist because every run uses a version-qualified immutable
+          # dist-tag and never mutates shared latest/next state.
+          echo "version_exists=${VERSION_EXISTS}"
 
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.11"
 
-      - name: Install dependencies
+      - name: Install dependencies without publish credentials
         run: bun install --frozen-lockfile
 
-      - name: Configure git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Derive version
-        id: version
-        run: |
-          PREFIX="${{ steps.target.outputs.prefix }}"
-          TODAY=$(date -u +%y%m%d)
-          EXISTING=$(git tag --list "v${PREFIX}.${TODAY}.*" | wc -l | tr -d ' ')
-          BUILD_NUMBER=$((EXISTING + 1))
-          VERSION="${PREFIX}.${TODAY}.${BUILD_NUMBER}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "build_number=${BUILD_NUMBER}" >> "$GITHUB_OUTPUT"
-          echo "Derived version: ${VERSION}"
-
-      - name: Sync version files
-        run: bun run version
-        env:
-          RAVI_VERSION_PREFIX: ${{ steps.target.outputs.prefix }}
-          RAVI_BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
-
-      - name: Commit and tag version
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          BRANCH="${{ steps.target.outputs.branch }}"
-
-          git add package.json
-          if git diff --cached --quiet; then
-            echo "No version changes to commit"
-          else
-            git commit -m "chore(version): bump to ${VERSION} [skip ci]"
-          fi
-
-          git tag "v${VERSION}"
-          git push --atomic origin "HEAD:refs/heads/${BRANCH}" "refs/tags/v${VERSION}"
-
-      - name: Build package
+      - name: Build exact tagged SHA without publish credentials
         run: bun run build
 
-      - name: Publish to npm
+      - name: Typecheck exact tagged SHA without publish credentials
+        run: bun run typecheck
+
+      - name: Test exact tagged SHA without publish credentials
+        run: bun run test
+
+      - name: Seal immutable inspected tarball and metadata
+        id: seal
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_TAG: ${{ steps.target.outputs.npm_tag }}
-          VERSION: ${{ steps.version.outputs.version }}
+          BASE: ${{ steps.provenance.outputs.base }}
+          CURRENT_BASE_SHA: ${{ steps.provenance.outputs.current_base_sha }}
+          GH_TOKEN: ${{ github.token }}
+          IMMUTABLE_NPM_TAG: ${{ steps.provenance.outputs.immutable_npm_tag }}
+          PR_NUMBER: ${{ steps.provenance.outputs.pr_number }}
+          TAG: ${{ steps.provenance.outputs.tag }}
+          TARGET_SHA: ${{ steps.provenance.outputs.target_sha }}
+          TRUSTED_NPM: ${{ steps.npm.outputs.binary }}
+          TRUSTED_PATH: ${{ steps.npm.outputs.path }}
+          VERSION: ${{ steps.provenance.outputs.version }}
         run: |
-          if [ -z "$NPM_TOKEN" ]; then
-            echo "NPM_TOKEN not set; skipping npm publish"
-            exit 0
+          set -euo pipefail
+          export LC_ALL=C
+          export PATH="$TRUSTED_PATH"
+
+          validate_tar_layout() {
+            local tarball="$1"
+            local listing="$2"
+            local verbose="$3"
+            local manifest_entries manifest_regular_entries
+            tar -tzf "$tarball" > "$listing"
+            tar -tvzf "$tarball" > "$verbose"
+            if grep -Eq '(^$|^/|//|(^|/)\.\.?(/|$)|\\)' "$listing" ||
+              [ "$(sort "$listing" | uniq -d | wc -l | tr -d ' ')" -ne 0 ]; then
+              echo "Packed payload contains a duplicate or ambiguous path." >&2
+              return 1
+            fi
+            if awk '$1 !~ /^[-d]/ { unsafe=1 } END { exit !unsafe }' "$verbose"; then
+              echo "Packed payload contains a link or special entry." >&2
+              return 1
+            fi
+            manifest_entries="$(
+              awk '$0 == "package/package.json" { count++ } END { print count + 0 }' "$listing"
+            )"
+            manifest_regular_entries="$(
+              awk '
+                $1 ~ /^-/ && $NF == "package\/package.json" { count++ }
+                END { print count + 0 }
+              ' "$verbose"
+            )"
+            if [ "$manifest_entries" -ne 1 ] || [ "$manifest_regular_entries" -ne 1 ]; then
+              echo "Packed payload must contain exactly one regular package/package.json." >&2
+              return 1
+            fi
+          }
+
+          ssri_sha512() {
+            printf 'sha512-%s\n' "$(
+              openssl dgst -sha512 -binary "$1" | openssl base64 -A
+            )"
+          }
+
+          if [ "$(git rev-parse HEAD)" != "$TARGET_SHA" ] ||
+            [ "$(git rev-parse "refs/tags/${TAG}")" != "$TARGET_SHA" ]; then
+            echo "Checkout or local tag changed before packaging." >&2
+            exit 1
+          fi
+          if find "$GITHUB_WORKSPACE" \
+            -path "$GITHUB_WORKSPACE/.git" -prune -o \
+            -path "$GITHUB_WORKSPACE/node_modules" -prune -o \
+            -name .npmrc -type f -print -quit | grep -q .; then
+            echo "A repository-controlled .npmrc appeared before packaging." >&2
+            exit 1
           fi
 
-          PACKAGE=$(jq -r '.name' package.json)
-          if npm view "${PACKAGE}@${VERSION}" version >/dev/null 2>&1; then
-            echo "Version ${VERSION} already exists. Moving dist-tag ${NPM_TAG}."
-            echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
-            npm dist-tag add "${PACKAGE}@${VERSION}" "${NPM_TAG}"
+          BRANCH_REF="$(
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/git/ref/heads/${BASE}"
+          )"
+          if ! jq -e \
+            --arg ref "refs/heads/${BASE}" \
+            --arg sha "$CURRENT_BASE_SHA" \
+            '.ref == $ref and .object.type == "commit" and .object.sha == $sha' \
+            >/dev/null \
+            <<<"$BRANCH_REF"; then
+            echo "Base branch moved while the tagged SHA was being tested; rerun explicitly." >&2
+            exit 1
+          fi
+
+          WORK_DIR="${RUNNER_TEMP}/pack-work"
+          FIRST_DIR="${WORK_DIR}/first"
+          STAGE_DIR="${WORK_DIR}/stage"
+          PAYLOAD_DIR="${RUNNER_TEMP}/release-payload"
+          mkdir -p "$FIRST_DIR" "$STAGE_DIR" "$PAYLOAD_DIR"
+          SAFE_NPMRC="${RUNNER_TEMP}/pack-read-only.npmrc"
+          printf 'registry=%s\nignore-scripts=true\n' "$NPM_REGISTRY" > "$SAFE_NPMRC"
+
+          NPM_CONFIG_USERCONFIG="$SAFE_NPMRC" \
+            NPM_CONFIG_GLOBALCONFIG=/dev/null \
+            "$TRUSTED_NPM" pack "$PACKAGE_DIR" \
+            --json \
+            --ignore-scripts \
+            --pack-destination "$FIRST_DIR" \
+            --registry="$NPM_REGISTRY" > "${WORK_DIR}/first-pack.json"
+          FIRST_NAME="$(jq -er 'if type == "array" and length == 1 then .[0].filename else error("ambiguous pack") end' "${WORK_DIR}/first-pack.json")"
+          FIRST_TARBALL="${FIRST_DIR}/${FIRST_NAME}"
+          if [ "$(basename "$FIRST_TARBALL")" != "$FIRST_NAME" ] || [ ! -f "$FIRST_TARBALL" ]; then
+            echo "npm pack returned an unsafe tarball name." >&2
+            exit 1
+          fi
+          if ! validate_tar_layout \
+            "$FIRST_TARBALL" \
+            "${WORK_DIR}/first-files.txt" \
+            "${WORK_DIR}/first-verbose.txt" ||
+            grep -Eq '(^|/)\.npmrc$' "${WORK_DIR}/first-files.txt"; then
+            echo "Initial packed payload is unsafe." >&2
+            exit 1
+          fi
+          tar -xzf "$FIRST_TARBALL" -C "$STAGE_DIR"
+
+          STAGED_MANIFEST="${STAGE_DIR}/package/package.json"
+          if ! jq -e -s \
+            --arg name "$EXPECTED_PACKAGE" \
+            --arg version "$VERSION" \
+            '
+              length == 1
+              and .[0].name == $name
+              and .[0].version == $version
+              and (.[0].publishConfig // {}) == {"access":"public"}
+              and (.[0].gitHead == null)
+            ' \
+            "$STAGED_MANIFEST" >/dev/null; then
+            echo "Packed manifest must be one JSON document inside the release contract." >&2
+            exit 1
+          fi
+          jq --arg sha "$TARGET_SHA" '.gitHead = $sha' "$STAGED_MANIFEST" \
+            > "${STAGED_MANIFEST}.tmp"
+          mv "${STAGED_MANIFEST}.tmp" "$STAGED_MANIFEST"
+
+          NPM_CONFIG_USERCONFIG="$SAFE_NPMRC" \
+            NPM_CONFIG_GLOBALCONFIG=/dev/null \
+            "$TRUSTED_NPM" pack "${STAGE_DIR}/package" \
+            --json \
+            --ignore-scripts \
+            --pack-destination "$PAYLOAD_DIR" \
+            --registry="$NPM_REGISTRY" > "${WORK_DIR}/final-pack.json"
+          TARBALL_NAME="$(jq -er 'if type == "array" and length == 1 then .[0].filename else error("ambiguous pack") end' "${WORK_DIR}/final-pack.json")"
+          TARBALL="${PAYLOAD_DIR}/${TARBALL_NAME}"
+          if [ "$(basename "$TARBALL")" != "$TARBALL_NAME" ] ||
+            [[ ! "$TARBALL_NAME" =~ ^[A-Za-z0-9._-]+\.tgz$ ]] ||
+            [ ! -f "$TARBALL" ]; then
+            echo "Final tarball name is unsafe or missing." >&2
+            exit 1
+          fi
+          if ! validate_tar_layout \
+            "$TARBALL" \
+            "${WORK_DIR}/final-files.txt" \
+            "${WORK_DIR}/final-verbose.txt" ||
+            grep -Eq '(^|/)\.npmrc$' "${WORK_DIR}/final-files.txt"; then
+            echo "Final tarball is unsafe." >&2
+            exit 1
+          fi
+          tar -xOf "$TARBALL" package/package.json > "${WORK_DIR}/final-manifest.json"
+          if ! jq -e -s \
+            --arg name "$EXPECTED_PACKAGE" \
+            --arg version "$VERSION" \
+            --arg sha "$TARGET_SHA" \
+            '
+              length == 1
+              and .[0].name == $name
+              and .[0].version == $version
+              and .[0].gitHead == $sha
+              and .[0].publishConfig == {"access":"public"}
+            ' \
+            "${WORK_DIR}/final-manifest.json" >/dev/null; then
+            echo "Final tarball must contain one JSON manifest binding package, version, and gitHead." >&2
+            exit 1
+          fi
+
+          TARBALL_SHA512="$(sha512sum "$TARBALL" | awk '{print $1}')"
+          TARBALL_INTEGRITY="$(ssri_sha512 "$TARBALL")"
+          if [[ ! "$TARBALL_INTEGRITY" =~ ^sha512-[A-Za-z0-9+/]{86}==$ ]]; then
+            echo "Sealed tarball SSRI is malformed." >&2
+            exit 1
+          fi
+          ARTIFACT_NAME="ravi-${RELEASE_KIND}-package-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          jq -n \
+            --arg artifactName "$ARTIFACT_NAME" \
+            --arg base "$BASE" \
+            --arg currentBaseSha "$CURRENT_BASE_SHA" \
+            --arg immutableNpmTag "$IMMUTABLE_NPM_TAG" \
+            --arg packageName "$EXPECTED_PACKAGE" \
+            --arg packagePath "$PACKAGE_PATH" \
+            --arg prNumber "$PR_NUMBER" \
+            --arg registry "$NPM_REGISTRY" \
+            --arg tag "$TAG" \
+            --arg targetSha "$TARGET_SHA" \
+            --arg tarball "$TARBALL_NAME" \
+            --arg tarballIntegrity "$TARBALL_INTEGRITY" \
+            --arg tarballSha512 "$TARBALL_SHA512" \
+            --arg version "$VERSION" \
+            '{
+              schema: 2,
+              artifactName: $artifactName,
+              base: $base,
+              currentBaseSha: $currentBaseSha,
+              immutableNpmTag: $immutableNpmTag,
+              packageName: $packageName,
+              packagePath: $packagePath,
+              prNumber: $prNumber,
+              registry: $registry,
+              tag: $tag,
+              targetSha: $targetSha,
+              tarball: $tarball,
+              tarballIntegrity: $tarballIntegrity,
+              tarballSha512: $tarballSha512,
+              version: $version
+            }' > "${PAYLOAD_DIR}/metadata.json"
+          echo "artifact_name=${ARTIFACT_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload immutable inspected release payload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.seal.outputs.artifact_name }}
+          path: ${{ runner.temp }}/release-payload
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: false
+          retention-days: 90
+
+  publish:
+    name: Revalidate And Publish Sealed Tarball
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # This fresh job has no checkout and executes no repository code. It sees
+    # only the immutable inspected tarball plus declarative metadata.
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org/
+
+      - name: Resolve fresh trusted npm and isolated config
+        id: npm
+        run: |
+          set -euo pipefail
+          NPM_BIN="$(realpath "$(command -v npm)")"
+          NODE_BIN="$(realpath "$(command -v node)")"
+          TOOLCHAIN_DIR="$(dirname "$NODE_BIN")"
+          TOOLCHAIN_ROOT="$(dirname "$TOOLCHAIN_DIR")"
+          case "$NPM_BIN" in
+            "$TOOLCHAIN_ROOT"/*) ;;
+            *)
+              echo "npm is outside the fresh Node toolchain." >&2
+              exit 1
+              ;;
+          esac
+          SAFE_HOME="${RUNNER_TEMP}/npm-home"
+          SAFE_NPMRC="${RUNNER_TEMP}/publish.npmrc"
+          mkdir -p "$SAFE_HOME"
+          chmod 700 "$SAFE_HOME"
+          umask 077
+          {
+            printf 'registry=%s\n' "$NPM_REGISTRY"
+            printf 'ignore-scripts=true\n'
+            printf 'access=public\n'
+            printf '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}\n'
+          } > "$SAFE_NPMRC"
+          echo "binary=${NPM_BIN}" >> "$GITHUB_OUTPUT"
+          echo "home=${SAFE_HOME}" >> "$GITHUB_OUTPUT"
+          echo "npmrc=${SAFE_NPMRC}" >> "$GITHUB_OUTPUT"
+          echo "path=${TOOLCHAIN_DIR}:/usr/bin:/bin" >> "$GITHUB_OUTPUT"
+
+      - name: Download exact sealed release payload
+        uses: actions/download-artifact@v5
+        with:
+          name: ${{ needs.verify.outputs.artifact_name }}
+          path: ${{ runner.temp }}/release-payload
+
+      - name: Revalidate artifact, tag, current base, PR files, and registry
+        id: revalidate
+        env:
+          EXPECTED_ARTIFACT_NAME: ${{ needs.verify.outputs.artifact_name }}
+          EXPECTED_BASE: ${{ needs.verify.outputs.base }}
+          EXPECTED_CURRENT_BASE_SHA: ${{ needs.verify.outputs.current_base_sha }}
+          EXPECTED_IMMUTABLE_NPM_TAG: ${{ needs.verify.outputs.immutable_npm_tag }}
+          EXPECTED_PR_NUMBER: ${{ needs.verify.outputs.pr_number }}
+          EXPECTED_TAG: ${{ needs.verify.outputs.tag }}
+          EXPECTED_TARGET_SHA: ${{ needs.verify.outputs.target_sha }}
+          EXPECTED_VERSION: ${{ needs.verify.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+          SAFE_HOME: ${{ steps.npm.outputs.home }}
+          SAFE_NPMRC: ${{ steps.npm.outputs.npmrc }}
+          TRUSTED_NPM: ${{ steps.npm.outputs.binary }}
+          TRUSTED_PATH: ${{ steps.npm.outputs.path }}
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+          export PATH="$TRUSTED_PATH"
+          export HOME="$SAFE_HOME"
+
+          semver_valid() {
+            [[ "$1" =~ ^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$ ]]
+          }
+          semver_gt() {
+            local newer="$1" older="$2" left right
+            local newer_a newer_b newer_c older_a older_b older_c
+            semver_valid "$newer" && semver_valid "$older" || return 1
+            IFS=. read -r newer_a newer_b newer_c <<<"$newer"
+            IFS=. read -r older_a older_b older_c <<<"$older"
+            for pair in "$newer_a:$older_a" "$newer_b:$older_b" "$newer_c:$older_c"; do
+              left="${pair%%:*}"; right="${pair#*:}"
+              if [ "${#left}" -gt "${#right}" ]; then return 0; fi
+              if [ "${#left}" -lt "${#right}" ]; then return 1; fi
+              if [[ "$left" > "$right" ]]; then return 0; fi
+              if [[ "$left" < "$right" ]]; then return 1; fi
+            done
+            return 1
+          }
+
+          validate_tar_layout() {
+            local tarball="$1"
+            local listing="$2"
+            local verbose="$3"
+            local manifest_entries manifest_regular_entries
+            tar -tzf "$tarball" > "$listing"
+            tar -tvzf "$tarball" > "$verbose"
+            if grep -Eq '(^$|^/|//|(^|/)\.\.?(/|$)|\\)' "$listing" ||
+              [ "$(sort "$listing" | uniq -d | wc -l | tr -d ' ')" -ne 0 ]; then
+              echo "Sealed tarball contains a duplicate or ambiguous path." >&2
+              return 1
+            fi
+            if awk '$1 !~ /^[-d]/ { unsafe=1 } END { exit !unsafe }' "$verbose"; then
+              echo "Sealed tarball contains a link or special entry." >&2
+              return 1
+            fi
+            manifest_entries="$(
+              awk '$0 == "package/package.json" { count++ } END { print count + 0 }' "$listing"
+            )"
+            manifest_regular_entries="$(
+              awk '
+                $1 ~ /^-/ && $NF == "package\/package.json" { count++ }
+                END { print count + 0 }
+              ' "$verbose"
+            )"
+            if [ "$manifest_entries" -ne 1 ] || [ "$manifest_regular_entries" -ne 1 ]; then
+              echo "Sealed tarball must contain exactly one regular package/package.json." >&2
+              return 1
+            fi
+          }
+
+          ssri_sha512() {
+            printf 'sha512-%s\n' "$(
+              openssl dgst -sha512 -binary "$1" | openssl base64 -A
+            )"
+          }
+
+          PAYLOAD_DIR="${RUNNER_TEMP}/release-payload"
+          METADATA="${PAYLOAD_DIR}/metadata.json"
+          if [ -L "$PAYLOAD_DIR" ] || [ ! -f "$METADATA" ] || [ -L "$METADATA" ]; then
+            echo "Release artifact layout is unsafe." >&2
+            exit 1
+          fi
+          if [ "$(find "$PAYLOAD_DIR" -mindepth 1 -maxdepth 1 -print | wc -l | tr -d ' ')" -ne 2 ] ||
+            [ "$(find "$PAYLOAD_DIR" -mindepth 1 -maxdepth 1 -type f -links 1 -print | wc -l | tr -d ' ')" -ne 2 ] ||
+            ! jq -e 'type == "object" and .schema == 2' "$METADATA" >/dev/null; then
+            echo "Release artifact must contain exactly two unlinked regular files and schema-2 metadata." >&2
+            exit 1
+          fi
+
+          if ! jq -e \
+            --arg artifact "$EXPECTED_ARTIFACT_NAME" \
+            --arg base "$EXPECTED_BASE" \
+            --arg current "$EXPECTED_CURRENT_BASE_SHA" \
+            --arg npmTag "$EXPECTED_IMMUTABLE_NPM_TAG" \
+            --arg name "$EXPECTED_PACKAGE" \
+            --arg path "$PACKAGE_PATH" \
+            --arg pr "$EXPECTED_PR_NUMBER" \
+            --arg registry "$NPM_REGISTRY" \
+            --arg tag "$EXPECTED_TAG" \
+            --arg sha "$EXPECTED_TARGET_SHA" \
+            --arg version "$EXPECTED_VERSION" \
+            '
+              .artifactName == $artifact
+              and .base == $base
+              and .currentBaseSha == $current
+              and .immutableNpmTag == $npmTag
+              and .packageName == $name
+              and .packagePath == $path
+              and .prNumber == $pr
+              and .registry == $registry
+              and .tag == $tag
+              and .targetSha == $sha
+              and .version == $version
+              and (.tarball | type == "string" and test("^[A-Za-z0-9._-]+[.]tgz$"))
+              and (.tarballIntegrity | type == "string" and test("^sha512-[A-Za-z0-9+/]{86}==$"))
+              and (.tarballSha512 | type == "string" and test("^[0-9a-f]{128}$"))
+            ' \
+            "$METADATA" >/dev/null; then
+            echo "Release metadata does not match verified job outputs." >&2
+            exit 1
+          fi
+          TARBALL_NAME="$(jq -er '.tarball' "$METADATA")"
+          TARBALL="${PAYLOAD_DIR}/${TARBALL_NAME}"
+          EXPECTED_TARBALL_INTEGRITY="$(jq -er '.tarballIntegrity' "$METADATA")"
+          if [ ! -f "$TARBALL" ] || [ -L "$TARBALL" ] ||
+            [ "$(sha512sum "$TARBALL" | awk '{print $1}')" != "$(jq -er '.tarballSha512' "$METADATA")" ] ||
+            [ "$(ssri_sha512 "$TARBALL")" != "$EXPECTED_TARBALL_INTEGRITY" ]; then
+            echo "Sealed tarball is missing, linked, or has the wrong hex/SSRI digest." >&2
+            exit 1
+          fi
+          if ! validate_tar_layout \
+            "$TARBALL" \
+            "${RUNNER_TEMP}/publish-files.txt" \
+            "${RUNNER_TEMP}/publish-verbose.txt" ||
+            grep -Eq '(^|/)\.npmrc$' "${RUNNER_TEMP}/publish-files.txt"; then
+            echo "Sealed tarball layout is unsafe." >&2
+            exit 1
+          fi
+          tar -xOf "$TARBALL" package/package.json > "${RUNNER_TEMP}/publish-manifest.json"
+          if ! jq -e -s \
+            --arg name "$EXPECTED_PACKAGE" \
+            --arg version "$EXPECTED_VERSION" \
+            --arg sha "$EXPECTED_TARGET_SHA" \
+            '
+              length == 1
+              and .[0].name == $name
+              and .[0].version == $version
+              and .[0].gitHead == $sha
+              and .[0].publishConfig == {"access":"public"}
+            ' \
+            "${RUNNER_TEMP}/publish-manifest.json" >/dev/null; then
+            echo "Sealed manifest must be one JSON document binding the target SHA." >&2
+            exit 1
+          fi
+
+          REMOTE_REF="$(
+            gh api -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/git/ref/tags/${EXPECTED_TAG}"
+          )"
+          if ! jq -e \
+            --arg ref "refs/tags/${EXPECTED_TAG}" \
+            --arg sha "$EXPECTED_TARGET_SHA" \
+            '.ref == $ref and .object.type == "commit" and .object.sha == $sha' \
+            >/dev/null \
+            <<<"$REMOTE_REF"; then
+            echo "Remote tag changed after artifact sealing." >&2
+            exit 1
+          fi
+
+          ASSOCIATED_PRS="$(
+            gh api --paginate --slurp \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/commits/${EXPECTED_TARGET_SHA}/pulls?per_page=100"
+          )"
+          if ! jq -e \
+            --argjson number "$EXPECTED_PR_NUMBER" \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg base "$EXPECTED_BASE" \
+            --arg sha "$EXPECTED_TARGET_SHA" \
+            '
+              type == "array"
+              and all(.[]; type == "array" and all(.[]; type == "object"))
+              and ([
+                (add // [])[]
+                | select(
+                    .merged_at != null
+                    and .merge_commit_sha == $sha
+                    and .head.repo.full_name == $repo
+                    and .base.repo.full_name == $repo
+                    and (.base.ref == "dev" or .base.ref == "main")
+                    and (.number | type == "number")
+                  )
+              ] |
+                length == 1
+                and .[0].number == $number
+                and .[0].base.ref == $base
+              )
+            ' \
+            >/dev/null \
+            <<<"$ASSOCIATED_PRS"; then
+            echo "Associated PR provenance changed after artifact sealing." >&2
+            exit 1
+          fi
+          PR_JSON="$(
+            gh api -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/pulls/${EXPECTED_PR_NUMBER}"
+          )"
+          if ! jq -e \
+            --argjson number "$EXPECTED_PR_NUMBER" \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg base "$EXPECTED_BASE" \
+            --arg sha "$EXPECTED_TARGET_SHA" \
+            '
+              .number == $number
+              and .merged_at != null
+              and .merge_commit_sha == $sha
+              and .head.repo.full_name == $repo
+              and .base.repo.full_name == $repo
+              and .base.ref == $base
+            ' \
+            >/dev/null \
+            <<<"$PR_JSON"; then
+            echo "PR provenance changed after artifact sealing." >&2
+            exit 1
+          fi
+          PR_FILE_PAGES="$(
+            gh api --paginate --slurp \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/pulls/${EXPECTED_PR_NUMBER}/files?per_page=100"
+          )"
+          if ! jq -e \
+            --arg path "$PACKAGE_PATH" \
+            '
+              type == "array"
+              and all(.[]; type == "array" and all(.[]; type == "object"))
+              and ((add // []) | length) == 1
+              and (add // [])[0].filename == $path
+              and (add // [])[0].status == "modified"
+              and ((add // [])[0].previous_filename == null)
+            ' \
+            >/dev/null \
+            <<<"$PR_FILE_PAGES"; then
+            echo "Full paginated PR delta changed after artifact sealing." >&2
+            exit 1
+          fi
+
+          BRANCH_REF="$(
+            gh api -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/git/ref/heads/${EXPECTED_BASE}"
+          )"
+          if ! jq -e \
+            --arg ref "refs/heads/${EXPECTED_BASE}" \
+            --arg sha "$EXPECTED_CURRENT_BASE_SHA" \
+            '.ref == $ref and .object.type == "commit" and .object.sha == $sha' \
+            >/dev/null \
+            <<<"$BRANCH_REF"; then
+            echo "Base branch moved after artifact sealing; fail closed and rerun." >&2
+            exit 1
+          fi
+          REACHABILITY="$(
+            gh api -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/compare/${EXPECTED_TARGET_SHA}...${EXPECTED_CURRENT_BASE_SHA}"
+          )"
+          if ! jq -e \
+            --arg target "$EXPECTED_TARGET_SHA" \
+            --arg current "$EXPECTED_CURRENT_BASE_SHA" \
+            '
+              .base_commit.sha == $target
+              and .merge_base_commit.sha == $target
+              and .head_commit.sha == $current
+              and (.status == "ahead" or .status == "identical")
+            ' \
+            >/dev/null \
+            <<<"$REACHABILITY"; then
+            echo "Tagged target is no longer reachable from the sealed base tip." >&2
+            exit 1
+          fi
+
+          TARGET_CONTENT="$(
+            gh api -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/contents/${PACKAGE_PATH}?ref=${EXPECTED_TARGET_SHA}"
+          )"
+          CURRENT_CONTENT="$(
+            gh api -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/contents/${PACKAGE_PATH}?ref=${EXPECTED_CURRENT_BASE_SHA}"
+          )"
+          for response in "$TARGET_CONTENT" "$CURRENT_CONTENT"; do
+            if ! jq -e \
+              '.type == "file" and .encoding == "base64" and (.content | type == "string")' \
+              >/dev/null \
+              <<<"$response"; then
+              echo "Target or current-base manifest response is ambiguous." >&2
+              exit 1
+            fi
+          done
+          TARGET_MANIFEST="${RUNNER_TEMP}/target-manifest.json"
+          CURRENT_MANIFEST="${RUNNER_TEMP}/current-manifest.json"
+          jq -er '.content' <<<"$TARGET_CONTENT" | tr -d '\n' | base64 --decode > "$TARGET_MANIFEST"
+          jq -er '.content' <<<"$CURRENT_CONTENT" | tr -d '\n' | base64 --decode > "$CURRENT_MANIFEST"
+          if [ "$(jq -er '.name' "$TARGET_MANIFEST")" != "$EXPECTED_PACKAGE" ] ||
+            [ "$(jq -er '.version' "$TARGET_MANIFEST")" != "$EXPECTED_VERSION" ] ||
+            [ "$(jq -er '.name' "$CURRENT_MANIFEST")" != "$EXPECTED_PACKAGE" ] ||
+            ! diff -u \
+              <(jq -S 'del(.version)' "$TARGET_MANIFEST") \
+              <(jq -S 'del(.version)' "$CURRENT_MANIFEST"); then
+            echo "Target/current-base manifest invariant changed." >&2
+            exit 1
+          fi
+          CURRENT_VERSION="$(jq -er '.version' "$CURRENT_MANIFEST")"
+          if ! semver_valid "$CURRENT_VERSION" ||
+            { [ "$CURRENT_VERSION" != "$EXPECTED_VERSION" ] && ! semver_gt "$CURRENT_VERSION" "$EXPECTED_VERSION"; }; then
+            echo "Current base version is older than the target." >&2
+            exit 1
+          fi
+
+          REGISTRY_VERSIONS="${RUNNER_TEMP}/publish-registry-versions.json"
+          NPM_CONFIG_USERCONFIG="$SAFE_NPMRC" \
+            NPM_CONFIG_GLOBALCONFIG=/dev/null \
+            "$TRUSTED_NPM" view "$EXPECTED_PACKAGE" versions --json \
+            --registry="$NPM_REGISTRY" > "$REGISTRY_VERSIONS"
+          if ! jq -e '
+            (if type == "string" then [.] elif type == "array" then . else error("invalid registry response") end)
+            | length > 0 and all(.[]; type == "string")
+          ' "$REGISTRY_VERSIONS" >/dev/null; then
+            echo "Registry versions are empty or ambiguous." >&2
+            exit 1
+          fi
+          VERSION_EXISTS=false
+          while IFS= read -r REGISTRY_VERSION; do
+            if ! semver_valid "$REGISTRY_VERSION"; then
+              echo "Registry version '${REGISTRY_VERSION}' is invalid." >&2
+              exit 1
+            fi
+            if [ "$REGISTRY_VERSION" = "$EXPECTED_VERSION" ]; then VERSION_EXISTS=true; fi
+          done < <(jq -er 'if type == "string" then . else .[] end' "$REGISTRY_VERSIONS")
+
+          DIST_TAGS="$(
+            NPM_CONFIG_USERCONFIG="$SAFE_NPMRC" \
+              NPM_CONFIG_GLOBALCONFIG=/dev/null \
+              "$TRUSTED_NPM" view "$EXPECTED_PACKAGE" dist-tags --json \
+              --registry="$NPM_REGISTRY"
+          )"
+          if ! jq -e 'type == "object" and all(to_entries[]; .value | type == "string")' \
+            >/dev/null <<<"$DIST_TAGS"; then
+            echo "Registry dist-tags are ambiguous." >&2
+            exit 1
+          fi
+
+          if [ "$VERSION_EXISTS" = true ]; then
+            REGISTRY_METADATA="$(
+              NPM_CONFIG_USERCONFIG="$SAFE_NPMRC" \
+                NPM_CONFIG_GLOBALCONFIG=/dev/null \
+                "$TRUSTED_NPM" view \
+                "${EXPECTED_PACKAGE}@${EXPECTED_VERSION}" \
+                version gitHead dist.integrity --json \
+                --registry="$NPM_REGISTRY"
+            )"
+            if ! jq -e \
+              --arg version "$EXPECTED_VERSION" \
+              --arg sha "$EXPECTED_TARGET_SHA" \
+              --arg integrity "$EXPECTED_TARBALL_INTEGRITY" \
+              '
+                .version == $version
+                and .gitHead == $sha
+                and .["dist.integrity"] == $integrity
+              ' \
+              >/dev/null \
+              <<<"$REGISTRY_METADATA"; then
+              echo "Existing package version has mismatched gitHead or dist.integrity." >&2
+              exit 1
+            fi
+            if [ "$(jq -r --arg tag "$EXPECTED_IMMUTABLE_NPM_TAG" '.[$tag] // empty' <<<"$DIST_TAGS")" != "$EXPECTED_VERSION" ]; then
+              echo "Existing package has a missing or mismatched immutable dist-tag." >&2
+              exit 1
+            fi
+            ALREADY_PUBLISHED=true
           else
-            echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
-            bun publish --access public --tag "${NPM_TAG}"
+            if jq -e --arg tag "$EXPECTED_IMMUTABLE_NPM_TAG" 'has($tag)' >/dev/null <<<"$DIST_TAGS"; then
+              echo "Immutable dist-tag already exists without its package version." >&2
+              exit 1
+            fi
+            # Publication order is intentionally irrelevant. The immutable,
+            # version-qualified tag cannot move a shared channel backward.
+            ALREADY_PUBLISHED=false
+          fi
+
+          echo "already_published=${ALREADY_PUBLISHED}" >> "$GITHUB_OUTPUT"
+          echo "integrity=${EXPECTED_TARBALL_INTEGRITY}" >> "$GITHUB_OUTPUT"
+          echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
+          echo "tarball_sha512=$(jq -er '.tarballSha512' "$METADATA")" >> "$GITHUB_OUTPUT"
+
+      - name: Publish immutable inspected tarball
+        id: publish
+        if: steps.revalidate.outputs.already_published == 'false'
+        continue-on-error: true
+        env:
+          HOME: ${{ steps.npm.outputs.home }}
+          IMMUTABLE_NPM_TAG: ${{ needs.verify.outputs.immutable_npm_tag }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_GLOBALCONFIG: /dev/null
+          NPM_CONFIG_IGNORE_SCRIPTS: "true"
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+          NPM_CONFIG_USERCONFIG: ${{ steps.npm.outputs.npmrc }}
+          PATH: ${{ steps.npm.outputs.path }}
+          TARBALL: ${{ steps.revalidate.outputs.tarball }}
+          TRUSTED_NPM: ${{ steps.npm.outputs.binary }}
+        run: '"$TRUSTED_NPM" publish "$TARBALL" --ignore-scripts --access public --tag "$IMMUTABLE_NPM_TAG" --registry="https://registry.npmjs.org/"'
+
+      - name: Verify exact registry result after publish or retry
+        if: always() && steps.revalidate.outcome == 'success'
+        env:
+          EXPECTED_BASE: ${{ needs.verify.outputs.base }}
+          EXPECTED_CURRENT_BASE_SHA: ${{ needs.verify.outputs.current_base_sha }}
+          EXPECTED_IMMUTABLE_NPM_TAG: ${{ needs.verify.outputs.immutable_npm_tag }}
+          EXPECTED_INTEGRITY: ${{ steps.revalidate.outputs.integrity }}
+          EXPECTED_PR_NUMBER: ${{ needs.verify.outputs.pr_number }}
+          EXPECTED_TAG: ${{ needs.verify.outputs.tag }}
+          EXPECTED_TARBALL_SHA512: ${{ steps.revalidate.outputs.tarball_sha512 }}
+          EXPECTED_TARGET_SHA: ${{ needs.verify.outputs.target_sha }}
+          EXPECTED_VERSION: ${{ needs.verify.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+          HOME: ${{ steps.npm.outputs.home }}
+          SAFE_NPMRC: ${{ steps.npm.outputs.npmrc }}
+          TARBALL: ${{ steps.revalidate.outputs.tarball }}
+          TRUSTED_NPM: ${{ steps.npm.outputs.binary }}
+          TRUSTED_PATH: ${{ steps.npm.outputs.path }}
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+          export PATH="$TRUSTED_PATH"
+
+          ssri_sha512() {
+            printf 'sha512-%s\n' "$(
+              openssl dgst -sha512 -binary "$1" | openssl base64 -A
+            )"
+          }
+
+          if [ ! -f "$TARBALL" ] || [ -L "$TARBALL" ] ||
+            [ "$(sha512sum "$TARBALL" | awk '{print $1}')" != "$EXPECTED_TARBALL_SHA512" ] ||
+            [ "$(ssri_sha512 "$TARBALL")" != "$EXPECTED_INTEGRITY" ]; then
+            echo "Sealed tarball digest changed during publication." >&2
+            exit 1
+          fi
+
+          REMOTE_REF="$(
+            gh api -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/git/ref/tags/${EXPECTED_TAG}"
+          )"
+          if ! jq -e \
+            --arg ref "refs/tags/${EXPECTED_TAG}" \
+            --arg sha "$EXPECTED_TARGET_SHA" \
+            '.ref == $ref and .object.type == "commit" and .object.sha == $sha' \
+            >/dev/null \
+            <<<"$REMOTE_REF"; then
+            echo "Remote tag diverged during publication." >&2
+            exit 1
+          fi
+
+          ASSOCIATED_PRS="$(
+            gh api --paginate --slurp \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/commits/${EXPECTED_TARGET_SHA}/pulls?per_page=100"
+          )"
+          if ! jq -e \
+            --argjson number "$EXPECTED_PR_NUMBER" \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg base "$EXPECTED_BASE" \
+            --arg sha "$EXPECTED_TARGET_SHA" \
+            '
+              type == "array"
+              and all(.[]; type == "array" and all(.[]; type == "object"))
+              and ([
+                (add // [])[]
+                | select(
+                    .merged_at != null
+                    and .merge_commit_sha == $sha
+                    and .head.repo.full_name == $repo
+                    and .base.repo.full_name == $repo
+                    and (.base.ref == "dev" or .base.ref == "main")
+                    and (.number | type == "number")
+                  )
+              ] |
+                length == 1
+                and .[0].number == $number
+                and .[0].base.ref == $base
+              )
+            ' \
+            >/dev/null \
+            <<<"$ASSOCIATED_PRS"; then
+            echo "Associated PR provenance diverged during publication." >&2
+            exit 1
+          fi
+          PR_JSON="$(
+            gh api -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/pulls/${EXPECTED_PR_NUMBER}"
+          )"
+          if ! jq -e \
+            --argjson number "$EXPECTED_PR_NUMBER" \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg base "$EXPECTED_BASE" \
+            --arg sha "$EXPECTED_TARGET_SHA" \
+            '
+              .number == $number
+              and .merged_at != null
+              and .merge_commit_sha == $sha
+              and .head.repo.full_name == $repo
+              and .base.repo.full_name == $repo
+              and .base.ref == $base
+            ' \
+            >/dev/null \
+            <<<"$PR_JSON"; then
+            echo "PR provenance diverged during publication." >&2
+            exit 1
+          fi
+          PR_FILE_PAGES="$(
+            gh api --paginate --slurp \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/pulls/${EXPECTED_PR_NUMBER}/files?per_page=100"
+          )"
+          if ! jq -e \
+            --arg path "$PACKAGE_PATH" \
+            '
+              type == "array"
+              and all(.[]; type == "array" and all(.[]; type == "object"))
+              and ((add // []) | length) == 1
+              and (add // [])[0].filename == $path
+              and (add // [])[0].status == "modified"
+              and ((add // [])[0].previous_filename == null)
+            ' \
+            >/dev/null \
+            <<<"$PR_FILE_PAGES"; then
+            echo "Reviewed PR delta diverged during publication." >&2
+            exit 1
+          fi
+
+          BRANCH_REF="$(
+            gh api -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/git/ref/heads/${EXPECTED_BASE}"
+          )"
+          if ! jq -e \
+            --arg ref "refs/heads/${EXPECTED_BASE}" \
+            --arg sha "$EXPECTED_CURRENT_BASE_SHA" \
+            '.ref == $ref and .object.type == "commit" and .object.sha == $sha' \
+            >/dev/null \
+            <<<"$BRANCH_REF"; then
+            echo "Base branch diverged during publication." >&2
+            exit 1
+          fi
+          REACHABILITY="$(
+            gh api -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/compare/${EXPECTED_TARGET_SHA}...${EXPECTED_CURRENT_BASE_SHA}"
+          )"
+          if ! jq -e \
+            --arg target "$EXPECTED_TARGET_SHA" \
+            --arg current "$EXPECTED_CURRENT_BASE_SHA" \
+            '
+              .base_commit.sha == $target
+              and .merge_base_commit.sha == $target
+              and .head_commit.sha == $current
+              and (.status == "ahead" or .status == "identical")
+            ' \
+            >/dev/null \
+            <<<"$REACHABILITY"; then
+            echo "Base reachability diverged during publication." >&2
+            exit 1
+          fi
+
+          REGISTRY_METADATA="$(
+            NPM_CONFIG_USERCONFIG="$SAFE_NPMRC" \
+              NPM_CONFIG_GLOBALCONFIG=/dev/null \
+              "$TRUSTED_NPM" view \
+              "${EXPECTED_PACKAGE}@${EXPECTED_VERSION}" \
+              version gitHead dist.integrity --json \
+              --registry="$NPM_REGISTRY"
+          )"
+          DIST_TAGS="$(
+            NPM_CONFIG_USERCONFIG="$SAFE_NPMRC" \
+              NPM_CONFIG_GLOBALCONFIG=/dev/null \
+              "$TRUSTED_NPM" view "$EXPECTED_PACKAGE" dist-tags --json \
+              --registry="$NPM_REGISTRY"
+          )"
+          if ! jq -e \
+            --arg version "$EXPECTED_VERSION" \
+            --arg sha "$EXPECTED_TARGET_SHA" \
+            --arg integrity "$EXPECTED_INTEGRITY" \
+            '
+              .version == $version
+              and .gitHead == $sha
+              and .["dist.integrity"] == $integrity
+            ' \
+            >/dev/null \
+            <<<"$REGISTRY_METADATA" ||
+            [ "$(jq -r --arg tag "$EXPECTED_IMMUTABLE_NPM_TAG" '.[$tag] // empty' <<<"$DIST_TAGS")" != "$EXPECTED_VERSION" ]; then
+            echo "npm publish was unsuccessful or produced mismatched integrity, gitHead, or dist-tag." >&2
+            exit 1
           fi
