@@ -305,6 +305,7 @@ interface ChatMessageRow {
   actor_id: string | null;
   contact_id: string | null;
   agent_id: string | null;
+  origin_session_key: string | null;
   platform_identity_id: string | null;
   message_type: string | null;
   content_json: string | null;
@@ -632,6 +633,7 @@ export interface ChatMessageRecord {
   actorId?: string;
   contactId?: string;
   agentId?: string;
+  originSessionKey?: string;
   platformIdentityId?: string;
   messageType?: string;
   content?: Record<string, unknown>;
@@ -694,6 +696,7 @@ export interface UpsertChatMessageInput {
   actorType?: "contact" | "agent" | "system" | "unknown" | string | null;
   contactId?: string | null;
   agentId?: string | null;
+  originSessionKey?: string | null;
   platformIdentityId?: string | null;
   messageType?: string | null;
   content?: Record<string, unknown> | null;
@@ -1292,6 +1295,7 @@ function getDb(): Database {
       actor_id TEXT,
       contact_id TEXT,
       agent_id TEXT,
+      origin_session_key TEXT,
       platform_identity_id TEXT,
       message_type TEXT,
       content_json TEXT,
@@ -3216,6 +3220,7 @@ function ensureIdentityChatMigrations(database: Database): void {
   ensureColumn(database, "chats", "agent_id", "TEXT");
   ensureColumn(database, "chat_messages", "client_message_id", "TEXT");
   ensureColumn(database, "chat_messages", "actor_id", "TEXT");
+  ensureColumn(database, "chat_messages", "origin_session_key", "TEXT");
   ensureColumn(database, "chat_messages", "revision", "INTEGER");
   ensureColumn(database, "chat_messages", "state", "TEXT");
   ensureColumn(database, "chat_messages", "edited_at", "INTEGER");
@@ -3230,6 +3235,9 @@ function ensureIdentityChatMigrations(database: Database): void {
   );
   database.exec(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_messages_client_idempotency ON chat_messages(chat_id, actor_id, client_message_id) WHERE actor_id IS NOT NULL AND client_message_id IS NOT NULL",
+  );
+  database.exec(
+    "CREATE INDEX IF NOT EXISTS idx_chat_messages_origin_session_time ON chat_messages(origin_session_key, provider_timestamp, ingested_at) WHERE origin_session_key IS NOT NULL",
   );
 
   // sessions/attach owns the output attachment. Remove legacy focus state
@@ -3589,6 +3597,7 @@ function rowToChatMessage(row: ChatMessageRow): ChatMessageRecord {
     actorId: row.actor_id ?? undefined,
     contactId: row.contact_id ?? undefined,
     agentId: row.agent_id ?? undefined,
+    originSessionKey: row.origin_session_key ?? undefined,
     platformIdentityId: row.platform_identity_id ?? undefined,
     messageType: row.message_type ?? undefined,
     content: parseJsonRecord(row.content_json),
@@ -4462,11 +4471,12 @@ function upsertChatMessage(database: Database, input: UpsertChatMessageInput): U
       `
       INSERT INTO chat_messages (
         id, chat_id, channel, instance_id, provider_message_id, raw_chat_id,
-        raw_sender_id, normalized_sender_id, actor_type, contact_id, agent_id, platform_identity_id,
+        raw_sender_id, normalized_sender_id, actor_type, contact_id, agent_id, origin_session_key,
+        platform_identity_id,
         message_type, content_json, raw_provenance_json, provider_timestamp,
         edited_at, deleted_at, ingested_at, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(channel, instance_id, chat_id, provider_message_id) DO UPDATE SET
         raw_sender_id = COALESCE(excluded.raw_sender_id, chat_messages.raw_sender_id),
         normalized_sender_id = COALESCE(excluded.normalized_sender_id, chat_messages.normalized_sender_id),
@@ -4476,6 +4486,7 @@ function upsertChatMessage(database: Database, input: UpsertChatMessageInput): U
         END,
         contact_id = COALESCE(excluded.contact_id, chat_messages.contact_id),
         agent_id = COALESCE(excluded.agent_id, chat_messages.agent_id),
+        origin_session_key = COALESCE(excluded.origin_session_key, chat_messages.origin_session_key),
         platform_identity_id = COALESCE(excluded.platform_identity_id, chat_messages.platform_identity_id),
         message_type = COALESCE(excluded.message_type, chat_messages.message_type),
         content_json = COALESCE(excluded.content_json, chat_messages.content_json),
@@ -4498,6 +4509,7 @@ function upsertChatMessage(database: Database, input: UpsertChatMessageInput): U
       input.actorType ?? "unknown",
       input.contactId ?? null,
       input.agentId ?? null,
+      input.originSessionKey?.trim() || null,
       input.platformIdentityId ?? null,
       input.messageType ?? null,
       cleanJsonRecord(input.content),
@@ -6173,6 +6185,7 @@ export function dbFindAgentChatMessageByRef(input: {
   agentId: string;
   messageRef: string;
   chatIds?: string[] | null;
+  originSessionKey?: string | null;
   includeDeleted?: boolean;
 }): ChatMessageRecord | null {
   const agentId = input.agentId.trim();
@@ -6182,9 +6195,15 @@ export function dbFindAgentChatMessageByRef(input: {
   const whereClauses = ["m.actor_type = 'agent'", "m.agent_id = ?", "(m.id = ? OR m.provider_message_id = ?)"];
   const params: SQLQueryBindings[] = [agentId, messageRef, messageRef];
   const chatIds = normalizeChatMessageScopeIds(input.chatIds);
+  if (input.chatIds !== undefined && input.chatIds !== null && chatIds.length === 0) return null;
   if (chatIds.length > 0) {
     whereClauses.push(`m.chat_id IN (${chatIds.map(() => "?").join(", ")})`);
     params.push(...chatIds);
+  }
+  const originSessionKey = input.originSessionKey?.trim();
+  if (originSessionKey) {
+    whereClauses.push("m.origin_session_key = ?");
+    params.push(originSessionKey);
   }
   if (!input.includeDeleted) {
     whereClauses.push("m.deleted_at IS NULL");
@@ -6207,6 +6226,7 @@ export function dbFindAgentChatMessageByRef(input: {
 export function dbListAgentChatMessagesPage(input: {
   agentId: string;
   chatIds?: string[] | null;
+  originSessionKey?: string | null;
   limit?: number | string | null;
   offset?: number | string | null;
   order?: "asc" | "desc";
@@ -6226,9 +6246,17 @@ export function dbListAgentChatMessagesPage(input: {
   const whereClauses = ["m.actor_type = 'agent'", "m.agent_id = ?"];
   const params: SQLQueryBindings[] = [agentId];
   const chatIds = normalizeChatMessageScopeIds(input.chatIds);
+  if (input.chatIds !== undefined && input.chatIds !== null && chatIds.length === 0) {
+    return { total: 0, limit, offset, items: [] };
+  }
   if (chatIds.length > 0) {
     whereClauses.push(`m.chat_id IN (${chatIds.map(() => "?").join(", ")})`);
     params.push(...chatIds);
+  }
+  const originSessionKey = input.originSessionKey?.trim();
+  if (originSessionKey) {
+    whereClauses.push("m.origin_session_key = ?");
+    params.push(originSessionKey);
   }
   if (!input.includeDeleted) {
     whereClauses.push("m.deleted_at IS NULL");
@@ -6255,6 +6283,38 @@ export function dbListAgentChatMessagesPage(input: {
     limit,
     offset,
     items: rows.map(rowToChatMessageWithSortKey),
+  };
+}
+
+export function dbGetAgentChatActionCounts(input: { agentId: string; chatId: string; originSessionKey: string }): {
+  ownMessageCount: number;
+  ownTextMessageCount: number;
+} {
+  const agentId = input.agentId.trim();
+  const chatId = input.chatId.trim();
+  const originSessionKey = input.originSessionKey.trim();
+  if (!agentId || !chatId || !originSessionKey) {
+    return { ownMessageCount: 0, ownTextMessageCount: 0 };
+  }
+
+  const row = getDb()
+    .prepare(
+      `SELECT
+         COUNT(*) AS own_message_count,
+         SUM(CASE WHEN LOWER(COALESCE(message_type, '')) = 'text' THEN 1 ELSE 0 END) AS own_text_message_count
+       FROM chat_messages
+       WHERE actor_type = 'agent'
+         AND agent_id = ?
+         AND chat_id = ?
+         AND origin_session_key = ?
+         AND deleted_at IS NULL`,
+    )
+    .get(agentId, chatId, originSessionKey) as
+    | { own_message_count: number; own_text_message_count: number | null }
+    | undefined;
+  return {
+    ownMessageCount: Number(row?.own_message_count ?? 0),
+    ownTextMessageCount: Number(row?.own_text_message_count ?? 0),
   };
 }
 

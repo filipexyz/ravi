@@ -38,6 +38,7 @@ This spec defines canonical message shape and content semantics.
 - reply/quote references
 - reactions summary or references
 - delivery state reference
+- stable origin session key for outbound agent messages
 - raw platform metadata when retained
 
 ## Content Kinds
@@ -76,3 +77,9 @@ When a new outbound message is created for the same origin session and chat/thre
 ## Reply And Mention Rules
 
 Replies, quotes and mentions MUST resolve to canonical references when possible and preserve platform references when not.
+
+## Session Provenance
+
+New outbound agent messages MUST preserve the stable origin session key as a
+queryable field. A mutable session-action target MUST NOT be inferred from
+agent identity alone.

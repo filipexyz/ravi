@@ -279,6 +279,13 @@ describe("runCoverageGate", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("accepts canonical chat schema coverage for router persistence changes", () => {
+    const result = runCoverageGate(["src/router/router-db.ts", "src/router/chat-schema.test.ts"]);
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/router/"]);
+  });
+
   it("requires a focused native channel test in the diff", () => {
     const missing = runCoverageGate(["src/channels/slack/socket-mode.ts"]);
     const covered = runCoverageGate(["src/channels/slack/socket-mode.ts", "src/channels/slack/socket-mode.test.ts"]);

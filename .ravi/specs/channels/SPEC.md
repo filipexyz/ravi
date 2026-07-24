@@ -4,6 +4,7 @@ title: Channels
 kind: domain
 domain: channels
 capabilities:
+  - chat-actions
   - chats
   - meetings
 tags:
@@ -33,7 +34,8 @@ Ravi MUST abstract Omni as a transport/gateway adapter. Product and agent-facing
 - Ravi MUST NOT patch transport code to compensate for broken runtime lifecycle or routing rules without evidence that the transport contract is wrong.
 - Omni/raw channel identifiers MUST remain stored as provenance and debugging data, but they MUST NOT be the primary product model exposed to agents or operators.
 - Channel-specific behavior SHOULD be exposed to Ravi through typed capabilities and normalized events when a feature needs it, not through provider conditionals spread across features.
-- A dedicated channel capability registry MAY be deferred until a concrete feature needs it. The source of capability facts SHOULD be Omni.
+- Chat-action capabilities MUST be resolved through the typed Ravi capability registry defined by `channels/chat-actions`.
+- Native adapters MUST be the source of capability facts for native channels. Omni MAY remain the source only for channels explicitly backed by the legacy bridge.
 - Agent-executed channel CLIs MUST default to the current runtime source account when it is available. Falling back to the first configured account is only valid outside a sourced runtime context.
 - Native channel adapters MUST bind inbound routing to an explicit Ravi channel/account identity. A missing route account MUST NOT cause cross-account route matching.
 - Native channel adapters MUST resolve provider secrets through the credential broker/manager using the Ravi channel config as the authority.

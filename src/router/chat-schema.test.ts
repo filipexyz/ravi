@@ -12,6 +12,7 @@ import {
   dbFindChatByRef,
   dbFindChatReadingList,
   dbFindAgentChatMessageByRef,
+  dbGetAgentChatActionCounts,
   dbContactDmNormalizedChatId,
   dbGetSessionChatBinding,
   dbGetChatReadingDelta,
@@ -148,7 +149,11 @@ describe("identity chat schema", () => {
         SELECT name
         FROM sqlite_master
         WHERE type = 'index'
-          AND name IN ('idx_chats_actor_agent', 'idx_chat_messages_client_idempotency')
+          AND name IN (
+            'idx_chats_actor_agent',
+            'idx_chat_messages_client_idempotency',
+            'idx_chat_messages_origin_session_time'
+          )
         ORDER BY name
       `,
       )
@@ -160,9 +165,14 @@ describe("identity chat schema", () => {
     expect(chatColumnNames).toContain("agent_id");
     expect(messageColumnNames).toContain("client_message_id");
     expect(messageColumnNames).toContain("actor_id");
+    expect(messageColumnNames).toContain("origin_session_key");
     expect(messageColumnNames).toContain("revision");
     expect(messageColumnNames).toContain("state");
-    expect(indexes.map((row) => row.name)).toEqual(["idx_chat_messages_client_idempotency", "idx_chats_actor_agent"]);
+    expect(indexes.map((row) => row.name)).toEqual([
+      "idx_chat_messages_client_idempotency",
+      "idx_chat_messages_origin_session_time",
+      "idx_chats_actor_agent",
+    ]);
     expect(db.prepare("SELECT content_json FROM chat_messages WHERE id = 'cm_legacy'").get()).toEqual({
       content_json: '{"type":"text","text":"legacy"}',
     });
@@ -561,6 +571,77 @@ describe("identity chat schema", () => {
     expect(
       dbFindAgentChatMessageByRef({ agentId: "dev", messageRef: "outbound-edit-1", chatIds: [chat.id] })?.content,
     ).toMatchObject({ text: "texto novo" });
+  });
+
+  it("scopes mutable own messages to their origin session and fails closed on an empty chat scope", () => {
+    const chat = dbUpsertChat({
+      channel: "slack",
+      instanceId: "ravi-slack",
+      platformChatId: "C123",
+      chatType: "channel",
+    });
+    const sessionA = dbUpsertChatMessage({
+      chatId: chat.id,
+      channel: "slack",
+      instanceId: "ravi-slack",
+      providerMessageId: "1711111111.000100",
+      rawChatId: "C123",
+      actorType: "agent",
+      agentId: "dev",
+      originSessionKey: "agent:dev:slack:ravi-slack:C123",
+      messageType: "text",
+      content: { type: "text", text: "from session A" },
+    }).message;
+    dbUpsertChatMessage({
+      chatId: chat.id,
+      channel: "slack",
+      instanceId: "ravi-slack",
+      providerMessageId: "1711111111.000200",
+      rawChatId: "C123",
+      actorType: "agent",
+      agentId: "dev",
+      originSessionKey: "agent:dev:slack:ravi-slack:C123:thread",
+      messageType: "text",
+      content: { type: "text", text: "from session B" },
+    });
+
+    expect(
+      dbListAgentChatMessagesPage({
+        agentId: "dev",
+        chatIds: [chat.id],
+        originSessionKey: "agent:dev:slack:ravi-slack:C123",
+      }).items.map((message) => message.id),
+    ).toEqual([sessionA.id]);
+    expect(
+      dbFindAgentChatMessageByRef({
+        agentId: "dev",
+        messageRef: "1711111111.000200",
+        chatIds: [chat.id],
+        originSessionKey: "agent:dev:slack:ravi-slack:C123",
+      }),
+    ).toBeNull();
+    expect(
+      dbListAgentChatMessagesPage({
+        agentId: "dev",
+        chatIds: [],
+        originSessionKey: "agent:dev:slack:ravi-slack:C123",
+      }).items,
+    ).toEqual([]);
+    expect(
+      dbFindAgentChatMessageByRef({
+        agentId: "dev",
+        messageRef: sessionA.id,
+        chatIds: [],
+        originSessionKey: "agent:dev:slack:ravi-slack:C123",
+      }),
+    ).toBeNull();
+    expect(
+      dbGetAgentChatActionCounts({
+        agentId: "dev",
+        chatId: chat.id,
+        originSessionKey: "agent:dev:slack:ravi-slack:C123",
+      }),
+    ).toEqual({ ownMessageCount: 1, ownTextMessageCount: 1 });
   });
 
   it("lists chats and reads messages through the durable ledger", () => {

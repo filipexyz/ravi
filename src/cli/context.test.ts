@@ -35,7 +35,9 @@ describe("cli context resolution", () => {
     RAVI_AGENT_ID: process.env.RAVI_AGENT_ID,
     RAVI_CHANNEL: process.env.RAVI_CHANNEL,
     RAVI_ACCOUNT_ID: process.env.RAVI_ACCOUNT_ID,
+    RAVI_INSTANCE_ID: process.env.RAVI_INSTANCE_ID,
     RAVI_CHAT_ID: process.env.RAVI_CHAT_ID,
+    RAVI_CANONICAL_CHAT_ID: process.env.RAVI_CANONICAL_CHAT_ID,
     RAVI_CREDENTIALS_PATH: process.env.RAVI_CREDENTIALS_PATH,
   };
 
@@ -47,7 +49,9 @@ describe("cli context resolution", () => {
     delete process.env.RAVI_AGENT_ID;
     delete process.env.RAVI_CHANNEL;
     delete process.env.RAVI_ACCOUNT_ID;
+    delete process.env.RAVI_INSTANCE_ID;
     delete process.env.RAVI_CHAT_ID;
+    delete process.env.RAVI_CANONICAL_CHAT_ID;
     process.env.RAVI_CREDENTIALS_PATH = join(tmpdir(), `ravi-cli-context-test-missing-${process.pid}.json`);
   });
 
@@ -58,7 +62,9 @@ describe("cli context resolution", () => {
     restoreEnv("RAVI_AGENT_ID", originalEnv.RAVI_AGENT_ID);
     restoreEnv("RAVI_CHANNEL", originalEnv.RAVI_CHANNEL);
     restoreEnv("RAVI_ACCOUNT_ID", originalEnv.RAVI_ACCOUNT_ID);
+    restoreEnv("RAVI_INSTANCE_ID", originalEnv.RAVI_INSTANCE_ID);
     restoreEnv("RAVI_CHAT_ID", originalEnv.RAVI_CHAT_ID);
+    restoreEnv("RAVI_CANONICAL_CHAT_ID", originalEnv.RAVI_CANONICAL_CHAT_ID);
     restoreEnv("RAVI_CREDENTIALS_PATH", originalEnv.RAVI_CREDENTIALS_PATH);
   });
 
@@ -91,14 +97,22 @@ describe("cli context resolution", () => {
     process.env.RAVI_AGENT_ID = "main";
     process.env.RAVI_CHANNEL = "whatsapp";
     process.env.RAVI_ACCOUNT_ID = "main";
+    process.env.RAVI_INSTANCE_ID = "instance-main";
     process.env.RAVI_CHAT_ID = "5511888888888";
+    process.env.RAVI_CANONICAL_CHAT_ID = "chat-main";
 
     const ctx = getContext();
     expect(ctx).toMatchObject({
       sessionKey: "agent:main:main",
       sessionName: "main",
       agentId: "main",
-      source: { channel: "whatsapp", accountId: "main", chatId: "5511888888888" },
+      source: {
+        channel: "whatsapp",
+        accountId: "main",
+        instanceId: "instance-main",
+        chatId: "5511888888888",
+        canonicalChatId: "chat-main",
+      },
     });
   });
 });

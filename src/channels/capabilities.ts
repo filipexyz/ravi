@@ -13,6 +13,7 @@ const CHANNEL_ALIASES: Record<string, string> = {
   "whatsapp-baileys": "whatsapp",
   "whatsapp baileys": "whatsapp",
   matrix: "matrix",
+  slack: "slack",
   tui: "tui",
 };
 
@@ -25,6 +26,11 @@ const CHANNEL_CAPABILITIES: Record<string, ChannelCapabilitySet> = {
   matrix: {
     channelId: "matrix",
     displayName: "Matrix",
+    capabilities: ["reactions"],
+  },
+  slack: {
+    channelId: "slack",
+    displayName: "Slack",
     capabilities: ["reactions"],
   },
   tui: {

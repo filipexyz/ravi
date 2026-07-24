@@ -28,6 +28,11 @@ export interface SlackUpdateMessageInput {
   readonly blocks?: readonly SlackBlockKitBlock[];
 }
 
+export interface SlackDeleteMessageInput {
+  readonly channel: string;
+  readonly ts: string;
+}
+
 export interface SlackChatUnfurlInput {
   readonly channel?: string;
   readonly ts?: string;
@@ -248,6 +253,7 @@ export interface SlackChatUnfurlResponse extends SlackApiResponse {}
 export interface SlackEntityPresentDetailsResponse extends SlackApiResponse {}
 
 interface SlackReactionResponse extends SlackApiResponse {}
+interface SlackDeleteMessageResponse extends SlackApiResponse {}
 
 interface SlackAssistantThreadStatusResponse extends SlackApiResponse {}
 
@@ -414,6 +420,18 @@ export class SlackWebApiClient {
       messageId: response.ts,
       raw: response,
     };
+  }
+
+  async deleteMessage(input: SlackDeleteMessageInput): Promise<Record<string, unknown>> {
+    return this.apiRequest<SlackDeleteMessageResponse>(
+      "chat.delete",
+      this.botToken,
+      {
+        channel: input.channel,
+        ts: input.ts,
+      },
+      { okErrors: ["message_not_found"] },
+    );
   }
 
   async unfurl(input: SlackChatUnfurlInput): Promise<SlackChatUnfurlResponse> {

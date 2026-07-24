@@ -1071,6 +1071,7 @@ export class Gateway {
         identityProvenance: {
           source: "ravi.gateway.response",
           sessionName,
+          originSessionKey: session?.sessionKey ?? null,
           agentId: agentId ?? null,
           accountId: target.accountId,
           instanceId,
@@ -1088,12 +1089,14 @@ export class Gateway {
           normalizedSenderId: agentIdentity?.normalizedPlatformUserId,
           actorType: "agent",
           agentId,
+          originSessionKey: session?.sessionKey,
           platformIdentityId: agentIdentity?.id,
           messageType: "text",
           content: { type: "text", text: text ?? "" },
           rawProvenance: {
             source: "ravi.gateway.response",
             sessionName,
+            originSessionKey: session?.sessionKey ?? null,
             agentId,
             accountId: target.accountId,
             instanceId,

@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { AckPolicy, DeliverPolicy, RetentionPolicy, StringCodec, type JetStreamManager } from "nats";
 import { ensureConnected, getNats } from "../nats.js";
 import type { MessageTarget, ResponseMessage } from "../runtime/message-types.js";
 import { logger } from "../utils/logger.js";
+import type { ChannelChatActionContent } from "./chat-actions.js";
 
 const log = logger.child("channels:outbound-stream");
 const sc = StringCodec();
@@ -44,10 +46,12 @@ export interface ChannelOutboundRequest {
     runtimePid?: number;
     responsePhase?: string;
   };
-  content: {
-    type: "text";
-    text: string;
-  };
+  content:
+    | {
+        type: "text";
+        text: string;
+      }
+    | ChannelChatActionContent;
   idempotencyKey: string;
   policyHints?: Record<string, unknown>;
   target: MessageTarget;
@@ -295,6 +299,52 @@ export function buildChannelOutboundJobFromResponse(
         target,
         ...(response.metadata && typeof response.metadata === "object" ? { metadata: response.metadata } : {}),
       },
+    },
+  };
+}
+
+export function buildChannelChatActionJob(input: {
+  sessionName: string;
+  target: MessageTarget;
+  content: ChannelChatActionContent;
+  requestId?: string;
+  now?: number;
+}): ChannelOutboundJob {
+  const sessionName = input.sessionName.trim();
+  if (!sessionName) throw new Error("sessionName is required");
+  const now = input.now ?? Date.now();
+  const requestId = input.requestId?.trim() || `chat-action:${randomUUID()}`;
+  const channelId = input.target.channel.trim().toLowerCase() || "unknown";
+  const idempotencyKey = [
+    requestId,
+    channelId,
+    input.target.accountId,
+    input.target.chatId,
+    input.content.actionId,
+    input.content.providerMessageId,
+  ].join(":");
+
+  return {
+    jobId: requestId,
+    status: "queued",
+    attemptCount: 0,
+    createdAt: now,
+    updatedAt: now,
+    request: {
+      requestId,
+      channelId,
+      ...(input.target.instanceId ? { instanceId: input.target.instanceId } : {}),
+      accountId: input.target.accountId,
+      targetChatId: input.target.chatId,
+      ...(input.target.threadId ? { targetThreadId: input.target.threadId } : {}),
+      origin: {
+        sessionName,
+        emitId: requestId,
+        responsePhase: "chat_action",
+      },
+      content: input.content,
+      idempotencyKey,
+      target: input.target,
     },
   };
 }

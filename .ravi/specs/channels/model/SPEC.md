@@ -39,6 +39,11 @@ The model MUST define:
 - `ChannelStatusAnchor`
 - `ChannelCapabilityMatrix`
 - `ChannelCredentialRequirements`
+- `ChatActionDescriptor`
+- `ChatActionAvailability`
+- `ChatActionRequest`
+- `ChatActionResult`
+- `ChatActionUnavailableReason`
 - `OutboundRequest`
 - `DeliveryResult`
 

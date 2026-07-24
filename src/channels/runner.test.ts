@@ -3,12 +3,47 @@ import { CHANNEL_OUTBOUND_PUBLISH_RETENTION_MS } from "./outbound-publish-outbox
 import { CHANNEL_OUTBOUND_RECEIPT_RETENTION_MS } from "./outbound-receipts.js";
 import {
   CHANNEL_OUTBOUND_RECEIPT_PRUNE_INTERVAL_MS,
+  collectSlackRuntimeDeliveries,
   pruneChannelOutboundPublishOutbox,
   pruneChannelOutboundReceiptLedger,
   runChannelOutboundLedgerMaintenance,
   slackAdapterHealth,
   startChannelOutboundReceiptPruner,
 } from "./runner.js";
+
+describe("channel runner native delivery registry", () => {
+  it("registers Slack text, chat action, and presence adapters together", () => {
+    const delivery = {
+      channelId: "slack",
+      supports: () => true,
+      deliverText: mock(async () => ({ provider: "slack" })),
+    };
+    const actions = {
+      channelId: "slack",
+      supports: () => true,
+      executeChatAction: mock(async () => ({ provider: "slack" })),
+    };
+    const presence = {
+      channelId: "slack",
+      supports: () => true,
+      sendPresence: mock(async () => ({ provider: "slack", status: "active" as const })),
+    };
+
+    expect(
+      collectSlackRuntimeDeliveries([
+        {
+          delivery,
+          actions,
+          presence,
+        },
+      ]),
+    ).toEqual({
+      deliveries: [delivery],
+      actionDeliveries: [actions],
+      presenceDeliveries: [presence],
+    });
+  });
+});
 
 describe("channel runner outbound receipt maintenance", () => {
   it("prunes expired receipts in every state using the 14-day safety window", () => {

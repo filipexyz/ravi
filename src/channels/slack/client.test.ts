@@ -255,12 +255,16 @@ describe("Slack Web API client", () => {
       channel: "C123",
       ts: "1713000000.000100",
     });
+    await expect(client.deleteMessage({ channel: "C123", ts: "1713000000.000100" })).resolves.toMatchObject({
+      ok: true,
+    });
 
     expect(calls.map((call) => call.method)).toEqual([
       "blocks.validate",
       "chat.postMessage",
       "chat.postEphemeral",
       "chat.update",
+      "chat.delete",
     ]);
     expect(formBody(calls[0]?.init.body)).toEqual({
       message: JSON.stringify({ text: "Fallback", blocks }),
@@ -282,6 +286,10 @@ describe("Slack Web API client", () => {
       ts: "1713000000.000100",
       text: "Updated",
       blocks: JSON.stringify(blocks),
+    });
+    expect(formBody(calls[4]?.init.body)).toEqual({
+      channel: "C123",
+      ts: "1713000000.000100",
     });
   });
 
