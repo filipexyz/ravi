@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import type { ChannelRuntimeCommandClient } from "../channel-runtime-events.js";
 import type { RaviClient } from "../client.js";
 import type {
   ArtifactsShowReturn,
@@ -14,6 +15,10 @@ import type {
   ChatsMessagesCreateReturn,
   ChannelsBackendIngressInput,
   ChannelsBackendIngressReturn,
+  ChannelsBackendRuntimeInterruptInput,
+  ChannelsBackendRuntimeInterruptReturn,
+  ChannelsBackendRuntimeReadbackInput,
+  ChannelsBackendRuntimeReadbackReturn,
   ContextCredentialsListReturn,
 } from "../types.js";
 
@@ -24,6 +29,7 @@ type ExpectTrue<T extends true> = T;
 type ExpectFalse<T extends false> = T;
 
 declare const client: RaviClient;
+type _ChannelRuntimeClientCompatible = ExpectTrue<RaviClient extends ChannelRuntimeCommandClient ? true : false>;
 
 // `client.artifacts.show(id)` — single positional string, return Promise<ArtifactsShowReturn>.
 type ArtifactsShowFn = typeof client.artifacts.show;
@@ -72,6 +78,32 @@ type _ChannelBackendIngressReturnOk = ExpectTrue<
   Eq<ChannelBackendIngressResult, ChannelsBackendIngressReturn>
 >;
 
+type ChannelBackendRuntimeInterruptFn = typeof client.channels.backend.runtime.interrupt;
+type ChannelBackendRuntimeInterruptParams = Parameters<ChannelBackendRuntimeInterruptFn>;
+type ChannelBackendRuntimeInterruptResult = Awaited<ReturnType<ChannelBackendRuntimeInterruptFn>>;
+type ChannelBackendRuntimeReadbackFn = typeof client.channels.backend.runtime.readback;
+type ChannelBackendRuntimeReadbackParams = Parameters<ChannelBackendRuntimeReadbackFn>;
+type ChannelBackendRuntimeReadbackResult = Awaited<ReturnType<ChannelBackendRuntimeReadbackFn>>;
+
+type _ChannelBackendRuntimeInterruptParamsOk = ExpectTrue<
+  Eq<
+    ChannelBackendRuntimeInterruptParams,
+    [agentId: string, request: ChannelsBackendRuntimeInterruptInput["request"]]
+  >
+>;
+type _ChannelBackendRuntimeInterruptReturnOk = ExpectTrue<
+  Eq<ChannelBackendRuntimeInterruptResult, ChannelsBackendRuntimeInterruptReturn>
+>;
+type _ChannelBackendRuntimeReadbackParamsOk = ExpectTrue<
+  Eq<
+    ChannelBackendRuntimeReadbackParams,
+    [agentId: string, request: ChannelsBackendRuntimeReadbackInput["request"]]
+  >
+>;
+type _ChannelBackendRuntimeReadbackReturnOk = ExpectTrue<
+  Eq<ChannelBackendRuntimeReadbackResult, ChannelsBackendRuntimeReadbackReturn>
+>;
+
 // `client.context.credentials.list()` — no required args; return is `unknown`
 // because the underlying command does not declare `@Returns`.
 type ListFn = typeof client.context.credentials.list;
@@ -105,6 +137,11 @@ type _Touched =
   | _ChatsMessageRevisionRequired
   | _ChannelBackendIngressParamsOk
   | _ChannelBackendIngressReturnOk
+  | _ChannelRuntimeClientCompatible
+  | _ChannelBackendRuntimeInterruptParamsOk
+  | _ChannelBackendRuntimeInterruptReturnOk
+  | _ChannelBackendRuntimeReadbackParamsOk
+  | _ChannelBackendRuntimeReadbackReturnOk
   | _ListReturnOk
   | _ListReturnIsUnknown
   | _ListParamsOk;

@@ -1,4 +1,5 @@
 import { calculateCost, prewarmPricingCatalog } from "../costs/pricing-catalog.js";
+import { projectChannelRuntimeEvent } from "../channels/runtime-events.js";
 import { backfillProviderSessionId, getRecentHistory, saveMessage } from "../db.js";
 import { HEARTBEAT_OK } from "../heartbeat/index.js";
 import { getToolSafety } from "../hooks/tool-safety.js";
@@ -870,6 +871,25 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     await safeEmit(`ravi.session.${sessionName}.runtime`, augmented);
   };
 
+  const projectRuntimeEventToChannel = async (event: RuntimeEvent, projectedResponseText?: string) => {
+    const metadata = streaming.currentChannelBackend;
+    if (!metadata) return;
+    try {
+      await projectChannelRuntimeEvent({
+        metadata,
+        event,
+        ...(projectedResponseText !== undefined ? { responseText: projectedResponseText } : {}),
+      });
+    } catch (error) {
+      log.warn("Channel runtime event projection failed", {
+        sessionName,
+        turnId: metadata.binding.turnId,
+        eventType: event.type,
+        errorKind: error instanceof Error ? error.name : typeof error,
+      });
+    }
+  };
+
   const recordProviderTurnInactivityTimeout = (idleMs: number) => {
     const currentTurnId = streaming.currentTraceTurnId;
     if (!currentTurnId || streaming.currentTraceTurnTerminalRecorded) {
@@ -1018,6 +1038,28 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       reason,
       stashedMessages: stashedCount,
     });
+  };
+
+  const projectUnterminatedChannelTurn = async () => {
+    if (!streaming.currentChannelBackend || restartStashedReason) {
+      return;
+    }
+    const reason =
+      streaming.internalAbortReason ??
+      (streaming.abortController.signal.aborted ? "runtime_aborted" : "runtime_event_loop_closed");
+    const timedOut =
+      reason === PROVIDER_INACTIVE_AFTER_TOOL_REASON ||
+      reason === PROVIDER_TURN_INACTIVITY_REASON ||
+      reason === "stuck_tool";
+    await projectRuntimeEventToChannel(
+      timedOut
+        ? {
+            type: "turn.failed",
+            error: "Runtime ended before a terminal provider event",
+            recoverable: true,
+          }
+        : { type: "turn.interrupted" },
+    );
   };
 
   const patchLiveState = (
@@ -1289,6 +1331,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       });
 
       if (event.type === "text.delta") {
+        await projectRuntimeEventToChannel(event);
         updateRuntimeLiveState(sessionName, {
           activity: "streaming",
           summary: truncateLiveSummary(event.text) || "streaming",
@@ -1303,6 +1346,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
 
       await chunkEmitTail;
+
+      if (event.type !== "turn.failed") {
+        await projectRuntimeEventToChannel(event, event.type === "turn.complete" ? responseText : undefined);
+      }
 
       if (event.type === "provider.raw" && event.rawEvent) {
         await emitLegacyProviderEvent(event.rawEvent);
@@ -1958,6 +2005,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.pendingAbort = false;
         streaming.currentTurnToolStarted = false;
         streaming.turnActive = false;
+        streaming.currentChannelBackend = undefined;
         clearTraceTurnState();
         patchLiveState(
           {
@@ -2000,6 +2048,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
         streaming.currentTurnToolStarted = false;
+        streaming.currentChannelBackend = undefined;
         streaming.turnActive = false;
         clearTraceTurnState();
         markRuntimeLiveIdle(sessionName, "turn interrupted");
@@ -2038,6 +2087,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         );
 
         if (suppressedRecoverable) {
+          await projectRuntimeEventToChannel({
+            type: "turn.interrupted",
+            metadata: event.metadata,
+          });
           await emitRuntimeEvent({
             type: "turn.interrupted",
             provider: runtimeSession.provider,
@@ -2095,6 +2148,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           signalTurnComplete();
           clearTraceTurnState();
           streaming.done = true;
+          streaming.currentChannelBackend = undefined;
           break;
         }
 
@@ -2152,6 +2206,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           rawEvent: event.rawEvent,
         });
         if (contextWindowFailure) {
+          await projectRuntimeEventToChannel(event);
           const history = getRecentHistory(sessionName, 48);
           const recovery = buildRuntimeContextRecoveryPrompt({
             sessionName,
@@ -2243,9 +2298,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           signalTurnComplete();
           clearTraceTurnState();
           streaming.done = true;
+          streaming.currentChannelBackend = undefined;
           break;
         }
 
+        await projectRuntimeEventToChannel(event);
         await emitRuntimeEvent({
           ...event,
           provider: runtimeSession.provider,
@@ -2273,6 +2330,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearTraceTurnState();
 
         streaming.currentTurnToolStarted = false;
+        streaming.currentChannelBackend = undefined;
         clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
 
         if (streaming.agentMode !== "sentinel") {
@@ -2313,7 +2371,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     log.info("Streaming session ended", { runId, sessionName });
 
     prepareUnterminatedTurnRecovery();
+    await projectUnterminatedChannelTurn();
     recordUnterminatedTurnExit();
+    streaming.currentChannelBackend = undefined;
     clearTraceTurnState();
     clearProviderInactivityWatch();
     clearIdleSessionEvictionTimer();

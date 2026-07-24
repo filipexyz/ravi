@@ -346,6 +346,27 @@ interface ChannelBackendIngressReceiptRow {
   updated_at: number;
 }
 
+interface ChannelBackendRuntimeStateRow {
+  turn_id: string;
+  state: ChannelBackendRuntimeState;
+  last_sequence: number;
+  last_delta_sequence: number;
+  assistant_message_id: string | null;
+  updated_at: number;
+}
+
+interface ChannelBackendRuntimeInterruptRow {
+  turn_id: string;
+  idempotency_key: string;
+  request_id: string;
+  state: "accepted" | "publishing" | "published";
+  publish_claim_id: string | null;
+  publish_claim_expires_at: number | null;
+  published_at: number | null;
+  requested_at: number;
+  updated_at: number;
+}
+
 interface ChatReadingListRow {
   id: string;
   name: string;
@@ -784,6 +805,53 @@ export interface ChannelBackendIngressReceiptRecord {
   acceptedAt: number;
   updatedAt: number;
 }
+
+export type ChannelBackendRuntimeState =
+  | "accepted"
+  | "running"
+  | "waiting_approval"
+  | "completed"
+  | "failed"
+  | "interrupted";
+
+export interface ChannelBackendRuntimeStateRecord {
+  turnId: string;
+  state: ChannelBackendRuntimeState;
+  lastSequence: number;
+  lastDeltaSequence: number;
+  assistantMessageId?: string;
+  updatedAt: number;
+}
+
+export interface RecordChannelBackendRuntimeEventInput {
+  turnId: string;
+  state?: ChannelBackendRuntimeState;
+  assistantDelta?: boolean;
+  assistantText?: string;
+  occurredAt?: number;
+}
+
+export interface RecordChannelBackendRuntimeEventResult {
+  receipt: ChannelBackendIngressReceiptRecord;
+  runtime: ChannelBackendRuntimeStateRecord;
+}
+
+export interface ChannelBackendRuntimeInterruptRecord {
+  turnId: string;
+  idempotencyKey: string;
+  requestId: string;
+  state: "accepted" | "publishing" | "published";
+  publishClaimId?: string;
+  publishClaimExpiresAt?: number;
+  publishedAt?: number;
+  requestedAt: number;
+  updatedAt: number;
+}
+
+export type ChannelBackendRuntimeInterruptClaimResult =
+  | { status: "acquired"; record: ChannelBackendRuntimeInterruptRecord }
+  | { status: "busy"; record: ChannelBackendRuntimeInterruptRecord }
+  | { status: "published"; record: ChannelBackendRuntimeInterruptRecord };
 
 export interface AcceptChannelBackendIngressInput {
   channelInstanceId: string;
@@ -1443,6 +1511,44 @@ function getDb(): Database {
       ON channel_backend_ingress_receipts(state, publish_claim_expires_at);
     CREATE INDEX IF NOT EXISTS idx_channel_backend_ingress_session
       ON channel_backend_ingress_receipts(session_name, accepted_at);
+
+    CREATE TABLE IF NOT EXISTS channel_backend_runtime_state (
+      turn_id TEXT PRIMARY KEY
+        REFERENCES channel_backend_ingress_receipts(turn_id) ON DELETE CASCADE,
+      state TEXT NOT NULL DEFAULT 'accepted'
+        CHECK(state IN (
+          'accepted',
+          'running',
+          'waiting_approval',
+          'completed',
+          'failed',
+          'interrupted'
+        )),
+      last_sequence INTEGER NOT NULL DEFAULT 0
+        CHECK(last_sequence >= 0),
+      last_delta_sequence INTEGER NOT NULL DEFAULT 0
+        CHECK(last_delta_sequence >= 0),
+      assistant_message_id TEXT
+        REFERENCES chat_messages(id) ON DELETE RESTRICT,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS channel_backend_runtime_interrupts (
+      turn_id TEXT NOT NULL
+        REFERENCES channel_backend_ingress_receipts(turn_id) ON DELETE CASCADE,
+      idempotency_key TEXT NOT NULL,
+      request_id TEXT NOT NULL,
+      state TEXT NOT NULL DEFAULT 'accepted'
+        CHECK(state IN ('accepted', 'publishing', 'published')),
+      publish_claim_id TEXT,
+      publish_claim_expires_at INTEGER,
+      published_at INTEGER,
+      requested_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY(turn_id, idempotency_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_channel_backend_runtime_interrupt_request
+      ON channel_backend_runtime_interrupts(request_id);
 
     CREATE TABLE IF NOT EXISTS chat_reading_lists (
       id TEXT PRIMARY KEY,
@@ -3784,6 +3890,48 @@ function rowToChannelBackendIngressReceipt(row: ChannelBackendIngressReceiptRow)
     acceptedAt: row.accepted_at,
     updatedAt: row.updated_at,
   };
+}
+
+function rowToChannelBackendRuntimeState(row: ChannelBackendRuntimeStateRow): ChannelBackendRuntimeStateRecord {
+  return {
+    turnId: row.turn_id,
+    state: row.state,
+    lastSequence: row.last_sequence,
+    lastDeltaSequence: row.last_delta_sequence,
+    ...(row.assistant_message_id ? { assistantMessageId: row.assistant_message_id } : {}),
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToChannelBackendRuntimeInterrupt(
+  row: ChannelBackendRuntimeInterruptRow,
+): ChannelBackendRuntimeInterruptRecord {
+  return {
+    turnId: row.turn_id,
+    idempotencyKey: row.idempotency_key,
+    requestId: row.request_id,
+    state: row.state,
+    ...(row.publish_claim_id ? { publishClaimId: row.publish_claim_id } : {}),
+    ...(row.publish_claim_expires_at !== null ? { publishClaimExpiresAt: row.publish_claim_expires_at } : {}),
+    ...(row.published_at !== null ? { publishedAt: row.published_at } : {}),
+    requestedAt: row.requested_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function assertChannelBackendRuntimeTransition(
+  current: ChannelBackendRuntimeState,
+  next: ChannelBackendRuntimeState,
+): void {
+  if (current === "completed" || current === "failed" || current === "interrupted") {
+    if (current !== next) {
+      throw new Error(`Channel runtime turn is already terminal: ${current}`);
+    }
+    throw new Error(`Channel runtime turn already recorded terminal state ${current}`);
+  }
+  if (next === "accepted" && current !== "accepted") {
+    throw new Error(`Channel runtime state cannot transition from ${current} to accepted`);
+  }
 }
 
 function parsePositiveIntegerOption(value: number | string | null | undefined, optionName: string): number | undefined {
@@ -6461,6 +6609,380 @@ export function dbGetChannelBackendIngressReceiptByTurnId(turnId: string): Chann
     .prepare("SELECT * FROM channel_backend_ingress_receipts WHERE turn_id = ?")
     .get(normalizeOpaqueCanonicalId(turnId, "turnId")) as ChannelBackendIngressReceiptRow | undefined;
   return row ? rowToChannelBackendIngressReceipt(row) : null;
+}
+
+export function dbGetChannelBackendRuntimeState(turnId: string): ChannelBackendRuntimeStateRecord | null {
+  const row = getDb()
+    .prepare("SELECT * FROM channel_backend_runtime_state WHERE turn_id = ?")
+    .get(normalizeOpaqueCanonicalId(turnId, "turnId")) as ChannelBackendRuntimeStateRow | undefined;
+  return row ? rowToChannelBackendRuntimeState(row) : null;
+}
+
+export function dbRecordChannelBackendRuntimeEvent(
+  input: RecordChannelBackendRuntimeEventInput,
+): RecordChannelBackendRuntimeEventResult {
+  return executeWrite(
+    getDb(),
+    (database) => {
+      const turnId = normalizeOpaqueCanonicalId(input.turnId, "turnId");
+      const occurredAt = input.occurredAt ?? Date.now();
+      if (!Number.isSafeInteger(occurredAt) || occurredAt < 0) {
+        throw new Error("occurredAt must be a non-negative Unix millisecond timestamp");
+      }
+      const receiptRow = database
+        .prepare("SELECT * FROM channel_backend_ingress_receipts WHERE turn_id = ?")
+        .get(turnId) as ChannelBackendIngressReceiptRow | undefined;
+      if (!receiptRow) {
+        throw new Error(`Channel backend ingress receipt not found for turn ${turnId}`);
+      }
+      const receipt = rowToChannelBackendIngressReceipt(receiptRow);
+      const currentRow = database
+        .prepare("SELECT * FROM channel_backend_runtime_state WHERE turn_id = ?")
+        .get(turnId) as ChannelBackendRuntimeStateRow | undefined;
+      const current = currentRow
+        ? rowToChannelBackendRuntimeState(currentRow)
+        : {
+            turnId,
+            state: "accepted" as const,
+            lastSequence: 0,
+            lastDeltaSequence: 0,
+            updatedAt: receipt.acceptedAt,
+          };
+      const nextState = input.state ?? current.state;
+      assertChannelBackendRuntimeTransition(current.state, nextState);
+
+      let assistantMessageId = current.assistantMessageId;
+      if (input.assistantText !== undefined) {
+        if (nextState !== "completed") {
+          throw new Error("assistantText is valid only for a completed channel runtime turn");
+        }
+        const assistantText = input.assistantText.trim();
+        if (!assistantText) {
+          throw new Error("assistantText must not be empty");
+        }
+        const messageResult = upsertChatMessage(database, {
+          chatId: receipt.chatId,
+          channel: receipt.external.channelKind,
+          instanceId: receipt.channelInstanceId,
+          providerMessageId: semanticId("channel_runtime_assistant", [turnId]),
+          rawChatId: receipt.external.conversationId,
+          rawSenderId: receipt.agentId,
+          normalizedSenderId: receipt.agentId,
+          actorType: "agent",
+          agentId: receipt.agentId,
+          originSessionKey: receipt.sessionKey,
+          messageType: "text",
+          content: {
+            blocks: [{ type: "text", text: assistantText }],
+          },
+          rawProvenance: {
+            source: "channel.runtime",
+            turnId,
+          },
+          providerTimestamp: occurredAt,
+          ingestedAt: occurredAt,
+        });
+        assistantMessageId = messageResult.canonicalMessageId;
+      }
+
+      const nextSequence = current.lastSequence + 1;
+      const nextDeltaSequence = current.lastDeltaSequence + (input.assistantDelta ? 1 : 0);
+      database
+        .prepare(
+          `
+          INSERT INTO channel_backend_runtime_state (
+            turn_id,
+            state,
+            last_sequence,
+            last_delta_sequence,
+            assistant_message_id,
+            updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(turn_id) DO UPDATE SET
+            state = excluded.state,
+            last_sequence = excluded.last_sequence,
+            last_delta_sequence = excluded.last_delta_sequence,
+            assistant_message_id = COALESCE(
+              excluded.assistant_message_id,
+              channel_backend_runtime_state.assistant_message_id
+            ),
+            updated_at = excluded.updated_at
+        `,
+        )
+        .run(turnId, nextState, nextSequence, nextDeltaSequence, assistantMessageId ?? null, occurredAt);
+      const runtimeRow = database
+        .prepare("SELECT * FROM channel_backend_runtime_state WHERE turn_id = ?")
+        .get(turnId) as ChannelBackendRuntimeStateRow | undefined;
+      if (!runtimeRow) {
+        throw new Error(`Channel backend runtime state not found after update for turn ${turnId}`);
+      }
+      return {
+        receipt,
+        runtime: rowToChannelBackendRuntimeState(runtimeRow),
+      };
+    },
+    { label: "record_channel_backend_runtime_event" },
+  );
+}
+
+export function dbRecordChannelBackendRuntimeInterrupt(input: {
+  turnId: string;
+  idempotencyKey: string;
+  requestId: string;
+  requestedAt?: number;
+}): { created: boolean; record: ChannelBackendRuntimeInterruptRecord } {
+  return executeWrite(
+    getDb(),
+    (database) => {
+      const turnId = normalizeOpaqueCanonicalId(input.turnId, "turnId");
+      const idempotencyKey = normalizeOpaqueCanonicalId(input.idempotencyKey, "idempotencyKey");
+      const requestId = normalizeOpaqueCanonicalId(input.requestId, "requestId");
+      const requestedAt = input.requestedAt ?? Date.now();
+      if (!Number.isSafeInteger(requestedAt) || requestedAt < 0) {
+        throw new Error("requestedAt must be a non-negative Unix millisecond timestamp");
+      }
+      const receipt = database.prepare("SELECT 1 FROM channel_backend_ingress_receipts WHERE turn_id = ?").get(turnId);
+      if (!receipt) {
+        throw new Error(`Channel backend ingress receipt not found for turn ${turnId}`);
+      }
+      const inserted = database
+        .prepare(
+          `
+          INSERT OR IGNORE INTO channel_backend_runtime_interrupts (
+            turn_id,
+            idempotency_key,
+            request_id,
+            state,
+            requested_at,
+            updated_at
+          )
+          VALUES (?, ?, ?, 'accepted', ?, ?)
+        `,
+        )
+        .run(turnId, idempotencyKey, requestId, requestedAt, requestedAt);
+      const row = database
+        .prepare(
+          `
+          SELECT *
+          FROM channel_backend_runtime_interrupts
+          WHERE turn_id = ? AND idempotency_key = ?
+        `,
+        )
+        .get(turnId, idempotencyKey) as ChannelBackendRuntimeInterruptRow | undefined;
+      if (!row) {
+        throw new Error(`Channel backend runtime interrupt not found after insert for turn ${turnId}`);
+      }
+      return {
+        created: inserted.changes > 0,
+        record: rowToChannelBackendRuntimeInterrupt(row),
+      };
+    },
+    { label: "record_channel_backend_runtime_interrupt" },
+  );
+}
+
+export function dbGetChannelBackendRuntimeInterrupt(
+  turnId: string,
+  idempotencyKey: string,
+): ChannelBackendRuntimeInterruptRecord | null {
+  const row = getDb()
+    .prepare(
+      `
+      SELECT *
+      FROM channel_backend_runtime_interrupts
+      WHERE turn_id = ? AND idempotency_key = ?
+    `,
+    )
+    .get(normalizeOpaqueCanonicalId(turnId, "turnId"), normalizeOpaqueCanonicalId(idempotencyKey, "idempotencyKey")) as
+    | ChannelBackendRuntimeInterruptRow
+    | undefined;
+  return row ? rowToChannelBackendRuntimeInterrupt(row) : null;
+}
+
+export function dbClaimChannelBackendRuntimeInterrupt(input: {
+  turnId: string;
+  idempotencyKey: string;
+  claimId: string;
+  claimedAt?: number;
+  leaseMs?: number;
+}): ChannelBackendRuntimeInterruptClaimResult {
+  const turnId = normalizeOpaqueCanonicalId(input.turnId, "turnId");
+  const idempotencyKey = normalizeOpaqueCanonicalId(input.idempotencyKey, "idempotencyKey");
+  const claimId = normalizeOpaqueCanonicalId(input.claimId, "claimId");
+  const claimedAt = input.claimedAt ?? Date.now();
+  const leaseMs = input.leaseMs ?? 60_000;
+  if (!Number.isSafeInteger(claimedAt) || claimedAt < 0) {
+    throw new Error("claimedAt must be a non-negative Unix millisecond timestamp");
+  }
+  if (!Number.isSafeInteger(leaseMs) || leaseMs < 1_000 || leaseMs > 300_000) {
+    throw new Error("leaseMs must be an integer between 1000 and 300000");
+  }
+
+  return executeWrite(
+    getDb(),
+    (database) => {
+      const current = database
+        .prepare(
+          `
+          SELECT *
+          FROM channel_backend_runtime_interrupts
+          WHERE turn_id = ? AND idempotency_key = ?
+        `,
+        )
+        .get(turnId, idempotencyKey) as ChannelBackendRuntimeInterruptRow | undefined;
+      if (!current) {
+        throw new Error(`Channel backend runtime interrupt not found for turn ${turnId}`);
+      }
+      if (current.state === "published") {
+        return { status: "published", record: rowToChannelBackendRuntimeInterrupt(current) };
+      }
+      if (
+        current.state === "publishing" &&
+        current.publish_claim_id !== claimId &&
+        (current.publish_claim_expires_at ?? 0) > claimedAt
+      ) {
+        return { status: "busy", record: rowToChannelBackendRuntimeInterrupt(current) };
+      }
+
+      const claimExpiresAt = claimedAt + leaseMs;
+      const result = database
+        .prepare(
+          `
+          UPDATE channel_backend_runtime_interrupts
+          SET state = 'publishing',
+              publish_claim_id = ?,
+              publish_claim_expires_at = ?,
+              updated_at = ?
+          WHERE turn_id = ?
+            AND idempotency_key = ?
+            AND state IN ('accepted', 'publishing')
+            AND (
+              publish_claim_id IS NULL
+              OR publish_claim_id = ?
+              OR publish_claim_expires_at IS NULL
+              OR publish_claim_expires_at <= ?
+            )
+        `,
+        )
+        .run(claimId, claimExpiresAt, claimedAt, turnId, idempotencyKey, claimId, claimedAt);
+      const row = database
+        .prepare(
+          `
+          SELECT *
+          FROM channel_backend_runtime_interrupts
+          WHERE turn_id = ? AND idempotency_key = ?
+        `,
+        )
+        .get(turnId, idempotencyKey) as ChannelBackendRuntimeInterruptRow;
+      if (result.changes > 0 && row.publish_claim_id === claimId) {
+        return { status: "acquired", record: rowToChannelBackendRuntimeInterrupt(row) };
+      }
+      return row.state === "published"
+        ? { status: "published", record: rowToChannelBackendRuntimeInterrupt(row) }
+        : { status: "busy", record: rowToChannelBackendRuntimeInterrupt(row) };
+    },
+    { label: "claim_channel_backend_runtime_interrupt" },
+  );
+}
+
+export function dbMarkChannelBackendRuntimeInterruptPublished(input: {
+  turnId: string;
+  idempotencyKey: string;
+  claimId: string;
+  publishedAt?: number;
+}): ChannelBackendRuntimeInterruptRecord {
+  const turnId = normalizeOpaqueCanonicalId(input.turnId, "turnId");
+  const idempotencyKey = normalizeOpaqueCanonicalId(input.idempotencyKey, "idempotencyKey");
+  const claimId = normalizeOpaqueCanonicalId(input.claimId, "claimId");
+  const publishedAt = input.publishedAt ?? Date.now();
+  if (!Number.isSafeInteger(publishedAt) || publishedAt < 0) {
+    throw new Error("publishedAt must be a non-negative Unix millisecond timestamp");
+  }
+  return executeWrite(
+    getDb(),
+    (database) => {
+      const result = database
+        .prepare(
+          `
+          UPDATE channel_backend_runtime_interrupts
+          SET state = 'published',
+              publish_claim_id = NULL,
+              publish_claim_expires_at = NULL,
+              published_at = COALESCE(published_at, ?),
+              updated_at = ?
+          WHERE turn_id = ?
+            AND idempotency_key = ?
+            AND state = 'publishing'
+            AND publish_claim_id = ?
+        `,
+        )
+        .run(publishedAt, publishedAt, turnId, idempotencyKey, claimId);
+      if (result.changes === 0) {
+        throw new Error(`Channel backend runtime interrupt claim is no longer owned for turn ${turnId}`);
+      }
+      const row = database
+        .prepare(
+          `
+          SELECT *
+          FROM channel_backend_runtime_interrupts
+          WHERE turn_id = ? AND idempotency_key = ?
+        `,
+        )
+        .get(turnId, idempotencyKey) as ChannelBackendRuntimeInterruptRow;
+      return rowToChannelBackendRuntimeInterrupt(row);
+    },
+    { label: "mark_channel_backend_runtime_interrupt_published" },
+  );
+}
+
+export function dbReleaseChannelBackendRuntimeInterrupt(input: {
+  turnId: string;
+  idempotencyKey: string;
+  claimId: string;
+  releasedAt?: number;
+}): ChannelBackendRuntimeInterruptRecord {
+  const turnId = normalizeOpaqueCanonicalId(input.turnId, "turnId");
+  const idempotencyKey = normalizeOpaqueCanonicalId(input.idempotencyKey, "idempotencyKey");
+  const claimId = normalizeOpaqueCanonicalId(input.claimId, "claimId");
+  const releasedAt = input.releasedAt ?? Date.now();
+  if (!Number.isSafeInteger(releasedAt) || releasedAt < 0) {
+    throw new Error("releasedAt must be a non-negative Unix millisecond timestamp");
+  }
+  return executeWrite(
+    getDb(),
+    (database) => {
+      database
+        .prepare(
+          `
+          UPDATE channel_backend_runtime_interrupts
+          SET state = CASE WHEN state = 'publishing' THEN 'accepted' ELSE state END,
+              publish_claim_id = NULL,
+              publish_claim_expires_at = NULL,
+              updated_at = ?
+          WHERE turn_id = ?
+            AND idempotency_key = ?
+            AND state = 'publishing'
+            AND publish_claim_id = ?
+        `,
+        )
+        .run(releasedAt, turnId, idempotencyKey, claimId);
+      const row = database
+        .prepare(
+          `
+          SELECT *
+          FROM channel_backend_runtime_interrupts
+          WHERE turn_id = ? AND idempotency_key = ?
+        `,
+        )
+        .get(turnId, idempotencyKey) as ChannelBackendRuntimeInterruptRow | undefined;
+      if (!row) {
+        throw new Error(`Channel backend runtime interrupt not found for turn ${turnId}`);
+      }
+      return rowToChannelBackendRuntimeInterrupt(row);
+    },
+    { label: "release_channel_backend_runtime_interrupt" },
+  );
 }
 
 export function dbClaimChannelBackendIngressPublication(input: {

@@ -2,7 +2,12 @@ import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barrier
 import type { SessionEntry } from "../router/index.js";
 import type { TurnProvenance } from "./turn-provenance.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
-import type { MessageActorMetadata, RaviCommandPromptMetadata, RuntimeLaunchPrompt } from "./message-types.js";
+import type {
+  ChannelBackendPromptMetadata,
+  MessageActorMetadata,
+  RaviCommandPromptMetadata,
+  RuntimeLaunchPrompt,
+} from "./message-types.js";
 import type {
   RuntimeEventMetadata,
   RuntimeEffort,
@@ -57,6 +62,8 @@ export interface RuntimeHostStreamingSession {
   pendingMessages: RuntimeUserMessage[];
   /** Current response source for routing */
   currentSource?: RuntimeMessageTarget;
+  /** Provider-neutral channel backend identity for the currently executing turn. */
+  currentChannelBackend?: ChannelBackendPromptMetadata;
   /** Runtime model currently assigned to this live stream */
   currentModel: string;
   /** Runtime effort currently assigned to this live stream */

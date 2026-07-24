@@ -1,0 +1,257 @@
+{
+  "artifacts": [
+    {
+      "sha256": "4ee15609430af147c2ba6e8f6fdbcad64c7c235e820bbd5d2989e1be66dced8d",
+      "sizeBytes": 700,
+      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/event-approval-requested.json"
+    },
+    {
+      "sha256": "0f0e8efd873d8dd933a30d3d386d9a21c20c477c61a17eabe1cdd2da2a00e06f",
+      "sizeBytes": 632,
+      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/event-approval-resolved.json"
+    },
+    {
+      "sha256": "ffca541434066016ab156c643b4d353e7fcbe23b4ae1ecf3855fc765459a8952",
+      "sizeBytes": 632,
+      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/event-delta.json"
+    },
+    {
+      "sha256": "3e2c6c615041950969a6b6b3aa2ac1148e94dc308e3882b23a12831e363fd294",
+      "sizeBytes": 580,
+      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/event-state.json"
+    },
+    {
+      "sha256": "48d25f6387dbc2274e9a1e52e4bd7c7c632e2ebce64b45102eb856f340044090",
+      "sizeBytes": 733,
+      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/event-terminal.json"
+    },
+    {
+      "sha256": "e7df644cf903eed7bf6d859772a4c55f00c2e752d3908fe0f6c1c1dd33f76c34",
+      "sizeBytes": 645,
+      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/event-tool.json"
+    },
+    {
+      "sha256": "063f288dc8f4cccdb451253f812dcbb6b3adb41739356e524bac609afb6d127e",
+      "sizeBytes": 392,
+      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/interrupt-request.json"
+    },
+    {
+      "sha256": "891bae80724b6a3901f718af2754e8a27ec2105ca03313444edb15e7f7877d83",
+      "sizeBytes": 174,
+      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/interrupt-result.json"
+    },
+    {
+      "sha256": "d0f95e039e23edcfc8ad76cf0a8e9177f56f8ae6fd618f118e83865f1b384c2b",
+      "sizeBytes": 299,
+      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/readback-request.json"
+    },
+    {
+      "sha256": "78c9cd4e9168f716bf41be0065cd4c5c71f963ea4005f070e2e5bb39d3f50bc4",
+      "sizeBytes": 435,
+      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/readback-result.json"
+    },
+    {
+      "sha256": "64c8d063e91ae7dfd9c95c33ce972150146a4a91983f32446c3dda9f41d2c7eb",
+      "sizeBytes": 57495,
+      "targetPath": "packages/ravi-os-sdk/src/generated/channel-runtime-events.schema.json"
+    }
+  ],
+  "capsule": "channel-runtime-events",
+  "capsuleVersion": 1,
+  "compatibilityProfile": "additive-v1",
+  "exclusions": [
+    "taxonomy-boundary-v1",
+    "authorization-boundary-v1",
+    "commercial-boundary-v1",
+    "network-boundary-v1",
+    "payload-boundary-v1",
+    "secret-boundary-v1"
+  ],
+  "fileAllowlist": [
+    "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/event-approval-requested.json",
+    "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/event-approval-resolved.json",
+    "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/event-delta.json",
+    "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/event-state.json",
+    "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/event-terminal.json",
+    "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/event-tool.json",
+    "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/interrupt-request.json",
+    "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/interrupt-result.json",
+    "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/readback-request.json",
+    "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/readback-result.json",
+    "packages/ravi-os-sdk/src/generated/channel-runtime-events.capsule.json",
+    "packages/ravi-os-sdk/src/generated/channel-runtime-events.schema.json"
+  ],
+  "formatVersion": 1,
+  "outputDigest": "11b24c67425f32c3137c27a71cdee845907665bc82e74c0ee9aef46033e24f3c",
+  "rationale": "Channel backends need provider-independent turn lifecycle, delta, terminal, approval, interrupt, and readback contracts.",
+  "schemaAllowlist": [
+    {
+      "fields": [
+        "code",
+        "category",
+        "retryable",
+        "correlationId",
+        "retryAfterMs"
+      ],
+      "schema": "ChannelSafeError"
+    },
+    {
+      "fields": [
+        "type",
+        "text"
+      ],
+      "schema": "ChannelTextContentBlock"
+    },
+    {
+      "fields": [
+        "type",
+        "artifactId",
+        "name",
+        "mediaType",
+        "sizeBytes"
+      ],
+      "schema": "ChannelArtifactContentBlock"
+    },
+    {
+      "fields": [],
+      "schema": "ChannelContent"
+    },
+    {
+      "fields": [
+        "channelInstanceId",
+        "agentId",
+        "chatId",
+        "messageId",
+        "sessionId",
+        "turnId"
+      ],
+      "schema": "LocalChannelMessageBinding"
+    },
+    {
+      "fields": [
+        "correlationId",
+        "causationId",
+        "ingressRequestId",
+        "binding"
+      ],
+      "schema": "ChannelRuntimeCorrelation"
+    },
+    {
+      "fields": [
+        "state",
+        "error"
+      ],
+      "schema": "ChannelTurnStateChangedPayload"
+    },
+    {
+      "fields": [
+        "blockIndex",
+        "deltaSequence",
+        "text"
+      ],
+      "schema": "ChannelAssistantDeltaPayload"
+    },
+    {
+      "fields": [
+        "state",
+        "assistantMessageId",
+        "content",
+        "error"
+      ],
+      "schema": "ChannelTerminalOutputPayload"
+    },
+    {
+      "fields": [
+        "toolCallId",
+        "toolName",
+        "phase",
+        "error"
+      ],
+      "schema": "ChannelToolSummaryPayload"
+    },
+    {
+      "fields": [
+        "approvalId",
+        "action",
+        "risk",
+        "expiresAt"
+      ],
+      "schema": "ChannelApprovalRequestedPayload"
+    },
+    {
+      "fields": [
+        "approvalId",
+        "decision"
+      ],
+      "schema": "ChannelApprovalResolvedPayload"
+    },
+    {
+      "fields": [],
+      "schema": "KnownChannelRuntimeEvent"
+    },
+    {
+      "fields": [
+        "protocol",
+        "schemaVersion",
+        "requestId",
+        "idempotencyKey",
+        "binding",
+        "requestedAt"
+      ],
+      "schema": "ChannelInterruptRequest"
+    },
+    {
+      "fields": [
+        "protocol",
+        "schemaVersion",
+        "requestId",
+        "disposition",
+        "error",
+        "acceptedAt"
+      ],
+      "schema": "ChannelInterruptResult"
+    },
+    {
+      "fields": [
+        "protocol",
+        "schemaVersion",
+        "requestId",
+        "binding"
+      ],
+      "schema": "ChannelRuntimeReadbackRequest"
+    },
+    {
+      "fields": [
+        "protocol",
+        "schemaVersion",
+        "requestId",
+        "binding",
+        "state",
+        "lastSequence",
+        "assistantMessageId",
+        "observedAt"
+      ],
+      "schema": "ChannelRuntimeReadbackResult"
+    }
+  ],
+  "sourceDigest": "816c67787b76c5b98f6ab356b0f178fdeda35cf0d81f92aa9b2a75655b370464",
+  "targetRepository": "filipexyz/ravi",
+  "validations": [
+    {
+      "command": [
+        "bun",
+        "test",
+        "packages/ravi-os-sdk/src/__tests__/channel-runtime-events.test.ts"
+      ],
+      "id": "sdk-contract"
+    },
+    {
+      "command": [
+        "bun",
+        "run",
+        "typecheck"
+      ],
+      "id": "typecheck"
+    }
+  ]
+}
