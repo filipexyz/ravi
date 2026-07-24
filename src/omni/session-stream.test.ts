@@ -4,6 +4,7 @@ import {
   ensureSessionPromptInfrastructure,
   ensureSessionPromptsStream,
   resetSessionPromptInfrastructureCacheForTests,
+  resolveSessionPromptPublishOptions,
 } from "./session-stream.js";
 import { publishSessionPromptPublication } from "./session-prompt-publication.js";
 
@@ -74,6 +75,13 @@ describe("session prompt JetStream infrastructure", () => {
 
     expect(streamInfo).toHaveBeenCalledTimes(1);
     expect(consumerInfo).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps a stable prompt message id to JetStream deduplication options", () => {
+    expect(resolveSessionPromptPublishOptions({ messageId: "channel_ingress_a" })).toEqual({
+      msgID: "channel_ingress_a",
+    });
+    expect(resolveSessionPromptPublishOptions({})).toBeUndefined();
   });
 
   it("force revalidates cached infrastructure for health checks and recovery", async () => {

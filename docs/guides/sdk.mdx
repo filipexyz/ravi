@@ -111,6 +111,60 @@ await client.sdk.client.check();
 Kebab-case commands become camelCase methods. For example,
 `daemon init-admin-key` becomes `client.daemon.initAdminKey()`.
 
+## Native Channel Backends
+
+Use the provider-neutral channel backend client when an adapter needs to accept
+an external message into a local Ravi agent without depending on a provider
+payload:
+
+```ts
+import {
+  RaviClient,
+  createChannelBackendClient,
+  createHttpTransport,
+} from "@ravi-os/sdk";
+
+const ravi = new RaviClient(
+  createHttpTransport({
+    baseUrl: "http://127.0.0.1:7777",
+    contextKey: process.env.RAVI_CONTEXT_KEY!,
+  }),
+);
+const backend = createChannelBackendClient(ravi);
+
+const result = await backend.ingress({
+  protocol: "ravi.channel.backend",
+  schemaVersion: 1,
+  requestId: "request-01",
+  idempotencyKey: "provider-message-01",
+  localActorId: "actor-01",
+  channelInstanceId: "custom-main",
+  agentId: "support",
+  external: {
+    channelKind: "custom",
+    connectionId: "connection-01",
+    conversationId: "conversation-01",
+    senderId: "sender-01",
+    messageId: "message-01",
+  },
+  content: [{ type: "text", text: "Hello" }],
+  receivedAt: new Date().toISOString(),
+});
+```
+
+Ingress requires a concrete `mutate:agent:<agentId>` capability. Ravi persists
+one canonical local message and one stable chat/session/turn binding for each
+channel-instance idempotency key. A retry with the same semantic request
+returns `duplicate` and the original binding; conflicting reuse fails closed.
+The local permission decision remains authoritative.
+
+The projected JSON Schema and fixtures live under
+`packages/ravi-os-sdk/src/generated` and
+`packages/ravi-os-sdk/src/__tests__/fixtures/channel-backend-core`.
+Adapters can implement `ChannelOutputSink` to consume validated,
+provider-neutral assistant or safe-error envelopes. Runtime lifecycle streams
+are a separate contract.
+
 ## Wire Contract
 
 Every command call is a POST:
@@ -245,6 +299,7 @@ The published TypeScript package exports:
 
 ```ts
 import { RaviClient } from "@ravi-os/sdk/client";
+import { createChannelBackendClient } from "@ravi-os/sdk/channel-backend";
 import { createHttpTransport } from "@ravi-os/sdk/transport/http";
 import { createStreamClient } from "@ravi-os/sdk/streaming";
 import { RaviError } from "@ravi-os/sdk/errors";

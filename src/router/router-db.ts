@@ -324,6 +324,28 @@ interface ChatMessageWithSortKeyRow extends ChatMessageRow {
   message_sort_key: string;
 }
 
+interface ChannelBackendIngressReceiptRow {
+  id: string;
+  channel_instance_id: string;
+  idempotency_key: string;
+  request_fingerprint: string;
+  initial_request_id: string;
+  local_actor_id: string;
+  agent_id: string;
+  chat_id: string;
+  message_id: string;
+  session_key: string;
+  session_name: string;
+  turn_id: string;
+  external_json: string;
+  state: ChannelBackendIngressPublicationState;
+  publish_claim_id: string | null;
+  publish_claim_expires_at: number | null;
+  published_at: number | null;
+  accepted_at: number;
+  updated_at: number;
+}
+
 interface ChatReadingListRow {
   id: string;
   name: string;
@@ -730,6 +752,71 @@ export interface CreateCanonicalActorMessageResult {
   canonicalMessageId: string;
   clientMessageId: string;
 }
+
+export type ChannelBackendIngressPublicationState = "accepted" | "publishing" | "published";
+
+export interface ChannelBackendExternalIdentityRecord {
+  channelKind: string;
+  connectionId: string;
+  conversationId: string;
+  senderId: string;
+  messageId: string;
+}
+
+export interface ChannelBackendIngressReceiptRecord {
+  id: string;
+  channelInstanceId: string;
+  idempotencyKey: string;
+  requestFingerprint: string;
+  initialRequestId: string;
+  localActorId: string;
+  agentId: string;
+  chatId: string;
+  messageId: string;
+  sessionKey: string;
+  sessionName: string;
+  turnId: string;
+  external: ChannelBackendExternalIdentityRecord;
+  state: ChannelBackendIngressPublicationState;
+  publishClaimId?: string;
+  publishClaimExpiresAt?: number;
+  publishedAt?: number;
+  acceptedAt: number;
+  updatedAt: number;
+}
+
+export interface AcceptChannelBackendIngressInput {
+  channelInstanceId: string;
+  idempotencyKey: string;
+  requestFingerprint: string;
+  requestId: string;
+  localActorId: string;
+  agentId: string;
+  clientMessageId: string;
+  sessionKey: string;
+  sessionName: string;
+  turnId: string;
+  external: ChannelBackendExternalIdentityRecord;
+  content: Record<string, unknown>;
+  receivedAt: number;
+  acceptedAt?: number;
+}
+
+export type AcceptChannelBackendIngressResult =
+  | {
+      status: "accepted" | "duplicate";
+      receipt: ChannelBackendIngressReceiptRecord;
+      message: ChatMessageWithSortKey;
+    }
+  | {
+      status: "conflict";
+      receipt: ChannelBackendIngressReceiptRecord;
+    };
+
+export type ChannelBackendIngressPublicationClaimResult =
+  | { status: "acquired"; receipt: ChannelBackendIngressReceiptRecord }
+  | { status: "busy"; receipt: ChannelBackendIngressReceiptRecord }
+  | { status: "published"; receipt: ChannelBackendIngressReceiptRecord };
 
 export type ChatReadingListOwnerType = "user" | "agent" | "team" | "system" | "workflow" | string;
 export type ChatReadingListVisibility = "private" | "team" | "system" | string;
@@ -1324,6 +1411,38 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_chat_messages_platform_identity
       ON chat_messages(platform_identity_id, provider_timestamp)
       WHERE platform_identity_id IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS channel_backend_ingress_receipts (
+      id TEXT PRIMARY KEY,
+      channel_instance_id TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      request_fingerprint TEXT NOT NULL,
+      initial_request_id TEXT NOT NULL,
+      local_actor_id TEXT NOT NULL,
+      agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE RESTRICT,
+      chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE RESTRICT,
+      message_id TEXT NOT NULL REFERENCES chat_messages(id) ON DELETE RESTRICT,
+      session_key TEXT NOT NULL,
+      session_name TEXT NOT NULL,
+      turn_id TEXT NOT NULL,
+      external_json TEXT NOT NULL,
+      state TEXT NOT NULL DEFAULT 'accepted'
+        CHECK(state IN ('accepted', 'publishing', 'published')),
+      publish_claim_id TEXT,
+      publish_claim_expires_at INTEGER,
+      published_at INTEGER,
+      accepted_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(channel_instance_id, idempotency_key),
+      UNIQUE(message_id),
+      UNIQUE(turn_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_channel_backend_ingress_state
+      ON channel_backend_ingress_receipts(state, updated_at);
+    CREATE INDEX IF NOT EXISTS idx_channel_backend_ingress_claim
+      ON channel_backend_ingress_receipts(state, publish_claim_expires_at);
+    CREATE INDEX IF NOT EXISTS idx_channel_backend_ingress_session
+      ON channel_backend_ingress_receipts(session_name, accepted_at);
 
     CREATE TABLE IF NOT EXISTS chat_reading_lists (
       id TEXT PRIMARY KEY,
@@ -3626,6 +3745,47 @@ function rowToChatMessageWithSortKey(row: ChatMessageWithSortKeyRow): ChatMessag
   };
 }
 
+function rowToChannelBackendIngressReceipt(row: ChannelBackendIngressReceiptRow): ChannelBackendIngressReceiptRecord {
+  const external = parseJsonRecord(row.external_json);
+  if (
+    !external ||
+    typeof external.channelKind !== "string" ||
+    typeof external.connectionId !== "string" ||
+    typeof external.conversationId !== "string" ||
+    typeof external.senderId !== "string" ||
+    typeof external.messageId !== "string"
+  ) {
+    throw new Error(`Channel backend ingress receipt ${row.id} has invalid external identity`);
+  }
+  return {
+    id: row.id,
+    channelInstanceId: row.channel_instance_id,
+    idempotencyKey: row.idempotency_key,
+    requestFingerprint: row.request_fingerprint,
+    initialRequestId: row.initial_request_id,
+    localActorId: row.local_actor_id,
+    agentId: row.agent_id,
+    chatId: row.chat_id,
+    messageId: row.message_id,
+    sessionKey: row.session_key,
+    sessionName: row.session_name,
+    turnId: row.turn_id,
+    external: {
+      channelKind: external.channelKind,
+      connectionId: external.connectionId,
+      conversationId: external.conversationId,
+      senderId: external.senderId,
+      messageId: external.messageId,
+    },
+    state: row.state,
+    ...(row.publish_claim_id ? { publishClaimId: row.publish_claim_id } : {}),
+    ...(row.publish_claim_expires_at !== null ? { publishClaimExpiresAt: row.publish_claim_expires_at } : {}),
+    ...(row.published_at !== null ? { publishedAt: row.published_at } : {}),
+    acceptedAt: row.accepted_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function parsePositiveIntegerOption(value: number | string | null | undefined, optionName: string): number | undefined {
   if (value === null || value === undefined || value === "") return undefined;
   const parsed = typeof value === "number" ? value : Number(value);
@@ -4664,6 +4824,142 @@ function createCanonicalActorMessage(
     created: inserted.changes > 0,
     canonicalMessageId: row.id,
     clientMessageId,
+  };
+}
+
+function selectChannelBackendIngressReceipt(
+  database: Database,
+  channelInstanceId: string,
+  idempotencyKey: string,
+): ChannelBackendIngressReceiptRow | undefined {
+  return database
+    .prepare(
+      `
+      SELECT *
+      FROM channel_backend_ingress_receipts
+      WHERE channel_instance_id = ? AND idempotency_key = ?
+    `,
+    )
+    .get(channelInstanceId, idempotencyKey) as ChannelBackendIngressReceiptRow | undefined;
+}
+
+function channelBackendMessageWithSortKey(database: Database, messageId: string): ChatMessageWithSortKey {
+  const row = database
+    .prepare(
+      `
+      SELECT m.*, printf('%013d:%013d:%s', COALESCE(m.provider_timestamp, m.ingested_at), m.ingested_at, m.id)
+        AS message_sort_key
+      FROM chat_messages m
+      WHERE m.id = ?
+    `,
+    )
+    .get(messageId) as ChatMessageWithSortKeyRow | undefined;
+  if (!row) throw new Error(`Channel backend ingress message not found: ${messageId}`);
+  return rowToChatMessageWithSortKey(row);
+}
+
+function normalizeChannelBackendSessionKey(value: string): string {
+  const normalized = value.trim();
+  if (!normalized || normalized.length > 512 || /[\u0000-\u001f\u007f]/.test(normalized)) {
+    throw new Error("sessionKey must be a non-empty control-free identifier of 512 characters or fewer");
+  }
+  return normalized;
+}
+
+function acceptChannelBackendIngress(
+  database: Database,
+  input: AcceptChannelBackendIngressInput,
+): AcceptChannelBackendIngressResult {
+  const channelInstanceId = normalizeOpaqueCanonicalId(input.channelInstanceId, "channelInstanceId");
+  const idempotencyKey = normalizeOpaqueCanonicalId(input.idempotencyKey, "idempotencyKey");
+  const requestFingerprint = normalizeOpaqueCanonicalId(input.requestFingerprint, "requestFingerprint");
+  const requestId = normalizeOpaqueCanonicalId(input.requestId, "requestId");
+  const localActorId = normalizeOpaqueCanonicalId(input.localActorId, "localActorId");
+  const agentId = normalizeOpaqueCanonicalId(input.agentId, "agentId");
+  const clientMessageId = normalizeOpaqueCanonicalId(input.clientMessageId, "clientMessageId");
+  const sessionKey = normalizeChannelBackendSessionKey(input.sessionKey);
+  const sessionName = normalizeOpaqueCanonicalId(input.sessionName, "sessionName");
+  const turnId = normalizeOpaqueCanonicalId(input.turnId, "turnId");
+  const receivedAt = input.receivedAt;
+  const acceptedAt = input.acceptedAt ?? Date.now();
+  if (!Number.isSafeInteger(receivedAt) || receivedAt < 0) {
+    throw new Error("receivedAt must be a non-negative Unix millisecond timestamp");
+  }
+  if (!Number.isSafeInteger(acceptedAt) || acceptedAt < 0) {
+    throw new Error("acceptedAt must be a non-negative Unix millisecond timestamp");
+  }
+
+  const existing = selectChannelBackendIngressReceipt(database, channelInstanceId, idempotencyKey);
+  if (existing) {
+    const receipt = rowToChannelBackendIngressReceipt(existing);
+    if (receipt.requestFingerprint !== requestFingerprint) {
+      return { status: "conflict", receipt };
+    }
+    return {
+      status: "duplicate",
+      receipt,
+      message: channelBackendMessageWithSortKey(database, receipt.messageId),
+    };
+  }
+
+  const chatResult = ensureActorAgentChat(database, {
+    actorId: localActorId,
+    agentId,
+    clientRequestId: requestId,
+    seenAt: receivedAt,
+  });
+  const messageResult = createCanonicalActorMessage(database, {
+    chatId: chatResult.chat.id,
+    actorId: localActorId,
+    clientMessageId,
+    content: input.content,
+    messageType: "channel",
+    createdAt: receivedAt,
+  });
+  const receiptId = semanticId("channel_ingress", [channelInstanceId, idempotencyKey]);
+  database
+    .prepare(
+      `
+      INSERT INTO channel_backend_ingress_receipts (
+        id, channel_instance_id, idempotency_key, request_fingerprint,
+        initial_request_id, local_actor_id, agent_id, chat_id, message_id,
+        session_key, session_name, turn_id, external_json, state,
+        publish_claim_id, publish_claim_expires_at, published_at,
+        accepted_at, updated_at
+      )
+      VALUES (
+        ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, 'accepted',
+        NULL, NULL, NULL,
+        ?, ?
+      )
+    `,
+    )
+    .run(
+      receiptId,
+      channelInstanceId,
+      idempotencyKey,
+      requestFingerprint,
+      requestId,
+      localActorId,
+      agentId,
+      chatResult.chat.id,
+      messageResult.canonicalMessageId,
+      sessionKey,
+      sessionName,
+      turnId,
+      canonicalJsonRecord({ ...input.external }),
+      acceptedAt,
+      acceptedAt,
+    );
+
+  const row = selectChannelBackendIngressReceipt(database, channelInstanceId, idempotencyKey);
+  if (!row) throw new Error(`Channel backend ingress receipt not found after insert: ${receiptId}`);
+  return {
+    status: "accepted",
+    receipt: rowToChannelBackendIngressReceipt(row),
+    message: messageResult.message,
   };
 }
 
@@ -6138,6 +6434,181 @@ export function dbCreateCanonicalActorMessage(
   return executeWrite(getDb(), (database) => createCanonicalActorMessage(database, input), {
     label: "create_canonical_actor_message",
   });
+}
+
+export function dbAcceptChannelBackendIngress(
+  input: AcceptChannelBackendIngressInput,
+): AcceptChannelBackendIngressResult {
+  return executeWrite(getDb(), (database) => acceptChannelBackendIngress(database, input), {
+    label: "accept_channel_backend_ingress",
+  });
+}
+
+export function dbGetChannelBackendIngressReceipt(
+  channelInstanceId: string,
+  idempotencyKey: string,
+): ChannelBackendIngressReceiptRecord | null {
+  const row = selectChannelBackendIngressReceipt(
+    getDb(),
+    normalizeOpaqueCanonicalId(channelInstanceId, "channelInstanceId"),
+    normalizeOpaqueCanonicalId(idempotencyKey, "idempotencyKey"),
+  );
+  return row ? rowToChannelBackendIngressReceipt(row) : null;
+}
+
+export function dbGetChannelBackendIngressReceiptByTurnId(turnId: string): ChannelBackendIngressReceiptRecord | null {
+  const row = getDb()
+    .prepare("SELECT * FROM channel_backend_ingress_receipts WHERE turn_id = ?")
+    .get(normalizeOpaqueCanonicalId(turnId, "turnId")) as ChannelBackendIngressReceiptRow | undefined;
+  return row ? rowToChannelBackendIngressReceipt(row) : null;
+}
+
+export function dbClaimChannelBackendIngressPublication(input: {
+  receiptId: string;
+  claimId: string;
+  claimedAt?: number;
+  leaseMs?: number;
+}): ChannelBackendIngressPublicationClaimResult {
+  const receiptId = normalizeOpaqueCanonicalId(input.receiptId, "receiptId");
+  const claimId = normalizeOpaqueCanonicalId(input.claimId, "claimId");
+  const claimedAt = input.claimedAt ?? Date.now();
+  const leaseMs = input.leaseMs ?? 60_000;
+  if (!Number.isSafeInteger(claimedAt) || claimedAt < 0) {
+    throw new Error("claimedAt must be a non-negative Unix millisecond timestamp");
+  }
+  if (!Number.isSafeInteger(leaseMs) || leaseMs < 1_000 || leaseMs > 300_000) {
+    throw new Error("leaseMs must be an integer between 1000 and 300000");
+  }
+
+  return executeWrite(
+    getDb(),
+    (database) => {
+      const current = database.prepare("SELECT * FROM channel_backend_ingress_receipts WHERE id = ?").get(receiptId) as
+        | ChannelBackendIngressReceiptRow
+        | undefined;
+      if (!current) throw new Error(`Channel backend ingress receipt not found: ${receiptId}`);
+      if (current.state === "published") {
+        return { status: "published", receipt: rowToChannelBackendIngressReceipt(current) };
+      }
+      if (
+        current.state === "publishing" &&
+        current.publish_claim_id !== claimId &&
+        (current.publish_claim_expires_at ?? 0) > claimedAt
+      ) {
+        return { status: "busy", receipt: rowToChannelBackendIngressReceipt(current) };
+      }
+
+      const claimExpiresAt = claimedAt + leaseMs;
+      const result = database
+        .prepare(
+          `
+          UPDATE channel_backend_ingress_receipts
+          SET state = 'publishing',
+              publish_claim_id = ?,
+              publish_claim_expires_at = ?,
+              updated_at = ?
+          WHERE id = ?
+            AND state IN ('accepted', 'publishing')
+            AND (
+              publish_claim_id IS NULL
+              OR publish_claim_id = ?
+              OR publish_claim_expires_at IS NULL
+              OR publish_claim_expires_at <= ?
+            )
+        `,
+        )
+        .run(claimId, claimExpiresAt, claimedAt, receiptId, claimId, claimedAt);
+      const row = database
+        .prepare("SELECT * FROM channel_backend_ingress_receipts WHERE id = ?")
+        .get(receiptId) as ChannelBackendIngressReceiptRow;
+      if (result.changes > 0 && row.publish_claim_id === claimId) {
+        return { status: "acquired", receipt: rowToChannelBackendIngressReceipt(row) };
+      }
+      return row.state === "published"
+        ? { status: "published", receipt: rowToChannelBackendIngressReceipt(row) }
+        : { status: "busy", receipt: rowToChannelBackendIngressReceipt(row) };
+    },
+    { label: "claim_channel_backend_ingress_publication" },
+  );
+}
+
+export function dbMarkChannelBackendIngressPublished(input: {
+  receiptId: string;
+  claimId: string;
+  publishedAt?: number;
+}): ChannelBackendIngressReceiptRecord {
+  const receiptId = normalizeOpaqueCanonicalId(input.receiptId, "receiptId");
+  const claimId = normalizeOpaqueCanonicalId(input.claimId, "claimId");
+  const publishedAt = input.publishedAt ?? Date.now();
+  if (!Number.isSafeInteger(publishedAt) || publishedAt < 0) {
+    throw new Error("publishedAt must be a non-negative Unix millisecond timestamp");
+  }
+  return executeWrite(
+    getDb(),
+    (database) => {
+      const result = database
+        .prepare(
+          `
+          UPDATE channel_backend_ingress_receipts
+          SET state = 'published',
+              publish_claim_id = NULL,
+              publish_claim_expires_at = NULL,
+              published_at = COALESCE(published_at, ?),
+              updated_at = ?
+          WHERE id = ?
+            AND state = 'publishing'
+            AND publish_claim_id = ?
+        `,
+        )
+        .run(publishedAt, publishedAt, receiptId, claimId);
+      if (result.changes === 0) {
+        throw new Error(`Channel backend ingress publication claim is no longer owned: ${receiptId}`);
+      }
+      const row = database
+        .prepare("SELECT * FROM channel_backend_ingress_receipts WHERE id = ?")
+        .get(receiptId) as ChannelBackendIngressReceiptRow;
+      return rowToChannelBackendIngressReceipt(row);
+    },
+    { label: "mark_channel_backend_ingress_published" },
+  );
+}
+
+export function dbReleaseChannelBackendIngressPublication(input: {
+  receiptId: string;
+  claimId: string;
+  releasedAt?: number;
+}): ChannelBackendIngressReceiptRecord {
+  const receiptId = normalizeOpaqueCanonicalId(input.receiptId, "receiptId");
+  const claimId = normalizeOpaqueCanonicalId(input.claimId, "claimId");
+  const releasedAt = input.releasedAt ?? Date.now();
+  if (!Number.isSafeInteger(releasedAt) || releasedAt < 0) {
+    throw new Error("releasedAt must be a non-negative Unix millisecond timestamp");
+  }
+  return executeWrite(
+    getDb(),
+    (database) => {
+      database
+        .prepare(
+          `
+          UPDATE channel_backend_ingress_receipts
+          SET state = CASE WHEN state = 'publishing' THEN 'accepted' ELSE state END,
+              publish_claim_id = NULL,
+              publish_claim_expires_at = NULL,
+              updated_at = ?
+          WHERE id = ?
+            AND state = 'publishing'
+            AND publish_claim_id = ?
+        `,
+        )
+        .run(releasedAt, receiptId, claimId);
+      const row = database.prepare("SELECT * FROM channel_backend_ingress_receipts WHERE id = ?").get(receiptId) as
+        | ChannelBackendIngressReceiptRow
+        | undefined;
+      if (!row) throw new Error(`Channel backend ingress receipt not found: ${receiptId}`);
+      return rowToChannelBackendIngressReceipt(row);
+    },
+    { label: "release_channel_backend_ingress_publication" },
+  );
 }
 
 export function dbGetChatMessage(id: string): ChatMessageRecord | null {

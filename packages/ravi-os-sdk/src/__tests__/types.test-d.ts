@@ -12,6 +12,8 @@ import type {
   ArtifactsShowReturn,
   ChatsEnsureReturn,
   ChatsMessagesCreateReturn,
+  ChannelsBackendIngressInput,
+  ChannelsBackendIngressReturn,
   ContextCredentialsListReturn,
 } from "../types.js";
 
@@ -54,6 +56,22 @@ type _ChatsMessageCreateReturnOk = ExpectTrue<Eq<ChatsMessageCreateResult, Chats
 type _ChatsMessageStateRequired = ExpectTrue<Eq<ChatsMessagesCreateReturn["message"]["state"], "created">>;
 type _ChatsMessageRevisionRequired = ExpectTrue<Eq<ChatsMessagesCreateReturn["message"]["revision"], 1>>;
 
+// Generic channel backends authorize against a concrete local agent while
+// keeping the complete ingress request as a typed second argument.
+type ChannelBackendIngressFn = typeof client.channels.backend.ingress;
+type ChannelBackendIngressParams = Parameters<ChannelBackendIngressFn>;
+type ChannelBackendIngressResult = Awaited<ReturnType<ChannelBackendIngressFn>>;
+
+type _ChannelBackendIngressParamsOk = ExpectTrue<
+  Eq<
+    ChannelBackendIngressParams,
+    [agentId: string, request: ChannelsBackendIngressInput["request"]]
+  >
+>;
+type _ChannelBackendIngressReturnOk = ExpectTrue<
+  Eq<ChannelBackendIngressResult, ChannelsBackendIngressReturn>
+>;
+
 // `client.context.credentials.list()` — no required args; return is `unknown`
 // because the underlying command does not declare `@Returns`.
 type ListFn = typeof client.context.credentials.list;
@@ -85,6 +103,8 @@ type _Touched =
   | _ChatsMessageCreateReturnOk
   | _ChatsMessageStateRequired
   | _ChatsMessageRevisionRequired
+  | _ChannelBackendIngressParamsOk
+  | _ChannelBackendIngressReturnOk
   | _ListReturnOk
   | _ListReturnIsUnknown
   | _ListParamsOk;

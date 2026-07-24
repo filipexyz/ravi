@@ -12,6 +12,7 @@ export * from "./artifacts.js";
 export * from "./audio.js";
 export * from "./bridges.js";
 export * from "./calendar.js";
+export * from "./channel-backend.js";
 export * from "./channels.js";
 export * from "./chats.js";
 export * from "./cloud-auth.js";

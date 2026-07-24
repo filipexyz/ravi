@@ -2373,6 +2373,62 @@ export type CalendarsShowReturn = {
   }>;
 };
 
+/** Input shape for `channels.backend.ingress`. */
+export type ChannelsBackendIngressInput = {
+  agentId: string;
+  request: {
+    agentId: string;
+    channelInstanceId: string;
+    content: Array<({
+      text: string;
+      type: "text";
+    }) | ({
+      artifactId: string;
+      mediaType?: string;
+      name?: string;
+      sizeBytes?: number;
+      type: "artifact";
+    })>;
+    external: {
+      channelKind: string;
+      connectionId: string;
+      conversationId: string;
+      messageId: string;
+      senderId: string;
+    };
+    idempotencyKey: string;
+    localActorId: string;
+    protocol: "ravi.channel.backend";
+    receivedAt: string;
+    requestId: string;
+    schemaVersion: 1;
+  };
+};
+
+/** Return shape for `channels.backend.ingress`. */
+export type ChannelsBackendIngressReturn = {
+  acceptedAt: string;
+  binding?: {
+    agentId: string;
+    channelInstanceId: string;
+    chatId: string;
+    messageId: string;
+    sessionId: string;
+    turnId: string;
+  };
+  disposition: "accepted" | "duplicate" | "rejected";
+  error?: {
+    category: "validation" | "authentication" | "authorization" | "capacity" | "availability" | "internal";
+    code: "INVALID_REQUEST" | "IDEMPOTENCY_CONFLICT" | "UNAUTHENTICATED" | "PERMISSION_DENIED" | "LOCAL_PERMISSION_DENIED" | "NOT_FOUND" | "RATE_LIMITED" | "OVERLOADED" | "UNAVAILABLE" | "INTERNAL";
+    correlationId?: string;
+    retryAfterMs?: number;
+    retryable: boolean;
+  };
+  protocol: "ravi.channel.backend";
+  requestId: string;
+  schemaVersion: 1;
+};
+
 /** Input shape for `channels.create`. */
 export type ChannelsCreateInput = {
   credentialConnection?: string;

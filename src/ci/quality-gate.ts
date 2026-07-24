@@ -23,6 +23,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/channels/runner.ts": ["src/channels/runner.test.ts"],
   "src/channels/slack/socket-mode.ts": ["src/channels/slack/socket-mode.test.ts"],
   "src/channels/": [
+    "src/channels/backend.test.ts",
     "src/channels/health.test.ts",
     "src/channels/runner.test.ts",
     "src/channels/slack/media.test.ts",
@@ -34,6 +35,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/omni/session-stream.test.ts",
   ],
   "src/router/": [
+    "src/channels/backend.test.ts",
     "src/router/router.test.ts",
     "src/router/chat-schema.test.ts",
     "src/router/sessions.test.ts",
@@ -44,6 +46,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/allowed-skills.test.ts",
   ],
   "src/runtime/": [
+    "src/channels/backend.test.ts",
     "src/runtime/index.test.ts",
     "src/runtime/model-catalog.test.ts",
     "src/runtime/context-registry.test.ts",

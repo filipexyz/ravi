@@ -3144,6 +3144,36 @@ public struct CalendarsShowReturn: Codable, Sendable {
   }
 }
 
+public struct ChannelsBackendIngressReturn: Codable, Sendable {
+  public var acceptedAt: String
+  public var binding: RaviJSON?
+  public var disposition: String
+  public var error: RaviJSON?
+  public var protocol_: String
+  public var requestId: String
+  public var schemaVersion: Int
+
+  public init(acceptedAt: String, binding: RaviJSON? = nil, disposition: String, error: RaviJSON? = nil, protocol_: String, requestId: String, schemaVersion: Int) {
+    self.acceptedAt = acceptedAt
+    self.binding = binding
+    self.disposition = disposition
+    self.error = error
+    self.protocol_ = protocol_
+    self.requestId = requestId
+    self.schemaVersion = schemaVersion
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case acceptedAt = "acceptedAt"
+    case binding = "binding"
+    case disposition = "disposition"
+    case error = "error"
+    case protocol_ = "protocol"
+    case requestId = "requestId"
+    case schemaVersion = "schemaVersion"
+  }
+}
+
 public struct ChannelsCreateOptions: Codable, Sendable {
   public var credentialConnection: String?
   public var provider: String?
@@ -15597,23 +15627,44 @@ public struct ProxCallsVoiceAgentsUnbindToolReturn: Codable, Sendable {
 
 public struct ReactSendReturn: Codable, Sendable {
   public var event: RaviJSON
+  public var executionMode: String
+  public var idempotencyKey: String?
+  public var nextAttemptAt: Double?
+  public var publishPending: Bool?
+  public var publishedNow: Bool?
+  public var queued: Bool
   public var reaction: RaviJSON
-  public var success: Bool
+  public var requestId: String?
+  public var status: String
   public var target: RaviJSON
   public var topic: String
 
-  public init(event: RaviJSON, reaction: RaviJSON, success: Bool, target: RaviJSON, topic: String) {
+  public init(event: RaviJSON, executionMode: String, idempotencyKey: String? = nil, nextAttemptAt: Double? = nil, publishPending: Bool? = nil, publishedNow: Bool? = nil, queued: Bool, reaction: RaviJSON, requestId: String? = nil, status: String, target: RaviJSON, topic: String) {
     self.event = event
+    self.executionMode = executionMode
+    self.idempotencyKey = idempotencyKey
+    self.nextAttemptAt = nextAttemptAt
+    self.publishPending = publishPending
+    self.publishedNow = publishedNow
+    self.queued = queued
     self.reaction = reaction
-    self.success = success
+    self.requestId = requestId
+    self.status = status
     self.target = target
     self.topic = topic
   }
 
   enum CodingKeys: String, CodingKey {
     case event = "event"
+    case executionMode = "executionMode"
+    case idempotencyKey = "idempotencyKey"
+    case nextAttemptAt = "nextAttemptAt"
+    case publishPending = "publishPending"
+    case publishedNow = "publishedNow"
+    case queued = "queued"
     case reaction = "reaction"
-    case success = "success"
+    case requestId = "requestId"
+    case status = "status"
     case target = "target"
     case topic = "topic"
   }
