@@ -880,12 +880,341 @@ export const AgentsListInputSchema = {
 
 /** JSON Schema for the return shape of `agents.list`. */
 export const AgentsListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "agents": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "allowedSessions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "contactScope": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "debounceMs": {
+            "type": "number"
+          },
+          "defaults": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dmScope": {
+            "enum": [
+              "main",
+              "per-peer",
+              "per-channel-peer",
+              "per-account-channel-peer"
+            ],
+            "type": "string"
+          },
+          "effectiveModel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effectiveProvider": {
+            "type": "string"
+          },
+          "effort": {
+            "enum": [
+              "none",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max",
+              "ultra"
+            ],
+            "type": "string"
+          },
+          "groupDebounceMs": {
+            "type": "number"
+          },
+          "heartbeat": {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "activeEnd": {
+                "type": "string"
+              },
+              "activeStart": {
+                "type": "string"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "intervalMs": {
+                "type": "number"
+              },
+              "lastRunAt": {
+                "type": "number"
+              },
+              "model": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "enabled",
+              "intervalMs"
+            ],
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "matrixAccount": {
+            "type": "string"
+          },
+          "memoryModel": {
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "active",
+              "sentinel"
+            ],
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "modelPresetId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "modelPresetVersion": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "modelSource": {
+            "anyOf": [
+              {
+                "enum": [
+                  "agent_preset",
+                  "agent_default",
+                  "global_default"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "remote": {
+            "type": "string"
+          },
+          "remoteUser": {
+            "type": "string"
+          },
+          "settingSources": {
+            "items": {
+              "enum": [
+                "user",
+                "project"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "specMode": {
+            "type": "boolean"
+          },
+          "systemPromptAppend": {
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "assetId": {
+                  "type": "string"
+                },
+                "assetType": {
+                  "enum": [
+                    "agent",
+                    "automation",
+                    "app",
+                    "session",
+                    "task",
+                    "project",
+                    "profile",
+                    "contact",
+                    "chat",
+                    "route",
+                    "instance",
+                    "artifact",
+                    "insight",
+                    "workflow_spec",
+                    "workflow_run",
+                    "workflow_node",
+                    "cron_job",
+                    "trigger",
+                    "hook",
+                    "task_automation",
+                    "observer_rule",
+                    "observer_binding",
+                    "observer_profile",
+                    "command",
+                    "skill",
+                    "skill_gate_rule",
+                    "context",
+                    "call_profile",
+                    "call_request",
+                    "call_voice_agent",
+                    "call_tool",
+                    "outbound_queue",
+                    "outbound_entry",
+                    "spec",
+                    "devin_session"
+                  ],
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "number"
+                },
+                "createdBy": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "metadata": {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "source": {
+                  "type": "string"
+                },
+                "tagId": {
+                  "type": "string"
+                },
+                "tagSlug": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "number"
+                },
+                "updatedBy": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "tagId",
+                "tagSlug",
+                "assetType",
+                "assetId",
+                "source",
+                "createdAt",
+                "updatedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "cwd",
+          "modelPresetId",
+          "isDefault",
+          "effectiveProvider",
+          "effectiveModel",
+          "modelSource",
+          "modelPresetVersion",
+          "tags"
+        ],
         "type": "object"
       },
       "type": "array"
@@ -894,20 +1223,326 @@ export const AgentsListReturnSchema = {
       "type": "string"
     },
     "filters": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "tag": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "tag"
+      ],
       "type": "object"
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "allowedSessions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "contactScope": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "debounceMs": {
+            "type": "number"
+          },
+          "defaults": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dmScope": {
+            "enum": [
+              "main",
+              "per-peer",
+              "per-channel-peer",
+              "per-account-channel-peer"
+            ],
+            "type": "string"
+          },
+          "effectiveModel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effectiveProvider": {
+            "type": "string"
+          },
+          "effort": {
+            "enum": [
+              "none",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max",
+              "ultra"
+            ],
+            "type": "string"
+          },
+          "groupDebounceMs": {
+            "type": "number"
+          },
+          "heartbeat": {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "activeEnd": {
+                "type": "string"
+              },
+              "activeStart": {
+                "type": "string"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "intervalMs": {
+                "type": "number"
+              },
+              "lastRunAt": {
+                "type": "number"
+              },
+              "model": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "enabled",
+              "intervalMs"
+            ],
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "matrixAccount": {
+            "type": "string"
+          },
+          "memoryModel": {
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "active",
+              "sentinel"
+            ],
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "modelPresetId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "modelPresetVersion": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "modelSource": {
+            "anyOf": [
+              {
+                "enum": [
+                  "agent_preset",
+                  "agent_default",
+                  "global_default"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "remote": {
+            "type": "string"
+          },
+          "remoteUser": {
+            "type": "string"
+          },
+          "settingSources": {
+            "items": {
+              "enum": [
+                "user",
+                "project"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "specMode": {
+            "type": "boolean"
+          },
+          "systemPromptAppend": {
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "assetId": {
+                  "type": "string"
+                },
+                "assetType": {
+                  "enum": [
+                    "agent",
+                    "automation",
+                    "app",
+                    "session",
+                    "task",
+                    "project",
+                    "profile",
+                    "contact",
+                    "chat",
+                    "route",
+                    "instance",
+                    "artifact",
+                    "insight",
+                    "workflow_spec",
+                    "workflow_run",
+                    "workflow_node",
+                    "cron_job",
+                    "trigger",
+                    "hook",
+                    "task_automation",
+                    "observer_rule",
+                    "observer_binding",
+                    "observer_profile",
+                    "command",
+                    "skill",
+                    "skill_gate_rule",
+                    "context",
+                    "call_profile",
+                    "call_request",
+                    "call_voice_agent",
+                    "call_tool",
+                    "outbound_queue",
+                    "outbound_entry",
+                    "spec",
+                    "devin_session"
+                  ],
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "number"
+                },
+                "createdBy": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "metadata": {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "source": {
+                  "type": "string"
+                },
+                "tagId": {
+                  "type": "string"
+                },
+                "tagSlug": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "number"
+                },
+                "updatedBy": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "tagId",
+                "tagSlug",
+                "assetType",
+                "assetId",
+                "source",
+                "createdAt",
+                "updatedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "cwd",
+          "modelPresetId",
+          "isDefault",
+          "effectiveProvider",
+          "effectiveModel",
+          "modelSource",
+          "modelPresetVersion",
+          "tags"
+        ],
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -949,10 +1584,7 @@ export const AgentsListReturnSchema = {
         "limit",
         "offset",
         "returned",
-        "total",
-        "hasMore",
-        "nextOffset",
-        "nextCommand"
+        "total"
       ],
       "type": "object"
     },
@@ -963,9 +1595,9 @@ export const AgentsListReturnSchema = {
   "required": [
     "total",
     "pagination",
-    "items",
     "defaultAgent",
     "filters",
+    "items",
     "agents"
   ],
   "type": "object"
@@ -1464,19 +2096,397 @@ export const AgentsShowInputSchema = {
 
 /** JSON Schema for the return shape of `agents.show`. */
 export const AgentsShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "agent": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "allowedSessions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "contactScope": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "debounceMs": {
+          "type": "number"
+        },
+        "defaults": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dmScope": {
+          "enum": [
+            "main",
+            "per-peer",
+            "per-channel-peer",
+            "per-account-channel-peer"
+          ],
+          "type": "string"
+        },
+        "effectiveModel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effectiveProvider": {
+          "type": "string"
+        },
+        "effort": {
+          "enum": [
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra"
+          ],
+          "type": "string"
+        },
+        "groupDebounceMs": {
+          "type": "number"
+        },
+        "heartbeat": {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "activeEnd": {
+              "type": "string"
+            },
+            "activeStart": {
+              "type": "string"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "intervalMs": {
+              "type": "number"
+            },
+            "lastRunAt": {
+              "type": "number"
+            },
+            "model": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "enabled",
+            "intervalMs"
+          ],
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "isDefault": {
+          "type": "boolean"
+        },
+        "matrixAccount": {
+          "type": "string"
+        },
+        "memoryModel": {
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "active",
+            "sentinel"
+          ],
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "modelPresetId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelPresetVersion": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelSource": {
+          "anyOf": [
+            {
+              "enum": [
+                "agent_preset",
+                "agent_default",
+                "global_default"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "remote": {
+          "type": "string"
+        },
+        "remoteUser": {
+          "type": "string"
+        },
+        "settingSources": {
+          "items": {
+            "enum": [
+              "user",
+              "project"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "specMode": {
+          "type": "boolean"
+        },
+        "systemPromptAppend": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "assetId": {
+                "type": "string"
+              },
+              "assetType": {
+                "enum": [
+                  "agent",
+                  "automation",
+                  "app",
+                  "session",
+                  "task",
+                  "project",
+                  "profile",
+                  "contact",
+                  "chat",
+                  "route",
+                  "instance",
+                  "artifact",
+                  "insight",
+                  "workflow_spec",
+                  "workflow_run",
+                  "workflow_node",
+                  "cron_job",
+                  "trigger",
+                  "hook",
+                  "task_automation",
+                  "observer_rule",
+                  "observer_binding",
+                  "observer_profile",
+                  "command",
+                  "skill",
+                  "skill_gate_rule",
+                  "context",
+                  "call_profile",
+                  "call_request",
+                  "call_voice_agent",
+                  "call_tool",
+                  "outbound_queue",
+                  "outbound_entry",
+                  "spec",
+                  "devin_session"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "createdBy": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "source": {
+                "type": "string"
+              },
+              "tagId": {
+                "type": "string"
+              },
+              "tagSlug": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "updatedBy": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "tagId",
+              "tagSlug",
+              "assetType",
+              "assetId",
+              "source",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "cwd",
+        "modelPresetId",
+        "isDefault",
+        "effectiveProvider",
+        "effectiveModel",
+        "modelSource",
+        "modelPresetVersion",
+        "tags"
+      ],
       "type": "object"
     },
     "permissionsCommand": {
       "type": "string"
+    },
+    "runtimePermissions": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "capabilities": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "objectId": {
+                        "type": "string"
+                      },
+                      "objectType": {
+                        "type": "string"
+                      },
+                      "permission": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            "profile": {
+              "enum": [
+                "bootstrap",
+                "full-access"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "required": [
     "agent",
+    "runtimePermissions",
     "permissionsCommand"
   ],
   "type": "object"
@@ -14953,8 +15963,488 @@ export const ChatsListInputSchema = {
 
 /** JSON Schema for the return shape of `chats.list`. */
 export const ChatsListReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "chats": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "chat": {
+            "additionalProperties": false,
+            "properties": {
+              "avatarUrl": {
+                "type": "string"
+              },
+              "channel": {
+                "type": "string"
+              },
+              "chatType": {
+                "enum": [
+                  "dm",
+                  "group",
+                  "room",
+                  "thread",
+                  "channel",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "firstSeenAt": {
+                "type": "number"
+              },
+              "id": {
+                "type": "string"
+              },
+              "instanceId": {
+                "type": "string"
+              },
+              "lastSeenAt": {
+                "type": "number"
+              },
+              "metadata": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "normalizedChatId": {
+                "type": "string"
+              },
+              "platformChatId": {
+                "type": "string"
+              },
+              "rawProvenance": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "title": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "channel",
+              "instanceId",
+              "chatType",
+              "firstSeenAt",
+              "lastSeenAt",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          "lastMessage": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "actorType": {
+                    "type": "string"
+                  },
+                  "agentId": {
+                    "type": "string"
+                  },
+                  "channel": {
+                    "type": "string"
+                  },
+                  "chatId": {
+                    "type": "string"
+                  },
+                  "contactId": {
+                    "type": "string"
+                  },
+                  "content": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "createdAt": {
+                    "type": "number"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "ingestedAt": {
+                    "type": "number"
+                  },
+                  "instanceId": {
+                    "type": "string"
+                  },
+                  "messageType": {
+                    "type": "string"
+                  },
+                  "normalizedSenderId": {
+                    "type": "string"
+                  },
+                  "platformIdentityId": {
+                    "type": "string"
+                  },
+                  "providerMessageId": {
+                    "type": "string"
+                  },
+                  "providerTimestamp": {
+                    "type": "number"
+                  },
+                  "rawChatId": {
+                    "type": "string"
+                  },
+                  "rawProvenance": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "rawSenderId": {
+                    "type": "string"
+                  },
+                  "sortKey": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "id",
+                  "chatId",
+                  "actorType",
+                  "ingestedAt",
+                  "sortKey",
+                  "createdAt",
+                  "updatedAt"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "messageCount": {
+            "type": "number"
+          },
+          "participantCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "chat",
+          "messageCount",
+          "participantCount",
+          "lastMessage"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "chat": {
+            "additionalProperties": false,
+            "properties": {
+              "avatarUrl": {
+                "type": "string"
+              },
+              "channel": {
+                "type": "string"
+              },
+              "chatType": {
+                "enum": [
+                  "dm",
+                  "group",
+                  "room",
+                  "thread",
+                  "channel",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "firstSeenAt": {
+                "type": "number"
+              },
+              "id": {
+                "type": "string"
+              },
+              "instanceId": {
+                "type": "string"
+              },
+              "lastSeenAt": {
+                "type": "number"
+              },
+              "metadata": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "normalizedChatId": {
+                "type": "string"
+              },
+              "platformChatId": {
+                "type": "string"
+              },
+              "rawProvenance": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "title": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "channel",
+              "instanceId",
+              "chatType",
+              "firstSeenAt",
+              "lastSeenAt",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          "lastMessage": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "actorType": {
+                    "type": "string"
+                  },
+                  "agentId": {
+                    "type": "string"
+                  },
+                  "channel": {
+                    "type": "string"
+                  },
+                  "chatId": {
+                    "type": "string"
+                  },
+                  "contactId": {
+                    "type": "string"
+                  },
+                  "content": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "createdAt": {
+                    "type": "number"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "ingestedAt": {
+                    "type": "number"
+                  },
+                  "instanceId": {
+                    "type": "string"
+                  },
+                  "messageType": {
+                    "type": "string"
+                  },
+                  "normalizedSenderId": {
+                    "type": "string"
+                  },
+                  "platformIdentityId": {
+                    "type": "string"
+                  },
+                  "providerMessageId": {
+                    "type": "string"
+                  },
+                  "providerTimestamp": {
+                    "type": "number"
+                  },
+                  "rawChatId": {
+                    "type": "string"
+                  },
+                  "rawProvenance": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "rawSenderId": {
+                    "type": "string"
+                  },
+                  "sortKey": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "id",
+                  "chatId",
+                  "actorType",
+                  "ingestedAt",
+                  "sortKey",
+                  "createdAt",
+                  "updatedAt"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "messageCount": {
+            "type": "number"
+          },
+          "participantCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "chat",
+          "messageCount",
+          "participantCount",
+          "lastMessage"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "chats"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -15954,8 +17444,270 @@ export const ChatsReadInputSchema = {
 
 /** JSON Schema for the return shape of `chats.read`. */
 export const ChatsReadReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "chat": {
+      "additionalProperties": false,
+      "properties": {
+        "avatarUrl": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "string"
+        },
+        "chatType": {
+          "enum": [
+            "dm",
+            "group",
+            "room",
+            "thread",
+            "channel",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "firstSeenAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "instanceId": {
+          "type": "string"
+        },
+        "lastSeenAt": {
+          "type": "number"
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "normalizedChatId": {
+          "type": "string"
+        },
+        "platformChatId": {
+          "type": "string"
+        },
+        "rawProvenance": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "channel",
+        "instanceId",
+        "chatType",
+        "firstSeenAt",
+        "lastSeenAt",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "messages": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "actorType": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "chatId": {
+            "type": "string"
+          },
+          "contactId": {
+            "type": "string"
+          },
+          "content": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ingestedAt": {
+            "type": "number"
+          },
+          "instanceId": {
+            "type": "string"
+          },
+          "messageType": {
+            "type": "string"
+          },
+          "normalizedSenderId": {
+            "type": "string"
+          },
+          "platformIdentityId": {
+            "type": "string"
+          },
+          "providerMessageId": {
+            "type": "string"
+          },
+          "providerTimestamp": {
+            "type": "number"
+          },
+          "rawChatId": {
+            "type": "string"
+          },
+          "rawProvenance": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "rawSenderId": {
+            "type": "string"
+          },
+          "sortKey": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "chatId",
+          "actorType",
+          "ingestedAt",
+          "sortKey",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "chat",
+    "total",
+    "pagination",
+    "messages"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 

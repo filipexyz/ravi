@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option, Scope } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
+import { jsonObjectSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
 import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
 import {
   inspectChatReadingList,
@@ -142,6 +143,77 @@ const chatReadingListPreviewReturnSchema = z.object({
     diff: chatReadingListMembershipDiffSchema.nullable(),
   }),
 });
+
+const chatReturnSchema = z
+  .object({
+    id: z.string(),
+    channel: z.string(),
+    instanceId: z.string(),
+    chatType: z.enum(["dm", "group", "room", "thread", "channel", "unknown"]),
+    title: z.string().optional(),
+    avatarUrl: z.string().optional(),
+    metadata: jsonObjectSchema.optional(),
+    firstSeenAt: z.number(),
+    lastSeenAt: z.number(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+    platformChatId: z.string().optional(),
+    normalizedChatId: z.string().optional(),
+    rawProvenance: jsonObjectSchema.optional(),
+  })
+  .strict();
+
+const chatMessageReturnSchema = z
+  .object({
+    id: z.string(),
+    chatId: z.string(),
+    actorType: z.string(),
+    contactId: z.string().optional(),
+    agentId: z.string().optional(),
+    platformIdentityId: z.string().optional(),
+    messageType: z.string().optional(),
+    content: jsonObjectSchema.optional(),
+    providerTimestamp: z.number().optional(),
+    ingestedAt: z.number(),
+    sortKey: z.string(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+    channel: z.string().optional(),
+    instanceId: z.string().optional(),
+    providerMessageId: z.string().optional(),
+    rawChatId: z.string().optional(),
+    rawSenderId: z.string().optional(),
+    normalizedSenderId: z.string().optional(),
+    rawProvenance: jsonObjectSchema.optional(),
+  })
+  .strict();
+
+const chatListItemReturnSchema = z
+  .object({
+    chat: chatReturnSchema,
+    messageCount: z.number(),
+    participantCount: z.number(),
+    lastMessage: chatMessageReturnSchema.nullable(),
+  })
+  .strict();
+
+export const chatsListReturnSchema = z
+  .object({
+    total: z.number(),
+    pagination: strictCliOffsetPaginationSchema.strict(),
+    items: z.array(chatListItemReturnSchema),
+    chats: z.array(chatListItemReturnSchema),
+  })
+  .strict();
+
+export const chatsReadReturnSchema = z
+  .object({
+    chat: chatReturnSchema,
+    total: z.number(),
+    pagination: strictCliOffsetPaginationSchema.strict(),
+    messages: z.array(chatMessageReturnSchema),
+  })
+  .strict();
 
 function summarizeCurrent(current: ChatReadingListInspectionResult["current"]) {
   return { total: current.total, selector: current.selector, preserved: current.preserved };
@@ -1071,8 +1143,8 @@ FONTES
 
 declareCommandReturns(ChatsCommands, {
   backfillProviderTimestamps: commandEnvelopeReturnSchema,
-  list: commandEnvelopeReturnSchema,
-  read: commandEnvelopeReturnSchema,
+  list: chatsListReturnSchema,
+  read: chatsReadReturnSchema,
 });
 
 declareCommandReturns(ChatReadingListCommands, {

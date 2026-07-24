@@ -1,8 +1,9 @@
 import { z } from "zod";
 import type { ZodTypeAny } from "zod";
 import { Returns } from "../decorators.js";
-import { jsonObjectSchema, jsonValueSchema } from "../return-schemas.js";
+import { jsonObjectSchema, jsonValueSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
 import { RUNTIME_EFFORT_LEVELS } from "../../runtime/effort.js";
+import { TAG_ASSET_TYPES } from "../../tags/types.js";
 
 export const looseObjectSchema = z.object({}).passthrough();
 export const looseObjectOrNullSchema = looseObjectSchema.nullable();
@@ -1816,20 +1817,89 @@ const agentRuntimePermissionsConfigReturnSchema = z
   })
   .nullable();
 
-export const agentsListReturnSchema = pagedItemsReturnSchema
-  .extend({
-    defaultAgent: z.string(),
-    filters: looseObjectSchema,
-    agents: z.array(agentRecordReturnSchema),
+const agentHeartbeatReturnSchema = z
+  .object({
+    enabled: z.boolean(),
+    intervalMs: z.number(),
+    model: z.string().optional(),
+    accountId: z.string().optional(),
+    activeStart: z.string().optional(),
+    activeEnd: z.string().optional(),
+    lastRunAt: z.number().optional(),
   })
-  .passthrough();
+  .strict();
+
+const agentTagBindingReturnSchema = z
+  .object({
+    id: z.string(),
+    tagId: z.string(),
+    tagSlug: z.string(),
+    assetType: z.enum(TAG_ASSET_TYPES),
+    assetId: z.string(),
+    metadata: jsonObjectSchema.optional(),
+    source: z.string(),
+    createdBy: z.string().optional(),
+    updatedBy: z.string().optional(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+  })
+  .strict();
+
+export const agentJsonSummaryReturnSchema = z
+  .object({
+    id: z.string(),
+    name: z.string().optional(),
+    cwd: z.string(),
+    model: z.string().optional(),
+    effort: z.enum(RUNTIME_EFFORT_LEVELS).optional(),
+    provider: z.string().optional(),
+    modelPresetId: z.string().nullable(),
+    dmScope: z.enum(["main", "per-peer", "per-channel-peer", "per-account-channel-peer"]).optional(),
+    systemPromptAppend: z.string().optional(),
+    debounceMs: z.number().optional(),
+    groupDebounceMs: z.number().optional(),
+    matrixAccount: z.string().optional(),
+    heartbeat: agentHeartbeatReturnSchema.optional(),
+    settingSources: z.array(z.enum(["user", "project"])).optional(),
+    memoryModel: z.string().optional(),
+    specMode: z.boolean().optional(),
+    contactScope: z.string().optional(),
+    allowedSessions: z.array(z.string()).optional(),
+    mode: z.enum(["active", "sentinel"]).optional(),
+    remote: z.string().optional(),
+    remoteUser: z.string().optional(),
+    defaults: jsonObjectSchema.nullable().optional(),
+    isDefault: z.boolean(),
+    effectiveProvider: z.string(),
+    effectiveModel: z.string().nullable(),
+    modelSource: z.enum(["agent_preset", "agent_default", "global_default"]).nullable(),
+    modelPresetVersion: z.number().nullable(),
+    tags: z.array(agentTagBindingReturnSchema),
+  })
+  .strict();
+
+export const agentsListReturnSchema = z
+  .object({
+    total: z.number(),
+    pagination: strictCliOffsetPaginationSchema.strict(),
+    defaultAgent: z.string(),
+    filters: z
+      .object({
+        tag: z.string().nullable(),
+      })
+      .strict(),
+    items: z.array(agentJsonSummaryReturnSchema),
+    agents: z.array(agentJsonSummaryReturnSchema),
+  })
+  .strict();
 
 export const agentShowReturnSchema = z
   .object({
-    agent: agentRecordReturnSchema,
+    agent: agentJsonSummaryReturnSchema,
+    runtimePermissions: agentRuntimePermissionsConfigReturnSchema,
     permissionsCommand: z.string(),
   })
-  .passthrough();
+  .strict();
 
 export const agentCreateReturnSchema = z
   .object({

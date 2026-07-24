@@ -220,7 +220,47 @@ mock.module("../../runtime/model-preset-store.js", () => ({
 }));
 
 const { AgentsCommands } = await import("./agents.js");
-const { agentSetReturnSchema } = await import("./operational-return-schemas.js");
+const { agentSetReturnSchema, agentShowReturnSchema, agentsListReturnSchema } = await import(
+  "./operational-return-schemas.js"
+);
+
+describe("AgentsCommands public return contracts", () => {
+  beforeEach(() => {
+    currentAgent = {
+      id: "main",
+      cwd: "/tmp/main",
+      model: "gpt-5",
+      effort: "high",
+      provider: "codex",
+      defaults: {
+        runtimePermissions: {
+          profile: "bootstrap",
+          capabilities: [{ permission: "view", objectType: "agent", objectId: "*" }],
+        },
+      },
+    };
+    allAgents = [currentAgent];
+    presetsById = {};
+  });
+
+  it("validates list and show payloads without accepting undeclared fields", () => {
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+
+    try {
+      const listPayload = commands.list(true);
+      const showPayload = commands.show("main", true);
+
+      expect(agentsListReturnSchema.safeParse(listPayload).success).toBe(true);
+      expect(agentShowReturnSchema.safeParse(showPayload).success).toBe(true);
+      expect(agentsListReturnSchema.safeParse({ ...listPayload, unexpected: true }).success).toBe(false);
+      expect(agentShowReturnSchema.safeParse({ ...showPayload, unexpected: true }).success).toBe(false);
+    } finally {
+      console.log = originalLog;
+    }
+  });
+});
 
 describe("AgentsCommands set model validation", () => {
   beforeEach(() => {
