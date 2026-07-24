@@ -50694,6 +50694,35 @@ export const RuntimeContinuityDecisionReturnSchema = {
           },
           "type": "array"
         },
+        "compatibilityRequest": {
+          "additionalProperties": false,
+          "default": {
+            "requiresMcpServers": false,
+            "requiresRemoteSpawn": false,
+            "toolAccessMode": "unrestricted"
+          },
+          "properties": {
+            "requiresMcpServers": {
+              "type": "boolean"
+            },
+            "requiresRemoteSpawn": {
+              "type": "boolean"
+            },
+            "toolAccessMode": {
+              "enum": [
+                "restricted",
+                "unrestricted"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "requiresMcpServers",
+            "requiresRemoteSpawn",
+            "toolAccessMode"
+          ],
+          "type": "object"
+        },
         "compatibilitySnapshotId": {
           "const": "provider-continuity-1.0.0",
           "type": "string"
@@ -51298,6 +51327,7 @@ export const RuntimeContinuityDecisionReturnSchema = {
         "wakeAt",
         "createdAt",
         "updatedAt",
+        "compatibilityRequest",
         "compatibilitySnapshotId"
       ],
       "type": "object"
@@ -52158,6 +52188,35 @@ export const RuntimeContinuityReconcileReturnSchema = {
           },
           "type": "array"
         },
+        "compatibilityRequest": {
+          "additionalProperties": false,
+          "default": {
+            "requiresMcpServers": false,
+            "requiresRemoteSpawn": false,
+            "toolAccessMode": "unrestricted"
+          },
+          "properties": {
+            "requiresMcpServers": {
+              "type": "boolean"
+            },
+            "requiresRemoteSpawn": {
+              "type": "boolean"
+            },
+            "toolAccessMode": {
+              "enum": [
+                "restricted",
+                "unrestricted"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "requiresMcpServers",
+            "requiresRemoteSpawn",
+            "toolAccessMode"
+          ],
+          "type": "object"
+        },
         "compatibilitySnapshotId": {
           "const": "provider-continuity-1.0.0",
           "type": "string"
@@ -52762,6 +52821,7 @@ export const RuntimeContinuityReconcileReturnSchema = {
         "wakeAt",
         "createdAt",
         "updatedAt",
+        "compatibilityRequest",
         "compatibilitySnapshotId"
       ],
       "type": "object"
@@ -53391,6 +53451,35 @@ export const RuntimeContinuityResumeReturnSchema = {
           },
           "type": "array"
         },
+        "compatibilityRequest": {
+          "additionalProperties": false,
+          "default": {
+            "requiresMcpServers": false,
+            "requiresRemoteSpawn": false,
+            "toolAccessMode": "unrestricted"
+          },
+          "properties": {
+            "requiresMcpServers": {
+              "type": "boolean"
+            },
+            "requiresRemoteSpawn": {
+              "type": "boolean"
+            },
+            "toolAccessMode": {
+              "enum": [
+                "restricted",
+                "unrestricted"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "requiresMcpServers",
+            "requiresRemoteSpawn",
+            "toolAccessMode"
+          ],
+          "type": "object"
+        },
         "compatibilitySnapshotId": {
           "const": "provider-continuity-1.0.0",
           "type": "string"
@@ -53995,6 +54084,7 @@ export const RuntimeContinuityResumeReturnSchema = {
         "wakeAt",
         "createdAt",
         "updatedAt",
+        "compatibilityRequest",
         "compatibilitySnapshotId"
       ],
       "type": "object"
@@ -55033,6 +55123,35 @@ export const RuntimeContinuityTraceReturnSchema = {
           },
           "type": "array"
         },
+        "compatibilityRequest": {
+          "additionalProperties": false,
+          "default": {
+            "requiresMcpServers": false,
+            "requiresRemoteSpawn": false,
+            "toolAccessMode": "unrestricted"
+          },
+          "properties": {
+            "requiresMcpServers": {
+              "type": "boolean"
+            },
+            "requiresRemoteSpawn": {
+              "type": "boolean"
+            },
+            "toolAccessMode": {
+              "enum": [
+                "restricted",
+                "unrestricted"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "requiresMcpServers",
+            "requiresRemoteSpawn",
+            "toolAccessMode"
+          ],
+          "type": "object"
+        },
         "compatibilitySnapshotId": {
           "const": "provider-continuity-1.0.0",
           "type": "string"
@@ -55637,6 +55756,7 @@ export const RuntimeContinuityTraceReturnSchema = {
         "wakeAt",
         "createdAt",
         "updatedAt",
+        "compatibilityRequest",
         "compatibilitySnapshotId"
       ],
       "type": "object"
@@ -55966,6 +56086,35 @@ export const RuntimeContinuityWaitReturnSchema = {
           },
           "type": "array"
         },
+        "compatibilityRequest": {
+          "additionalProperties": false,
+          "default": {
+            "requiresMcpServers": false,
+            "requiresRemoteSpawn": false,
+            "toolAccessMode": "unrestricted"
+          },
+          "properties": {
+            "requiresMcpServers": {
+              "type": "boolean"
+            },
+            "requiresRemoteSpawn": {
+              "type": "boolean"
+            },
+            "toolAccessMode": {
+              "enum": [
+                "restricted",
+                "unrestricted"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "requiresMcpServers",
+            "requiresRemoteSpawn",
+            "toolAccessMode"
+          ],
+          "type": "object"
+        },
         "compatibilitySnapshotId": {
           "const": "provider-continuity-1.0.0",
           "type": "string"
@@ -56570,6 +56719,7 @@ export const RuntimeContinuityWaitReturnSchema = {
         "wakeAt",
         "createdAt",
         "updatedAt",
+        "compatibilityRequest",
         "compatibilitySnapshotId"
       ],
       "type": "object"
@@ -56847,6 +56997,35 @@ export const RuntimeContinuityWakeReturnSchema = {
           },
           "type": "array"
         },
+        "compatibilityRequest": {
+          "additionalProperties": false,
+          "default": {
+            "requiresMcpServers": false,
+            "requiresRemoteSpawn": false,
+            "toolAccessMode": "unrestricted"
+          },
+          "properties": {
+            "requiresMcpServers": {
+              "type": "boolean"
+            },
+            "requiresRemoteSpawn": {
+              "type": "boolean"
+            },
+            "toolAccessMode": {
+              "enum": [
+                "restricted",
+                "unrestricted"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "requiresMcpServers",
+            "requiresRemoteSpawn",
+            "toolAccessMode"
+          ],
+          "type": "object"
+        },
         "compatibilitySnapshotId": {
           "const": "provider-continuity-1.0.0",
           "type": "string"
@@ -57451,6 +57630,7 @@ export const RuntimeContinuityWakeReturnSchema = {
         "wakeAt",
         "createdAt",
         "updatedAt",
+        "compatibilityRequest",
         "compatibilitySnapshotId"
       ],
       "type": "object"

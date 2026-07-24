@@ -50,6 +50,32 @@ export const providerContinuityTargetSchema = z
   .strict();
 export type ProviderContinuityTarget = z.infer<typeof providerContinuityTargetSchema>;
 
+/**
+ * Runtime compatibility requirement for the logical request, frozen into the journal so every
+ * failover target-selection can skip providers that cannot serve THIS turn (e.g. a restricted turn
+ * must never migrate onto a provider-native runtime). Mirrors {@link RuntimeCompatibilityRequest}
+ * with all fields resolved to concrete values.
+ */
+export const providerContinuityCompatibilityRequestSchema = z
+  .object({
+    requiresMcpServers: z.boolean(),
+    requiresRemoteSpawn: z.boolean(),
+    toolAccessMode: z.enum(["restricted", "unrestricted"]),
+  })
+  .strict();
+export type ProviderContinuityCompatibilityRequest = z.infer<typeof providerContinuityCompatibilityRequestSchema>;
+
+/**
+ * Conservative default used for journals created before compatibility capture existed (resumed
+ * in-flight after deploy) and for callers that do not supply a request: unrestricted skips nothing,
+ * preserving pre-guard behaviour.
+ */
+export const PROVIDER_CONTINUITY_DEFAULT_COMPATIBILITY_REQUEST: ProviderContinuityCompatibilityRequest = {
+  requiresMcpServers: false,
+  requiresRemoteSpawn: false,
+  toolAccessMode: "unrestricted",
+};
+
 export const providerContinuityPolicyConfigSchema = z
   .object({
     specVersion: z.literal(PROVIDER_CONTINUITY_SPEC_VERSION),
@@ -267,6 +293,9 @@ export const providerContinuityJournalSchema = z
     wakeAt: timestampSchema.nullable(),
     createdAt: timestampSchema,
     updatedAt: timestampSchema,
+    compatibilityRequest: providerContinuityCompatibilityRequestSchema.default(
+      PROVIDER_CONTINUITY_DEFAULT_COMPATIBILITY_REQUEST,
+    ),
     compatibilitySnapshotId: z.literal(PROVIDER_CONTINUITY_SNAPSHOT),
   })
   .strict();

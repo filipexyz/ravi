@@ -759,4 +759,106 @@ describe("provider continuity coordinator branches", () => {
       reason: "current_target_missing",
     });
   });
+
+  const restricted = {
+    requiresMcpServers: false,
+    requiresRemoteSpawn: false,
+    toolAccessMode: "restricted",
+  } as const;
+
+  it("skips a runtime-incompatible primary and selects the next compatible target for a restricted turn", () => {
+    // Chain [pi, claude]: pi is provider-native (no Ravi permission hooks) and cannot serve a
+    // restricted turn, so initial selection must skip it and start on claude.
+    writePolicy({ ...config(), targets: [tertiary, secondary] });
+    const prepared = prepareProviderContinuityRequest({
+      agentId: "main",
+      sessionName: "main-dm-restricted-initial",
+      prompt: prompt("restricted-initial", 62_000),
+      activation: "synthetic",
+      compatibility: restricted,
+      now: 62_000,
+    });
+    expect(prepared).toMatchObject({
+      active: true,
+      ready: true,
+      metadata: { target: secondary },
+      journal: {
+        currentTargetIndex: 1,
+        compatibilityRequest: { toolAccessMode: "restricted" },
+        decisions: expect.arrayContaining([
+          expect.objectContaining({
+            action: "skip_target",
+            fromTargetIndex: 0,
+            rejectionReasons: ["compatibility:restricted_tool_access_unsupported"],
+          }),
+        ]),
+      },
+    });
+  });
+
+  it("skips a runtime-incompatible failover target and switches to the next compatible one", () => {
+    // Chain [codex, pi, claude]: a restricted turn starts on codex (Ravi-host). When codex fails,
+    // failover must skip pi (provider-native) and switch to claude rather than migrate onto pi.
+    writePolicy({ ...config(), targets: [primary, tertiary, secondary] });
+    const prepared = prepareProviderContinuityRequest({
+      agentId: "main",
+      sessionName: "main-dm-restricted-failover",
+      prompt: prompt("restricted-failover", 63_000),
+      activation: "synthetic",
+      compatibility: restricted,
+      now: 63_000,
+    });
+    if (!prepared.active || !prepared.ready)
+      throw new Error(`Restricted failover request not ready: ${prepared.reason}.`);
+    expect(prepared.journal.currentTargetIndex).toBe(0);
+
+    const failed = handleProviderContinuityFailure({
+      metadata: prepared.metadata,
+      runtimeProvider: "codex",
+      model: "gpt-5",
+      rawEvent: { status: 503, message: "overloaded" },
+      now: 63_001,
+    });
+    expect(failed).toMatchObject({
+      active: true,
+      action: "switch_target",
+      target: secondary,
+      journal: {
+        currentTargetIndex: 2,
+        decisions: expect.arrayContaining([
+          expect.objectContaining({
+            action: "skip_target",
+            fromTargetIndex: 1,
+            rejectionReasons: expect.arrayContaining(["compatibility:restricted_tool_access_unsupported"]),
+          }),
+          expect.objectContaining({ action: "switch_target", fromTargetIndex: 0, toTargetIndex: 2 }),
+        ]),
+      },
+    });
+  });
+
+  it("terminates with a clear compatibility reason when no target can serve a restricted turn", () => {
+    // Chain [pi] only: a restricted turn has no compatible target, so continuity must terminate
+    // cleanly with an actionable reason instead of leaking a raw assertRuntimeCompatibility throw.
+    writePolicy({ ...config(), targets: [tertiary] });
+    const terminal = prepareProviderContinuityRequest({
+      agentId: "main",
+      sessionName: "main-dm-restricted-exhausted",
+      prompt: prompt("restricted-exhausted", 64_000),
+      activation: "synthetic",
+      compatibility: restricted,
+      now: 64_000,
+    });
+    expect(terminal).toMatchObject({
+      active: true,
+      ready: false,
+      reason: "terminal",
+      journal: {
+        state: "exhausted",
+        terminalOutcome: "exhaustion",
+        compatibilityRequest: { toolAccessMode: "restricted" },
+      },
+      userMessage: expect.stringContaining("compatibility:restricted_tool_access_unsupported"),
+    });
+  });
 });

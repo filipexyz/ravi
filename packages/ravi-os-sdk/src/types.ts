@@ -10140,6 +10140,11 @@ export type RuntimeContinuityDecisionReturn = {
       };
       targetIndex: number;
     }>;
+    compatibilityRequest: {
+      requiresMcpServers: boolean;
+      requiresRemoteSpawn: boolean;
+      toolAccessMode: "restricted" | "unrestricted";
+    };
     compatibilitySnapshotId: "provider-continuity-1.0.0";
     contextSnapshot: {
       attachments: Array<{
@@ -10361,6 +10366,11 @@ export type RuntimeContinuityReconcileReturn = {
       };
       targetIndex: number;
     }>;
+    compatibilityRequest: {
+      requiresMcpServers: boolean;
+      requiresRemoteSpawn: boolean;
+      toolAccessMode: "restricted" | "unrestricted";
+    };
     compatibilitySnapshotId: "provider-continuity-1.0.0";
     contextSnapshot: {
       attachments: Array<{
@@ -10543,6 +10553,11 @@ export type RuntimeContinuityResumeReturn = {
       };
       targetIndex: number;
     }>;
+    compatibilityRequest: {
+      requiresMcpServers: boolean;
+      requiresRemoteSpawn: boolean;
+      toolAccessMode: "restricted" | "unrestricted";
+    };
     compatibilitySnapshotId: "provider-continuity-1.0.0";
     contextSnapshot: {
       attachments: Array<{
@@ -10791,6 +10806,11 @@ export type RuntimeContinuityTraceReturn = {
       };
       targetIndex: number;
     }>;
+    compatibilityRequest: {
+      requiresMcpServers: boolean;
+      requiresRemoteSpawn: boolean;
+      toolAccessMode: "restricted" | "unrestricted";
+    };
     compatibilitySnapshotId: "provider-continuity-1.0.0";
     contextSnapshot: {
       attachments: Array<{
@@ -10919,6 +10939,11 @@ export type RuntimeContinuityWaitReturn = {
       };
       targetIndex: number;
     }>;
+    compatibilityRequest: {
+      requiresMcpServers: boolean;
+      requiresRemoteSpawn: boolean;
+      toolAccessMode: "restricted" | "unrestricted";
+    };
     compatibilitySnapshotId: "provider-continuity-1.0.0";
     contextSnapshot: {
       attachments: Array<{
@@ -11039,6 +11064,11 @@ export type RuntimeContinuityWakeReturn = {
       };
       targetIndex: number;
     }>;
+    compatibilityRequest: {
+      requiresMcpServers: boolean;
+      requiresRemoteSpawn: boolean;
+      toolAccessMode: "restricted" | "unrestricted";
+    };
     compatibilitySnapshotId: "provider-continuity-1.0.0";
     contextSnapshot: {
       attachments: Array<{

@@ -31,7 +31,8 @@ import {
 import { applyDirectRuntimeModelSwitch, resolveRuntimeModelSwitchStrategy } from "./model-switch.js";
 import { resolveAgentModelSelection } from "./model-preset-resolver.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID } from "./provider-registry.js";
-import type { RuntimeProviderId } from "./types.js";
+import { shouldUseTurnScopedAuthorityForPrompt } from "./runtime-request-context.js";
+import type { RuntimeCompatibilityRequest, RuntimeProviderId } from "./types.js";
 import type { RuntimeSafeEmit } from "./host-event-loop.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
 import {
@@ -654,10 +655,20 @@ export class RuntimeSessionDispatcher {
       log.error("No agent found for prompt", { sessionName, agentId });
       return;
     }
+    // Capture the turn's runtime-compatibility requirement so failover target-selection can skip
+    // providers that cannot serve THIS turn (e.g. a restricted turn must never migrate onto a
+    // provider-native runtime). Mirrors the launch-time guard in session-launcher's
+    // assertRuntimeCompatibility so selection never picks a target that launch would reject.
+    const continuityCompatibility: RuntimeCompatibilityRequest = {
+      requiresMcpServers: !!agent.specMode,
+      requiresRemoteSpawn: !!agent.remote,
+      toolAccessMode: shouldUseTurnScopedAuthorityForPrompt(prompt) ? "restricted" : "unrestricted",
+    };
     const continuity = prepareProviderContinuityRequest({
       agentId: agent.id,
       sessionName,
       prompt,
+      compatibility: continuityCompatibility,
     });
     if (continuity.active) {
       if (!continuity.ready) {

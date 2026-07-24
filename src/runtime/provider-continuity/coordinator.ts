@@ -2,6 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { getRecentHistory } from "../../db.js";
 import { classifyProviderContinuityFailure } from "../credential-classifier.js";
 import type { RuntimeLaunchPrompt } from "../message-types.js";
+import { getRuntimeCompatibilityIssues } from "../provider-registry.js";
+import type { RuntimeCompatibilityRequest } from "../types.js";
 import {
   buildProviderContinuityContextFromPrompt,
   resumePromptFromPortableContext,
@@ -33,21 +35,56 @@ import {
   saveProviderContinuityJournal,
 } from "./store.js";
 import {
+  PROVIDER_CONTINUITY_DEFAULT_COMPATIBILITY_REQUEST,
   PROVIDER_CONTINUITY_DEFAULTS,
   PROVIDER_CONTINUITY_LIVE_BLOCK_REASON,
   PROVIDER_CONTINUITY_SNAPSHOT,
   providerContinuityAttemptSchema,
+  providerContinuityCompatibilityRequestSchema,
   providerContinuityContractHeader,
   providerContinuityDecisionSchema,
   providerContinuityJournalSchema,
   providerContinuityPromptMetadataSchema,
   type ProviderContinuityAttempt,
+  type ProviderContinuityCompatibilityRequest,
   type ProviderContinuityDecision,
   type ProviderContinuityJournal,
   type ProviderContinuityPolicy,
   type ProviderContinuityPromptMetadata,
   type ProviderContinuityTarget,
 } from "./types.js";
+
+/**
+ * Resolve a caller-supplied compatibility request into the concrete shape frozen in the journal.
+ * Missing fields fall back to the conservative unrestricted default (skips nothing).
+ */
+function normalizeProviderContinuityCompatibilityRequest(
+  request?: RuntimeCompatibilityRequest | null,
+): ProviderContinuityCompatibilityRequest {
+  return providerContinuityCompatibilityRequestSchema.parse({
+    requiresMcpServers:
+      request?.requiresMcpServers ?? PROVIDER_CONTINUITY_DEFAULT_COMPATIBILITY_REQUEST.requiresMcpServers,
+    requiresRemoteSpawn:
+      request?.requiresRemoteSpawn ?? PROVIDER_CONTINUITY_DEFAULT_COMPATIBILITY_REQUEST.requiresRemoteSpawn,
+    toolAccessMode: request?.toolAccessMode ?? PROVIDER_CONTINUITY_DEFAULT_COMPATIBILITY_REQUEST.toolAccessMode,
+  });
+}
+
+/**
+ * Runtime-compatibility rejection reasons for routing THIS turn onto `target`. Empty means the
+ * provider can serve the turn. A target whose provider is unknown/unloadable cannot serve it either,
+ * so it is reported as incompatible rather than throwing and aborting the whole selection.
+ */
+function providerContinuityCompatibilityRejections(
+  target: ProviderContinuityTarget,
+  compatibility: ProviderContinuityCompatibilityRequest,
+): string[] {
+  try {
+    return getRuntimeCompatibilityIssues(target.provider, compatibility).map((issue) => `compatibility:${issue.code}`);
+  } catch {
+    return ["compatibility:provider_unavailable"];
+  }
+}
 
 function shortHash(value: string, length = 32): string {
   return createHash("sha256").update(value).digest("hex").slice(0, length);
@@ -313,6 +350,7 @@ function preparationFromExisting(
 function selectInitialTarget(input: {
   agentId: string;
   policy: ProviderContinuityPolicy;
+  compatibility: ProviderContinuityCompatibilityRequest;
   deadlineAt: number;
   now: number;
 }): {
@@ -326,6 +364,17 @@ function selectInitialTarget(input: {
   const eligibility: ProviderContinuityEligibility[] = [];
   let earliestWakeAt: number | null = null;
   for (const [targetIndex, target] of input.policy.targets.entries()) {
+    const compatibilityRejections = providerContinuityCompatibilityRejections(target, input.compatibility);
+    if (compatibilityRejections.length > 0) {
+      eligibility.push({
+        targetIndex,
+        eligible: false,
+        rejectionReasons: compatibilityRejections,
+        waitUntil: null,
+        probe: false,
+      });
+      continue;
+    }
     const inspected = inspectProviderContinuityTargetEligibility({
       agentId: input.agentId,
       target,
@@ -429,11 +478,13 @@ export function prepareProviderContinuityRequest(input: {
   agentId: string;
   sessionName: string;
   prompt: RuntimeLaunchPrompt;
+  compatibility?: RuntimeCompatibilityRequest | null;
   activation?: "runtime" | "synthetic";
   now?: number;
 }): ProviderContinuityPreparation {
   const now = input.now ?? Date.now();
   const synthetic = input.activation === "synthetic";
+  const compatibility = normalizeProviderContinuityCompatibilityRequest(input.compatibility);
   if (input.prompt._continuity) {
     const metadata = providerContinuityPromptMetadataSchema.parse(input.prompt._continuity);
     const journal = requireProviderContinuityJournal(metadata.logicalRequestId);
@@ -462,6 +513,7 @@ export function prepareProviderContinuityRequest(input: {
   const selection = selectInitialTarget({
     agentId: input.agentId,
     policy,
+    compatibility,
     deadlineAt,
     now,
   });
@@ -554,6 +606,7 @@ export function prepareProviderContinuityRequest(input: {
       wakeAt: wait ? selection.earliestWakeAt : null,
       createdAt: now,
       updatedAt: now,
+      compatibilityRequest: compatibility,
       compatibilitySnapshotId: PROVIDER_CONTINUITY_SNAPSHOT,
     }),
   );
@@ -571,6 +624,7 @@ export function prepareProviderContinuityRequest(input: {
     });
   }
   if (!attempt) {
+    const terminalReasons = [...new Set([...rejectionReasons, ...translation.rejectionReasons])];
     return {
       active: true,
       ready: false,
@@ -579,7 +633,8 @@ export function prepareProviderContinuityRequest(input: {
       journal,
       userMessage: wait
         ? `All configured provider targets are temporarily unavailable; continuity is waiting until ${journal.wakeAt}.`
-        : `Provider continuity exhausted the configured target chain: ${decision.reasonCode}.`,
+        : `Provider continuity could not route this turn (${decision.reasonCode})` +
+          (terminalReasons.length > 0 ? `: ${terminalReasons.join("; ")}.` : "."),
     };
   }
   const metadata = promptMetadata({
@@ -670,6 +725,7 @@ function eligibilityForFailure(journal: ProviderContinuityJournal, now: number):
         probe: false,
       };
     }
+    const compatibilityRejections = providerContinuityCompatibilityRejections(target, journal.compatibilityRequest);
     const translated = translateProviderContinuityContext({ context: journal.contextSnapshot, target });
     const recovery = inspectProviderContinuityTargetEligibility({
       agentId: journal.agentId,
@@ -681,8 +737,8 @@ function eligibilityForFailure(journal: ProviderContinuityJournal, now: number):
     });
     return {
       targetIndex,
-      eligible: translated.eligible && recovery.eligible,
-      rejectionReasons: [...translated.rejectionReasons, ...recovery.rejectionReasons],
+      eligible: compatibilityRejections.length === 0 && translated.eligible && recovery.eligible,
+      rejectionReasons: [...compatibilityRejections, ...translated.rejectionReasons, ...recovery.rejectionReasons],
       waitUntil: recovery.waitUntil,
       probe: recovery.probe,
     };
