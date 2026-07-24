@@ -16,6 +16,7 @@ import "reflect-metadata";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import { ArtifactsCommands } from "../../src/cli/commands/artifacts.js";
+import { ChatMessageCommands, ChatsCommands } from "../../src/cli/commands/chats.js";
 import { SessionCommands } from "../../src/cli/commands/sessions.js";
 import { buildRegistry } from "../../src/cli/registry-snapshot.js";
 import { createArtifact } from "../../src/artifacts/store.js";
@@ -33,7 +34,7 @@ import { RaviClient } from "../../packages/ravi-os-sdk/src/index.js";
 import { createHttpTransport } from "../../packages/ravi-os-sdk/src/transport/http.js";
 import { RaviValidationError } from "../../packages/ravi-os-sdk/src/errors.js";
 
-const registry = buildRegistry([ArtifactsCommands, SessionCommands]);
+const registry = buildRegistry([ArtifactsCommands, ChatsCommands, ChatMessageCommands, SessionCommands]);
 const allowedContext: ContextRecord = {
   contextId: "ctx_sdk_roundtrip",
   contextKey: "rctx_sdk_roundtrip",
@@ -43,6 +44,7 @@ const allowedContext: ContextRecord = {
     { permission: "execute", objectType: "group", objectId: "artifacts", source: "test" },
     { permission: "execute", objectType: "group", objectId: "sessions", source: "test" },
     { permission: "access", objectType: "session", objectId: "managed-sdk-roundtrip", source: "test" },
+    { permission: "mutate", objectType: "agent", objectId: "main", source: "test" },
   ],
   metadata: { authorityMode: "delegated" },
   createdAt: Date.now(),
@@ -50,18 +52,29 @@ const allowedContext: ContextRecord = {
 
 let stateDir: string | null = null;
 let handle: GatewayHandle | null = null;
+let canonicalChatGrantId: string | null = null;
 const originalRuntimeContextEnv = new Map(RAVI_RUNTIME_CONTEXT_ENV_KEYS.map((key) => [key, process.env[key]]));
 
 beforeEach(async () => {
   for (const key of RAVI_RUNTIME_CONTEXT_ENV_KEYS) delete process.env[key];
   stateDir = await createIsolatedRaviState("ravi-sdk-roundtrip-");
+  canonicalChatGrantId = null;
   handle = startGateway({
     host: "127.0.0.1",
     port: 0,
     registry,
     auth: {
       resolveContext(token) {
-        return token === allowedContext.contextKey ? { ...allowedContext } : null;
+        if (token !== allowedContext.contextKey) return null;
+        return {
+          ...allowedContext,
+          capabilities: [
+            ...allowedContext.capabilities,
+            ...(canonicalChatGrantId
+              ? [{ permission: "mutate", objectType: "chat", objectId: canonicalChatGrantId, source: "test" }]
+              : []),
+          ],
+        };
       },
     },
   });
@@ -74,6 +87,7 @@ afterEach(async () => {
   }
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
+  canonicalChatGrantId = null;
   for (const key of RAVI_RUNTIME_CONTEXT_ENV_KEYS) {
     const value = originalRuntimeContextEnv.get(key);
     if (value === undefined) delete process.env[key];
@@ -125,6 +139,36 @@ describe("SDK round-trip — RaviClient over http transport", () => {
     if (!("messages" in result)) throw new Error("sessions.read did not return history");
     expect(result.transcript.source).toBe("chat-db");
     expect(result.messages.map((message) => message.text)).toEqual(["pergunta remota", "resposta remota"]);
+  });
+
+  it("creates canonical chats and actor messages idempotently through the generated client", async () => {
+    const client = buildClient();
+    const ensured = await client.chats.ensure("actor-sdk-roundtrip", "main", "request-sdk-roundtrip");
+    const retriedEnsure = await client.chats.ensure("actor-sdk-roundtrip", "main", "request-sdk-roundtrip");
+
+    expect(ensured.disposition).toBe("created");
+    expect(retriedEnsure.disposition).toBe("existing");
+    expect(retriedEnsure.chat.id).toBe(ensured.chat.id);
+    canonicalChatGrantId = ensured.chat.id;
+
+    const created = await client.chats.messages.create(
+      ensured.chat.id,
+      "actor-sdk-roundtrip",
+      "message-sdk-roundtrip",
+      "hello through the generated SDK",
+    );
+    const duplicate = await client.chats.messages.create(
+      ensured.chat.id,
+      "actor-sdk-roundtrip",
+      "message-sdk-roundtrip",
+      "hello through the generated SDK",
+    );
+
+    expect(created.disposition).toBe("created");
+    expect(created.message.state).toBe("created");
+    expect(created.message.revision).toBe(1);
+    expect(duplicate.disposition).toBe("duplicate");
+    expect(duplicate.messageId).toBe(created.messageId);
   });
 
   it("maps 4xx validation errors to RaviValidationError", async () => {

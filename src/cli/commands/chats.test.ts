@@ -13,8 +13,16 @@ import {
 } from "../../router/router-db.js";
 import { attachTagSlugsToAsset } from "../../tags/helpers.js";
 import { runWithContext } from "../context.js";
-import { getArgsMetadata, getCommandAccessMetadata } from "../decorators.js";
-import { ChatReadingListCommands, ChatsCommands, chatsListReturnSchema, chatsReadReturnSchema } from "./chats.js";
+import { getArgsMetadata, getCliOnlyMetadata, getCommandAccessMetadata } from "../decorators.js";
+import {
+  ChatMessageCommands,
+  ChatReadingListCommands,
+  ChatsCommands,
+  chatsEnsureReturnSchema,
+  chatsListReturnSchema,
+  chatsMessageCreateReturnSchema,
+  chatsReadReturnSchema,
+} from "./chats.js";
 
 let stateDir: string | null = null;
 
@@ -48,6 +56,71 @@ function captureJson(run: () => void): Record<string, unknown> {
 }
 
 describe("ChatsCommands --json", () => {
+  it("ensures chats and creates canonical actor messages idempotently", () => {
+    const chats = new ChatsCommands();
+    const messages = new ChatMessageCommands();
+    const ensured = captureJson(() => chats.ensure("actor-1", "main", "request-1", true));
+    const retriedEnsure = captureJson(() => chats.ensure("actor-1", "main", "request-1", true));
+    const chatId = (ensured.chat as Record<string, string>).id;
+
+    expect(chatsEnsureReturnSchema.safeParse(ensured).success).toBe(true);
+    expect(ensured.disposition).toBe("created");
+    expect(retriedEnsure.disposition).toBe("existing");
+    expect((retriedEnsure.chat as Record<string, string>).id).toBe(chatId);
+
+    const created = captureJson(() =>
+      messages.create(chatId, "actor-1", "client-message-1", "hello from the actor", true),
+    );
+    const duplicate = captureJson(() =>
+      messages.create(chatId, "actor-1", "client-message-1", "hello from the actor", true),
+    );
+    const compatibilityRead = captureJson(() =>
+      chats.messages(chatId, undefined, undefined, undefined, undefined, undefined, undefined, true),
+    );
+    const createdMessage = created.message as Record<string, unknown>;
+
+    expect(chatsMessageCreateReturnSchema.safeParse(created).success).toBe(true);
+    expect(created.disposition).toBe("created");
+    expect(duplicate.disposition).toBe("duplicate");
+    expect(duplicate.messageId).toBe(created.messageId);
+    expect(compatibilityRead.messages).toHaveLength(1);
+    expect(createdMessage).toMatchObject({
+      actorType: "actor",
+      actorId: "actor-1",
+      clientMessageId: "client-message-1",
+      revision: 1,
+      state: "created",
+      content: { type: "text", text: "hello from the actor" },
+    });
+  });
+
+  it("declares concrete agent and chat authorization for canonical writes", () => {
+    expect(getCliOnlyMetadata(ChatsCommands)).toContain("messages");
+
+    const chatsAccess = getCommandAccessMetadata(ChatsCommands).get("ensure");
+    expect(chatsAccess).toMatchObject({
+      kind: "mutate",
+      resource: "agent",
+      action: "ensure-chat",
+      resourceId: "agentId",
+      requireConcreteResource: true,
+      resourceIdPattern: "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$",
+      input: ["actorId", "agentId", "clientRequestId"],
+    });
+
+    const messageAccess = getCommandAccessMetadata(ChatMessageCommands).get("create");
+    expect(messageAccess).toMatchObject({
+      kind: "mutate",
+      resource: "chat",
+      action: "create-message",
+      resourceId: "chatId",
+      requireConcreteResource: true,
+      resourceIdPattern: "^chat_[0-9a-f]{24}$",
+      input: ["chatId", "actorId", "clientMessageId", "content"],
+      redactions: ["content"],
+    });
+  });
+
   it("reads durable chat messages and manages list cursors with scoped readers", () => {
     const chat = dbUpsertChat({
       channel: "whatsapp",

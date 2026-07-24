@@ -10,6 +10,8 @@ import { describe, expect, it } from "bun:test";
 import type { RaviClient } from "../client.js";
 import type {
   ArtifactsShowReturn,
+  ChatsEnsureReturn,
+  ChatsMessagesCreateReturn,
   ContextCredentialsListReturn,
 } from "../types.js";
 
@@ -28,6 +30,29 @@ type ArtifactsShowResult = Awaited<ReturnType<ArtifactsShowFn>>;
 
 type _ShowParamsOk = ExpectTrue<Eq<ArtifactsShowParams, [id: string]>>;
 type _ShowReturnOk = ExpectTrue<Eq<ArtifactsShowResult, ArtifactsShowReturn>>;
+
+// Canonical chat/message writes keep their idempotency keys positional and
+// expose the required persisted message state in the generated return type.
+type ChatsEnsureFn = typeof client.chats.ensure;
+type ChatsEnsureParams = Parameters<ChatsEnsureFn>;
+type ChatsEnsureResult = Awaited<ReturnType<ChatsEnsureFn>>;
+type ChatsMessageCreateFn = typeof client.chats.messages.create;
+type ChatsMessageCreateParams = Parameters<ChatsMessageCreateFn>;
+type ChatsMessageCreateResult = Awaited<ReturnType<ChatsMessageCreateFn>>;
+
+type _ChatsEnsureParamsOk = ExpectTrue<
+  Eq<ChatsEnsureParams, [actorId: string, agentId: string, clientRequestId: string]>
+>;
+type _ChatsEnsureReturnOk = ExpectTrue<Eq<ChatsEnsureResult, ChatsEnsureReturn>>;
+type _ChatsMessageCreateParamsOk = ExpectTrue<
+  Eq<
+    ChatsMessageCreateParams,
+    [chatId: string, actorId: string, clientMessageId: string, content: string]
+  >
+>;
+type _ChatsMessageCreateReturnOk = ExpectTrue<Eq<ChatsMessageCreateResult, ChatsMessagesCreateReturn>>;
+type _ChatsMessageStateRequired = ExpectTrue<Eq<ChatsMessagesCreateReturn["message"]["state"], "created">>;
+type _ChatsMessageRevisionRequired = ExpectTrue<Eq<ChatsMessagesCreateReturn["message"]["revision"], 1>>;
 
 // `client.context.credentials.list()` — no required args; return is `unknown`
 // because the underlying command does not declare `@Returns`.
@@ -54,6 +79,12 @@ void _typeRef;
 type _Touched =
   | _ShowParamsOk
   | _ShowReturnOk
+  | _ChatsEnsureParamsOk
+  | _ChatsEnsureReturnOk
+  | _ChatsMessageCreateParamsOk
+  | _ChatsMessageCreateReturnOk
+  | _ChatsMessageStateRequired
+  | _ChatsMessageRevisionRequired
   | _ListReturnOk
   | _ListReturnIsUnknown
   | _ListParamsOk;
