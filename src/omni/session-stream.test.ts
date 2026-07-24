@@ -152,16 +152,15 @@ describe("session prompt JetStream infrastructure", () => {
 
   it("announces a sourced prompt to the runtime after its durable publish", async () => {
     const callOrder: string[] = [];
-    promptPublishMock.mockImplementationOnce(async () => {
-      callOrder.push("prompt");
-      return {};
-    });
-    runtimeEmitMock.mockImplementationOnce(async () => {
-      callOrder.push("runtime");
-    });
     setSessionPromptPublishHooksForTests({
-      publishPrompt: promptPublishMock,
-      emitRuntimeEvent: runtimeEmitMock,
+      publishPrompt: async (...args) => {
+        callOrder.push("prompt");
+        return promptPublishMock(...args);
+      },
+      emitRuntimeEvent: async (...args) => {
+        callOrder.push("runtime");
+        await runtimeEmitMock(...args);
+      },
       recordPublishedTrace: recordPromptPublishedTraceMock,
     });
     const source = {
