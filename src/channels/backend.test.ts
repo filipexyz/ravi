@@ -17,6 +17,13 @@ import {
   type ChannelBackendPromptPublisher,
   type ChannelIngressRequest,
 } from "./backend.js";
+import {
+  CHANNEL_RUNTIME_EVENTS_PROTOCOL,
+  CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION,
+  ChannelRuntimeEventSinkRegistry,
+  projectChannelRuntimeEvent,
+  readChannelRuntime,
+} from "./runtime-events.js";
 
 let stateDir: string | null = null;
 
@@ -93,6 +100,57 @@ describe("channel backend ingress", () => {
           },
         },
       },
+    });
+  });
+
+  it("carries an accepted binding into runtime lifecycle readback", async () => {
+    setChannelBackendPromptPublisherForTests(mock(async () => {}));
+    const result = await acceptChannelIngress(request());
+    if (!result.binding) throw new Error("accepted ingress did not return a binding");
+
+    const target = {
+      channelKind: "custom",
+      connectionId: "connection-a",
+      conversationId: "external-conversation-a",
+    };
+    const events: string[] = [];
+    const sinks = new ChannelRuntimeEventSinkRegistry();
+    const unregister = sinks.register(target, {
+      async emit(event) {
+        events.push(event.kind);
+      },
+    });
+
+    try {
+      await projectChannelRuntimeEvent({
+        metadata: {
+          protocol: CHANNEL_BACKEND_PROTOCOL,
+          schemaVersion: CHANNEL_BACKEND_SCHEMA_VERSION,
+          ingressRequestId: result.requestId,
+          correlationId: result.requestId,
+          binding: result.binding,
+          target,
+        },
+        event: { type: "text.delta", text: "Hello" },
+        occurredAt: Date.parse("2026-07-24T18:00:01.000Z"),
+        sinks,
+      });
+    } finally {
+      unregister();
+    }
+
+    expect(events).toEqual(["turn.state_changed", "turn.assistant_delta"]);
+    expect(
+      readChannelRuntime({
+        protocol: CHANNEL_RUNTIME_EVENTS_PROTOCOL,
+        schemaVersion: CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION,
+        requestId: "runtime-readback-a",
+        binding: result.binding,
+      }),
+    ).toMatchObject({
+      binding: result.binding,
+      state: "running",
+      lastSequence: 2,
     });
   });
 
