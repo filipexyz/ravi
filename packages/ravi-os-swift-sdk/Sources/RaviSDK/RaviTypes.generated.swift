@@ -3497,6 +3497,24 @@ public struct ChatsBackfillProviderTimestampsOptions: Codable, Sendable {
 
 public typealias ChatsBackfillProviderTimestampsReturn = [String: RaviJSON]
 
+public struct ChatsEnsureReturn: Codable, Sendable {
+  public var chat: RaviJSON
+  public var clientRequestId: String
+  public var disposition: String
+
+  public init(chat: RaviJSON, clientRequestId: String, disposition: String) {
+    self.chat = chat
+    self.clientRequestId = clientRequestId
+    self.disposition = disposition
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case chat = "chat"
+    case clientRequestId = "clientRequestId"
+    case disposition = "disposition"
+  }
+}
+
 public struct ChatsListOptions: Codable, Sendable {
   public var agent: String?
   public var channel: String?
@@ -3997,6 +4015,27 @@ public struct ChatsListsShowReturn: Codable, Sendable {
     case current = "current"
     case list = "list"
     case validation = "validation"
+  }
+}
+
+public struct ChatsMessagesCreateReturn: Codable, Sendable {
+  public var clientMessageId: String
+  public var disposition: String
+  public var message: RaviJSON
+  public var messageId: String
+
+  public init(clientMessageId: String, disposition: String, message: RaviJSON, messageId: String) {
+    self.clientMessageId = clientMessageId
+    self.disposition = disposition
+    self.message = message
+    self.messageId = messageId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case clientMessageId = "clientMessageId"
+    case disposition = "disposition"
+    case message = "message"
+    case messageId = "messageId"
   }
 }
 

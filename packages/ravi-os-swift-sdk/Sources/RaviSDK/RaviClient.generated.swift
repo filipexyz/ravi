@@ -831,10 +831,22 @@ public struct ChatsNamespace: Sendable {
     ChatsListsNamespace(transport: transport)
   }
 
+  public var messages: ChatsMessagesNamespace {
+    ChatsMessagesNamespace(transport: transport)
+  }
+
   public func backfillProviderTimestamps(_ options: ChatsBackfillProviderTimestampsOptions = .init()) async throws -> ChatsBackfillProviderTimestampsReturn {
     var requestBody: [String: RaviJSON] = [:]
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["chats"], command: "backfill-provider-timestamps", body: requestBody, as: ChatsBackfillProviderTimestampsReturn.self)
+  }
+
+  public func ensure(_ actorId: String, _ agentId: String, _ clientRequestId: String) async throws -> ChatsEnsureReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["actorId"] = try RaviJSON.fromEncodable(actorId)
+    requestBody["agentId"] = try RaviJSON.fromEncodable(agentId)
+    requestBody["clientRequestId"] = try RaviJSON.fromEncodable(clientRequestId)
+    return try await transport.call(groupSegments: ["chats"], command: "ensure", body: requestBody, as: ChatsEnsureReturn.self)
   }
 
   public func list(_ options: ChatsListOptions = .init()) async throws -> ChatsListReturn {
@@ -929,6 +941,23 @@ public struct ChatsListsNamespace: Sendable {
     requestBody["listId"] = try RaviJSON.fromEncodable(listId)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["chats","lists"], command: "show", body: requestBody, as: ChatsListsShowReturn.self)
+  }
+}
+
+public struct ChatsMessagesNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func create(_ chatId: String, _ actorId: String, _ clientMessageId: String, _ content: String) async throws -> ChatsMessagesCreateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["chatId"] = try RaviJSON.fromEncodable(chatId)
+    requestBody["actorId"] = try RaviJSON.fromEncodable(actorId)
+    requestBody["clientMessageId"] = try RaviJSON.fromEncodable(clientMessageId)
+    requestBody["content"] = try RaviJSON.fromEncodable(content)
+    return try await transport.call(groupSegments: ["chats","messages"], command: "create", body: requestBody, as: ChatsMessagesCreateReturn.self)
   }
 }
 

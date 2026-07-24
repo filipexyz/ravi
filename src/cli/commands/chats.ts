@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { z } from "zod";
-import { Arg, Command, CommandAccess, Group, Option, Scope } from "../decorators.js";
+import { Arg, CliOnly, Command, CommandAccess, Group, Option, Scope } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
 import { jsonObjectSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
@@ -17,7 +17,9 @@ import {
 import {
   dbAddChatToReadingList,
   dbBackfillChatMessageProviderTimestamps,
+  dbCreateCanonicalActorMessage,
   dbCreateChatReadingList,
+  dbEnsureActorAgentChat,
   dbFindChatByRef,
   dbFindChatReadingList,
   dbGetChat,
@@ -75,6 +77,17 @@ const chatReadingListPublicReturnSchema = chatReadingListReturnSchema.omit({
 });
 
 const READING_LIST_ID_PATTERN_SOURCE = "^crl_[0-9a-f]{24}$";
+const CHAT_ID_PATTERN_SOURCE = "^chat_[0-9a-f]{24}$";
+const OPAQUE_ID_PATTERN_SOURCE = "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$";
+const opaqueIdArgSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(new RegExp(OPAQUE_ID_PATTERN_SOURCE), "Must be an opaque URL-safe identifier");
+const chatIdArgSchema = z
+  .string()
+  .regex(new RegExp(CHAT_ID_PATTERN_SOURCE), "Chat id must use the canonical chat_<24 hex> form");
+const messageContentArgSchema = z.string().min(1).max(1_000_000);
 const readingListIdArgSchema = z
   .string()
   .regex(new RegExp(READING_LIST_ID_PATTERN_SOURCE), "Reading-list id must use the canonical crl_<24 hex> form");
@@ -149,6 +162,8 @@ const chatReturnSchema = z
     id: z.string(),
     channel: z.string(),
     instanceId: z.string(),
+    actorId: z.string().optional(),
+    agentId: z.string().optional(),
     chatType: z.enum(["dm", "group", "room", "thread", "channel", "unknown"]),
     title: z.string().optional(),
     avatarUrl: z.string().optional(),
@@ -167,12 +182,16 @@ const chatMessageReturnSchema = z
   .object({
     id: z.string(),
     chatId: z.string(),
+    clientMessageId: z.string().optional(),
     actorType: z.string(),
+    actorId: z.string().optional(),
     contactId: z.string().optional(),
     agentId: z.string().optional(),
     platformIdentityId: z.string().optional(),
     messageType: z.string().optional(),
     content: jsonObjectSchema.optional(),
+    revision: z.number().int().positive().optional(),
+    state: z.string().optional(),
     providerTimestamp: z.number().optional(),
     ingestedAt: z.number(),
     sortKey: z.string(),
@@ -212,6 +231,37 @@ export const chatsReadReturnSchema = z
     total: z.number(),
     pagination: strictCliOffsetPaginationSchema.strict(),
     messages: z.array(chatMessageReturnSchema),
+  })
+  .strict();
+
+const ensuredChatReturnSchema = chatReturnSchema.extend({
+  actorId: z.string(),
+  agentId: z.string(),
+});
+
+const canonicalActorMessageReturnSchema = chatMessageReturnSchema.extend({
+  clientMessageId: z.string(),
+  actorType: z.literal("actor"),
+  actorId: z.string(),
+  content: jsonObjectSchema,
+  revision: z.literal(1),
+  state: z.literal("created"),
+});
+
+export const chatsEnsureReturnSchema = z
+  .object({
+    disposition: z.enum(["created", "existing"]),
+    clientRequestId: z.string(),
+    chat: ensuredChatReturnSchema,
+  })
+  .strict();
+
+export const chatsMessageCreateReturnSchema = z
+  .object({
+    disposition: z.enum(["created", "duplicate"]),
+    clientMessageId: z.string(),
+    messageId: z.string(),
+    message: canonicalActorMessageReturnSchema,
   })
   .strict();
 
@@ -379,6 +429,7 @@ function formatTime(ts?: number): string {
 }
 
 function actorLabel(message: ChatMessageWithSortKey): string {
+  if (message.actorId) return `actor:${message.actorId}`;
   if (message.contactId) return `contact:${message.contactId}`;
   if (message.agentId) return `agent:${message.agentId}`;
   if (message.normalizedSenderId) return message.normalizedSenderId;
@@ -396,6 +447,8 @@ function serializeChat(chat: ChatRecord, includeRaw?: boolean): Record<string, u
     id: chat.id,
     channel: chat.channel,
     instanceId: chat.instanceId,
+    actorId: chat.actorId,
+    agentId: chat.agentId,
     chatType: chat.chatType,
     title: chat.title,
     avatarUrl: chat.avatarUrl,
@@ -417,12 +470,16 @@ function serializeMessage(message: ChatMessageWithSortKey, includeRaw?: boolean)
   const base: Record<string, unknown> = {
     id: message.id,
     chatId: message.chatId,
+    clientMessageId: message.clientMessageId,
     actorType: message.actorType,
+    actorId: message.actorId,
     contactId: message.contactId,
     agentId: message.agentId,
     platformIdentityId: message.platformIdentityId,
     messageType: message.messageType,
     content: message.content,
+    revision: message.revision,
+    state: message.state,
     providerTimestamp: message.providerTimestamp,
     ingestedAt: message.ingestedAt,
     sortKey: message.sortKey,
@@ -487,6 +544,44 @@ function serializeReadingDelta(delta: ChatReadingDelta, includeRaw?: boolean): R
   description: "Inspect canonical chats, messages, and reading queues",
 })
 export class ChatsCommands {
+  @Scope("admin")
+  @Command({
+    name: "ensure",
+    description: "Ensure one canonical direct chat between an actor and an agent",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "agent",
+    action: "ensure-chat",
+    risk: "medium",
+    resourceId: "agentId",
+    requireConcreteResource: true,
+    resourceIdPattern: OPAQUE_ID_PATTERN_SOURCE,
+    input: ["actorId", "agentId", "clientRequestId"],
+  })
+  ensure(
+    @Arg("actorId", { description: "Canonical actor id", schema: opaqueIdArgSchema }) actorId: string,
+    @Arg("agentId", { description: "Target agent id", schema: opaqueIdArgSchema }) agentId: string,
+    @Arg("clientRequestId", { description: "Caller-owned request id", schema: opaqueIdArgSchema })
+    clientRequestId: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const result = dbEnsureActorAgentChat({ actorId, agentId, clientRequestId });
+    const payload = {
+      disposition: result.created ? ("created" as const) : ("existing" as const),
+      clientRequestId: result.clientRequestId,
+      chat: serializeChat(result.chat),
+    };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(
+      `${result.created ? "Created" : "Found"} chat ${result.chat.id} for actor ${actorId} and agent ${agentId}.`,
+    );
+    return payload;
+  }
+
   @Scope("admin")
   @Command({ name: "list", aliases: ["recent"], description: "List recent canonical chats" })
   @CommandAccess({ kind: "read", resource: "chats", action: "list", risk: "low" })
@@ -561,7 +656,7 @@ export class ChatsCommands {
   }
 
   @Scope("admin")
-  @Command({ name: "read", aliases: ["messages"], description: "Read messages from one chat" })
+  @Command({ name: "read", description: "Read messages from one chat" })
   @CommandAccess({ kind: "read", resource: "chats", action: "read", risk: "low" })
   read(
     @Arg("chat", { description: "Chat id, platform chat id, phone, group id, or normalized chat id" }) chatRef: string,
@@ -620,6 +715,28 @@ export class ChatsCommands {
     return payload;
   }
 
+  @CliOnly()
+  @Scope("admin")
+  @Command({
+    name: "messages",
+    description: "Read messages from one chat (compatibility command; prefer chats read)",
+  })
+  @CommandAccess({ kind: "read", resource: "chats", action: "read", risk: "low" })
+  messages(
+    @Arg("chat", { description: "Chat id, platform chat id, phone, group id, or normalized chat id" }) chatRef: string,
+    @Option({ flags: "--instance <name-or-id>", description: "Resolve chat within an instance" }) instance?: string,
+    @Option({ flags: "--channel <channel>", description: "Resolve chat within a channel" }) channel?: string,
+    @Option({ flags: "--type <type>", description: "Resolve chat type: dm|group|thread|room" }) type?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching messages to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--order <asc|desc>", description: "Message order (default: asc)" }) order?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--include-raw", description: "Include raw provider ids and provenance in JSON output" })
+    includeRaw?: boolean,
+  ) {
+    return this.read(chatRef, instance, channel, type, limit, offset, order, asJson, includeRaw);
+  }
+
   @Scope("admin")
   @Command({
     name: "backfill-provider-timestamps",
@@ -674,6 +791,57 @@ export class ChatsCommands {
       }
     }
     if (nextCommand) console.log(`\nApply:\n  ${nextCommand}`);
+    return payload;
+  }
+}
+
+@Group({
+  name: "chats.messages",
+  description: "Create canonical chat messages",
+})
+export class ChatMessageCommands {
+  @Scope("admin")
+  @Command({
+    name: "create",
+    description: "Create one idempotent actor-authored message in a canonical chat",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "chat",
+    action: "create-message",
+    risk: "medium",
+    resourceId: "chatId",
+    requireConcreteResource: true,
+    resourceIdPattern: CHAT_ID_PATTERN_SOURCE,
+    input: ["chatId", "actorId", "clientMessageId", "content"],
+    redactions: ["content"],
+  })
+  create(
+    @Arg("chatId", { description: "Canonical chat id", schema: chatIdArgSchema }) chatId: string,
+    @Arg("actorId", { description: "Canonical actor id", schema: opaqueIdArgSchema }) actorId: string,
+    @Arg("clientMessageId", { description: "Caller-owned message id", schema: opaqueIdArgSchema })
+    clientMessageId: string,
+    @Arg("content", { description: "Message text", schema: messageContentArgSchema }) content: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const result = dbCreateCanonicalActorMessage({
+      chatId,
+      actorId,
+      clientMessageId,
+      content: { type: "text", text: content },
+      messageType: "text",
+    });
+    const payload = {
+      disposition: result.created ? ("created" as const) : ("duplicate" as const),
+      clientMessageId: result.clientMessageId,
+      messageId: result.canonicalMessageId,
+      message: serializeMessage(result.message),
+    };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(`${result.created ? "Created" : "Found"} message ${result.canonicalMessageId} in chat ${chatId}.`);
     return payload;
   }
 }
@@ -1143,8 +1311,13 @@ FONTES
 
 declareCommandReturns(ChatsCommands, {
   backfillProviderTimestamps: commandEnvelopeReturnSchema,
+  ensure: chatsEnsureReturnSchema,
   list: chatsListReturnSchema,
   read: chatsReadReturnSchema,
+});
+
+declareCommandReturns(ChatMessageCommands, {
+  create: chatsMessageCreateReturnSchema,
 });
 
 declareCommandReturns(ChatReadingListCommands, {

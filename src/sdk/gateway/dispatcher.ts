@@ -110,6 +110,7 @@ export async function dispatch(
   if (!validation.ok) {
     return { response: validationError(validation.issues), audit: null };
   }
+  const auditInput = redactCommandInput(cmd, validation.inputForAudit);
 
   const startedAt = Date.now();
   const toolContext = asToolContext(scopeContext, opts.contextRecord ?? null);
@@ -126,7 +127,7 @@ export async function dispatch(
   );
   if (!accessResult.allowed) {
     const response = permissionDenied(accessResult.errorMessage);
-    const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, true, startedAt, lineage);
+    const audit = buildAuditEvent(cmd, tool, auditInput, true, startedAt, lineage);
     const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
     return { response, audit: auditEmitted ? audit : null };
   }
@@ -165,7 +166,7 @@ export async function dispatch(
       const message = err instanceof Error ? err.message : String(err);
       response = internalError(message);
     }
-    const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, isError, startedAt, lineage);
+    const audit = buildAuditEvent(cmd, tool, auditInput, isError, startedAt, lineage);
     const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
     return { response, audit: auditEmitted ? audit : null };
   }
@@ -179,11 +180,11 @@ export async function dispatch(
           message: `Command "${cmd.fullName}" is declared @Returns.binary() but handler returned ${describeReturnValue(returnValue)} instead of a Response.`,
         },
       ]);
-      const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, true, startedAt, lineage);
+      const audit = buildAuditEvent(cmd, tool, auditInput, true, startedAt, lineage);
       const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
       return { response, audit: auditEmitted ? audit : null };
     }
-    const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, isError, startedAt, lineage);
+    const audit = buildAuditEvent(cmd, tool, auditInput, isError, startedAt, lineage);
     const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
     return { response: returnValue, audit: auditEmitted ? audit : null };
   }
@@ -194,14 +195,14 @@ export async function dispatch(
     const returnIssues = checkReturnShape(cmd.returns, responseValue);
     if (returnIssues) {
       response = returnShapeError(returnIssues);
-      const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, true, startedAt, lineage);
+      const audit = buildAuditEvent(cmd, tool, auditInput, true, startedAt, lineage);
       const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
       return { response, audit: auditEmitted ? audit : null };
     }
   }
 
   response = json(200, responseValue);
-  const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, isError, startedAt, lineage);
+  const audit = buildAuditEvent(cmd, tool, auditInput, isError, startedAt, lineage);
   const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
   return { response, audit: auditEmitted ? audit : null };
 }
@@ -227,6 +228,16 @@ function extractLineage(record: ContextRecord | null | undefined): AuditLineage 
     parentContextId,
     agentId: record.agentId ?? null,
   };
+}
+
+function redactCommandInput(cmd: CommandRegistryEntry, input: Record<string, unknown>): Record<string, unknown> {
+  const redactions = new Set(cmd.access?.redactions ?? []);
+  if (redactions.size === 0) return input;
+  const redacted = { ...input };
+  for (const field of redactions) {
+    if (field in redacted) redacted[field] = "[REDACTED]";
+  }
+  return redacted;
 }
 
 function buildAuditEvent(

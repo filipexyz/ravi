@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { Database } from "bun:sqlite";
+import { join } from "node:path";
 import {
   dbBindSessionToChat,
   dbAddChatToReadingList,
   dbCanonicalizeDmChatForContact,
+  dbCreateCanonicalActorMessage,
   dbCreateChatReadingList,
+  dbEnsureActorAgentChat,
   dbFindChat,
   dbFindChatByRef,
   dbFindChatReadingList,
@@ -29,6 +33,7 @@ import {
   dbUpsertChatMessage,
   dbUpsertChatParticipant,
   dbUpsertSessionParticipant,
+  closeRouterDb,
   getDb,
 } from "./router-db.js";
 import { recomputeChatReadingListMembers } from "../chats/reading-lists.js";
@@ -69,6 +74,111 @@ describe("identity chat schema", () => {
       "session_chat_bindings",
       "session_participants",
     ]);
+  });
+
+  it("migrates existing chat rows before installing canonical-write indexes", () => {
+    const legacyDb = new Database(join(stateDir!, "ravi.db"));
+    legacyDb.exec(`
+      CREATE TABLE chats (
+        id TEXT PRIMARY KEY,
+        channel TEXT NOT NULL,
+        instance_id TEXT NOT NULL DEFAULT '',
+        platform_chat_id TEXT NOT NULL,
+        normalized_chat_id TEXT NOT NULL,
+        chat_type TEXT NOT NULL DEFAULT 'unknown',
+        title TEXT,
+        avatar_url TEXT,
+        metadata_json TEXT,
+        raw_provenance_json TEXT,
+        first_seen_at INTEGER NOT NULL,
+        last_seen_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        UNIQUE(channel, instance_id, normalized_chat_id)
+      );
+      CREATE TABLE chat_messages (
+        id TEXT PRIMARY KEY,
+        chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+        channel TEXT NOT NULL,
+        instance_id TEXT NOT NULL DEFAULT '',
+        provider_message_id TEXT NOT NULL,
+        raw_chat_id TEXT NOT NULL,
+        raw_sender_id TEXT,
+        normalized_sender_id TEXT,
+        actor_type TEXT NOT NULL DEFAULT 'unknown',
+        contact_id TEXT,
+        agent_id TEXT,
+        platform_identity_id TEXT,
+        message_type TEXT,
+        content_json TEXT,
+        raw_provenance_json TEXT,
+        provider_timestamp INTEGER,
+        edited_at INTEGER,
+        deleted_at INTEGER,
+        ingested_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        UNIQUE(channel, instance_id, chat_id, provider_message_id)
+      );
+      INSERT INTO chats (
+        id, channel, instance_id, platform_chat_id, normalized_chat_id, chat_type,
+        first_seen_at, last_seen_at, created_at, updated_at
+      )
+      VALUES (
+        'chat_legacy', 'slack', 'legacy-instance', 'C123', 'C123', 'channel',
+        100, 100, 100, 100
+      );
+      INSERT INTO chat_messages (
+        id, chat_id, channel, instance_id, provider_message_id, raw_chat_id,
+        actor_type, message_type, content_json, ingested_at, created_at, updated_at
+      )
+      VALUES (
+        'cm_legacy', 'chat_legacy', 'slack', 'legacy-instance', 'm1', 'C123',
+        'contact', 'text', '{"type":"text","text":"legacy"}', 100, 100, 100
+      );
+    `);
+    legacyDb.close();
+
+    const db = getDb();
+    const chatColumns = db.prepare("PRAGMA table_info(chats)").all() as Array<{ name: string }>;
+    const messageColumns = db.prepare("PRAGMA table_info(chat_messages)").all() as Array<{ name: string }>;
+    const indexes = db
+      .prepare(
+        `
+        SELECT name
+        FROM sqlite_master
+        WHERE type = 'index'
+          AND name IN ('idx_chats_actor_agent', 'idx_chat_messages_client_idempotency')
+        ORDER BY name
+      `,
+      )
+      .all() as Array<{ name: string }>;
+
+    const chatColumnNames = chatColumns.map((column) => column.name);
+    const messageColumnNames = messageColumns.map((column) => column.name);
+    expect(chatColumnNames).toContain("actor_id");
+    expect(chatColumnNames).toContain("agent_id");
+    expect(messageColumnNames).toContain("client_message_id");
+    expect(messageColumnNames).toContain("actor_id");
+    expect(messageColumnNames).toContain("revision");
+    expect(messageColumnNames).toContain("state");
+    expect(indexes.map((row) => row.name)).toEqual(["idx_chat_messages_client_idempotency", "idx_chats_actor_agent"]);
+    expect(db.prepare("SELECT content_json FROM chat_messages WHERE id = 'cm_legacy'").get()).toEqual({
+      content_json: '{"type":"text","text":"legacy"}',
+    });
+
+    const ensured = dbEnsureActorAgentChat({
+      actorId: "actor-after-migration",
+      agentId: "main",
+      clientRequestId: "request-after-migration",
+    });
+    const message = dbCreateCanonicalActorMessage({
+      chatId: ensured.chat.id,
+      actorId: "actor-after-migration",
+      clientMessageId: "message-after-migration",
+      content: { type: "text", text: "new" },
+    });
+    expect(message.created).toBe(true);
   });
 
   it("allows one chat to bind to multiple sessions while keeping chat and session participants separate", () => {
@@ -225,6 +335,143 @@ describe("identity chat schema", () => {
       })?.id,
     ).toBe(first.message.id);
     expect(dbListChatMessages(chat.id)).toHaveLength(1);
+  });
+
+  it("ensures one durable chat per actor and agent across retries and restarts", () => {
+    const first = dbEnsureActorAgentChat({
+      actorId: "actor-1",
+      agentId: "main",
+      clientRequestId: "request-1",
+      seenAt: 1_700_000_000_000,
+    });
+    const retry = dbEnsureActorAgentChat({
+      actorId: "actor-1",
+      agentId: "main",
+      clientRequestId: "request-1",
+      seenAt: 1_700_000_001_000,
+    });
+    const newRequest = dbEnsureActorAgentChat({
+      actorId: "actor-1",
+      agentId: "main",
+      clientRequestId: "request-2",
+      seenAt: 1_700_000_002_000,
+    });
+
+    expect(first.created).toBe(true);
+    expect(retry.created).toBe(false);
+    expect(newRequest.created).toBe(false);
+    expect(retry.chat.id).toBe(first.chat.id);
+    expect(newRequest.chat.id).toBe(first.chat.id);
+    expect(first.chat).toMatchObject({
+      actorId: "actor-1",
+      agentId: "main",
+      channel: "ravi",
+      chatType: "dm",
+    });
+
+    closeRouterDb();
+    const afterRestart = dbEnsureActorAgentChat({
+      actorId: "actor-1",
+      agentId: "main",
+      clientRequestId: "request-1",
+    });
+    expect(afterRestart.created).toBe(false);
+    expect(afterRestart.chat.id).toBe(first.chat.id);
+
+    const otherActor = dbEnsureActorAgentChat({
+      actorId: "actor-2",
+      agentId: "main",
+      clientRequestId: "request-1",
+    });
+    expect(otherActor.created).toBe(true);
+    expect(otherActor.chat.id).not.toBe(first.chat.id);
+  });
+
+  it("creates one canonical actor message per actor, chat, and client id across restarts", () => {
+    const ensured = dbEnsureActorAgentChat({
+      actorId: "actor-1",
+      agentId: "main",
+      clientRequestId: "request-1",
+    });
+    const first = dbCreateCanonicalActorMessage({
+      chatId: ensured.chat.id,
+      actorId: "actor-1",
+      clientMessageId: "client-message-1",
+      content: { text: "hello", type: "text" },
+      createdAt: 1_700_000_010_000,
+    });
+    const retry = dbCreateCanonicalActorMessage({
+      chatId: ensured.chat.id,
+      actorId: "actor-1",
+      clientMessageId: "client-message-1",
+      content: { type: "text", text: "hello" },
+      createdAt: 1_700_000_020_000,
+    });
+
+    expect(first.created).toBe(true);
+    expect(retry.created).toBe(false);
+    expect(retry.canonicalMessageId).toBe(first.canonicalMessageId);
+    expect(retry.message.id).toBe(first.message.id);
+    expect(first.message).toMatchObject({
+      actorType: "actor",
+      actorId: "actor-1",
+      clientMessageId: "client-message-1",
+      revision: 1,
+      state: "created",
+      content: { type: "text", text: "hello" },
+    });
+    expect(dbListChatMessages(ensured.chat.id)).toHaveLength(1);
+
+    closeRouterDb();
+    const afterRestart = dbCreateCanonicalActorMessage({
+      chatId: ensured.chat.id,
+      actorId: "actor-1",
+      clientMessageId: "client-message-1",
+      content: { type: "text", text: "hello" },
+    });
+    expect(afterRestart.created).toBe(false);
+    expect(afterRestart.message.id).toBe(first.message.id);
+    expect(dbListChatMessages(ensured.chat.id)).toHaveLength(1);
+  });
+
+  it("fails closed when a canonical message idempotency key changes actor or content", () => {
+    const ensured = dbEnsureActorAgentChat({
+      actorId: "actor-1",
+      agentId: "main",
+      clientRequestId: "request-1",
+    });
+    dbCreateCanonicalActorMessage({
+      chatId: ensured.chat.id,
+      actorId: "actor-1",
+      clientMessageId: "client-message-1",
+      content: { type: "text", text: "original" },
+    });
+
+    expect(() =>
+      dbCreateCanonicalActorMessage({
+        chatId: ensured.chat.id,
+        actorId: "actor-1",
+        clientMessageId: "client-message-1",
+        content: { type: "text", text: "changed" },
+      }),
+    ).toThrow(/different message content/);
+    expect(() =>
+      dbCreateCanonicalActorMessage({
+        chatId: ensured.chat.id,
+        actorId: "actor-2",
+        clientMessageId: "client-message-1",
+        content: { type: "text", text: "original" },
+      }),
+    ).toThrow(/does not own chat/);
+    expect(() =>
+      dbCreateCanonicalActorMessage({
+        chatId: ensured.chat.id,
+        actorId: "actor-1",
+        clientMessageId: "empty-content",
+        content: { ignored: undefined },
+      }),
+    ).toThrow(/content is required/);
+    expect(dbListChatMessages(ensured.chat.id)).toHaveLength(1);
   });
 
   it("lists and marks an agent's own messages for session actions", () => {

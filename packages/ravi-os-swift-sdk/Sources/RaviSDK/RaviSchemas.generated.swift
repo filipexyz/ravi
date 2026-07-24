@@ -16046,6 +16046,188 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ChatsEnsureInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "actorId": {
+        "description": "Canonical actor id",
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$",
+        "type": "string"
+      },
+      "agentId": {
+        "description": "Target agent id",
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$",
+        "type": "string"
+      },
+      "clientRequestId": {
+        "description": "Caller-owned request id",
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "actorId",
+      "agentId",
+      "clientRequestId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChatsEnsureReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "chat": {
+        "additionalProperties": false,
+        "properties": {
+          "actorId": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "avatarUrl": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "chatType": {
+            "enum": [
+              "dm",
+              "group",
+              "room",
+              "thread",
+              "channel",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "firstSeenAt": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "instanceId": {
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "type": "number"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "normalizedChatId": {
+            "type": "string"
+          },
+          "platformChatId": {
+            "type": "string"
+          },
+          "rawProvenance": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "channel",
+          "instanceId",
+          "actorId",
+          "agentId",
+          "chatType",
+          "firstSeenAt",
+          "lastSeenAt",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "clientRequestId": {
+        "type": "string"
+      },
+      "disposition": {
+        "enum": [
+          "created",
+          "existing"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "disposition",
+      "clientRequestId",
+      "chat"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ChatsListInputSchema = #"""
   {
     "additionalProperties": false,
@@ -16139,6 +16321,12 @@ public enum RaviSchemas {
             "chat": {
               "additionalProperties": false,
               "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "agentId": {
+                  "type": "string"
+                },
                 "avatarUrl": {
                   "type": "string"
                 },
@@ -16219,6 +16407,9 @@ public enum RaviSchemas {
                 {
                   "additionalProperties": false,
                   "properties": {
+                    "actorId": {
+                      "type": "string"
+                    },
                     "actorType": {
                       "type": "string"
                     },
@@ -16229,6 +16420,9 @@ public enum RaviSchemas {
                       "type": "string"
                     },
                     "chatId": {
+                      "type": "string"
+                    },
+                    "clientMessageId": {
                       "type": "string"
                     },
                     "contactId": {
@@ -16285,7 +16479,15 @@ public enum RaviSchemas {
                     "rawSenderId": {
                       "type": "string"
                     },
+                    "revision": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
                     "sortKey": {
+                      "type": "string"
+                    },
+                    "state": {
                       "type": "string"
                     },
                     "updatedAt": {
@@ -16332,6 +16534,12 @@ public enum RaviSchemas {
             "chat": {
               "additionalProperties": false,
               "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "agentId": {
+                  "type": "string"
+                },
                 "avatarUrl": {
                   "type": "string"
                 },
@@ -16412,6 +16620,9 @@ public enum RaviSchemas {
                 {
                   "additionalProperties": false,
                   "properties": {
+                    "actorId": {
+                      "type": "string"
+                    },
                     "actorType": {
                       "type": "string"
                     },
@@ -16422,6 +16633,9 @@ public enum RaviSchemas {
                       "type": "string"
                     },
                     "chatId": {
+                      "type": "string"
+                    },
+                    "clientMessageId": {
                       "type": "string"
                     },
                     "contactId": {
@@ -16478,7 +16692,15 @@ public enum RaviSchemas {
                     "rawSenderId": {
                       "type": "string"
                     },
+                    "revision": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991,
+                      "type": "integer"
+                    },
                     "sortKey": {
+                      "type": "string"
+                    },
+                    "state": {
                       "type": "string"
                     },
                     "updatedAt": {
@@ -17550,6 +17772,218 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let ChatsMessagesCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "actorId": {
+        "description": "Canonical actor id",
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$",
+        "type": "string"
+      },
+      "chatId": {
+        "description": "Canonical chat id",
+        "pattern": "^chat_[0-9a-f]{24}$",
+        "type": "string"
+      },
+      "clientMessageId": {
+        "description": "Caller-owned message id",
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$",
+        "type": "string"
+      },
+      "content": {
+        "description": "Message text",
+        "maxLength": 1000000,
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "required": [
+      "actorId",
+      "chatId",
+      "clientMessageId",
+      "content"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChatsMessagesCreateReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "clientMessageId": {
+        "type": "string"
+      },
+      "disposition": {
+        "enum": [
+          "created",
+          "duplicate"
+        ],
+        "type": "string"
+      },
+      "message": {
+        "additionalProperties": false,
+        "properties": {
+          "actorId": {
+            "type": "string"
+          },
+          "actorType": {
+            "const": "actor",
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "chatId": {
+            "type": "string"
+          },
+          "clientMessageId": {
+            "type": "string"
+          },
+          "contactId": {
+            "type": "string"
+          },
+          "content": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ingestedAt": {
+            "type": "number"
+          },
+          "instanceId": {
+            "type": "string"
+          },
+          "messageType": {
+            "type": "string"
+          },
+          "normalizedSenderId": {
+            "type": "string"
+          },
+          "platformIdentityId": {
+            "type": "string"
+          },
+          "providerMessageId": {
+            "type": "string"
+          },
+          "providerTimestamp": {
+            "type": "number"
+          },
+          "rawChatId": {
+            "type": "string"
+          },
+          "rawProvenance": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "rawSenderId": {
+            "type": "string"
+          },
+          "revision": {
+            "const": 1,
+            "type": "number"
+          },
+          "sortKey": {
+            "type": "string"
+          },
+          "state": {
+            "const": "created",
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "chatId",
+          "clientMessageId",
+          "actorType",
+          "actorId",
+          "content",
+          "revision",
+          "state",
+          "ingestedAt",
+          "sortKey",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "messageId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "disposition",
+      "clientMessageId",
+      "messageId",
+      "message"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let ChatsReadInputSchema = #"""
   {
     "additionalProperties": false,
@@ -17638,6 +18072,12 @@ public enum RaviSchemas {
       "chat": {
         "additionalProperties": false,
         "properties": {
+          "actorId": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
           "avatarUrl": {
             "type": "string"
           },
@@ -17717,6 +18157,9 @@ public enum RaviSchemas {
         "items": {
           "additionalProperties": false,
           "properties": {
+            "actorId": {
+              "type": "string"
+            },
             "actorType": {
               "type": "string"
             },
@@ -17727,6 +18170,9 @@ public enum RaviSchemas {
               "type": "string"
             },
             "chatId": {
+              "type": "string"
+            },
+            "clientMessageId": {
               "type": "string"
             },
             "contactId": {
@@ -17783,7 +18229,15 @@ public enum RaviSchemas {
             "rawSenderId": {
               "type": "string"
             },
+            "revision": {
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            },
             "sortKey": {
+              "type": "string"
+            },
+            "state": {
               "type": "string"
             },
             "updatedAt": {

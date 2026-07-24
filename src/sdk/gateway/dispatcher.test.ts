@@ -42,6 +42,21 @@ class GatewayDemoCommands {
     };
   }
 
+  @Command({ name: "redacted", description: "Redact sensitive command input from audits" })
+  @CommandAccess({
+    kind: "read",
+    resource: "demo",
+    action: "redacted",
+    risk: "low",
+    input: ["content"],
+    redactions: ["content"],
+  })
+  @Returns(z.object({ ok: z.literal(true) }))
+  redacted(@Arg("content") content: string) {
+    void content;
+    return { ok: true as const };
+  }
+
   @Command({ name: "void", description: "Returns nothing" })
   @CommandAccess({ kind: "read", resource: "demo", action: "void", risk: "low" })
   voidNoop(): void {
@@ -229,6 +244,21 @@ describe("dispatch — body shape (flat-only)", () => {
     });
   });
 
+  it("redacts command-declared fields from gateway audits", async () => {
+    const audits = captureAudits();
+    const result = await dispatch(
+      findCmd("demo.redacted"),
+      { content: "private message body" },
+      {},
+      { contextRecord: demoContext, emitAudit: audits.emit },
+    );
+
+    expect(result.response.status).toBe(200);
+    expect(audits.events).toHaveLength(1);
+    expect(audits.events[0]?.input).toEqual({ content: "[REDACTED]" });
+    expect(JSON.stringify(audits.events)).not.toContain("private message body");
+  });
+
   it("rejects the wrapped {args, options} form as unknown keys", async () => {
     const audits = captureAudits();
     const result = await dispatch(
@@ -386,23 +416,28 @@ describe("dispatch — scope and superadmin gating", () => {
   });
 
   it("denies unauthorized gateway calls before invoking the handler", async () => {
-    const audits = captureAudits();
-    const result = await dispatch(
-      findCmd("gated.ping"),
-      {},
-      {},
-      { contextRecord: gatewayContext([], "locked"), emitAudit: audits.emit },
-    );
+    const stateDir = await createIsolatedRaviState("gateway-api-denial-");
+    try {
+      const audits = captureAudits();
+      const result = await dispatch(
+        findCmd("gated.ping"),
+        {},
+        {},
+        { contextRecord: gatewayContext([], "locked"), emitAudit: audits.emit },
+      );
 
-    expect(result.response.status).toBe(403);
-    const body = (await result.response.json()) as {
-      error: string;
-      reason: string;
-    };
-    expect(body.error).toBe("PermissionDenied");
-    expect(body.reason).toContain("cannot execute");
-    expect(audits.events).toHaveLength(1);
-    expect(audits.events[0]?.tool).toBe("gated_ping");
+      expect(result.response.status).toBe(403);
+      const body = (await result.response.json()) as {
+        error: string;
+        reason: string;
+      };
+      expect(body.error).toBe("PermissionDenied");
+      expect(body.reason).toContain("cannot execute");
+      expect(audits.events).toHaveLength(1);
+      expect(audits.events[0]?.tool).toBe("gated_ping");
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
   });
 
   it("authorizes gateway calls through command access capabilities without legacy group grants", async () => {

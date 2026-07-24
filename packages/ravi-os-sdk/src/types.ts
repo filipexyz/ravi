@@ -2852,6 +2852,37 @@ export type ChatsBackfillProviderTimestampsInput = {
 /** Return shape for `chats.backfill-provider-timestamps`. */
 export type ChatsBackfillProviderTimestampsReturn = Record<string, unknown>;
 
+/** Input shape for `chats.ensure`. */
+export type ChatsEnsureInput = {
+  actorId: string;
+  agentId: string;
+  clientRequestId: string;
+};
+
+/** Return shape for `chats.ensure`. */
+export type ChatsEnsureReturn = {
+  chat: {
+    actorId: string;
+    agentId: string;
+    avatarUrl?: string;
+    channel: string;
+    chatType: "dm" | "group" | "room" | "thread" | "channel" | "unknown";
+    createdAt: number;
+    firstSeenAt: number;
+    id: string;
+    instanceId: string;
+    lastSeenAt: number;
+    metadata?: Record<string, unknown>;
+    normalizedChatId?: string;
+    platformChatId?: string;
+    rawProvenance?: Record<string, unknown>;
+    title?: string;
+    updatedAt: number;
+  };
+  clientRequestId: string;
+  disposition: "created" | "existing";
+};
+
 /** Input shape for `chats.list`. */
 export type ChatsListInput = {
   agent?: string;
@@ -2869,6 +2900,8 @@ export type ChatsListInput = {
 export type ChatsListReturn = {
   chats: Array<{
     chat: {
+      actorId?: string;
+      agentId?: string;
       avatarUrl?: string;
       channel: string;
       chatType: "dm" | "group" | "room" | "thread" | "channel" | "unknown";
@@ -2885,10 +2918,12 @@ export type ChatsListReturn = {
       updatedAt: number;
     };
     lastMessage: ({
+      actorId?: string;
       actorType: string;
       agentId?: string;
       channel?: string;
       chatId: string;
+      clientMessageId?: string;
       contactId?: string;
       content?: Record<string, unknown>;
       createdAt: number;
@@ -2903,7 +2938,9 @@ export type ChatsListReturn = {
       rawChatId?: string;
       rawProvenance?: Record<string, unknown>;
       rawSenderId?: string;
+      revision?: number;
       sortKey: string;
+      state?: string;
       updatedAt: number;
     }) | null;
     messageCount: number;
@@ -2911,6 +2948,8 @@ export type ChatsListReturn = {
   }>;
   items: Array<{
     chat: {
+      actorId?: string;
+      agentId?: string;
       avatarUrl?: string;
       channel: string;
       chatType: "dm" | "group" | "room" | "thread" | "channel" | "unknown";
@@ -2927,10 +2966,12 @@ export type ChatsListReturn = {
       updatedAt: number;
     };
     lastMessage: ({
+      actorId?: string;
       actorType: string;
       agentId?: string;
       channel?: string;
       chatId: string;
+      clientMessageId?: string;
       contactId?: string;
       content?: Record<string, unknown>;
       createdAt: number;
@@ -2945,7 +2986,9 @@ export type ChatsListReturn = {
       rawChatId?: string;
       rawProvenance?: Record<string, unknown>;
       rawSenderId?: string;
+      revision?: number;
       sortKey: string;
+      state?: string;
       updatedAt: number;
     }) | null;
     messageCount: number;
@@ -3213,6 +3256,47 @@ export type ChatsListsShowReturn = {
   };
 };
 
+/** Input shape for `chats.messages.create`. */
+export type ChatsMessagesCreateInput = {
+  actorId: string;
+  chatId: string;
+  clientMessageId: string;
+  content: string;
+};
+
+/** Return shape for `chats.messages.create`. */
+export type ChatsMessagesCreateReturn = {
+  clientMessageId: string;
+  disposition: "created" | "duplicate";
+  message: {
+    actorId: string;
+    actorType: "actor";
+    agentId?: string;
+    channel?: string;
+    chatId: string;
+    clientMessageId: string;
+    contactId?: string;
+    content: Record<string, unknown>;
+    createdAt: number;
+    id: string;
+    ingestedAt: number;
+    instanceId?: string;
+    messageType?: string;
+    normalizedSenderId?: string;
+    platformIdentityId?: string;
+    providerMessageId?: string;
+    providerTimestamp?: number;
+    rawChatId?: string;
+    rawProvenance?: Record<string, unknown>;
+    rawSenderId?: string;
+    revision: 1;
+    sortKey: string;
+    state: "created";
+    updatedAt: number;
+  };
+  messageId: string;
+};
+
 /** Input shape for `chats.read`. */
 export type ChatsReadInput = {
   channel?: string;
@@ -3228,6 +3312,8 @@ export type ChatsReadInput = {
 /** Return shape for `chats.read`. */
 export type ChatsReadReturn = {
   chat: {
+    actorId?: string;
+    agentId?: string;
     avatarUrl?: string;
     channel: string;
     chatType: "dm" | "group" | "room" | "thread" | "channel" | "unknown";
@@ -3244,10 +3330,12 @@ export type ChatsReadReturn = {
     updatedAt: number;
   };
   messages: Array<{
+    actorId?: string;
     actorType: string;
     agentId?: string;
     channel?: string;
     chatId: string;
+    clientMessageId?: string;
     contactId?: string;
     content?: Record<string, unknown>;
     createdAt: number;
@@ -3262,7 +3350,9 @@ export type ChatsReadReturn = {
     rawChatId?: string;
     rawProvenance?: Record<string, unknown>;
     rawSenderId?: string;
+    revision?: number;
     sortKey: string;
+    state?: string;
     updatedAt: number;
   }>;
   pagination: {

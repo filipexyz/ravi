@@ -260,6 +260,8 @@ interface ChatRow {
   instance_id: string;
   platform_chat_id: string;
   normalized_chat_id: string;
+  actor_id: string | null;
+  agent_id: string | null;
   chat_type: string;
   title: string | null;
   avatar_url: string | null;
@@ -295,16 +297,20 @@ interface ChatMessageRow {
   channel: string;
   instance_id: string;
   provider_message_id: string;
+  client_message_id: string | null;
   raw_chat_id: string;
   raw_sender_id: string | null;
   normalized_sender_id: string | null;
   actor_type: string;
+  actor_id: string | null;
   contact_id: string | null;
   agent_id: string | null;
   platform_identity_id: string | null;
   message_type: string | null;
   content_json: string | null;
   raw_provenance_json: string | null;
+  revision: number | null;
+  state: string | null;
   provider_timestamp: number | null;
   edited_at: number | null;
   deleted_at: number | null;
@@ -544,6 +550,8 @@ export interface ChatRecord {
   instanceId: string;
   platformChatId: string;
   normalizedChatId: string;
+  actorId?: string;
+  agentId?: string;
   chatType: ChatType;
   title?: string;
   avatarUrl?: string;
@@ -566,6 +574,19 @@ export interface UpsertChatInput {
   metadata?: Record<string, unknown> | null;
   rawProvenance?: Record<string, unknown> | null;
   seenAt?: number;
+}
+
+export interface EnsureActorAgentChatInput {
+  actorId: string;
+  agentId: string;
+  clientRequestId: string;
+  seenAt?: number;
+}
+
+export interface EnsureActorAgentChatResult {
+  chat: ChatRecord;
+  created: boolean;
+  clientRequestId: string;
 }
 
 export interface CanonicalizeDmChatForContactInput {
@@ -603,16 +624,20 @@ export interface ChatMessageRecord {
   channel: string;
   instanceId: string;
   providerMessageId: string;
+  clientMessageId?: string;
   rawChatId: string;
   rawSenderId?: string;
   normalizedSenderId?: string;
   actorType: "contact" | "agent" | "system" | "unknown" | string;
+  actorId?: string;
   contactId?: string;
   agentId?: string;
   platformIdentityId?: string;
   messageType?: string;
   content?: Record<string, unknown>;
   rawProvenance?: Record<string, unknown>;
+  revision?: number;
+  state?: string;
   providerTimestamp?: number;
   editedAt?: number;
   deletedAt?: number;
@@ -685,6 +710,22 @@ export interface UpsertChatMessageResult {
   canonicalMessageId: string;
   providerMessageId: string;
   providerTimestamp?: number;
+}
+
+export interface CreateCanonicalActorMessageInput {
+  chatId: string;
+  actorId: string;
+  clientMessageId: string;
+  content: Record<string, unknown>;
+  messageType?: string | null;
+  createdAt?: number;
+}
+
+export interface CreateCanonicalActorMessageResult {
+  message: ChatMessageWithSortKey;
+  created: boolean;
+  canonicalMessageId: string;
+  clientMessageId: string;
 }
 
 export type ChatReadingListOwnerType = "user" | "agent" | "team" | "system" | "workflow" | string;
@@ -1186,6 +1227,8 @@ function getDb(): Database {
       instance_id TEXT NOT NULL DEFAULT '',
       platform_chat_id TEXT NOT NULL,
       normalized_chat_id TEXT NOT NULL,
+      actor_id TEXT,
+      agent_id TEXT,
       chat_type TEXT NOT NULL DEFAULT 'unknown',
       title TEXT,
       avatar_url TEXT,
@@ -1241,16 +1284,20 @@ function getDb(): Database {
       channel TEXT NOT NULL,
       instance_id TEXT NOT NULL DEFAULT '',
       provider_message_id TEXT NOT NULL,
+      client_message_id TEXT,
       raw_chat_id TEXT NOT NULL,
       raw_sender_id TEXT,
       normalized_sender_id TEXT,
       actor_type TEXT NOT NULL DEFAULT 'unknown',
+      actor_id TEXT,
       contact_id TEXT,
       agent_id TEXT,
       platform_identity_id TEXT,
       message_type TEXT,
       content_json TEXT,
       raw_provenance_json TEXT,
+      revision INTEGER,
+      state TEXT,
       provider_timestamp INTEGER,
       edited_at INTEGER,
       deleted_at INTEGER,
@@ -3165,6 +3212,12 @@ function ensureIdentityChatMigrations(database: Database): void {
   ensureColumn(database, "session_events", "normalized_sender_id", "TEXT");
   ensureColumn(database, "session_events", "identity_confidence", "REAL");
   ensureColumn(database, "session_events", "identity_provenance_json", "TEXT");
+  ensureColumn(database, "chats", "actor_id", "TEXT");
+  ensureColumn(database, "chats", "agent_id", "TEXT");
+  ensureColumn(database, "chat_messages", "client_message_id", "TEXT");
+  ensureColumn(database, "chat_messages", "actor_id", "TEXT");
+  ensureColumn(database, "chat_messages", "revision", "INTEGER");
+  ensureColumn(database, "chat_messages", "state", "TEXT");
   ensureColumn(database, "chat_messages", "edited_at", "INTEGER");
   ensureColumn(database, "chat_messages", "deleted_at", "INTEGER");
 
@@ -3172,6 +3225,12 @@ function ensureIdentityChatMigrations(database: Database): void {
     "CREATE INDEX IF NOT EXISTS idx_message_metadata_canonical_chat ON message_metadata(canonical_chat_id)",
   );
   database.exec("CREATE INDEX IF NOT EXISTS idx_session_events_canonical_chat ON session_events(canonical_chat_id)");
+  database.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_chats_actor_agent ON chats(actor_id, agent_id) WHERE actor_id IS NOT NULL AND agent_id IS NOT NULL",
+  );
+  database.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_messages_client_idempotency ON chat_messages(chat_id, actor_id, client_message_id) WHERE actor_id IS NOT NULL AND client_message_id IS NOT NULL",
+  );
 
   // sessions/attach owns the output attachment. Remove legacy focus state
   // so old focus rows cannot surprise a future downgrade/inspection path.
@@ -3477,6 +3536,8 @@ function rowToChat(row: ChatRow): ChatRecord {
     instanceId: row.instance_id,
     platformChatId: row.platform_chat_id,
     normalizedChatId: row.normalized_chat_id,
+    actorId: row.actor_id ?? undefined,
+    agentId: row.agent_id ?? undefined,
     chatType: row.chat_type as ChatType,
     title: row.title ?? undefined,
     avatarUrl: row.avatar_url ?? undefined,
@@ -3520,16 +3581,20 @@ function rowToChatMessage(row: ChatMessageRow): ChatMessageRecord {
     channel: row.channel,
     instanceId: row.instance_id,
     providerMessageId: row.provider_message_id,
+    clientMessageId: row.client_message_id ?? undefined,
     rawChatId: row.raw_chat_id,
     rawSenderId: row.raw_sender_id ?? undefined,
     normalizedSenderId: row.normalized_sender_id ?? undefined,
     actorType: row.actor_type,
+    actorId: row.actor_id ?? undefined,
     contactId: row.contact_id ?? undefined,
     agentId: row.agent_id ?? undefined,
     platformIdentityId: row.platform_identity_id ?? undefined,
     messageType: row.message_type ?? undefined,
     content: parseJsonRecord(row.content_json),
     rawProvenance: parseJsonRecord(row.raw_provenance_json),
+    revision: row.revision ?? undefined,
+    state: row.state ?? undefined,
     providerTimestamp: row.provider_timestamp ?? undefined,
     editedAt: row.edited_at ?? undefined,
     deletedAt: row.deleted_at ?? undefined,
@@ -3704,6 +3769,82 @@ function upsertChat(database: Database, input: UpsertChatInput): ChatRecord {
     .prepare("SELECT * FROM chats WHERE channel = ? AND instance_id = ? AND normalized_chat_id = ?")
     .get(channel, instanceId, normalizedChatId) as ChatRow;
   return rowToChat(row);
+}
+
+const OPAQUE_CANONICAL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$/;
+const CANONICAL_CHAT_ID_PATTERN = /^chat_[0-9a-f]{24}$/;
+
+function normalizeOpaqueCanonicalId(value: string, label: string): string {
+  const normalized = value.trim();
+  if (!OPAQUE_CANONICAL_ID_PATTERN.test(normalized)) {
+    throw new Error(`${label} must be an opaque URL-safe identifier of 128 characters or fewer`);
+  }
+  return normalized;
+}
+
+function normalizeCanonicalChatId(value: string): string {
+  const normalized = value.trim();
+  if (!CANONICAL_CHAT_ID_PATTERN.test(normalized)) {
+    throw new Error("chatId must use the canonical chat_<24 hex> form");
+  }
+  return normalized;
+}
+
+function normalizeCanonicalMessageType(value: string | null | undefined): string {
+  const normalized = (value ?? "text").trim();
+  if (!normalized) throw new Error("messageType is required");
+  if (normalized.length > 128) throw new Error("messageType must be 128 characters or fewer");
+  return normalized;
+}
+
+function ensureActorAgentChat(database: Database, input: EnsureActorAgentChatInput): EnsureActorAgentChatResult {
+  const actorId = normalizeOpaqueCanonicalId(input.actorId, "actorId");
+  const agentId = normalizeOpaqueCanonicalId(input.agentId, "agentId");
+  const clientRequestId = normalizeOpaqueCanonicalId(input.clientRequestId, "clientRequestId");
+  const agent = database.prepare("SELECT id FROM agents WHERE id = ?").get(agentId) as { id: string } | undefined;
+  if (!agent) throw new Error(`Agent not found: ${agentId}`);
+
+  const existing = database.prepare("SELECT * FROM chats WHERE actor_id = ? AND agent_id = ?").get(actorId, agentId) as
+    | ChatRow
+    | undefined;
+  if (existing) {
+    return {
+      chat: rowToChat(existing),
+      created: false,
+      clientRequestId,
+    };
+  }
+
+  const now = input.seenAt ?? Date.now();
+  const channel = "ravi";
+  const instanceId = "";
+  const normalizedChatId = semanticId("actor_agent", [actorId, agentId]);
+  const id = semanticId("chat", [channel, instanceId, normalizedChatId]);
+  const inserted = database
+    .prepare(
+      `
+      INSERT INTO chats (
+        id, channel, instance_id, platform_chat_id, normalized_chat_id,
+        actor_id, agent_id, chat_type, title, avatar_url, metadata_json, raw_provenance_json,
+        first_seen_at, last_seen_at, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'dm', NULL, NULL, NULL, NULL, ?, ?, ?, ?)
+      ON CONFLICT(actor_id, agent_id)
+        WHERE actor_id IS NOT NULL AND agent_id IS NOT NULL
+        DO NOTHING
+    `,
+    )
+    .run(id, channel, instanceId, normalizedChatId, normalizedChatId, actorId, agentId, now, now, now, now);
+
+  const row = database.prepare("SELECT * FROM chats WHERE actor_id = ? AND agent_id = ?").get(actorId, agentId) as
+    | ChatRow
+    | undefined;
+  if (!row) throw new Error(`Chat ensure failed for actor ${actorId} and agent ${agentId}`);
+  return {
+    chat: rowToChat(row),
+    created: inserted.changes > 0,
+    clientRequestId,
+  };
 }
 
 function uniqueStrings(values: Array<string | null | undefined>): string[] {
@@ -4377,6 +4518,140 @@ function upsertChatMessage(database: Database, input: UpsertChatMessageInput): U
     canonicalMessageId: message.id,
     providerMessageId: message.providerMessageId,
     ...(message.providerTimestamp !== undefined ? { providerTimestamp: message.providerTimestamp } : {}),
+  };
+}
+
+function sortCanonicalJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => sortCanonicalJsonValue(item));
+  if (!value || typeof value !== "object") return value;
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+    const item = (value as Record<string, unknown>)[key];
+    if (item === undefined || typeof item === "function" || typeof item === "symbol") continue;
+    sorted[key] = sortCanonicalJsonValue(item);
+  }
+  return sorted;
+}
+
+function canonicalJsonRecord(value: Record<string, unknown>): string {
+  if (Object.keys(value).length === 0) throw new Error("content is required");
+  const serialized = JSON.stringify(sortCanonicalJsonValue(value));
+  if (!serialized || serialized === "{}") throw new Error("content is required");
+  return serialized;
+}
+
+function createCanonicalActorMessage(
+  database: Database,
+  input: CreateCanonicalActorMessageInput,
+): CreateCanonicalActorMessageResult {
+  const chatId = normalizeCanonicalChatId(input.chatId);
+  const actorId = normalizeOpaqueCanonicalId(input.actorId, "actorId");
+  const clientMessageId = normalizeOpaqueCanonicalId(input.clientMessageId, "clientMessageId");
+  const messageType = normalizeCanonicalMessageType(input.messageType);
+  const contentJson = canonicalJsonRecord(input.content);
+  const chat = database.prepare("SELECT * FROM chats WHERE id = ?").get(chatId) as ChatRow | undefined;
+  if (!chat) throw new Error(`Chat not found: ${chatId}`);
+  if (!chat.actor_id || !chat.agent_id) {
+    throw new Error(`Chat does not support actor-authored messages: ${chatId}`);
+  }
+  if (chat.actor_id !== actorId) {
+    throw new Error(`Actor ${actorId} does not own chat ${chatId}`);
+  }
+
+  const existing = database
+    .prepare(
+      `
+      SELECT *
+      FROM chat_messages
+      WHERE chat_id = ? AND actor_id = ? AND client_message_id = ?
+    `,
+    )
+    .get(chatId, actorId, clientMessageId) as ChatMessageRow | undefined;
+  if (existing) {
+    if (existing.message_type !== messageType || existing.content_json !== contentJson) {
+      throw new Error(
+        `clientMessageId ${clientMessageId} was already used with different message content in chat ${chatId}`,
+      );
+    }
+    return {
+      message: {
+        ...rowToChatMessage(existing),
+        sortKey: chatMessageSortKey(existing),
+      },
+      created: false,
+      canonicalMessageId: existing.id,
+      clientMessageId,
+    };
+  }
+
+  const now = input.createdAt ?? Date.now();
+  const providerMessageId = semanticId("client_message", [chatId, actorId, clientMessageId]);
+  const id = semanticId("cm", [chat.channel, chat.instance_id, chatId, providerMessageId]);
+  const inserted = database
+    .prepare(
+      `
+      INSERT INTO chat_messages (
+        id, chat_id, channel, instance_id, provider_message_id, client_message_id, raw_chat_id,
+        raw_sender_id, normalized_sender_id, actor_type, actor_id, contact_id, agent_id,
+        platform_identity_id, message_type, content_json, raw_provenance_json, revision, state,
+        provider_timestamp, edited_at, deleted_at, ingested_at, created_at, updated_at
+      )
+      VALUES (
+        ?, ?, ?, ?, ?, ?, ?,
+        NULL, NULL, 'actor', ?, NULL, NULL,
+        NULL, ?, ?, NULL, 1, 'created',
+        ?, NULL, NULL, ?, ?, ?
+      )
+      ON CONFLICT(chat_id, actor_id, client_message_id)
+        WHERE actor_id IS NOT NULL AND client_message_id IS NOT NULL
+        DO NOTHING
+    `,
+    )
+    .run(
+      id,
+      chatId,
+      chat.channel,
+      chat.instance_id,
+      providerMessageId,
+      clientMessageId,
+      chat.platform_chat_id,
+      actorId,
+      messageType,
+      contentJson,
+      now,
+      now,
+      now,
+      now,
+    );
+
+  const row = database
+    .prepare(
+      `
+      SELECT *
+      FROM chat_messages
+      WHERE chat_id = ? AND actor_id = ? AND client_message_id = ?
+    `,
+    )
+    .get(chatId, actorId, clientMessageId) as ChatMessageRow | undefined;
+  if (!row) throw new Error(`Canonical message create failed for chat ${chatId}`);
+  if (row.message_type !== messageType || row.content_json !== contentJson) {
+    throw new Error(
+      `clientMessageId ${clientMessageId} was already used with different message content in chat ${chatId}`,
+    );
+  }
+  if (inserted.changes > 0) {
+    database
+      .prepare("UPDATE chats SET last_seen_at = MAX(last_seen_at, ?), updated_at = ? WHERE id = ?")
+      .run(now, now, chatId);
+  }
+  return {
+    message: {
+      ...rowToChatMessage(row),
+      sortKey: chatMessageSortKey(row),
+    },
+    created: inserted.changes > 0,
+    canonicalMessageId: row.id,
+    clientMessageId,
   };
 }
 
@@ -5575,6 +5850,12 @@ export function dbUpsertChat(input: UpsertChatInput): ChatRecord {
   return upsertChat(getDb(), input);
 }
 
+export function dbEnsureActorAgentChat(input: EnsureActorAgentChatInput): EnsureActorAgentChatResult {
+  return executeWrite(getDb(), (database) => ensureActorAgentChat(database, input), {
+    label: "ensure_actor_agent_chat",
+  });
+}
+
 export function dbCanonicalizeDmChatForContact(input: CanonicalizeDmChatForContactInput): ChatRecord {
   return executeWrite(getDb(), (database) => canonicalizeDmChatForContact(database, input), {
     label: "canonicalize_dm_chat_for_contact",
@@ -5837,6 +6118,14 @@ export function dbUpsertChatParticipant(input: UpsertChatParticipantInput): Chat
 
 export function dbUpsertChatMessage(input: UpsertChatMessageInput): UpsertChatMessageResult {
   return upsertChatMessage(getDb(), input);
+}
+
+export function dbCreateCanonicalActorMessage(
+  input: CreateCanonicalActorMessageInput,
+): CreateCanonicalActorMessageResult {
+  return executeWrite(getDb(), (database) => createCanonicalActorMessage(database, input), {
+    label: "create_canonical_actor_message",
+  });
 }
 
 export function dbGetChatMessage(id: string): ChatMessageRecord | null {
