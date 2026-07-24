@@ -187,22 +187,120 @@ export type AgentsListInput = {
 
 /** Return shape for `agents.list`. */
 export type AgentsListReturn = {
-  agents: Array<Record<string, unknown>>;
+  agents: Array<{
+    allowedSessions?: string[];
+    contactScope?: string;
+    cwd: string;
+    debounceMs?: number;
+    defaults?: (Record<string, unknown>) | null;
+    dmScope?: "main" | "per-peer" | "per-channel-peer" | "per-account-channel-peer";
+    effectiveModel: string | null;
+    effectiveProvider: string;
+    effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+    groupDebounceMs?: number;
+    heartbeat?: {
+      accountId?: string;
+      activeEnd?: string;
+      activeStart?: string;
+      enabled: boolean;
+      intervalMs: number;
+      lastRunAt?: number;
+      model?: string;
+    };
+    id: string;
+    isDefault: boolean;
+    matrixAccount?: string;
+    memoryModel?: string;
+    mode?: "active" | "sentinel";
+    model?: string;
+    modelPresetId: string | null;
+    modelPresetVersion: number | null;
+    modelSource: ("agent_preset" | "agent_default" | "global_default") | null;
+    name?: string;
+    provider?: string;
+    remote?: string;
+    remoteUser?: string;
+    settingSources?: Array<"user" | "project">;
+    specMode?: boolean;
+    systemPromptAppend?: string;
+    tags: Array<{
+      assetId: string;
+      assetType: "agent" | "automation" | "app" | "session" | "task" | "project" | "profile" | "contact" | "chat" | "route" | "instance" | "artifact" | "insight" | "workflow_spec" | "workflow_run" | "workflow_node" | "cron_job" | "trigger" | "hook" | "task_automation" | "observer_rule" | "observer_binding" | "observer_profile" | "command" | "skill" | "skill_gate_rule" | "context" | "call_profile" | "call_request" | "call_voice_agent" | "call_tool" | "outbound_queue" | "outbound_entry" | "spec" | "devin_session";
+      createdAt: number;
+      createdBy?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      source: string;
+      tagId: string;
+      tagSlug: string;
+      updatedAt: number;
+      updatedBy?: string;
+    }>;
+  }>;
   defaultAgent: string;
-  filters: Record<string, unknown>;
-  items: Array<Record<string, unknown>>;
+  filters: {
+    tag: string | null;
+  };
+  items: Array<{
+    allowedSessions?: string[];
+    contactScope?: string;
+    cwd: string;
+    debounceMs?: number;
+    defaults?: (Record<string, unknown>) | null;
+    dmScope?: "main" | "per-peer" | "per-channel-peer" | "per-account-channel-peer";
+    effectiveModel: string | null;
+    effectiveProvider: string;
+    effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+    groupDebounceMs?: number;
+    heartbeat?: {
+      accountId?: string;
+      activeEnd?: string;
+      activeStart?: string;
+      enabled: boolean;
+      intervalMs: number;
+      lastRunAt?: number;
+      model?: string;
+    };
+    id: string;
+    isDefault: boolean;
+    matrixAccount?: string;
+    memoryModel?: string;
+    mode?: "active" | "sentinel";
+    model?: string;
+    modelPresetId: string | null;
+    modelPresetVersion: number | null;
+    modelSource: ("agent_preset" | "agent_default" | "global_default") | null;
+    name?: string;
+    provider?: string;
+    remote?: string;
+    remoteUser?: string;
+    settingSources?: Array<"user" | "project">;
+    specMode?: boolean;
+    systemPromptAppend?: string;
+    tags: Array<{
+      assetId: string;
+      assetType: "agent" | "automation" | "app" | "session" | "task" | "project" | "profile" | "contact" | "chat" | "route" | "instance" | "artifact" | "insight" | "workflow_spec" | "workflow_run" | "workflow_node" | "cron_job" | "trigger" | "hook" | "task_automation" | "observer_rule" | "observer_binding" | "observer_profile" | "command" | "skill" | "skill_gate_rule" | "context" | "call_profile" | "call_request" | "call_voice_agent" | "call_tool" | "outbound_queue" | "outbound_entry" | "spec" | "devin_session";
+      createdAt: number;
+      createdBy?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      source: string;
+      tagId: string;
+      tagSlug: string;
+      updatedAt: number;
+      updatedBy?: string;
+    }>;
+  }>;
   pagination: {
-    hasMore: boolean;
+    hasMore?: boolean;
     limit: number;
-    nextCommand: string | null;
-    nextOffset: number | null;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `agents.permissions`. */
@@ -315,9 +413,66 @@ export type AgentsShowInput = {
 
 /** Return shape for `agents.show`. */
 export type AgentsShowReturn = {
-  agent: Record<string, unknown>;
+  agent: {
+    allowedSessions?: string[];
+    contactScope?: string;
+    cwd: string;
+    debounceMs?: number;
+    defaults?: (Record<string, unknown>) | null;
+    dmScope?: "main" | "per-peer" | "per-channel-peer" | "per-account-channel-peer";
+    effectiveModel: string | null;
+    effectiveProvider: string;
+    effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+    groupDebounceMs?: number;
+    heartbeat?: {
+      accountId?: string;
+      activeEnd?: string;
+      activeStart?: string;
+      enabled: boolean;
+      intervalMs: number;
+      lastRunAt?: number;
+      model?: string;
+    };
+    id: string;
+    isDefault: boolean;
+    matrixAccount?: string;
+    memoryModel?: string;
+    mode?: "active" | "sentinel";
+    model?: string;
+    modelPresetId: string | null;
+    modelPresetVersion: number | null;
+    modelSource: ("agent_preset" | "agent_default" | "global_default") | null;
+    name?: string;
+    provider?: string;
+    remote?: string;
+    remoteUser?: string;
+    settingSources?: Array<"user" | "project">;
+    specMode?: boolean;
+    systemPromptAppend?: string;
+    tags: Array<{
+      assetId: string;
+      assetType: "agent" | "automation" | "app" | "session" | "task" | "project" | "profile" | "contact" | "chat" | "route" | "instance" | "artifact" | "insight" | "workflow_spec" | "workflow_run" | "workflow_node" | "cron_job" | "trigger" | "hook" | "task_automation" | "observer_rule" | "observer_binding" | "observer_profile" | "command" | "skill" | "skill_gate_rule" | "context" | "call_profile" | "call_request" | "call_voice_agent" | "call_tool" | "outbound_queue" | "outbound_entry" | "spec" | "devin_session";
+      createdAt: number;
+      createdBy?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      source: string;
+      tagId: string;
+      tagSlug: string;
+      updatedAt: number;
+      updatedBy?: string;
+    }>;
+  };
   permissionsCommand: string;
-  [k: string]: unknown;
+  runtimePermissions: ({
+    capabilities?: Array<string | ({
+      objectId?: string;
+      objectType?: string;
+      permission?: string;
+      source?: string;
+    })>;
+    profile?: "bootstrap" | "full-access";
+  }) | null;
 };
 
 /** Input shape for `agents.spec-mode`. */
@@ -2711,7 +2866,102 @@ export type ChatsListInput = {
 };
 
 /** Return shape for `chats.list`. */
-export type ChatsListReturn = Record<string, unknown>;
+export type ChatsListReturn = {
+  chats: Array<{
+    chat: {
+      avatarUrl?: string;
+      channel: string;
+      chatType: "dm" | "group" | "room" | "thread" | "channel" | "unknown";
+      createdAt: number;
+      firstSeenAt: number;
+      id: string;
+      instanceId: string;
+      lastSeenAt: number;
+      metadata?: Record<string, unknown>;
+      normalizedChatId?: string;
+      platformChatId?: string;
+      rawProvenance?: Record<string, unknown>;
+      title?: string;
+      updatedAt: number;
+    };
+    lastMessage: ({
+      actorType: string;
+      agentId?: string;
+      channel?: string;
+      chatId: string;
+      contactId?: string;
+      content?: Record<string, unknown>;
+      createdAt: number;
+      id: string;
+      ingestedAt: number;
+      instanceId?: string;
+      messageType?: string;
+      normalizedSenderId?: string;
+      platformIdentityId?: string;
+      providerMessageId?: string;
+      providerTimestamp?: number;
+      rawChatId?: string;
+      rawProvenance?: Record<string, unknown>;
+      rawSenderId?: string;
+      sortKey: string;
+      updatedAt: number;
+    }) | null;
+    messageCount: number;
+    participantCount: number;
+  }>;
+  items: Array<{
+    chat: {
+      avatarUrl?: string;
+      channel: string;
+      chatType: "dm" | "group" | "room" | "thread" | "channel" | "unknown";
+      createdAt: number;
+      firstSeenAt: number;
+      id: string;
+      instanceId: string;
+      lastSeenAt: number;
+      metadata?: Record<string, unknown>;
+      normalizedChatId?: string;
+      platformChatId?: string;
+      rawProvenance?: Record<string, unknown>;
+      title?: string;
+      updatedAt: number;
+    };
+    lastMessage: ({
+      actorType: string;
+      agentId?: string;
+      channel?: string;
+      chatId: string;
+      contactId?: string;
+      content?: Record<string, unknown>;
+      createdAt: number;
+      id: string;
+      ingestedAt: number;
+      instanceId?: string;
+      messageType?: string;
+      normalizedSenderId?: string;
+      platformIdentityId?: string;
+      providerMessageId?: string;
+      providerTimestamp?: number;
+      rawChatId?: string;
+      rawProvenance?: Record<string, unknown>;
+      rawSenderId?: string;
+      sortKey: string;
+      updatedAt: number;
+    }) | null;
+    messageCount: number;
+    participantCount: number;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  total: number;
+};
 
 /** Input shape for `chats.lists.add`. */
 export type ChatsListsAddInput = {
@@ -2976,7 +3226,56 @@ export type ChatsReadInput = {
 };
 
 /** Return shape for `chats.read`. */
-export type ChatsReadReturn = Record<string, unknown>;
+export type ChatsReadReturn = {
+  chat: {
+    avatarUrl?: string;
+    channel: string;
+    chatType: "dm" | "group" | "room" | "thread" | "channel" | "unknown";
+    createdAt: number;
+    firstSeenAt: number;
+    id: string;
+    instanceId: string;
+    lastSeenAt: number;
+    metadata?: Record<string, unknown>;
+    normalizedChatId?: string;
+    platformChatId?: string;
+    rawProvenance?: Record<string, unknown>;
+    title?: string;
+    updatedAt: number;
+  };
+  messages: Array<{
+    actorType: string;
+    agentId?: string;
+    channel?: string;
+    chatId: string;
+    contactId?: string;
+    content?: Record<string, unknown>;
+    createdAt: number;
+    id: string;
+    ingestedAt: number;
+    instanceId?: string;
+    messageType?: string;
+    normalizedSenderId?: string;
+    platformIdentityId?: string;
+    providerMessageId?: string;
+    providerTimestamp?: number;
+    rawChatId?: string;
+    rawProvenance?: Record<string, unknown>;
+    rawSenderId?: string;
+    sortKey: string;
+    updatedAt: number;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  total: number;
+};
 
 /** Input shape for `cloud.projects.create`. */
 export type CloudProjectsCreateInput = {

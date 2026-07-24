@@ -268,14 +268,14 @@ public struct AgentsListOptions: Codable, Sendable {
 }
 
 public struct AgentsListReturn: Codable, Sendable {
-  public var agents: [[String: RaviJSON]]
+  public var agents: [RaviJSON]
   public var defaultAgent: String
-  public var filters: [String: RaviJSON]
-  public var items: [[String: RaviJSON]]
+  public var filters: RaviJSON
+  public var items: [RaviJSON]
   public var pagination: RaviJSON
   public var total: Double
 
-  public init(agents: [[String: RaviJSON]], defaultAgent: String, filters: [String: RaviJSON], items: [[String: RaviJSON]], pagination: RaviJSON, total: Double) {
+  public init(agents: [RaviJSON], defaultAgent: String, filters: RaviJSON, items: [RaviJSON], pagination: RaviJSON, total: Double) {
     self.agents = agents
     self.defaultAgent = defaultAgent
     self.filters = filters
@@ -442,17 +442,20 @@ public struct AgentsSetReturn: Codable, Sendable {
 }
 
 public struct AgentsShowReturn: Codable, Sendable {
-  public var agent: [String: RaviJSON]
+  public var agent: RaviJSON
   public var permissionsCommand: String
+  public var runtimePermissions: RaviJSON
 
-  public init(agent: [String: RaviJSON], permissionsCommand: String) {
+  public init(agent: RaviJSON, permissionsCommand: String, runtimePermissions: RaviJSON) {
     self.agent = agent
     self.permissionsCommand = permissionsCommand
+    self.runtimePermissions = runtimePermissions
   }
 
   enum CodingKeys: String, CodingKey {
     case agent = "agent"
     case permissionsCommand = "permissionsCommand"
+    case runtimePermissions = "runtimePermissions"
   }
 }
 
@@ -3407,22 +3410,28 @@ public struct ChannelsStartReturn: Codable, Sendable {
 
 public struct ChannelsStatusReturn: Codable, Sendable {
   public var channels: RaviJSON
+  public var health: RaviJSON?
   public var pm2Available: Bool
   public var processName: String
   public var processes: [RaviJSON]
+  public var runner: RaviJSON?
 
-  public init(channels: RaviJSON, pm2Available: Bool, processName: String, processes: [RaviJSON]) {
+  public init(channels: RaviJSON, health: RaviJSON? = nil, pm2Available: Bool, processName: String, processes: [RaviJSON], runner: RaviJSON? = nil) {
     self.channels = channels
+    self.health = health
     self.pm2Available = pm2Available
     self.processName = processName
     self.processes = processes
+    self.runner = runner
   }
 
   enum CodingKeys: String, CodingKey {
     case channels = "channels"
+    case health = "health"
     case pm2Available = "pm2Available"
     case processName = "processName"
     case processes = "processes"
+    case runner = "runner"
   }
 }
 
@@ -3554,7 +3563,26 @@ public struct ChatsListOptions: Codable, Sendable {
   }
 }
 
-public typealias ChatsListReturn = [String: RaviJSON]
+public struct ChatsListReturn: Codable, Sendable {
+  public var chats: [RaviJSON]
+  public var items: [RaviJSON]
+  public var pagination: RaviJSON
+  public var total: Double
+
+  public init(chats: [RaviJSON], items: [RaviJSON], pagination: RaviJSON, total: Double) {
+    self.chats = chats
+    self.items = items
+    self.pagination = pagination
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case chats = "chats"
+    case items = "items"
+    case pagination = "pagination"
+    case total = "total"
+  }
+}
 
 public struct ChatsListsAddOptions: Codable, Sendable {
   public var channel: String?
@@ -4026,7 +4054,26 @@ public struct ChatsReadOptions: Codable, Sendable {
   }
 }
 
-public typealias ChatsReadReturn = [String: RaviJSON]
+public struct ChatsReadReturn: Codable, Sendable {
+  public var chat: RaviJSON
+  public var messages: [RaviJSON]
+  public var pagination: RaviJSON
+  public var total: Double
+
+  public init(chat: RaviJSON, messages: [RaviJSON], pagination: RaviJSON, total: Double) {
+    self.chat = chat
+    self.messages = messages
+    self.pagination = pagination
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case chat = "chat"
+    case messages = "messages"
+    case pagination = "pagination"
+    case total = "total"
+  }
+}
 
 public struct CloudProjectsCreateOptions: Codable, Sendable {
   public var console: String?

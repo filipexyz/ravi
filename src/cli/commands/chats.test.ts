@@ -14,7 +14,7 @@ import {
 import { attachTagSlugsToAsset } from "../../tags/helpers.js";
 import { runWithContext } from "../context.js";
 import { getArgsMetadata, getCommandAccessMetadata } from "../decorators.js";
-import { ChatReadingListCommands, ChatsCommands } from "./chats.js";
+import { ChatReadingListCommands, ChatsCommands, chatsListReturnSchema, chatsReadReturnSchema } from "./chats.js";
 
 let stateDir: string | null = null;
 
@@ -92,13 +92,21 @@ describe("ChatsCommands --json", () => {
       chats.read(chat.id, undefined, undefined, undefined, "10", undefined, undefined, true);
     });
     expect(readPayload.total).toBe(2);
+    expect(chatsReadReturnSchema.safeParse(readPayload).success).toBe(true);
     expect(JSON.stringify(readPayload)).not.toContain("messageSecret");
     expect((readPayload.messages as Array<Record<string, unknown>>)[0]!.rawProvenance).toBeUndefined();
 
     const rawReadPayload = captureJson(() => {
       chats.read(chat.id, undefined, undefined, undefined, "10", undefined, undefined, true, true);
     });
+    expect(chatsReadReturnSchema.safeParse(rawReadPayload).success).toBe(true);
     expect(JSON.stringify(rawReadPayload)).toContain("messageSecret");
+
+    const listPayload = captureJson(() => {
+      chats.list(undefined, undefined, undefined, undefined, undefined, undefined, "10", undefined, true);
+    });
+    expect(chatsListReturnSchema.safeParse(listPayload).success).toBe(true);
+    expect(chatsListReturnSchema.safeParse({ ...listPayload, unexpected: true }).success).toBe(false);
 
     const createdPayload = captureJson(() => {
       lists.create("crm-analysis-pending", "agent:ravi-crm", "CRM analysis queue", undefined, undefined, true);
