@@ -1,0 +1,1858 @@
+{
+  "$defs": {
+    "ChannelApprovalRequestedPayload": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "action": {
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "type": "string"
+        },
+        "approvalId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "type": "string"
+        },
+        "risk": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "approvalId",
+        "action"
+      ],
+      "type": "object"
+    },
+    "ChannelApprovalResolvedPayload": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "approvalId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "decision": {
+          "enum": [
+            "approved",
+            "denied",
+            "cancelled",
+            "expired"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "approvalId",
+        "decision"
+      ],
+      "type": "object"
+    },
+    "ChannelArtifactContentBlock": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "artifactId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "mediaType": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "type": {
+          "const": "artifact",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "artifactId"
+      ],
+      "type": "object"
+    },
+    "ChannelAssistantDeltaPayload": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "blockIndex": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "deltaSequence": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "blockIndex",
+        "deltaSequence",
+        "text"
+      ],
+      "type": "object"
+    },
+    "ChannelContent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "oneOf": [
+          {
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "type": {
+                "const": "text",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "text"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "artifactId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                "type": "string"
+              },
+              "mediaType": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "sizeBytes": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": {
+                "const": "artifact",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "artifactId"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "maxItems": 256,
+      "minItems": 1,
+      "type": "array"
+    },
+    "ChannelInterruptRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "binding": {
+          "properties": {
+            "agentId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "channelInstanceId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "chatId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "messageId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "sessionId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "turnId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "channelInstanceId",
+            "agentId",
+            "chatId",
+            "messageId",
+            "sessionId",
+            "turnId"
+          ],
+          "type": "object"
+        },
+        "idempotencyKey": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "protocol": {
+          "const": "ravi.channel.runtime-events",
+          "type": "string"
+        },
+        "requestedAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "type": "string"
+        },
+        "requestId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "protocol",
+        "schemaVersion",
+        "requestId",
+        "idempotencyKey",
+        "binding",
+        "requestedAt"
+      ],
+      "type": "object"
+    },
+    "ChannelInterruptResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "acceptedAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "type": "string"
+        },
+        "disposition": {
+          "enum": [
+            "requested",
+            "duplicate",
+            "rejected"
+          ],
+          "type": "string"
+        },
+        "error": {
+          "properties": {
+            "category": {
+              "enum": [
+                "validation",
+                "authentication",
+                "authorization",
+                "capacity",
+                "availability",
+                "internal"
+              ],
+              "type": "string"
+            },
+            "code": {
+              "enum": [
+                "INVALID_REQUEST",
+                "IDEMPOTENCY_CONFLICT",
+                "UNAUTHENTICATED",
+                "PERMISSION_DENIED",
+                "LOCAL_PERMISSION_DENIED",
+                "NOT_FOUND",
+                "RATE_LIMITED",
+                "OVERLOADED",
+                "UNAVAILABLE",
+                "INTERNAL"
+              ],
+              "type": "string"
+            },
+            "correlationId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "retryAfterMs": {
+              "exclusiveMinimum": 0,
+              "maximum": 86400000,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "code",
+            "category",
+            "retryable"
+          ],
+          "type": "object"
+        },
+        "protocol": {
+          "const": "ravi.channel.runtime-events",
+          "type": "string"
+        },
+        "requestId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "protocol",
+        "schemaVersion",
+        "requestId",
+        "disposition",
+        "acceptedAt"
+      ],
+      "type": "object"
+    },
+    "ChannelRuntimeCorrelation": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "binding": {
+          "properties": {
+            "agentId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "channelInstanceId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "chatId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "messageId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "sessionId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "turnId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "channelInstanceId",
+            "agentId",
+            "chatId",
+            "messageId",
+            "sessionId",
+            "turnId"
+          ],
+          "type": "object"
+        },
+        "causationId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "correlationId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "ingressRequestId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "correlationId",
+        "ingressRequestId",
+        "binding"
+      ],
+      "type": "object"
+    },
+    "ChannelRuntimeReadbackRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "binding": {
+          "properties": {
+            "agentId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "channelInstanceId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "chatId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "messageId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "sessionId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "turnId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "channelInstanceId",
+            "agentId",
+            "chatId",
+            "messageId",
+            "sessionId",
+            "turnId"
+          ],
+          "type": "object"
+        },
+        "protocol": {
+          "const": "ravi.channel.runtime-events",
+          "type": "string"
+        },
+        "requestId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "protocol",
+        "schemaVersion",
+        "requestId",
+        "binding"
+      ],
+      "type": "object"
+    },
+    "ChannelRuntimeReadbackResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "assistantMessageId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "binding": {
+          "properties": {
+            "agentId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "channelInstanceId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "chatId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "messageId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "sessionId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "turnId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "channelInstanceId",
+            "agentId",
+            "chatId",
+            "messageId",
+            "sessionId",
+            "turnId"
+          ],
+          "type": "object"
+        },
+        "lastSequence": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "observedAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "type": "string"
+        },
+        "protocol": {
+          "const": "ravi.channel.runtime-events",
+          "type": "string"
+        },
+        "requestId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        },
+        "state": {
+          "enum": [
+            "accepted",
+            "running",
+            "waiting_approval",
+            "completed",
+            "failed",
+            "interrupted"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocol",
+        "schemaVersion",
+        "requestId",
+        "binding",
+        "state",
+        "lastSequence",
+        "observedAt"
+      ],
+      "type": "object"
+    },
+    "ChannelSafeError": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "category": {
+          "enum": [
+            "validation",
+            "authentication",
+            "authorization",
+            "capacity",
+            "availability",
+            "internal"
+          ],
+          "type": "string"
+        },
+        "code": {
+          "enum": [
+            "INVALID_REQUEST",
+            "IDEMPOTENCY_CONFLICT",
+            "UNAUTHENTICATED",
+            "PERMISSION_DENIED",
+            "LOCAL_PERMISSION_DENIED",
+            "NOT_FOUND",
+            "RATE_LIMITED",
+            "OVERLOADED",
+            "UNAVAILABLE",
+            "INTERNAL"
+          ],
+          "type": "string"
+        },
+        "correlationId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "retryAfterMs": {
+          "exclusiveMinimum": 0,
+          "maximum": 86400000,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "code",
+        "category",
+        "retryable"
+      ],
+      "type": "object"
+    },
+    "ChannelTerminalOutputPayload": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "assistantMessageId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "content": {
+          "items": {
+            "oneOf": [
+              {
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "artifactId": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                    "type": "string"
+                  },
+                  "mediaType": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$",
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "sizeBytes": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "type": {
+                    "const": "artifact",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "artifactId"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "type": "array"
+        },
+        "error": {
+          "properties": {
+            "category": {
+              "enum": [
+                "validation",
+                "authentication",
+                "authorization",
+                "capacity",
+                "availability",
+                "internal"
+              ],
+              "type": "string"
+            },
+            "code": {
+              "enum": [
+                "INVALID_REQUEST",
+                "IDEMPOTENCY_CONFLICT",
+                "UNAUTHENTICATED",
+                "PERMISSION_DENIED",
+                "LOCAL_PERMISSION_DENIED",
+                "NOT_FOUND",
+                "RATE_LIMITED",
+                "OVERLOADED",
+                "UNAVAILABLE",
+                "INTERNAL"
+              ],
+              "type": "string"
+            },
+            "correlationId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "retryAfterMs": {
+              "exclusiveMinimum": 0,
+              "maximum": 86400000,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "code",
+            "category",
+            "retryable"
+          ],
+          "type": "object"
+        },
+        "state": {
+          "enum": [
+            "completed",
+            "failed",
+            "interrupted"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "type": "object"
+    },
+    "ChannelTextContentBlock": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "type": {
+          "const": "text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "text"
+      ],
+      "type": "object"
+    },
+    "ChannelToolSummaryPayload": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "error": {
+          "properties": {
+            "category": {
+              "enum": [
+                "validation",
+                "authentication",
+                "authorization",
+                "capacity",
+                "availability",
+                "internal"
+              ],
+              "type": "string"
+            },
+            "code": {
+              "enum": [
+                "INVALID_REQUEST",
+                "IDEMPOTENCY_CONFLICT",
+                "UNAUTHENTICATED",
+                "PERMISSION_DENIED",
+                "LOCAL_PERMISSION_DENIED",
+                "NOT_FOUND",
+                "RATE_LIMITED",
+                "OVERLOADED",
+                "UNAVAILABLE",
+                "INTERNAL"
+              ],
+              "type": "string"
+            },
+            "correlationId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "retryAfterMs": {
+              "exclusiveMinimum": 0,
+              "maximum": 86400000,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "code",
+            "category",
+            "retryable"
+          ],
+          "type": "object"
+        },
+        "phase": {
+          "enum": [
+            "requested",
+            "running",
+            "completed",
+            "failed",
+            "denied"
+          ],
+          "type": "string"
+        },
+        "toolCallId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "toolName": {
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "toolCallId",
+        "toolName",
+        "phase"
+      ],
+      "type": "object"
+    },
+    "ChannelTurnStateChangedPayload": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "error": {
+          "properties": {
+            "category": {
+              "enum": [
+                "validation",
+                "authentication",
+                "authorization",
+                "capacity",
+                "availability",
+                "internal"
+              ],
+              "type": "string"
+            },
+            "code": {
+              "enum": [
+                "INVALID_REQUEST",
+                "IDEMPOTENCY_CONFLICT",
+                "UNAUTHENTICATED",
+                "PERMISSION_DENIED",
+                "LOCAL_PERMISSION_DENIED",
+                "NOT_FOUND",
+                "RATE_LIMITED",
+                "OVERLOADED",
+                "UNAVAILABLE",
+                "INTERNAL"
+              ],
+              "type": "string"
+            },
+            "correlationId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "retryAfterMs": {
+              "exclusiveMinimum": 0,
+              "maximum": 86400000,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "code",
+            "category",
+            "retryable"
+          ],
+          "type": "object"
+        },
+        "state": {
+          "enum": [
+            "accepted",
+            "running",
+            "waiting_approval",
+            "completed",
+            "failed",
+            "interrupted"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "type": "object"
+    },
+    "KnownChannelRuntimeEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "properties": {
+            "correlation": {
+              "properties": {
+                "binding": {
+                  "properties": {
+                    "agentId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "channelInstanceId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "chatId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "messageId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "sessionId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "turnId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "channelInstanceId",
+                    "agentId",
+                    "chatId",
+                    "messageId",
+                    "sessionId",
+                    "turnId"
+                  ],
+                  "type": "object"
+                },
+                "causationId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "correlationId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "ingressRequestId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "correlationId",
+                "ingressRequestId",
+                "binding"
+              ],
+              "type": "object"
+            },
+            "eventId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "turn.state_changed",
+              "type": "string"
+            },
+            "occurredAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "payload": {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "category": {
+                      "enum": [
+                        "validation",
+                        "authentication",
+                        "authorization",
+                        "capacity",
+                        "availability",
+                        "internal"
+                      ],
+                      "type": "string"
+                    },
+                    "code": {
+                      "enum": [
+                        "INVALID_REQUEST",
+                        "IDEMPOTENCY_CONFLICT",
+                        "UNAUTHENTICATED",
+                        "PERMISSION_DENIED",
+                        "LOCAL_PERMISSION_DENIED",
+                        "NOT_FOUND",
+                        "RATE_LIMITED",
+                        "OVERLOADED",
+                        "UNAVAILABLE",
+                        "INTERNAL"
+                      ],
+                      "type": "string"
+                    },
+                    "correlationId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "retryable": {
+                      "type": "boolean"
+                    },
+                    "retryAfterMs": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 86400000,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "category",
+                    "retryable"
+                  ],
+                  "type": "object"
+                },
+                "state": {
+                  "enum": [
+                    "accepted",
+                    "running",
+                    "waiting_approval",
+                    "completed",
+                    "failed",
+                    "interrupted"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "type": "object"
+            },
+            "protocol": {
+              "const": "ravi.channel.runtime-events",
+              "type": "string"
+            },
+            "schemaVersion": {
+              "const": 1,
+              "type": "number"
+            },
+            "sequence": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "protocol",
+            "schemaVersion",
+            "eventId",
+            "kind",
+            "occurredAt",
+            "sequence",
+            "correlation",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "correlation": {
+              "properties": {
+                "binding": {
+                  "properties": {
+                    "agentId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "channelInstanceId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "chatId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "messageId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "sessionId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "turnId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "channelInstanceId",
+                    "agentId",
+                    "chatId",
+                    "messageId",
+                    "sessionId",
+                    "turnId"
+                  ],
+                  "type": "object"
+                },
+                "causationId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "correlationId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "ingressRequestId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "correlationId",
+                "ingressRequestId",
+                "binding"
+              ],
+              "type": "object"
+            },
+            "eventId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "turn.assistant_delta",
+              "type": "string"
+            },
+            "occurredAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "payload": {
+              "properties": {
+                "blockIndex": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "deltaSequence": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991,
+                  "type": "integer"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "blockIndex",
+                "deltaSequence",
+                "text"
+              ],
+              "type": "object"
+            },
+            "protocol": {
+              "const": "ravi.channel.runtime-events",
+              "type": "string"
+            },
+            "schemaVersion": {
+              "const": 1,
+              "type": "number"
+            },
+            "sequence": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "protocol",
+            "schemaVersion",
+            "eventId",
+            "kind",
+            "occurredAt",
+            "sequence",
+            "correlation",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "correlation": {
+              "properties": {
+                "binding": {
+                  "properties": {
+                    "agentId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "channelInstanceId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "chatId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "messageId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "sessionId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "turnId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "channelInstanceId",
+                    "agentId",
+                    "chatId",
+                    "messageId",
+                    "sessionId",
+                    "turnId"
+                  ],
+                  "type": "object"
+                },
+                "causationId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "correlationId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "ingressRequestId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "correlationId",
+                "ingressRequestId",
+                "binding"
+              ],
+              "type": "object"
+            },
+            "eventId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "turn.terminal_output",
+              "type": "string"
+            },
+            "occurredAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "payload": {
+              "properties": {
+                "assistantMessageId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "content": {
+                  "items": {
+                    "oneOf": [
+                      {
+                        "properties": {
+                          "text": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "text",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "text"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "artifactId": {
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                            "type": "string"
+                          },
+                          "mediaType": {
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$",
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "sizeBytes": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "type": {
+                            "const": "artifact",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "artifactId"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "maxItems": 256,
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "error": {
+                  "properties": {
+                    "category": {
+                      "enum": [
+                        "validation",
+                        "authentication",
+                        "authorization",
+                        "capacity",
+                        "availability",
+                        "internal"
+                      ],
+                      "type": "string"
+                    },
+                    "code": {
+                      "enum": [
+                        "INVALID_REQUEST",
+                        "IDEMPOTENCY_CONFLICT",
+                        "UNAUTHENTICATED",
+                        "PERMISSION_DENIED",
+                        "LOCAL_PERMISSION_DENIED",
+                        "NOT_FOUND",
+                        "RATE_LIMITED",
+                        "OVERLOADED",
+                        "UNAVAILABLE",
+                        "INTERNAL"
+                      ],
+                      "type": "string"
+                    },
+                    "correlationId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "retryable": {
+                      "type": "boolean"
+                    },
+                    "retryAfterMs": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 86400000,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "category",
+                    "retryable"
+                  ],
+                  "type": "object"
+                },
+                "state": {
+                  "enum": [
+                    "completed",
+                    "failed",
+                    "interrupted"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "type": "object"
+            },
+            "protocol": {
+              "const": "ravi.channel.runtime-events",
+              "type": "string"
+            },
+            "schemaVersion": {
+              "const": 1,
+              "type": "number"
+            },
+            "sequence": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "protocol",
+            "schemaVersion",
+            "eventId",
+            "kind",
+            "occurredAt",
+            "sequence",
+            "correlation",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "correlation": {
+              "properties": {
+                "binding": {
+                  "properties": {
+                    "agentId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "channelInstanceId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "chatId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "messageId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "sessionId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "turnId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "channelInstanceId",
+                    "agentId",
+                    "chatId",
+                    "messageId",
+                    "sessionId",
+                    "turnId"
+                  ],
+                  "type": "object"
+                },
+                "causationId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "correlationId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "ingressRequestId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "correlationId",
+                "ingressRequestId",
+                "binding"
+              ],
+              "type": "object"
+            },
+            "eventId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "turn.tool_summary",
+              "type": "string"
+            },
+            "occurredAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "payload": {
+              "properties": {
+                "error": {
+                  "properties": {
+                    "category": {
+                      "enum": [
+                        "validation",
+                        "authentication",
+                        "authorization",
+                        "capacity",
+                        "availability",
+                        "internal"
+                      ],
+                      "type": "string"
+                    },
+                    "code": {
+                      "enum": [
+                        "INVALID_REQUEST",
+                        "IDEMPOTENCY_CONFLICT",
+                        "UNAUTHENTICATED",
+                        "PERMISSION_DENIED",
+                        "LOCAL_PERMISSION_DENIED",
+                        "NOT_FOUND",
+                        "RATE_LIMITED",
+                        "OVERLOADED",
+                        "UNAVAILABLE",
+                        "INTERNAL"
+                      ],
+                      "type": "string"
+                    },
+                    "correlationId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "retryable": {
+                      "type": "boolean"
+                    },
+                    "retryAfterMs": {
+                      "exclusiveMinimum": 0,
+                      "maximum": 86400000,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "category",
+                    "retryable"
+                  ],
+                  "type": "object"
+                },
+                "phase": {
+                  "enum": [
+                    "requested",
+                    "running",
+                    "completed",
+                    "failed",
+                    "denied"
+                  ],
+                  "type": "string"
+                },
+                "toolCallId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "toolName": {
+                  "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "toolCallId",
+                "toolName",
+                "phase"
+              ],
+              "type": "object"
+            },
+            "protocol": {
+              "const": "ravi.channel.runtime-events",
+              "type": "string"
+            },
+            "schemaVersion": {
+              "const": 1,
+              "type": "number"
+            },
+            "sequence": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "protocol",
+            "schemaVersion",
+            "eventId",
+            "kind",
+            "occurredAt",
+            "sequence",
+            "correlation",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "correlation": {
+              "properties": {
+                "binding": {
+                  "properties": {
+                    "agentId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "channelInstanceId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "chatId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "messageId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "sessionId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "turnId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "channelInstanceId",
+                    "agentId",
+                    "chatId",
+                    "messageId",
+                    "sessionId",
+                    "turnId"
+                  ],
+                  "type": "object"
+                },
+                "causationId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "correlationId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "ingressRequestId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "correlationId",
+                "ingressRequestId",
+                "binding"
+              ],
+              "type": "object"
+            },
+            "eventId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "turn.approval_requested",
+              "type": "string"
+            },
+            "occurredAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "payload": {
+              "properties": {
+                "action": {
+                  "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                  "type": "string"
+                },
+                "approvalId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "expiresAt": {
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+                  "type": "string"
+                },
+                "risk": {
+                  "enum": [
+                    "low",
+                    "medium",
+                    "high"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "approvalId",
+                "action"
+              ],
+              "type": "object"
+            },
+            "protocol": {
+              "const": "ravi.channel.runtime-events",
+              "type": "string"
+            },
+            "schemaVersion": {
+              "const": 1,
+              "type": "number"
+            },
+            "sequence": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "protocol",
+            "schemaVersion",
+            "eventId",
+            "kind",
+            "occurredAt",
+            "sequence",
+            "correlation",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "correlation": {
+              "properties": {
+                "binding": {
+                  "properties": {
+                    "agentId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "channelInstanceId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "chatId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "messageId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "sessionId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "turnId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "channelInstanceId",
+                    "agentId",
+                    "chatId",
+                    "messageId",
+                    "sessionId",
+                    "turnId"
+                  ],
+                  "type": "object"
+                },
+                "causationId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "correlationId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "ingressRequestId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "correlationId",
+                "ingressRequestId",
+                "binding"
+              ],
+              "type": "object"
+            },
+            "eventId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "turn.approval_resolved",
+              "type": "string"
+            },
+            "occurredAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "payload": {
+              "properties": {
+                "approvalId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "decision": {
+                  "enum": [
+                    "approved",
+                    "denied",
+                    "cancelled",
+                    "expired"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "approvalId",
+                "decision"
+              ],
+              "type": "object"
+            },
+            "protocol": {
+              "const": "ravi.channel.runtime-events",
+              "type": "string"
+            },
+            "schemaVersion": {
+              "const": 1,
+              "type": "number"
+            },
+            "sequence": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "protocol",
+            "schemaVersion",
+            "eventId",
+            "kind",
+            "occurredAt",
+            "sequence",
+            "correlation",
+            "payload"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "LocalChannelMessageBinding": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "agentId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "channelInstanceId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "chatId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "messageId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "sessionId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "turnId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "channelInstanceId",
+        "agentId",
+        "chatId",
+        "messageId",
+        "sessionId",
+        "turnId"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:ravi:channel-capsule:channel-runtime-events:v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "capsuleVersion": 1,
+  "compatibilityProfile": "additive-v1",
+  "sourceDigest": "816c67787b76c5b98f6ab356b0f178fdeda35cf0d81f92aa9b2a75655b370464",
+  "title": "channel-runtime-events channel capability"
+}

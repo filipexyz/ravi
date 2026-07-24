@@ -58,5 +58,6 @@ export {
 } from "./errors.js";
 export { SDK_VERSION, REGISTRY_HASH, GIT_SHA } from "./version.js";
 export * from "./channel-backend.js";
+export * from "./channel-runtime-events.js";
 export * from "./types.js";
 export * from "./schemas.js";

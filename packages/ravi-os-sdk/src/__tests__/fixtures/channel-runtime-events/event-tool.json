@@ -1,0 +1,26 @@
+{
+  "correlation": {
+    "binding": {
+      "agentId": "agent-a",
+      "channelInstanceId": "channel-instance-a",
+      "chatId": "chat-a",
+      "messageId": "message-a",
+      "sessionId": "session-a",
+      "turnId": "turn-a"
+    },
+    "causationId": "request-a",
+    "correlationId": "correlation-a",
+    "ingressRequestId": "request-a"
+  },
+  "eventId": "event-tool",
+  "kind": "turn.tool_summary",
+  "occurredAt": "2026-07-24T18:00:01.000Z",
+  "payload": {
+    "phase": "completed",
+    "toolCallId": "tool-call-a",
+    "toolName": "local.lookup"
+  },
+  "protocol": "ravi.channel.runtime-events",
+  "schemaVersion": 1,
+  "sequence": 3
+}

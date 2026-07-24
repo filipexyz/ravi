@@ -81,7 +81,7 @@ export function getDeliverableRuntimeMessages(
   }
 
   const activeTaskByExemption = new Map<string, boolean>();
-  return session.pendingMessages.filter((message) =>
+  const deliverable = session.pendingMessages.filter((message) =>
     canReleaseRuntimeDeliveryBarrier(
       sessionName,
       session,
@@ -96,6 +96,16 @@ export function getDeliverableRuntimeMessages(
       })(),
     ),
   );
+  const firstChannelBackendIndex = deliverable.findIndex(
+    (message) => message.launchPrompt?._channelBackend !== undefined,
+  );
+  if (firstChannelBackendIndex === 0) {
+    return deliverable.slice(0, 1);
+  }
+  if (firstChannelBackendIndex > 0) {
+    return deliverable.slice(0, firstChannelBackendIndex);
+  }
+  return deliverable;
 }
 
 export function hasDeliverableRuntimeMessages(sessionName: string, session: RuntimeHostStreamingSession): boolean {

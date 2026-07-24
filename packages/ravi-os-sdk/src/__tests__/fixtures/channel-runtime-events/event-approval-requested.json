@@ -1,0 +1,27 @@
+{
+  "correlation": {
+    "binding": {
+      "agentId": "agent-a",
+      "channelInstanceId": "channel-instance-a",
+      "chatId": "chat-a",
+      "messageId": "message-a",
+      "sessionId": "session-a",
+      "turnId": "turn-a"
+    },
+    "causationId": "request-a",
+    "correlationId": "correlation-a",
+    "ingressRequestId": "request-a"
+  },
+  "eventId": "event-approval-requested",
+  "kind": "turn.approval_requested",
+  "occurredAt": "2026-07-24T18:00:01.000Z",
+  "payload": {
+    "action": "local.write",
+    "approvalId": "approval-a",
+    "expiresAt": "2026-07-24T18:05:00.000Z",
+    "risk": "high"
+  },
+  "protocol": "ravi.channel.runtime-events",
+  "schemaVersion": 1,
+  "sequence": 4
+}

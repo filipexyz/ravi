@@ -181,6 +181,7 @@ export const ChannelOutputEnvelopeSchema = z
 export type ChannelSafeError = z.infer<typeof ChannelSafeErrorSchema>;
 export type ChannelContent = z.infer<typeof ChannelContentSchema>;
 export type ExternalChannelIdentity = z.infer<typeof ExternalChannelIdentitySchema>;
+export type ExternalChannelTarget = z.infer<typeof ExternalChannelTargetSchema>;
 export type LocalChannelMessageBinding = z.infer<typeof LocalChannelMessageBindingSchema>;
 export type ChannelIngressRequest = z.infer<typeof ChannelIngressRequestSchema>;
 export type ChannelIngressResult = z.infer<typeof ChannelIngressResultSchema>;
@@ -217,6 +218,8 @@ export class ChannelOutputSinkRegistry {
     await sink.emit(envelope);
   }
 }
+
+export const channelOutputSinks = new ChannelOutputSinkRegistry();
 
 export type ChannelBackendPromptPublisher = (
   sessionName: string,

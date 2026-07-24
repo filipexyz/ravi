@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   createQueuedRuntimeUserMessage,
   createRuntimeMessageGenerator,
+  getDeliverableRuntimeMessages,
   shouldInterruptRuntimeForIncoming,
 } from "./delivery-queue.js";
 import { shutdownRuntimeStreamingSession } from "./host-session.js";
@@ -171,4 +172,56 @@ describe("runtime delivery queue", () => {
       reason: "response",
     });
   });
+
+  it("delivers at most one channel backend message in a local runtime turn", () => {
+    const first = createQueuedRuntimeUserMessage(channelPrompt("first", "turn-a"));
+    const second = createQueuedRuntimeUserMessage(channelPrompt("second", "turn-b"));
+    const session = makeStreamingSession({
+      pendingMessages: [first, second],
+    });
+
+    expect(getDeliverableRuntimeMessages("dev", session)).toEqual([first]);
+  });
+
+  it("preserves normal message batching boundaries around channel backend turns", () => {
+    const normalBefore = createQueuedRuntimeUserMessage({ prompt: "normal before" });
+    const backend = createQueuedRuntimeUserMessage(channelPrompt("backend", "turn-a"));
+    const normalAfter = createQueuedRuntimeUserMessage({ prompt: "normal after" });
+    const session = makeStreamingSession({
+      pendingMessages: [normalBefore, backend, normalAfter],
+    });
+
+    expect(getDeliverableRuntimeMessages("dev", session)).toEqual([normalBefore]);
+
+    session.pendingMessages.shift();
+    expect(getDeliverableRuntimeMessages("dev", session)).toEqual([backend]);
+
+    session.pendingMessages.shift();
+    expect(getDeliverableRuntimeMessages("dev", session)).toEqual([normalAfter]);
+  });
 });
+
+function channelPrompt(prompt: string, turnId: string) {
+  return {
+    prompt,
+    _channelBackend: {
+      protocol: "ravi.channel.backend" as const,
+      schemaVersion: 1 as const,
+      ingressRequestId: `request-${turnId}`,
+      correlationId: `correlation-${turnId}`,
+      binding: {
+        channelInstanceId: "channel-instance-a",
+        agentId: "agent-a",
+        chatId: "chat-a",
+        messageId: `message-${turnId}`,
+        sessionId: "session-a",
+        turnId,
+      },
+      target: {
+        channelKind: "custom",
+        connectionId: "connection-a",
+        conversationId: "conversation-a",
+      },
+    },
+  };
+}

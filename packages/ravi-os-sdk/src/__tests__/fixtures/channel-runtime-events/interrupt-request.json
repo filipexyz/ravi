@@ -1,0 +1,15 @@
+{
+  "binding": {
+    "agentId": "agent-a",
+    "channelInstanceId": "channel-instance-a",
+    "chatId": "chat-a",
+    "messageId": "message-a",
+    "sessionId": "session-a",
+    "turnId": "turn-a"
+  },
+  "idempotencyKey": "interrupt-idempotency-a",
+  "protocol": "ravi.channel.runtime-events",
+  "requestedAt": "2026-07-24T18:00:01.000Z",
+  "requestId": "interrupt-a",
+  "schemaVersion": 1
+}

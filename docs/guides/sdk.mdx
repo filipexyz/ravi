@@ -163,7 +163,54 @@ The projected JSON Schema and fixtures live under
 `packages/ravi-os-sdk/src/__tests__/fixtures/channel-backend-core`.
 Adapters can implement `ChannelOutputSink` to consume validated,
 provider-neutral assistant or safe-error envelopes. Runtime lifecycle streams
-are a separate contract.
+use the separate `ravi.channel.runtime-events` contract:
+
+```ts
+import {
+  createChannelRuntimeClient,
+} from "@ravi-os/sdk/channel-runtime-events";
+
+const runtime = createChannelRuntimeClient(ravi);
+const state = await runtime.readback({
+  protocol: "ravi.channel.runtime-events",
+  schemaVersion: 1,
+  requestId: "readback-01",
+  binding: result.binding!,
+});
+
+await runtime.interrupt({
+  protocol: "ravi.channel.runtime-events",
+  schemaVersion: 1,
+  requestId: "interrupt-01",
+  idempotencyKey: "interrupt-turn-01",
+  binding: result.binding!,
+  requestedAt: new Date().toISOString(),
+});
+```
+
+The adapter-side runtime bridge consumes the event contract through
+`ChannelRuntimeEventSink`:
+
+```ts
+import type { ChannelRuntimeEventSink } from "@ravi-os/sdk/channel-runtime-events";
+
+const sink: ChannelRuntimeEventSink = {
+  async emit(event) {
+    console.log(event.sequence, event.kind);
+  },
+};
+```
+
+Lifecycle events use a monotonically increasing sequence per local turn and
+cover state, assistant deltas, tool summaries, approvals, and terminal output.
+Readback remains available after reconnects, including the canonical assistant
+message id after successful completion. Interrupt publication is idempotent and
+requires the same concrete local-agent authorization boundary as ingress.
+Provider-native payloads and diagnostics are not part of this contract.
+
+The projected runtime schema and fixtures live beside the backend capsule under
+`packages/ravi-os-sdk/src/generated` and
+`packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events`.
 
 ## Wire Contract
 
@@ -300,6 +347,7 @@ The published TypeScript package exports:
 ```ts
 import { RaviClient } from "@ravi-os/sdk/client";
 import { createChannelBackendClient } from "@ravi-os/sdk/channel-backend";
+import { createChannelRuntimeClient } from "@ravi-os/sdk/channel-runtime-events";
 import { createHttpTransport } from "@ravi-os/sdk/transport/http";
 import { createStreamClient } from "@ravi-os/sdk/streaming";
 import { RaviError } from "@ravi-os/sdk/errors";

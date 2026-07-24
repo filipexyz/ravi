@@ -2429,6 +2429,79 @@ export type ChannelsBackendIngressReturn = {
   schemaVersion: 1;
 };
 
+/** Input shape for `channels.backend.runtime.interrupt`. */
+export type ChannelsBackendRuntimeInterruptInput = {
+  agentId: string;
+  request: {
+    binding: {
+      agentId: string;
+      channelInstanceId: string;
+      chatId: string;
+      messageId: string;
+      sessionId: string;
+      turnId: string;
+    };
+    idempotencyKey: string;
+    protocol: "ravi.channel.runtime-events";
+    requestId: string;
+    requestedAt: string;
+    schemaVersion: 1;
+  };
+};
+
+/** Return shape for `channels.backend.runtime.interrupt`. */
+export type ChannelsBackendRuntimeInterruptReturn = {
+  acceptedAt: string;
+  disposition: "requested" | "duplicate" | "rejected";
+  error?: {
+    category: "validation" | "authentication" | "authorization" | "capacity" | "availability" | "internal";
+    code: "INVALID_REQUEST" | "IDEMPOTENCY_CONFLICT" | "UNAUTHENTICATED" | "PERMISSION_DENIED" | "LOCAL_PERMISSION_DENIED" | "NOT_FOUND" | "RATE_LIMITED" | "OVERLOADED" | "UNAVAILABLE" | "INTERNAL";
+    correlationId?: string;
+    retryAfterMs?: number;
+    retryable: boolean;
+  };
+  protocol: "ravi.channel.runtime-events";
+  requestId: string;
+  schemaVersion: 1;
+};
+
+/** Input shape for `channels.backend.runtime.readback`. */
+export type ChannelsBackendRuntimeReadbackInput = {
+  agentId: string;
+  request: {
+    binding: {
+      agentId: string;
+      channelInstanceId: string;
+      chatId: string;
+      messageId: string;
+      sessionId: string;
+      turnId: string;
+    };
+    protocol: "ravi.channel.runtime-events";
+    requestId: string;
+    schemaVersion: 1;
+  };
+};
+
+/** Return shape for `channels.backend.runtime.readback`. */
+export type ChannelsBackendRuntimeReadbackReturn = {
+  assistantMessageId?: string;
+  binding: {
+    agentId: string;
+    channelInstanceId: string;
+    chatId: string;
+    messageId: string;
+    sessionId: string;
+    turnId: string;
+  };
+  lastSequence: number;
+  observedAt: string;
+  protocol: "ravi.channel.runtime-events";
+  requestId: string;
+  schemaVersion: 1;
+  state: "accepted" | "running" | "waiting_approval" | "completed" | "failed" | "interrupted";
+};
+
 /** Input shape for `channels.create`. */
 export type ChannelsCreateInput = {
   credentialConnection?: string;

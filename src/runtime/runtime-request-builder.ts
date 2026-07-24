@@ -346,6 +346,7 @@ export async function buildRuntimeStartRequest(
       if (turnSource) {
         streamingSession.currentSource = turnSource;
       }
+      streamingSession.currentChannelBackend = turnPrompt._channelBackend;
       streamingSession.currentTurnProvenance = classifyTurnProvenance({
         prompt: turnPrompt,
         source: turnSource,

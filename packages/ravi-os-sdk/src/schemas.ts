@@ -13718,6 +13718,358 @@ export const ChannelsBackendIngressReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `channels.backend.runtime.interrupt`. */
+export const ChannelsBackendRuntimeInterruptInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "description": "Concrete local agent id used for authorization",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+      "type": "string"
+    },
+    "request": {
+      "additionalProperties": false,
+      "description": "Channel runtime interrupt request object (JSON when invoked from the CLI)",
+      "properties": {
+        "binding": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "channelInstanceId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "chatId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "messageId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "sessionId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "turnId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "channelInstanceId",
+            "agentId",
+            "chatId",
+            "messageId",
+            "sessionId",
+            "turnId"
+          ],
+          "type": "object"
+        },
+        "idempotencyKey": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "protocol": {
+          "const": "ravi.channel.runtime-events",
+          "type": "string"
+        },
+        "requestId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "requestedAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "protocol",
+        "schemaVersion",
+        "requestId",
+        "idempotencyKey",
+        "binding",
+        "requestedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "agentId",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `channels.backend.runtime.interrupt`. */
+export const ChannelsBackendRuntimeInterruptReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "acceptedAt": {
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "disposition": {
+      "enum": [
+        "requested",
+        "duplicate",
+        "rejected"
+      ],
+      "type": "string"
+    },
+    "error": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "enum": [
+            "validation",
+            "authentication",
+            "authorization",
+            "capacity",
+            "availability",
+            "internal"
+          ],
+          "type": "string"
+        },
+        "code": {
+          "enum": [
+            "INVALID_REQUEST",
+            "IDEMPOTENCY_CONFLICT",
+            "UNAUTHENTICATED",
+            "PERMISSION_DENIED",
+            "LOCAL_PERMISSION_DENIED",
+            "NOT_FOUND",
+            "RATE_LIMITED",
+            "OVERLOADED",
+            "UNAVAILABLE",
+            "INTERNAL"
+          ],
+          "type": "string"
+        },
+        "correlationId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "retryAfterMs": {
+          "exclusiveMinimum": 0,
+          "maximum": 86400000,
+          "type": "integer"
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "category",
+        "retryable"
+      ],
+      "type": "object"
+    },
+    "protocol": {
+      "const": "ravi.channel.runtime-events",
+      "type": "string"
+    },
+    "requestId": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1,
+      "type": "number"
+    }
+  },
+  "required": [
+    "protocol",
+    "schemaVersion",
+    "requestId",
+    "disposition",
+    "acceptedAt"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `channels.backend.runtime.readback`. */
+export const ChannelsBackendRuntimeReadbackInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "description": "Concrete local agent id used for authorization",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+      "type": "string"
+    },
+    "request": {
+      "additionalProperties": false,
+      "description": "Channel runtime readback request object (JSON when invoked from the CLI)",
+      "properties": {
+        "binding": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "channelInstanceId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "chatId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "messageId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "sessionId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "turnId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "channelInstanceId",
+            "agentId",
+            "chatId",
+            "messageId",
+            "sessionId",
+            "turnId"
+          ],
+          "type": "object"
+        },
+        "protocol": {
+          "const": "ravi.channel.runtime-events",
+          "type": "string"
+        },
+        "requestId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "protocol",
+        "schemaVersion",
+        "requestId",
+        "binding"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "agentId",
+    "request"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `channels.backend.runtime.readback`. */
+export const ChannelsBackendRuntimeReadbackReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "assistantMessageId": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+      "type": "string"
+    },
+    "binding": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "channelInstanceId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "chatId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "messageId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "sessionId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "turnId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "channelInstanceId",
+        "agentId",
+        "chatId",
+        "messageId",
+        "sessionId",
+        "turnId"
+      ],
+      "type": "object"
+    },
+    "lastSequence": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "observedAt": {
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+      "type": "string"
+    },
+    "protocol": {
+      "const": "ravi.channel.runtime-events",
+      "type": "string"
+    },
+    "requestId": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1,
+      "type": "number"
+    },
+    "state": {
+      "enum": [
+        "accepted",
+        "running",
+        "waiting_approval",
+        "completed",
+        "failed",
+        "interrupted"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "protocol",
+    "schemaVersion",
+    "requestId",
+    "binding",
+    "state",
+    "lastSequence",
+    "observedAt"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `channels.create`. */
 export const ChannelsCreateInputSchema = {
   "additionalProperties": false,
