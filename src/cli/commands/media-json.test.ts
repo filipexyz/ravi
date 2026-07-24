@@ -7,9 +7,21 @@ afterAll(() => mock.restore());
 
 const emittedEvents: Array<{ topic: string; payload: Record<string, unknown> }> = [];
 const mediaSendCalls: Array<Record<string, unknown>> = [];
+const publishedOutboundJobs: Array<Record<string, unknown>> = [];
 
-const runtimeContext = {
+const runtimeContext: {
+  agentId: string;
+  sessionName: string;
+  source: {
+    channel: string;
+    accountId: string;
+    instanceId?: string;
+    chatId: string;
+    canonicalChatId?: string;
+  };
+} = {
   agentId: "dev",
+  sessionName: "dev",
   source: {
     channel: "whatsapp",
     accountId: "main",
@@ -36,11 +48,24 @@ mock.module("../context.js", () => ({
 }));
 
 mock.module("../../nats.js", () => ({
+  ensureConnected: mock(async () => ({})),
+  getNats: mock(() => ({})),
   nats: {
     emit: mock(async (topic: string, payload: Record<string, unknown>) => {
       emittedEvents.push({ topic, payload });
     }),
   },
+}));
+
+mock.module("../../channels/outbound-publish-outbox.js", () => ({
+  publishChannelOutboundJobDurably: mock(async (job: Record<string, unknown>) => {
+    publishedOutboundJobs.push(job);
+    return {
+      ok: true,
+      publishedNow: true,
+      record: { status: "published" },
+    };
+  }),
 }));
 
 mock.module("../../audio/generator.js", () => ({
@@ -110,6 +135,12 @@ describe("media/audio/react JSON output", () => {
   beforeEach(() => {
     emittedEvents.length = 0;
     mediaSendCalls.length = 0;
+    publishedOutboundJobs.length = 0;
+    runtimeContext.source.channel = "whatsapp";
+    runtimeContext.source.accountId = "main";
+    runtimeContext.source.chatId = "5511999999999";
+    delete runtimeContext.source.instanceId;
+    delete runtimeContext.source.canonicalChatId;
   });
 
   it("prints generated audio artifacts as typed JSON without human progress text", async () => {
@@ -319,7 +350,9 @@ describe("media/audio/react JSON output", () => {
     const payload = JSON.parse(output);
 
     expect(payload).toMatchObject({
-      success: true,
+      status: "accepted",
+      queued: false,
+      executionMode: "legacy",
       topic: "ravi.outbound.reaction",
       reaction: {
         messageId: "mid-1",
@@ -340,5 +373,42 @@ describe("media/audio/react JSON output", () => {
         },
       },
     ]);
+  });
+
+  it("queues Slack reactions through the durable native outbound stream", async () => {
+    runtimeContext.source.channel = "slack";
+    runtimeContext.source.accountId = "ravi-slack";
+    runtimeContext.source.instanceId = "slack-instance-1";
+    runtimeContext.source.chatId = "C123";
+    runtimeContext.source.canonicalChatId = "chat-slack-C123";
+
+    const { output, result } = await captureConsole(() => new ReactCommands().send("1711111111.000100", ":+1:", true));
+    const payload = JSON.parse(output);
+
+    expect(payload).toMatchObject({
+      status: "queued",
+      queued: true,
+      executionMode: "durable",
+      topic: "ravi.channel.outbound.slack",
+      publishedNow: true,
+      publishPending: false,
+    });
+    expect(result).toEqual(payload);
+    expect(emittedEvents).toEqual([]);
+    expect(publishedOutboundJobs).toHaveLength(1);
+    expect((publishedOutboundJobs[0] as any).request.content).toEqual({
+      type: "chat_action",
+      actionId: "message.react",
+      providerMessageId: "1711111111.000100",
+      emoji: ":+1:",
+      operation: "add",
+    });
+    expect((publishedOutboundJobs[0] as any).request.target).toMatchObject({
+      channel: "slack",
+      accountId: "ravi-slack",
+      instanceId: "slack-instance-1",
+      chatId: "C123",
+      canonicalChatId: "chat-slack-C123",
+    });
   });
 });

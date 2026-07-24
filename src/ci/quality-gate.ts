@@ -35,6 +35,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   ],
   "src/router/": [
     "src/router/router.test.ts",
+    "src/router/chat-schema.test.ts",
     "src/router/sessions.test.ts",
     "src/router/resolver.test.ts",
     "src/runtime/session-goals.test.ts",

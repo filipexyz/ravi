@@ -23,6 +23,7 @@ Slack is a native Ravi channel, not an Omni-owned semantic surface.
 
 - Slack adapter lifecycle rules live in `channels/adapters/slack`.
 - Slack workspace operations MUST follow `channels/slack/operations`.
+- Context-bound Slack chat actions MUST follow `channels/slack/chat-actions`.
 - Slack Block Kit operations and interaction events MUST follow `channels/slack/block-kit`.
 - Slack topology MUST follow `channels/slack/topology`.
 - Slack thread session forks MUST follow `channels/slack/threads`.

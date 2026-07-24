@@ -82,6 +82,11 @@ Outbound channel delivery MUST use a durable delivery boundary between the Ravi 
 
 Runtime responses destined for channels MUST become delivery jobs before platform send. A channel runner MUST consume those jobs and perform rendering/delivery through the selected adapter.
 
+Native edit, delete and reaction actions that return `queued` MUST use this
+same durable boundary. Their request content MUST remain distinguishable from a
+new text-message delivery, and terminal action telemetry MUST identify the
+action id and target message.
+
 Core NATS pub/sub MAY be used as a notification mechanism, but it MUST NOT be the only source of truth for user-visible outbound delivery. Audit streams MAY capture delivery history, but audit history MUST NOT replace the delivery workqueue.
 
 The delivery job MUST include:

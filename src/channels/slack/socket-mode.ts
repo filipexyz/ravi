@@ -27,6 +27,9 @@ import { transcribeAudio } from "../../transcribe/openai.js";
 import { logger } from "../../utils/logger.js";
 import { MAX_AUDIO_BYTES, MAX_MEDIA_BYTES, saveToAgentAttachments } from "../../utils/media.js";
 import type {
+  NativeChatActionDelivery,
+  NativeChatActionDeliveryRequest,
+  NativeChatActionDeliveryResult,
   NativePresenceDelivery,
   NativePresenceDeliveryRequest,
   NativePresenceDeliveryResult,
@@ -163,6 +166,7 @@ export interface SlackNativeRuntime {
   readonly instanceId: string;
   readonly connection: string;
   readonly delivery: NativeTextDelivery;
+  readonly actions: NativeChatActionDelivery;
   readonly presence: NativePresenceDelivery;
   readonly socketMode: SlackSocketModeService;
 }
@@ -247,6 +251,78 @@ export class SlackTextDelivery implements NativeTextDelivery {
       raw: result.raw,
     };
   }
+}
+
+export class SlackChatActionDelivery implements NativeChatActionDelivery {
+  readonly channelId = "slack";
+
+  constructor(
+    private readonly webClient: SlackWebApiClient,
+    private readonly scope?: SlackTargetScope,
+  ) {}
+
+  supports(target: MessageTarget): boolean {
+    return supportsSlackTarget(target, this.scope);
+  }
+
+  async executeChatAction(request: NativeChatActionDeliveryRequest): Promise<NativeChatActionDeliveryResult> {
+    const { action, target } = request;
+    if (action.actionId === "message.edit") {
+      const result = await this.webClient.updateMessage({
+        channel: target.chatId,
+        ts: action.providerMessageId,
+        text: action.text,
+      });
+      return {
+        provider: "slack",
+        messageId: result.messageId,
+        platformMessageId: result.ts,
+        providerTimestamp: slackTsToMs(result.ts),
+        raw: result.raw,
+      };
+    }
+
+    if (action.actionId === "message.delete") {
+      const raw = await this.webClient.deleteMessage({
+        channel: target.chatId,
+        ts: action.providerMessageId,
+      });
+      return {
+        provider: "slack",
+        messageId: action.providerMessageId,
+        platformMessageId: action.providerMessageId,
+        providerTimestamp: slackTsToMs(action.providerMessageId),
+        raw,
+      };
+    }
+
+    const name = normalizeSlackReactionName(action.emoji);
+    const raw =
+      action.operation === "remove"
+        ? await this.webClient.removeReaction({
+            channel: target.chatId,
+            timestamp: action.providerMessageId,
+            name,
+          })
+        : await this.webClient.addReaction({
+            channel: target.chatId,
+            timestamp: action.providerMessageId,
+            name,
+          });
+    return {
+      provider: "slack",
+      messageId: action.providerMessageId,
+      platformMessageId: action.providerMessageId,
+      providerTimestamp: slackTsToMs(action.providerMessageId),
+      raw,
+    };
+  }
+}
+
+function normalizeSlackReactionName(value: string): string {
+  const normalized = value.trim().replace(/^:+|:+$/g, "");
+  if (!normalized) throw new Error("Slack reaction emoji is required");
+  return normalized;
 }
 
 /** Stable UUID token for Slack's client_msg_id duplicate-suppression support. */
@@ -1938,6 +2014,7 @@ export async function createSlackNativeRuntimeFromEnv(
     webClient,
   });
   const delivery = new SlackTextDelivery(webClient, routingPolicy, scope);
+  const actions = new SlackChatActionDelivery(webClient, scope);
   const reactionPresence = new SlackReactionPresence(
     webClient,
     {
@@ -1974,6 +2051,7 @@ export async function createSlackNativeRuntimeFromEnv(
     instanceId: credentials.instanceId,
     connection: credentials.connection,
     delivery,
+    actions,
     presence,
     socketMode,
   };

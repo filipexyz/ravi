@@ -29,8 +29,10 @@ export interface ToolContext {
   source?: {
     channel: string;
     accountId: string;
+    instanceId?: string;
     chatId: string;
     threadId?: string;
+    canonicalChatId?: string;
   };
   /** Arbitrary metadata */
   [key: string]: unknown;
@@ -96,15 +98,19 @@ export function getContext(): ToolContext | undefined {
       ctx.source = {
         channel: source.channel,
         accountId: source.accountId,
+        ...(env.RAVI_INSTANCE_ID ? { instanceId: env.RAVI_INSTANCE_ID } : {}),
         chatId: source.chatId,
         ...(source.threadId ? { threadId: source.threadId } : {}),
+        ...(env.RAVI_CANONICAL_CHAT_ID ? { canonicalChatId: env.RAVI_CANONICAL_CHAT_ID } : {}),
       };
     } else if (env.RAVI_CHANNEL && env.RAVI_ACCOUNT_ID && env.RAVI_CHAT_ID) {
       ctx.source = {
         channel: env.RAVI_CHANNEL,
         accountId: env.RAVI_ACCOUNT_ID,
+        ...(env.RAVI_INSTANCE_ID ? { instanceId: env.RAVI_INSTANCE_ID } : {}),
         chatId: env.RAVI_CHAT_ID,
         ...(env.RAVI_THREAD_ID ? { threadId: env.RAVI_THREAD_ID } : {}),
+        ...(env.RAVI_CANONICAL_CHAT_ID ? { canonicalChatId: env.RAVI_CANONICAL_CHAT_ID } : {}),
       };
     }
 
@@ -125,8 +131,10 @@ export function getContext(): ToolContext | undefined {
     ctx.source = {
       channel: env.RAVI_CHANNEL,
       accountId: env.RAVI_ACCOUNT_ID,
+      ...(env.RAVI_INSTANCE_ID ? { instanceId: env.RAVI_INSTANCE_ID } : {}),
       chatId: env.RAVI_CHAT_ID,
       ...(env.RAVI_THREAD_ID ? { threadId: env.RAVI_THREAD_ID } : {}),
+      ...(env.RAVI_CANONICAL_CHAT_ID ? { canonicalChatId: env.RAVI_CANONICAL_CHAT_ID } : {}),
     };
   }
 

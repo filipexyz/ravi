@@ -64,10 +64,23 @@ import {
 } from "../../runtime/provider-registry.js";
 import { getDefaultModelForProvider } from "../../runtime/model-catalog.js";
 import type { ChannelContext, ResponseMessage } from "../../runtime/message-types.js";
+import {
+  CHAT_ACTION_DESCRIPTORS,
+  resolveChatActionAvailability,
+  unavailableChatActionWithoutSurface,
+  type ChannelChatActionContent,
+  type ChatActionAvailability,
+  type ChatActionId,
+  type ChatActionSurface,
+} from "../../channels/chat-actions.js";
+import { buildChannelChatActionJob } from "../../channels/outbound-stream.js";
+import { publishChannelOutboundJobDurably } from "../../channels/outbound-publish-outbox.js";
+import { listStickers, stickerAllowedForAgent, stickerAllowedOnChannel } from "../../stickers/catalog.js";
 import { revokeAgentRuntimeContextsForSession } from "../../runtime/context-registry.js";
 import {
   dbFindAgentChatMessageByRef,
   dbFindChatByRef,
+  dbGetAgentChatActionCounts,
   dbGetChat,
   dbGetSessionChatBinding,
   dbGetMessageMeta,
@@ -506,6 +519,35 @@ function sessionActionChatIds(session: SessionEntry): string[] {
   return Array.from(ids);
 }
 
+async function queueSlackChatAction(
+  session: SessionEntry,
+  message: ChatMessageRecord,
+  content: ChannelChatActionContent,
+): Promise<Record<string, unknown>> {
+  const job = buildChannelChatActionJob({
+    sessionName: sessionActionRef(session),
+    target: {
+      channel: "slack",
+      accountId: message.instanceId,
+      instanceId: message.instanceId,
+      chatId: message.rawChatId,
+      canonicalChatId: message.chatId,
+    },
+    content,
+  });
+  const published = await publishChannelOutboundJobDurably(job);
+  return {
+    status: "queued",
+    queued: true,
+    executionMode: "durable",
+    requestId: job.request.requestId,
+    idempotencyKey: job.request.idempotencyKey,
+    publishedNow: published.ok && published.publishedNow,
+    publishPending: !published.ok,
+    ...(published.ok ? {} : { nextAttemptAt: published.nextAttemptAt }),
+  };
+}
+
 function serializeSessionActionChat(chatId: string | undefined): Record<string, unknown> | null {
   if (!chatId) return null;
   const chat = dbGetChat(chatId);
@@ -555,16 +597,126 @@ export function serializeSessionActionMessage(
   };
 }
 
-function hasSessionActionChatSurface(
-  session: SessionEntry,
-  subscriptions: Array<Record<string, unknown>>,
-  chatIds: string[],
-): boolean {
+function buildSessionActionSurfaces(session: SessionEntry, chatIds: string[]): ChatActionSurface[] {
+  const config = loadRouterConfig();
+  const stickers = listStickers();
+  return chatIds.flatMap((chatId) => {
+    const chat = dbGetChat(chatId);
+    if (!chat) return [];
+    const counts = dbGetAgentChatActionCounts({
+      agentId: session.agentId,
+      chatId: chat.id,
+      originSessionKey: session.sessionKey,
+    });
+    const eligibleStickerCount = stickers.filter(
+      (sticker) =>
+        sticker.enabled &&
+        stickerAllowedOnChannel(sticker, chat.channel) &&
+        stickerAllowedForAgent(sticker, session.agentId),
+    ).length;
+    return [
+      {
+        id: chat.id,
+        channel: chat.channel,
+        instanceId: chat.instanceId,
+        platformChatId: chat.platformChatId,
+        ...(chat.channel.toLowerCase() === "slack"
+          ? { credentialConfigured: slackCredentialConfigured(config, chat.instanceId) }
+          : {}),
+        ...counts,
+        eligibleStickerCount,
+      },
+    ];
+  });
+}
+
+function slackCredentialConfigured(config: ReturnType<typeof loadRouterConfig>, instanceId: string): boolean {
+  const aliases = new Set<string>([instanceId.trim().toLowerCase()]);
+  const mappedAccount = config.instanceToAccount[instanceId];
+  if (mappedAccount) aliases.add(mappedAccount.trim().toLowerCase());
+  const configuredInstanceId = config.instances[instanceId]?.instanceId;
+  if (configuredInstanceId) aliases.add(configuredInstanceId.trim().toLowerCase());
+
+  return Object.values(config.channels ?? {}).some((channel) => {
+    if (channel.enabled === false || channel.provider.toLowerCase() !== "slack") return false;
+    if (!channel.credentialConnection?.trim()) return false;
+    return [channel.name, channel.credentialConnection].some((value) => aliases.has(value.trim().toLowerCase()));
+  });
+}
+
+function aggregateChatActionAvailability(
+  actionId: ChatActionId,
+  availabilityBySurface: ChatActionAvailability[],
+): ChatActionAvailability {
+  if (availabilityBySurface.length === 0) return unavailableChatActionWithoutSurface(actionId);
   return (
-    chatIds.length > 0 ||
-    subscriptions.length > 0 ||
-    Boolean(session.channel || session.lastChannel || session.lastTo || session.accountId)
+    availabilityBySurface.find((availability) => availability.status === "available") ??
+    availabilityBySurface.find((availability) => availability.status === "planned") ??
+    availabilityBySurface[0]!
   );
+}
+
+function serializeChatActionAvailability(availability: ChatActionAvailability): Record<string, unknown> {
+  return {
+    surfaceId: availability.surfaceId,
+    status: availability.status,
+    ...(availability.executionMode ? { executionMode: availability.executionMode } : {}),
+    ...(availability.requiredScopes ? { requiredScopes: availability.requiredScopes } : {}),
+    ...(availability.scopeVerification ? { scopeVerification: availability.scopeVerification } : {}),
+    ...(availability.unavailableReason
+      ? {
+          unavailableReasonCode: availability.unavailableReason.code,
+          unavailableReason: availability.unavailableReason.message,
+        }
+      : {}),
+  };
+}
+
+function sessionActionToolFields(
+  actionId: ChatActionId,
+  toolHints: ReturnType<typeof buildSessionActionToolHints>,
+): Record<string, unknown> {
+  if (actionId === "message.delete") {
+    return {
+      command: buildCurrentSessionDeleteMessageCommand("<message-id>"),
+      promptHint: toolHints.deleteMessage.promptHint,
+      idSource: toolHints.deleteMessage.idSource,
+      constraints: toolHints.deleteMessage.constraints,
+    };
+  }
+  if (actionId === "message.edit") {
+    return {
+      command: buildCurrentSessionEditMessageCommand("<message-id>"),
+      promptHint: toolHints.editMessage.promptHint,
+      idSource: toolHints.editMessage.idSource,
+      constraints: toolHints.editMessage.constraints,
+    };
+  }
+  if (actionId === "message.react") {
+    return {
+      command: buildCurrentSessionReactionCommand(),
+      promptHint: toolHints.reactMessage.promptHint,
+      idSource: toolHints.reactMessage.idSource,
+      constraints: toolHints.reactMessage.constraints,
+    };
+  }
+  if (actionId === "sticker.send") {
+    return {
+      command: buildCurrentSessionStickerSendCommand(),
+      promptHint: toolHints.sendSticker.promptHint,
+      idSource: toolHints.sendSticker.idSource,
+      constraints: toolHints.sendSticker.constraints,
+    };
+  }
+  if (actionId === "media.send") {
+    return {
+      command: buildCurrentSessionMediaSendCommand(),
+      promptHint: toolHints.sendMedia.promptHint,
+      fileSource: toolHints.sendMedia.fileSource,
+      constraints: toolHints.sendMedia.constraints,
+    };
+  }
+  return {};
 }
 
 function buildSessionActionsPayload(session: SessionEntry, options: { limit?: number } = {}): Record<string, unknown> {
@@ -594,16 +746,26 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
   const recentOwnMessages = dbListAgentChatMessagesPage({
     agentId: session.agentId,
     chatIds,
+    originSessionKey: session.sessionKey,
     limit,
     order: "desc",
   });
-  const hasChatSurface = hasSessionActionChatSurface(session, subscriptions, chatIds);
-  const channelActionStatus = hasChatSurface ? "available" : "unavailable";
-  const channelActionUnavailableReason = hasChatSurface
-    ? null
-    : "No current, attached, or recent chat surface was found for this session.";
+  const surfaces = buildSessionActionSurfaces(session, chatIds);
+  const actionAvailability = new Map(
+    CHAT_ACTION_DESCRIPTORS.map((descriptor) => {
+      const availabilityBySurface = surfaces.map((surface) => resolveChatActionAvailability(surface, descriptor.id));
+      return [
+        descriptor.id,
+        {
+          aggregate: aggregateChatActionAvailability(descriptor.id, availabilityBySurface),
+          availabilityBySurface,
+        },
+      ] as const;
+    }),
+  );
 
   return {
+    schemaVersion: 1,
     session: {
       ref,
       sessionKey: session.sessionKey,
@@ -613,6 +775,9 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
     surfaces: {
       chatIds,
       subscriptions,
+      effectiveSurfaceId:
+        subscriptions.find((subscription) => subscription.defaultOutput === true)?.chatId ?? chatIds[0] ?? null,
+      items: surfaces,
     },
     promptHint,
     usage: {
@@ -622,54 +787,27 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
       tools: toolHints,
     },
     actions: [
-      {
-        id: "message.delete",
-        status: "available",
-        description: "Delete one of this session agent's own channel messages.",
-        command: buildCurrentSessionDeleteMessageCommand("<message-id>"),
-        promptHint: toolHints.deleteMessage.promptHint,
-        idSource: toolHints.deleteMessage.idSource,
-        constraints: toolHints.deleteMessage.constraints,
-      },
-      {
-        id: "message.edit",
-        status: "available",
-        description: "Edit one of this session agent's own text channel messages.",
-        command: buildCurrentSessionEditMessageCommand("<message-id>"),
-        promptHint: toolHints.editMessage.promptHint,
-        idSource: toolHints.editMessage.idSource,
-        constraints: toolHints.editMessage.constraints,
-      },
-      {
-        id: "message.react",
-        status: channelActionStatus,
-        description: "React to a channel message when the channel supports reactions.",
-        command: buildCurrentSessionReactionCommand(),
-        promptHint: toolHints.reactMessage.promptHint,
-        idSource: toolHints.reactMessage.idSource,
-        constraints: toolHints.reactMessage.constraints,
-        ...(channelActionUnavailableReason ? { unavailableReason: channelActionUnavailableReason } : {}),
-      },
-      {
-        id: "sticker.send",
-        status: channelActionStatus,
-        description: "Send a sticker when the channel supports stickers.",
-        command: buildCurrentSessionStickerSendCommand(),
-        promptHint: toolHints.sendSticker.promptHint,
-        idSource: toolHints.sendSticker.idSource,
-        constraints: toolHints.sendSticker.constraints,
-        ...(channelActionUnavailableReason ? { unavailableReason: channelActionUnavailableReason } : {}),
-      },
-      {
-        id: "media.send",
-        status: channelActionStatus,
-        description: "Send a local image, video, audio, or document through the current chat context.",
-        command: buildCurrentSessionMediaSendCommand(),
-        promptHint: toolHints.sendMedia.promptHint,
-        fileSource: toolHints.sendMedia.fileSource,
-        constraints: toolHints.sendMedia.constraints,
-        ...(channelActionUnavailableReason ? { unavailableReason: channelActionUnavailableReason } : {}),
-      },
+      ...CHAT_ACTION_DESCRIPTORS.map((descriptor) => {
+        const resolved = actionAvailability.get(descriptor.id)!;
+        const aggregate = resolved.aggregate;
+        return {
+          id: descriptor.id,
+          status: aggregate.status,
+          description: descriptor.description,
+          targetKind: descriptor.targetKind,
+          ...sessionActionToolFields(descriptor.id, toolHints),
+          ...(aggregate.executionMode ? { executionMode: aggregate.executionMode } : {}),
+          ...(aggregate.requiredScopes ? { requiredScopes: aggregate.requiredScopes } : {}),
+          ...(aggregate.scopeVerification ? { scopeVerification: aggregate.scopeVerification } : {}),
+          ...(aggregate.unavailableReason
+            ? {
+                unavailableReasonCode: aggregate.unavailableReason.code,
+                unavailableReason: aggregate.unavailableReason.message,
+              }
+            : {}),
+          availabilityBySurface: resolved.availabilityBySurface.map(serializeChatActionAvailability),
+        };
+      }),
       {
         id: "session.read",
         status: "available",
@@ -677,11 +815,6 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
         command: buildCurrentSessionReadCommand(),
         promptHint: toolHints.readSession.promptHint,
         constraints: toolHints.readSession.constraints,
-      },
-      {
-        id: "message.reply",
-        status: "planned",
-        description: "Native quoted reply command is not implemented yet.",
       },
     ],
     recentOwnMessages: {
@@ -5457,7 +5590,7 @@ export class SessionCommands {
     console.log(`Actions for ${sessionActionRef(session)}:`);
     const actions = payload.actions as Array<Record<string, unknown>>;
     for (const action of actions) {
-      const status = action.status === "available" ? "available" : "planned";
+      const status = typeof action.status === "string" ? action.status : "unknown";
       const command = typeof action.command === "string" ? ` — ${action.command}` : "";
       console.log(`  ${action.id}: ${status}${command}`);
     }
@@ -5536,10 +5669,40 @@ export class SessionCommands {
       agentId: session.agentId,
       messageRef: ref,
       chatIds: sessionActionChatIds(session),
+      originSessionKey: session.sessionKey,
     });
     if (!message) {
       fail(`Message not found or is not an own message for session: ${ref}`);
       return;
+    }
+
+    if (message.channel.toLowerCase() === "slack") {
+      const queued = await queueSlackChatAction(session, message, {
+        type: "chat_action",
+        actionId: "message.delete",
+        canonicalMessageId: message.id,
+        providerMessageId: message.providerMessageId,
+      });
+      const payload = {
+        deleted: false,
+        ...queued,
+        session: {
+          ref: sessionRef,
+          sessionKey: session.sessionKey,
+          sessionName: session.name ?? null,
+          agentId: session.agentId,
+        },
+        message: serializeSessionActionMessage(session, message),
+        hints: {
+          actions: inferredSession ? buildCurrentSessionActionsCommand() : buildSessionActionsCommand(sessionRef),
+        },
+      };
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+      console.log(`Queued deletion of message ${message.providerMessageId} for session ${sessionRef}`);
+      return payload;
     }
 
     const reply = await requestReply<{
@@ -5600,10 +5763,10 @@ export class SessionCommands {
     description: "Edit one of this session agent's own text channel messages",
   })
   @CommandAccess({
-    kind: "read",
+    kind: "mutate",
     resource: "sessions",
     action: "edit-message",
-    risk: "low",
+    risk: "high",
   })
   async editMessage(
     @Arg("sessionOrMessage", {
@@ -5660,10 +5823,42 @@ export class SessionCommands {
       agentId: session.agentId,
       messageRef: ref,
       chatIds: sessionActionChatIds(session),
+      originSessionKey: session.sessionKey,
     });
     if (!message) {
       fail(`Message not found or is not an own message for session: ${ref}`);
       return;
+    }
+
+    if (message.channel.toLowerCase() === "slack") {
+      const queued = await queueSlackChatAction(session, message, {
+        type: "chat_action",
+        actionId: "message.edit",
+        canonicalMessageId: message.id,
+        providerMessageId: message.providerMessageId,
+        text: nextText,
+      });
+      const payload = {
+        edited: false,
+        ...queued,
+        session: {
+          ref: sessionRef,
+          sessionKey: session.sessionKey,
+          sessionName: session.name ?? null,
+          agentId: session.agentId,
+        },
+        message: serializeSessionActionMessage(session, message),
+        pendingText: nextText,
+        hints: {
+          actions: inferredSession ? buildCurrentSessionActionsCommand() : buildSessionActionsCommand(sessionRef),
+        },
+      };
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+      console.log(`Queued edit of message ${message.providerMessageId} for session ${sessionRef}`);
+      return payload;
     }
 
     const reply = await requestReply<{

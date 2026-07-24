@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import type { NativeTextDelivery } from "./native/types.js";
+import type { NativeChatActionDelivery, NativeTextDelivery } from "./native/types.js";
 import {
   type ChannelOutboundConsumerOptions,
   acknowledgeChannelOutboundMessage,
@@ -173,6 +173,67 @@ describe("channel outbound consumer", () => {
     );
   });
 
+  it("dispatches chat actions only through a matching native action adapter", async () => {
+    const emitEvent = mock(async () => {});
+    const actionDelivery = makeActionDelivery();
+    const job = makeActionJob();
+
+    const result = await processChannelOutboundJob(job, {
+      deliveries: [],
+      actionDeliveries: [actionDelivery],
+      emitEvent,
+      persistDelivery: false,
+    });
+
+    expect(result).toEqual({ disposition: "ack", status: "delivered", retryable: false });
+    expect(actionDelivery.executeChatAction).toHaveBeenCalledWith({
+      sessionName: "ravi-channels",
+      emitId: "chat-action:test",
+      idempotencyKey: job.request.idempotencyKey,
+      target: job.request.target,
+      action: job.request.content,
+    });
+    expect(emitEvent).toHaveBeenCalledWith(
+      "ravi.session.ravi-channels.delivery",
+      expect.objectContaining({
+        status: "delivered",
+        contentType: "chat_action",
+        actionId: "message.edit",
+        providerMessageId: "1711111111.000100",
+      }),
+    );
+  });
+
+  it("acknowledges terminal Slack action permission failures with a stable reason code", async () => {
+    const emitEvent = mock(async () => {});
+    const actionDelivery = makeActionDelivery();
+    actionDelivery.executeChatAction = mock(async () => {
+      throw new Error("Slack chat.update failed: missing_scope (needed=chat:write)");
+    });
+
+    const result = await processChannelOutboundJob(makeActionJob(), {
+      deliveries: [],
+      actionDeliveries: [actionDelivery],
+      emitEvent,
+      persistDelivery: false,
+    });
+
+    expect(result).toMatchObject({
+      disposition: "ack",
+      status: "failed",
+      retryable: false,
+      phase: "send",
+    });
+    expect(emitEvent).toHaveBeenCalledWith(
+      "ravi.session.ravi-channels.delivery",
+      expect.objectContaining({
+        status: "failed",
+        retryable: false,
+        unavailableReasonCode: "missing_scope",
+      }),
+    );
+  });
+
   describe("durable post-send receipts", () => {
     let stateDir: string | null = null;
 
@@ -241,6 +302,42 @@ describe("channel outbound consumer", () => {
         canonicalMessageId: "cm_123",
         platformMessageId: "1711111111.000100",
         providerTimestamp: 1_711_111_111_000,
+      });
+    });
+
+    it("uses the receipt ledger to execute and persist a native chat action once", async () => {
+      const delivery = makeActionDelivery();
+      const persist = mock(() => ({
+        canonicalMessageId: "cm_123",
+        platformMessageId: "1711111111.000100",
+      }));
+      const emitEvent = mock(async () => {});
+      const recordTrace = mock(() => null);
+
+      const first = await processChannelOutboundJob(makeActionJob(), {
+        deliveries: [],
+        actionDeliveries: [delivery],
+        persistDeliveredChatAction: persist,
+        emitEvent,
+        recordDeliveryTrace: recordTrace,
+      });
+      const repeated = await processChannelOutboundJob(makeActionJob(), {
+        deliveries: [],
+        actionDeliveries: [delivery],
+        persistDeliveredChatAction: persist,
+        emitEvent,
+        recordDeliveryTrace: recordTrace,
+      });
+
+      expect(first).toEqual({ disposition: "ack", status: "delivered", retryable: false });
+      expect(repeated).toEqual({ disposition: "ack", status: "delivered", retryable: false });
+      expect(delivery.executeChatAction).toHaveBeenCalledTimes(1);
+      expect(persist).toHaveBeenCalledTimes(1);
+      expect(emitEvent).toHaveBeenCalledTimes(1);
+      expect(getChannelOutboundReceipt(makeActionJob().request.idempotencyKey)).toMatchObject({
+        state: "complete",
+        canonicalMessageId: "cm_123",
+        platformMessageId: "1711111111.000100",
       });
     });
 
@@ -483,6 +580,7 @@ describe("channel outbound consumer", () => {
       const emitEvent = mock(async () => {});
       const firstJob = makeJob();
       const conflictingJob = makeJob();
+      if (conflictingJob.request.content.type !== "text") throw new Error("Expected text fixture");
       conflictingJob.request.content.text = "different content";
 
       await processChannelOutboundJob(firstJob, {
@@ -688,7 +786,12 @@ describe("channel outbound consumer", () => {
       },
       "hello Slack",
       {
-        resolveContext: () => ({ agentId: "main", canonicalChatId: "chat_123", agentIdentity: null }),
+        resolveContext: () => ({
+          agentId: "main",
+          canonicalChatId: "chat_123",
+          originSessionKey: "agent:main:slack:slack-main:C123",
+          agentIdentity: null,
+        }),
         saveMessageMeta: saveMessageMeta as never,
         upsertChatMessage: upsertChatMessage as never,
       },
@@ -708,6 +811,7 @@ describe("channel outbound consumer", () => {
       expect.objectContaining({
         providerMessageId: "1711111111.000100",
         providerTimestamp: 1_711_111_111_000,
+        originSessionKey: "agent:main:slack:slack-main:C123",
       }),
     );
     expect(persisted).toEqual({
@@ -771,6 +875,55 @@ function makeDelivery(): NativeTextDelivery {
       platformMessageId: "1711111111.000100",
       providerTimestamp: 1_711_111_111_000,
     })),
+  };
+}
+
+function makeActionDelivery(): NativeChatActionDelivery {
+  return {
+    channelId: "slack",
+    supports: (target) => target.channel === "slack",
+    executeChatAction: mock(async (request) => ({
+      provider: "slack",
+      messageId: request.action.providerMessageId,
+      platformMessageId: request.action.providerMessageId,
+      providerTimestamp: 1_711_111_111_000,
+    })),
+  };
+}
+
+function makeActionJob(): ChannelOutboundJob {
+  return {
+    jobId: "chat-action:test",
+    status: "queued",
+    attemptCount: 0,
+    createdAt: 1_782_920_000_000,
+    updatedAt: 1_782_920_000_000,
+    request: {
+      requestId: "chat-action:test",
+      channelId: "slack",
+      instanceId: "slack-main",
+      accountId: "T1",
+      targetChatId: "C123",
+      origin: {
+        sessionName: "ravi-channels",
+        emitId: "chat-action:test",
+        responsePhase: "chat_action",
+      },
+      content: {
+        type: "chat_action",
+        actionId: "message.edit",
+        canonicalMessageId: "cm_123",
+        providerMessageId: "1711111111.000100",
+        text: "corrected",
+      },
+      idempotencyKey: "chat-action:test:slack:T1:C123:message.edit:1711111111.000100",
+      target: {
+        channel: "slack",
+        accountId: "T1",
+        instanceId: "slack-main",
+        chatId: "C123",
+      },
+    },
   };
 }
 

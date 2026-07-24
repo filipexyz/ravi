@@ -50290,6 +50290,28 @@ export const ReactSendReturnSchema = {
       ],
       "type": "object"
     },
+    "executionMode": {
+      "enum": [
+        "durable",
+        "legacy"
+      ],
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "type": "string"
+    },
+    "nextAttemptAt": {
+      "type": "number"
+    },
+    "publishPending": {
+      "type": "boolean"
+    },
+    "publishedNow": {
+      "type": "boolean"
+    },
+    "queued": {
+      "type": "boolean"
+    },
     "reaction": {
       "additionalProperties": false,
       "properties": {
@@ -50306,9 +50328,15 @@ export const ReactSendReturnSchema = {
       ],
       "type": "object"
     },
-    "success": {
-      "const": true,
-      "type": "boolean"
+    "requestId": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "queued",
+        "accepted"
+      ],
+      "type": "string"
     },
     "target": {
       "additionalProperties": false,
@@ -50331,12 +50359,13 @@ export const ReactSendReturnSchema = {
       "type": "object"
     },
     "topic": {
-      "const": "ravi.outbound.reaction",
       "type": "string"
     }
   },
   "required": [
-    "success",
+    "status",
+    "queued",
+    "executionMode",
     "topic",
     "reaction",
     "target",

@@ -6,6 +6,7 @@ const actualRouterIndexModule = await import("../../router/index.js");
 const actualRouterSessionsModule = await import("../../router/sessions.js");
 const actualRouterDbModule = await import("../../router/router-db.js");
 const actualRuntimeContextRegistryModule = await import("../../runtime/context-registry.js");
+const actualStickerCatalogModule = await import("../../stickers/catalog.js");
 
 type RuntimeEventPayload = Record<string, unknown>;
 type ResponseEventPayload = { response?: string; error?: string };
@@ -24,7 +25,12 @@ let sessionDerivedSource: { channel: string; accountId: string; chatId: string; 
 let listedContexts: Array<Record<string, unknown>> = [];
 let listedAdapters: Array<Record<string, unknown>> = [];
 const adapterSnapshots = new Map<string, Record<string, unknown>>();
-let routerConfig: { agents: Record<string, Record<string, unknown>> } = {
+let routerConfig: {
+  agents: Record<string, Record<string, unknown>>;
+  channels?: Record<string, Record<string, unknown>>;
+  instances?: Record<string, Record<string, unknown>>;
+  instanceToAccount?: Record<string, string>;
+} = {
   agents: {},
 };
 let chatHistory: Array<Record<string, unknown>> = [];
@@ -40,6 +46,12 @@ let agentChatMessagesPage: {
   offset: number;
   items: Array<Record<string, unknown>>;
 } = { total: 0, limit: 10, offset: 0, items: [] };
+let lastAgentChatMessagesQuery: Record<string, unknown> | null = null;
+let lastAgentMessageLookup: Record<string, unknown> | null = null;
+let agentMessageByRef: Record<string, unknown> | null = null;
+const agentChatActionCounts = new Map<string, { ownMessageCount: number; ownTextMessageCount: number }>();
+let stickerCatalog: Array<Record<string, unknown>> = [];
+const publishedOutboundJobs: Array<Record<string, unknown>> = [];
 let displayNameUpdates: Array<{ sessionKey: string; displayName: string }> = [];
 let deletedSessionKeys: string[] = [];
 let renameSessionNameCalls: Array<{ sessionKey: string; newName: string }> = [];
@@ -128,6 +140,20 @@ mock.module("../../omni/session-stream.js", () => ({
   }),
 }));
 
+mock.module("../../channels/outbound-publish-outbox.js", () => ({
+  publishChannelOutboundJobDurably: mock(async (job: Record<string, unknown>) => {
+    publishedOutboundJobs.push(job);
+    return {
+      ok: true,
+      publishedNow: true,
+      record: {
+        idempotencyKey: (job as any).request.idempotencyKey,
+        status: "published",
+      },
+    };
+  }),
+}));
+
 mock.module("../../router/sessions.js", () => ({
   ...actualRouterSessionsModule,
   listSessions: () => listedSessions,
@@ -207,7 +233,16 @@ mock.module("../../router/router-db.js", () => ({
   ...actualRouterDbModule,
   dbGetChat: (chatId: string) => chatRecords.get(chatId) ?? actualRouterDbModule.dbGetChat(chatId),
   dbGetSessionChatBinding: (sessionKey: string) => sessionChatBindings.get(sessionKey) ?? null,
-  dbListAgentChatMessagesPage: () => agentChatMessagesPage,
+  dbFindAgentChatMessageByRef: (input: Record<string, unknown>) => {
+    lastAgentMessageLookup = input;
+    return agentMessageByRef;
+  },
+  dbListAgentChatMessagesPage: (input: Record<string, unknown>) => {
+    lastAgentChatMessagesQuery = input;
+    return agentChatMessagesPage;
+  },
+  dbGetAgentChatActionCounts: (input: { chatId: string }) =>
+    agentChatActionCounts.get(input.chatId) ?? { ownMessageCount: 0, ownTextMessageCount: 0 },
   dbListContexts: (options?: { sessionKey?: string }) =>
     listedContexts.filter((context) => {
       if (!options?.sessionKey) return true;
@@ -215,6 +250,15 @@ mock.module("../../router/router-db.js", () => ({
     }),
   dbListMessageMetaByChatId: (chatId: string, limit: number) =>
     messageMetadataRows.filter((row) => row.chatId === chatId).slice(-limit),
+}));
+
+mock.module("../../stickers/catalog.js", () => ({
+  ...actualStickerCatalogModule,
+  listStickers: () => stickerCatalog,
+  stickerAllowedOnChannel: (sticker: Record<string, unknown>, channel: string) =>
+    Array.isArray(sticker.channels) && sticker.channels.includes(channel),
+  stickerAllowedForAgent: (sticker: Record<string, unknown>, agentId: string) =>
+    Array.isArray(sticker.agents) && (sticker.agents.length === 0 || sticker.agents.includes(agentId)),
 }));
 
 mock.module("../../db.js", () => ({
@@ -342,6 +386,12 @@ beforeEach(() => {
   sessionSubscriptions = [];
   sessionChatBindings.clear();
   agentChatMessagesPage = { total: 0, limit: 10, offset: 0, items: [] };
+  lastAgentChatMessagesQuery = null;
+  lastAgentMessageLookup = null;
+  agentMessageByRef = null;
+  agentChatActionCounts.clear();
+  stickerCatalog = [];
+  publishedOutboundJobs.length = 0;
   displayNameUpdates = [];
   deletedSessionKeys = [];
   renameSessionNameCalls = [];
@@ -742,6 +792,14 @@ describe("SessionCommands attach hints", () => {
       instanceId: "main",
       platformChatId: "120363424772797713@g.us",
     });
+    stickerCatalog = [
+      {
+        id: "wave",
+        enabled: true,
+        channels: ["whatsapp"],
+        agents: [],
+      },
+    ];
 
     const payload = JSON.parse(
       captureLogs(() => {
@@ -777,6 +835,191 @@ describe("SessionCommands attach hints", () => {
       chatId: "chat_ae70f8bc7ec999d2e2048219",
       speechMode: "speak",
       defaultOutput: true,
+    });
+  });
+
+  it("resolves Slack actions per concrete surface and origin session", () => {
+    const sessionKey = "agent:dev:slack:ravi-slack:C123";
+    resolvedSession = {
+      sessionKey,
+      name: "dev-slack",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+    sessionSubscriptions = [
+      {
+        id: "sub_slack",
+        sessionKey,
+        chatId: "chat_slack",
+        role: "primary",
+        speechMode: "speak",
+        outputAttachedAt: 1,
+      },
+    ];
+    chatRecords.set("chat_slack", {
+      id: "chat_slack",
+      title: "ravi",
+      channel: "slack",
+      instanceId: "ravi-slack",
+      platformChatId: "C123",
+    });
+    routerConfig = {
+      agents: {},
+      channels: {
+        "ravi-slack": {
+          name: "ravi-slack",
+          provider: "slack",
+          enabled: true,
+          credentialConnection: "ravi-slack-secret",
+        },
+      },
+      instances: {},
+      instanceToAccount: {},
+    };
+    agentChatActionCounts.set("chat_slack", { ownMessageCount: 2, ownTextMessageCount: 1 });
+
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().actions("dev-slack", undefined, true);
+      }),
+    );
+
+    expect(lastAgentChatMessagesQuery).toMatchObject({
+      agentId: "dev",
+      chatIds: ["chat_slack"],
+      originSessionKey: sessionKey,
+    });
+    expect(payload.surfaces).toMatchObject({
+      effectiveSurfaceId: "chat_slack",
+      items: [
+        {
+          id: "chat_slack",
+          channel: "slack",
+          credentialConfigured: true,
+          ownMessageCount: 2,
+          ownTextMessageCount: 1,
+        },
+      ],
+    });
+    expect(payload.actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "message.edit",
+          status: "available",
+          executionMode: "durable",
+          requiredScopes: ["chat:write"],
+        }),
+        expect.objectContaining({
+          id: "message.react",
+          status: "available",
+          executionMode: "durable",
+          requiredScopes: ["reactions:write"],
+        }),
+        expect.objectContaining({
+          id: "media.send",
+          status: "available",
+          executionMode: "provider_confirmed",
+          requiredScopes: ["files:write"],
+        }),
+        expect.objectContaining({
+          id: "sticker.send",
+          status: "unavailable",
+          unavailableReasonCode: "unsupported_channel",
+        }),
+        expect.objectContaining({
+          id: "message.reply",
+          status: "planned",
+        }),
+      ]),
+    );
+  });
+
+  it("queues Slack edits and deletes durably without claiming provider success", async () => {
+    const sessionKey = "agent:dev:slack:ravi-slack:C123";
+    resolvedSession = {
+      sessionKey,
+      name: "dev-slack",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+    sessionSubscriptions = [
+      {
+        id: "sub_slack",
+        sessionKey,
+        chatId: "chat_slack",
+        role: "primary",
+        speechMode: "speak",
+        outputAttachedAt: 1,
+      },
+    ];
+    chatRecords.set("chat_slack", {
+      id: "chat_slack",
+      title: "ravi",
+      channel: "slack",
+      instanceId: "ravi-slack",
+      platformChatId: "C123",
+    });
+    agentMessageByRef = {
+      id: "cm_slack",
+      chatId: "chat_slack",
+      channel: "slack",
+      instanceId: "ravi-slack",
+      providerMessageId: "1711111111.000100",
+      rawChatId: "C123",
+      actorType: "agent",
+      agentId: "dev",
+      originSessionKey: sessionKey,
+      messageType: "text",
+      content: { type: "text", text: "old text" },
+      ingestedAt: 1_711_111_111_000,
+      createdAt: 1_711_111_111_000,
+      updatedAt: 1_711_111_111_000,
+    };
+
+    const commands = new SessionCommands();
+    let deleted: Record<string, unknown> | undefined;
+    await captureLogsAsync(async () => {
+      deleted = (await commands.deleteMessage("dev-slack", "cm_slack", true)) as Record<string, unknown>;
+    });
+    expect(deleted).toMatchObject({
+      deleted: false,
+      status: "queued",
+      queued: true,
+      executionMode: "durable",
+      publishedNow: true,
+    });
+    expect(lastAgentMessageLookup).toMatchObject({
+      agentId: "dev",
+      chatIds: ["chat_slack"],
+      originSessionKey: sessionKey,
+    });
+
+    let edited: Record<string, unknown> | undefined;
+    await captureLogsAsync(async () => {
+      edited = (await commands.editMessage("dev-slack", "cm_slack", "new text", undefined, true)) as Record<
+        string,
+        unknown
+      >;
+    });
+    expect(edited).toMatchObject({
+      edited: false,
+      status: "queued",
+      queued: true,
+      pendingText: "new text",
+    });
+    expect(publishedOutboundJobs).toHaveLength(2);
+    expect((publishedOutboundJobs[0] as any).request.content).toEqual({
+      type: "chat_action",
+      actionId: "message.delete",
+      canonicalMessageId: "cm_slack",
+      providerMessageId: "1711111111.000100",
+    });
+    expect((publishedOutboundJobs[1] as any).request.content).toEqual({
+      type: "chat_action",
+      actionId: "message.edit",
+      canonicalMessageId: "cm_slack",
+      providerMessageId: "1711111111.000100",
+      text: "new text",
     });
   });
 

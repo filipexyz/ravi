@@ -8,7 +8,7 @@ import {
   type ChannelRunnerHealthResponder,
   type ChannelRunnerRuntimeStatus,
 } from "./health.js";
-import type { NativePresenceDelivery, NativeTextDelivery } from "./native/types.js";
+import type { NativeChatActionDelivery, NativePresenceDelivery, NativeTextDelivery } from "./native/types.js";
 import { ChannelOutboundConsumer } from "./outbound-consumer.js";
 import {
   ChannelOutboundPublishReconciler,
@@ -39,6 +39,20 @@ const log = logger.child("channels:runner");
 
 export const CHANNEL_OUTBOUND_RECEIPT_PRUNE_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 
+export function collectSlackRuntimeDeliveries(
+  runtimes: readonly Pick<SlackNativeRuntime, "delivery" | "actions" | "presence">[],
+): {
+  deliveries: NativeTextDelivery[];
+  actionDeliveries: NativeChatActionDelivery[];
+  presenceDeliveries: NativePresenceDelivery[];
+} {
+  return {
+    deliveries: runtimes.map((runtime) => runtime.delivery),
+    actionDeliveries: runtimes.map((runtime) => runtime.actions),
+    presenceDeliveries: runtimes.map((runtime) => runtime.presence),
+  };
+}
+
 type ReceiptPruneTimer = ReturnType<typeof setInterval>;
 
 export interface ChannelOutboundReceiptPrunerOptions {
@@ -68,6 +82,7 @@ export class ChannelRunner {
   private outboundConsumer: ChannelOutboundConsumer | null = null;
   private presenceConsumer: ChannelPresenceConsumer | null = null;
   private deliveries: NativeTextDelivery[] = [];
+  private actionDeliveries: NativeChatActionDelivery[] = [];
   private presenceDeliveries: NativePresenceDelivery[] = [];
   private slackRuntimes: SlackNativeRuntime[] = [];
   private adapterStatuses = new Map<string, AdapterStatus>();
@@ -115,6 +130,7 @@ export class ChannelRunner {
 
       this.outboundConsumer = new ChannelOutboundConsumer({
         deliveries: this.deliveries,
+        actionDeliveries: this.actionDeliveries,
         isRunning: () => this.running,
       });
       this.outboundConsumer.start();
@@ -155,6 +171,7 @@ export class ChannelRunner {
     }
     this.slackRuntimes = [];
     this.deliveries = [];
+    this.actionDeliveries = [];
     this.presenceDeliveries = [];
     this.outboundInfrastructureReady = false;
     this.startedAt = null;
@@ -204,9 +221,11 @@ export class ChannelRunner {
       }
 
       this.slackRuntimes = runtimes;
+      const registered = collectSlackRuntimeDeliveries(runtimes);
+      this.deliveries.push(...registered.deliveries);
+      this.actionDeliveries.push(...registered.actionDeliveries);
+      this.presenceDeliveries.push(...registered.presenceDeliveries);
       for (const runtime of runtimes) {
-        this.deliveries.push(runtime.delivery);
-        this.presenceDeliveries.push(runtime.presence);
         runtime.socketMode.start();
         this.markAdapter(`slack:${runtime.accountId}`, "slack", "starting", "opening_socket");
       }

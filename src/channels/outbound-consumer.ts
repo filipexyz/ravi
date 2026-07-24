@@ -5,13 +5,20 @@ import { getAgentPlatformIdentity } from "../contacts.js";
 import { getSessionByName } from "../router/index.js";
 import {
   dbGetSessionChatBinding,
+  dbMarkChatMessageDeleted,
+  dbMarkChatMessageEdited,
   dbSaveMessageMeta,
   dbUpsertChatMessage,
   type UpsertChatMessageResult,
 } from "../router/router-db.js";
 import { recordDeliveryTrace } from "../session-trace/channel-trace.js";
 import { logger } from "../utils/logger.js";
-import type { NativeTextDelivery, NativeTextDeliveryResult } from "./native/types.js";
+import type {
+  NativeChatActionDelivery,
+  NativeChatActionDeliveryResult,
+  NativeTextDelivery,
+  NativeTextDeliveryResult,
+} from "./native/types.js";
 import {
   type ChannelOutboundReceipt,
   type ChannelOutboundReceiptErrorPhase,
@@ -49,14 +56,23 @@ export interface PersistedOutboundMessage {
   providerTimestamp?: number;
 }
 
+type NativeOutboundDelivery = NativeTextDelivery | NativeChatActionDelivery;
+type NativeOutboundDeliveryResult = NativeTextDeliveryResult | NativeChatActionDeliveryResult;
+
 export type PersistDeliveredMessage = (
   job: ChannelOutboundJob,
   delivered: NativeTextDeliveryResult,
   text: string,
 ) => PersistedOutboundMessage;
 
+export type PersistDeliveredChatAction = (
+  job: ChannelOutboundJob,
+  delivered: NativeChatActionDeliveryResult,
+) => PersistedOutboundMessage;
+
 export interface ChannelOutboundConsumerOptions {
   deliveries: NativeTextDelivery[];
+  actionDeliveries?: NativeChatActionDelivery[];
   emitEvent?: typeof nats.emit;
   flushNats?: typeof flushNatsConnection;
   isRunning?: () => boolean;
@@ -64,6 +80,7 @@ export interface ChannelOutboundConsumerOptions {
   persistDelivery?: boolean;
   receiptStore?: ChannelOutboundReceiptStore;
   persistDeliveredMessage?: PersistDeliveredMessage;
+  persistDeliveredChatAction?: PersistDeliveredChatAction;
   recordDeliveryTrace?: typeof recordDeliveryTrace;
   claimLeaseMs?: number;
 }
@@ -190,11 +207,11 @@ export async function processChannelOutboundJob(
   const sessionName = job.request.origin.sessionName;
   const emitId = job.request.origin.emitId;
   const target = job.request.target;
-  const text = job.request.content.text;
   const deliveryAttempt = options.deliveryAttempt;
 
-  if (job.request.content.type !== "text") {
-    const error = `Unsupported outbound content type: ${job.request.content.type}`;
+  if (job.request.content.type !== "text" && job.request.content.type !== "chat_action") {
+    const contentType = (job.request.content as { type?: unknown }).type;
+    const error = `Unsupported outbound content type: ${String(contentType)}`;
     await emitDelivery(emitEvent, recordTrace, job, {
       status: "failed",
       reason: "unsupported_content",
@@ -202,13 +219,13 @@ export async function processChannelOutboundJob(
       target,
       emitId,
       idempotencyKey: job.request.idempotencyKey,
-      textLen: text.length,
+      ...outboundContentTelemetry(job),
       durationMs: Date.now() - t0,
     });
     return { disposition: "ack", status: "failed", retryable: false, error };
   }
 
-  const adapter = options.deliveries.find((candidate) => candidate.supports(target));
+  const adapter = findNativeOutboundAdapter(job, options);
   if (options.persistDelivery === false) {
     if (!adapter) return emitMissingAdapter(emitEvent, recordTrace, job, t0, deliveryAttempt);
     return processWithoutReceiptLedger(job, adapter, emitEvent, recordTrace, t0);
@@ -216,6 +233,7 @@ export async function processChannelOutboundJob(
 
   const receiptStore = options.receiptStore ?? sqliteChannelOutboundReceiptStore;
   const persistMessage = options.persistDeliveredMessage ?? persistDeliveredMessage;
+  const persistChatAction = options.persistDeliveredChatAction ?? persistDeliveredChatAction;
   const requestFingerprint = channelOutboundRequestFingerprint(job);
   let receipt: ChannelOutboundReceipt | null;
 
@@ -333,17 +351,12 @@ export async function processChannelOutboundJob(
       };
     }
 
-    let delivered: NativeTextDeliveryResult;
+    let delivered: NativeOutboundDeliveryResult;
     try {
-      delivered = await adapter.deliverText({
-        sessionName,
-        emitId,
-        idempotencyKey: job.request.idempotencyKey,
-        target,
-        text,
-      });
+      delivered = await executeNativeOutbound(job, adapter);
     } catch (error) {
       const message = errorMessage(error);
+      const failure = classifyNativeOutboundFailure(job, message);
       try {
         receiptStore.releaseClaim({
           idempotencyKey: job.request.idempotencyKey,
@@ -362,10 +375,12 @@ export async function processChannelOutboundJob(
           status: "failed",
           reason: "send_error",
           error: message,
+          retryable: failure.retryable,
+          ...(failure.reasonCode ? { unavailableReasonCode: failure.reasonCode } : {}),
           target,
           emitId,
           idempotencyKey: job.request.idempotencyKey,
-          textLen: text.length,
+          ...outboundContentTelemetry(job),
           durationMs: Date.now() - t0,
         });
       } catch (telemetryError) {
@@ -374,7 +389,13 @@ export async function processChannelOutboundJob(
           error: errorMessage(telemetryError),
         });
       }
-      return { disposition: "nak", status: "failed", retryable: true, error: message, phase: "send" };
+      return {
+        disposition: failure.retryable ? "nak" : "ack",
+        status: "failed",
+        retryable: failure.retryable,
+        error: message,
+        phase: "send",
+      };
     }
 
     try {
@@ -396,7 +417,11 @@ export async function processChannelOutboundJob(
 
   if (receipt.persistedAt === undefined) {
     try {
-      const persisted = persistMessage(job, deliveryResultFromReceipt(receipt), text);
+      const delivered = deliveryResultFromReceipt(receipt);
+      const persisted =
+        job.request.content.type === "text"
+          ? persistMessage(job, delivered, job.request.content.text)
+          : persistChatAction(job, delivered);
       receipt = receiptStore.markPersisted(job.request.idempotencyKey, persisted);
     } catch (error) {
       return postSendPhaseFailure(job, receipt, receiptStore, "canonical_persist", error);
@@ -431,38 +456,39 @@ export async function processChannelOutboundJob(
 
 async function processWithoutReceiptLedger(
   job: ChannelOutboundJob,
-  adapter: NativeTextDelivery,
+  adapter: NativeOutboundDelivery,
   emitEvent: typeof nats.emit,
   recordTrace: typeof recordDeliveryTrace,
   t0: number,
 ): Promise<ChannelOutboundProcessingResult> {
-  const sessionName = job.request.origin.sessionName;
   const emitId = job.request.origin.emitId;
   const target = job.request.target;
-  const text = job.request.content.text;
-  let delivered: NativeTextDeliveryResult;
+  let delivered: NativeOutboundDeliveryResult;
 
   try {
-    delivered = await adapter.deliverText({
-      sessionName,
-      emitId,
-      idempotencyKey: job.request.idempotencyKey,
-      target,
-      text,
-    });
+    delivered = await executeNativeOutbound(job, adapter);
   } catch (error) {
     const message = errorMessage(error);
+    const failure = classifyNativeOutboundFailure(job, message);
     await emitDelivery(emitEvent, recordTrace, job, {
       status: "failed",
       reason: "send_error",
       error: message,
+      retryable: failure.retryable,
+      ...(failure.reasonCode ? { unavailableReasonCode: failure.reasonCode } : {}),
       target,
       emitId,
       idempotencyKey: job.request.idempotencyKey,
-      textLen: text.length,
+      ...outboundContentTelemetry(job),
       durationMs: Date.now() - t0,
     });
-    return { disposition: "nak", status: "failed", retryable: true, error: message, phase: "send" };
+    return {
+      disposition: failure.retryable ? "nak" : "ack",
+      status: "failed",
+      retryable: failure.retryable,
+      error: message,
+      phase: "send",
+    };
   }
 
   try {
@@ -479,7 +505,7 @@ async function processWithoutReceiptLedger(
       target,
       deliveredAt: Date.now(),
       durationMs: Date.now() - t0,
-      textLen: text.length,
+      ...outboundContentTelemetry(job),
     });
     return { disposition: "ack", status: "delivered", retryable: false };
   } catch (error) {
@@ -493,10 +519,77 @@ async function processWithoutReceiptLedger(
   }
 }
 
+function findNativeOutboundAdapter(
+  job: ChannelOutboundJob,
+  options: ChannelOutboundConsumerOptions,
+): NativeOutboundDelivery | undefined {
+  const target = job.request.target;
+  return job.request.content.type === "text"
+    ? options.deliveries.find((candidate) => candidate.supports(target))
+    : options.actionDeliveries?.find((candidate) => candidate.supports(target));
+}
+
+async function executeNativeOutbound(
+  job: ChannelOutboundJob,
+  adapter: NativeOutboundDelivery,
+): Promise<NativeOutboundDeliveryResult> {
+  const baseRequest = {
+    sessionName: job.request.origin.sessionName,
+    emitId: job.request.origin.emitId,
+    idempotencyKey: job.request.idempotencyKey,
+    target: job.request.target,
+  };
+  if (job.request.content.type === "text") {
+    if (!("deliverText" in adapter)) {
+      throw new Error(`Native text adapter is unavailable for channel: ${job.request.channelId}`);
+    }
+    return adapter.deliverText({
+      ...baseRequest,
+      text: job.request.content.text,
+    });
+  }
+  if (!("executeChatAction" in adapter)) {
+    throw new Error(`Native chat action adapter is unavailable for channel: ${job.request.channelId}`);
+  }
+  return adapter.executeChatAction({
+    ...baseRequest,
+    action: job.request.content,
+  });
+}
+
+function classifyNativeOutboundFailure(
+  job: ChannelOutboundJob,
+  message: string,
+): {
+  retryable: boolean;
+  reasonCode?: "missing_connection" | "missing_scope" | "permission_denied" | "invalid_target";
+} {
+  if (job.request.content.type !== "chat_action" || job.request.channelId.toLowerCase() !== "slack") {
+    return { retryable: true };
+  }
+  const normalized = message.toLowerCase();
+  if (/missing_scope/.test(normalized)) return { retryable: false, reasonCode: "missing_scope" };
+  if (/not_authed|invalid_auth|account_inactive|token_revoked/.test(normalized)) {
+    return { retryable: false, reasonCode: "missing_connection" };
+  }
+  if (
+    /not_allowed_token_type|restricted_action|no_permission|cant_update_message|cant_delete_message|edit_not_allowed/.test(
+      normalized,
+    )
+  ) {
+    return { retryable: false, reasonCode: "permission_denied" };
+  }
+  if (/channel_not_found|message_not_found|invalid_ts|invalid_name|is_archived/.test(normalized)) {
+    return { retryable: false, reasonCode: "invalid_target" };
+  }
+  return { retryable: true };
+}
+
 export interface PersistDeliveredMessageDependencies {
   resolveContext(input: { job: ChannelOutboundJob; instanceId: string }): {
     agentId?: string;
     canonicalChatId?: string;
+    originSessionKey?: string;
     agentIdentity?: {
       id: string;
       platformUserId: string;
@@ -524,6 +617,7 @@ const DEFAULT_PERSISTENCE_DEPENDENCIES: PersistDeliveredMessageDependencies = {
     return {
       ...(agentId ? { agentId } : {}),
       ...(canonicalChatId ? { canonicalChatId } : {}),
+      ...(session?.sessionKey ? { originSessionKey: session.sessionKey } : {}),
       agentIdentity,
     };
   },
@@ -547,7 +641,10 @@ export function persistDeliveredMessage(
   const target = job.request.target;
   const sessionName = job.request.origin.sessionName;
   const instanceId = target.instanceId ?? job.request.instanceId ?? target.accountId;
-  const { agentId, canonicalChatId, agentIdentity } = dependencies.resolveContext({ job, instanceId });
+  const { agentId, canonicalChatId, originSessionKey, agentIdentity } = dependencies.resolveContext({
+    job,
+    instanceId,
+  });
 
   dependencies.saveMessageMeta(platformMessageId, target.chatId, {
     canonicalChatId,
@@ -560,6 +657,7 @@ export function persistDeliveredMessage(
     identityProvenance: {
       source: "ravi.channels.runner",
       sessionName,
+      originSessionKey: originSessionKey ?? null,
       agentId: agentId ?? null,
       accountId: target.accountId,
       instanceId,
@@ -587,12 +685,14 @@ export function persistDeliveredMessage(
     normalizedSenderId: agentIdentity?.normalizedPlatformUserId,
     actorType: "agent",
     agentId,
+    originSessionKey,
     platformIdentityId: agentIdentity?.id,
     messageType: "text",
     content: { type: "text", text },
     rawProvenance: {
       source: "ravi.channels.runner",
       sessionName,
+      originSessionKey: originSessionKey ?? null,
       agentId,
       accountId: target.accountId,
       instanceId,
@@ -610,6 +710,31 @@ export function persistDeliveredMessage(
     canonicalMessageId: stored.canonicalMessageId,
     platformMessageId: stored.providerMessageId,
     ...(stored.providerTimestamp !== undefined ? { providerTimestamp: stored.providerTimestamp } : {}),
+  };
+}
+
+export function persistDeliveredChatAction(
+  job: ChannelOutboundJob,
+  delivered: NativeChatActionDeliveryResult,
+): PersistedOutboundMessage {
+  const content = job.request.content;
+  if (content.type !== "chat_action") {
+    throw new Error(`Cannot persist non-action outbound content: ${content.type}`);
+  }
+
+  const canonicalMessageId = content.canonicalMessageId?.trim();
+  if (canonicalMessageId && content.actionId === "message.edit") {
+    const edited = dbMarkChatMessageEdited(canonicalMessageId, content.text);
+    if (!edited) throw new Error(`Canonical chat message not found after Slack edit: ${canonicalMessageId}`);
+  } else if (canonicalMessageId && content.actionId === "message.delete") {
+    const deleted = dbMarkChatMessageDeleted(canonicalMessageId);
+    if (!deleted) throw new Error(`Canonical chat message not found after Slack delete: ${canonicalMessageId}`);
+  }
+
+  return {
+    ...(canonicalMessageId ? { canonicalMessageId } : {}),
+    ...(delivered.platformMessageId ? { platformMessageId: delivered.platformMessageId } : {}),
+    ...(delivered.providerTimestamp !== undefined ? { providerTimestamp: delivered.providerTimestamp } : {}),
   };
 }
 
@@ -642,7 +767,7 @@ async function emitFingerprintConflict(
     emitId: job.request.origin.emitId,
     idempotencyKey: job.request.idempotencyKey,
     conflictingJobId: receipt.jobId,
-    textLen: job.request.content.text.length,
+    ...outboundContentTelemetry(job),
     durationMs: Date.now() - t0,
   });
   return {
@@ -673,7 +798,7 @@ async function emitMissingAdapter(
     target: job.request.target,
     emitId: job.request.origin.emitId,
     idempotencyKey: job.request.idempotencyKey,
-    textLen: job.request.content.text.length,
+    ...outboundContentTelemetry(job),
     durationMs: Date.now() - t0,
   });
   return {
@@ -698,7 +823,7 @@ export function missingAdapterRetryDelayMs(deliveryAttempt: number | undefined):
   );
 }
 
-function deliveryResultFromReceipt(receipt: ChannelOutboundReceipt): NativeTextDeliveryResult {
+function deliveryResultFromReceipt(receipt: ChannelOutboundReceipt): NativeOutboundDeliveryResult {
   return {
     provider: receipt.provider,
     ...(receipt.deliveryMessageId ? { messageId: receipt.deliveryMessageId } : {}),
@@ -729,8 +854,24 @@ function deliveredPayload(
     target: job.request.target,
     deliveredAt: receipt.sentAt,
     durationMs: Date.now() - startedAt,
-    textLen: job.request.content.text.length,
+    ...outboundContentTelemetry(job),
   };
+}
+
+function outboundContentTelemetry(job: ChannelOutboundJob): Record<string, unknown> {
+  const content = job.request.content;
+  if (content.type === "text") {
+    return { contentType: "text", textLen: content.text.length };
+  }
+  if (content.type === "chat_action") {
+    return {
+      contentType: "chat_action",
+      actionId: content.actionId,
+      providerMessageId: content.providerMessageId,
+      canonicalMessageId: content.canonicalMessageId,
+    };
+  }
+  return { contentType: String((content as { type?: unknown }).type ?? "unknown") };
 }
 
 function postSendPhaseFailure(

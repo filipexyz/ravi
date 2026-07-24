@@ -96,6 +96,10 @@ Sessions do NOT own:
 
 `ravi sessions actions --json` is the canonical conversational action surface for a runtime session.
 
+The detailed discovery, ownership and per-surface availability contract lives
+in `sessions/actions`. Cross-channel action semantics live in
+`channels/chat-actions`.
+
 It MUST expose:
 
 - the current session identity;
@@ -132,6 +136,7 @@ Agents MUST consult `ravi sessions actions --json` before using a conversational
 - Falling back to inbound source for output after attach lands — causes sessions to reply in the wrong chat.
 - Mentioning a conversational tool in the prompt without exposing it through `ravi sessions actions --json`.
 - Marking a not-yet-implemented action as available instead of `planned`.
+- Widening an empty chat scope to every message authored by the session's agent.
 - Letting threads, observers, or knowledge collapse into the session concept.
 
 ## Effective Model And Presets

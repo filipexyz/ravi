@@ -7,10 +7,14 @@ import { z } from "zod";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { getContext, fail } from "../context.js";
 import { nats } from "../../nats.js";
+import { buildChannelChatActionJob } from "../../channels/outbound-stream.js";
+import { publishChannelOutboundJobDurably } from "../../channels/outbound-publish-outbox.js";
 
 const reactSendReturnSchema = z.object({
-  success: z.literal(true),
-  topic: z.literal("ravi.outbound.reaction"),
+  status: z.enum(["queued", "accepted"]),
+  queued: z.boolean(),
+  executionMode: z.enum(["durable", "legacy"]),
+  topic: z.string(),
   reaction: z.object({
     messageId: z.string(),
     emoji: z.string(),
@@ -29,6 +33,11 @@ const reactSendReturnSchema = z.object({
       emoji: z.string(),
     })
     .passthrough(),
+  requestId: z.string().optional(),
+  idempotencyKey: z.string().optional(),
+  publishedNow: z.boolean().optional(),
+  publishPending: z.boolean().optional(),
+  nextAttemptAt: z.number().optional(),
 });
 
 @Group({
@@ -62,10 +71,65 @@ export class ReactCommands {
       emoji,
     };
 
+    if (channel.toLowerCase() === "slack") {
+      const canonicalChatId = source.canonicalChatId?.trim();
+      if (!canonicalChatId) {
+        fail("invalid_target: Slack reactions require a canonical chat target");
+      }
+      const job = buildChannelChatActionJob({
+        sessionName: ctx?.sessionName ?? ctx?.sessionKey ?? ctx?.agentId ?? "cli",
+        target: {
+          channel: "slack",
+          accountId,
+          instanceId: source.instanceId ?? accountId,
+          chatId,
+          canonicalChatId,
+          ...(source.threadId ? { threadId: source.threadId } : {}),
+        },
+        content: {
+          type: "chat_action",
+          actionId: "message.react",
+          providerMessageId: messageId,
+          emoji,
+          operation: "add",
+        },
+      });
+      const published = await publishChannelOutboundJobDurably(job);
+      const payload = {
+        status: "queued" as const,
+        queued: true,
+        executionMode: "durable" as const,
+        topic: "ravi.channel.outbound.slack",
+        reaction: {
+          messageId,
+          emoji,
+        },
+        target: {
+          channel,
+          accountId,
+          chatId,
+        },
+        event: eventPayload,
+        requestId: job.request.requestId,
+        idempotencyKey: job.request.idempotencyKey,
+        publishedNow: published.ok && published.publishedNow,
+        publishPending: !published.ok,
+        ...(published.ok ? {} : { nextAttemptAt: published.nextAttemptAt }),
+      };
+      if (asJson) {
+        console.log(JSON.stringify(payload, null, 2));
+      } else {
+        console.log(`Queued reaction ${emoji} for message ${messageId}`);
+      }
+      return payload;
+    }
+
     await nats.emit("ravi.outbound.reaction", eventPayload);
 
     const payload = {
-      success: true,
+      status: "accepted" as const,
+      queued: false,
+      executionMode: "legacy" as const,
       topic: "ravi.outbound.reaction",
       reaction: {
         messageId,
@@ -82,7 +146,7 @@ export class ReactCommands {
     if (asJson) {
       console.log(JSON.stringify(payload, null, 2));
     } else {
-      console.log(`✓ Reaction ${emoji} sent to message ${messageId}`);
+      console.log(`Reaction ${emoji} accepted for message ${messageId}`);
     }
 
     return payload;

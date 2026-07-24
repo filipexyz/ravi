@@ -36,6 +36,7 @@ import {
 import type { TaskRuntimeResolution } from "../../tasks/types.js";
 import {
   SlackAssistantThreadPresence,
+  SlackChatActionDelivery,
   SlackPresenceStack,
   SlackReactionPresence,
   SlackSocketModeService,
@@ -285,6 +286,97 @@ describe("Slack Socket Mode routing", () => {
       platformMessageId: "1713000000.000100",
       providerTimestamp: 1_713_000_000_000,
       raw: { ok: true },
+    });
+  });
+
+  it("executes native Slack edit, delete, and reaction actions against provider message ids", async () => {
+    const updateMessage = mock(async () => ({
+      channel: "C123",
+      ts: "1713000000.000100",
+      messageId: "1713000000.000100",
+      raw: { ok: true, action: "updated" },
+    }));
+    const deleteMessage = mock(async () => ({ ok: true, action: "deleted" }));
+    const addReaction = mock(async () => ({ ok: true, action: "reacted" }));
+    const removeReaction = mock(async () => ({ ok: true, action: "unreacted" }));
+    const delivery = new SlackChatActionDelivery({
+      updateMessage,
+      deleteMessage,
+      addReaction,
+      removeReaction,
+    } as never);
+    const target = {
+      channel: "slack",
+      accountId: "ravi-slack",
+      chatId: "C123",
+    };
+
+    await expect(
+      delivery.executeChatAction({
+        sessionName: "ravi-slack-channel",
+        idempotencyKey: "edit-1",
+        target,
+        action: {
+          type: "chat_action",
+          actionId: "message.edit",
+          providerMessageId: "1713000000.000100",
+          text: "corrected",
+        },
+      }),
+    ).resolves.toMatchObject({
+      provider: "slack",
+      platformMessageId: "1713000000.000100",
+      providerTimestamp: 1_713_000_000_000,
+    });
+    await delivery.executeChatAction({
+      sessionName: "ravi-slack-channel",
+      idempotencyKey: "delete-1",
+      target,
+      action: {
+        type: "chat_action",
+        actionId: "message.delete",
+        providerMessageId: "1713000000.000100",
+      },
+    });
+    await delivery.executeChatAction({
+      sessionName: "ravi-slack-channel",
+      idempotencyKey: "react-1",
+      target,
+      action: {
+        type: "chat_action",
+        actionId: "message.react",
+        providerMessageId: "1713000000.000100",
+        emoji: ":+1:",
+      },
+    });
+    await delivery.executeChatAction({
+      sessionName: "ravi-slack-channel",
+      idempotencyKey: "unreact-1",
+      target,
+      action: {
+        type: "chat_action",
+        actionId: "message.react",
+        providerMessageId: "1713000000.000100",
+        emoji: "+1",
+        operation: "remove",
+      },
+    });
+
+    expect(updateMessage).toHaveBeenCalledWith({
+      channel: "C123",
+      ts: "1713000000.000100",
+      text: "corrected",
+    });
+    expect(deleteMessage).toHaveBeenCalledWith({ channel: "C123", ts: "1713000000.000100" });
+    expect(addReaction).toHaveBeenCalledWith({
+      channel: "C123",
+      timestamp: "1713000000.000100",
+      name: "+1",
+    });
+    expect(removeReaction).toHaveBeenCalledWith({
+      channel: "C123",
+      timestamp: "1713000000.000100",
+      name: "+1",
     });
   });
 

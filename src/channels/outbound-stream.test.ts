@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import {
   CHANNEL_OUTBOUND_CONSUMER,
   CHANNEL_OUTBOUND_STREAM,
+  buildChannelChatActionJob,
   buildChannelOutboundJobFromResponse,
   ensureChannelOutboundConsumer,
   ensureChannelOutboundInfrastructure,
@@ -93,6 +94,48 @@ describe("channel outbound jobs", () => {
         target: { channel: "slack", accountId: "a", chatId: "c" },
       }),
     ).toEqual({ ok: false, reason: "silent_response" });
+  });
+
+  it("builds deterministic durable jobs for native chat actions", () => {
+    const job = buildChannelChatActionJob({
+      sessionName: "ravi-slack-channel",
+      requestId: "chat-action:test",
+      now: 1_782_920_000_000,
+      target: {
+        channel: "slack",
+        accountId: "ravi-slack",
+        chatId: "C123",
+      },
+      content: {
+        type: "chat_action",
+        actionId: "message.delete",
+        canonicalMessageId: "cm_123",
+        providerMessageId: "1711111111.000100",
+      },
+    });
+
+    expect(job).toMatchObject({
+      jobId: "chat-action:test",
+      status: "queued",
+      request: {
+        requestId: "chat-action:test",
+        channelId: "slack",
+        accountId: "ravi-slack",
+        targetChatId: "C123",
+        origin: {
+          sessionName: "ravi-slack-channel",
+          emitId: "chat-action:test",
+          responsePhase: "chat_action",
+        },
+        content: {
+          type: "chat_action",
+          actionId: "message.delete",
+          canonicalMessageId: "cm_123",
+          providerMessageId: "1711111111.000100",
+        },
+      },
+    });
+    expect(job.request.idempotencyKey).toBe("chat-action:test:slack:ravi-slack:C123:message.delete:1711111111.000100");
   });
 
   it("normalizes channel ids into NATS subject tokens", () => {

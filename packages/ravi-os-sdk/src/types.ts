@@ -10061,17 +10061,24 @@ export type ReactSendReturn = {
     messageId: string;
     [k: string]: unknown;
   };
+  executionMode: "durable" | "legacy";
+  idempotencyKey?: string;
+  nextAttemptAt?: number;
+  publishPending?: boolean;
+  publishedNow?: boolean;
+  queued: boolean;
   reaction: {
     emoji: string;
     messageId: string;
   };
-  success: true;
+  requestId?: string;
+  status: "queued" | "accepted";
   target: {
     accountId: string;
     channel: string;
     chatId: string;
   };
-  topic: "ravi.outbound.reaction";
+  topic: string;
 };
 
 /** Input shape for `routes.explain`. */
