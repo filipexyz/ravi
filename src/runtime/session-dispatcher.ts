@@ -433,19 +433,27 @@ export class RuntimeSessionDispatcher {
     model: string,
     options: {
       drainReleasedSlot?: boolean;
+      restartStashedMessages?: boolean;
       modelSource?: string | null;
       modelPresetId?: string | null;
       modelPresetVersion?: number | null;
     } = {},
   ): Promise<"missing" | "unchanged" | "applied" | "restart-next-turn"> {
-    const streaming = this.streamingSessions.get(sessionName);
+    const resolved = resolveRuntimeStreamingSession(this.streamingSessions, {
+      sessionName,
+      sessionKey: sessionName,
+    });
+    const streaming = resolved?.session;
     if (!streaming || streaming.done) {
       return "missing";
     }
+    sessionName = resolved.name;
     if (streaming.currentModel === model) {
       return "unchanged";
     }
 
+    const sessionEntry = getSessionByName(sessionName) ?? getSession(sessionName);
+    const sessionKey = sessionEntry?.sessionKey ?? sessionName;
     const presetTrace = {
       ...(options.modelSource ? { modelSource: options.modelSource } : {}),
       ...(options.modelPresetId ? { modelPresetId: options.modelPresetId } : {}),
@@ -456,7 +464,7 @@ export class RuntimeSessionDispatcher {
 
     if (resolveRuntimeModelSwitchStrategy(streaming.queryHandle) === "direct-set") {
       recordRuntimeTraceEvent({
-        sessionKey: sessionName,
+        sessionKey,
         sessionName,
         agentId: streaming.agentId,
         runId: streaming.traceRunId,
@@ -479,12 +487,13 @@ export class RuntimeSessionDispatcher {
       return "applied";
     }
 
-    if (streaming.pendingMessages.length > 0) {
+    const hasStashedMessages = streaming.pendingMessages.length > 0;
+    if (hasStashedMessages) {
       stashPendingRuntimeMessages(sessionName, streaming, this.stashedMessages);
     }
     streaming.currentModel = model;
     recordRuntimeTraceEvent({
-      sessionKey: sessionName,
+      sessionKey,
       sessionName,
       agentId: streaming.agentId,
       runId: streaming.traceRunId,
@@ -502,9 +511,16 @@ export class RuntimeSessionDispatcher {
         ...presetTrace,
       },
     });
-    recordStreamingTurnInterruptedTrace(sessionName, streaming, "model_change_restart", sessionName);
+    recordStreamingTurnInterruptedTrace(sessionName, streaming, "model_change_restart", sessionKey);
     shutdownRuntimeStreamingSession(streaming, "model_change_restart");
-    this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: options.drainReleasedSlot ?? true });
+    const shouldRestartStashedMessages = options.restartStashedMessages === true && hasStashedMessages;
+    this.releaseRuntimeSessionSlot(sessionName, {
+      drainPendingStarts: shouldRestartStashedMessages ? false : (options.drainReleasedSlot ?? true),
+    });
+    if (shouldRestartStashedMessages) {
+      await this.restartStashedSession(sessionName, "model_change_restart");
+      this.drainPendingStarts();
+    }
     return "restart-next-turn";
   }
 

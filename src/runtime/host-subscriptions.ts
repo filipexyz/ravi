@@ -211,7 +211,9 @@ export class RuntimeHostSubscriptions {
             .map((value) => value.trim());
 
           for (const key of new Set(keys)) {
-            const status = await this.options.dispatcher.applySessionModelChange(key, effectiveModel);
+            const status = await this.options.dispatcher.applySessionModelChange(key, effectiveModel, {
+              restartStashedMessages: true,
+            });
             if (status !== "missing") {
               log.info("Session model change applied", { key, effectiveModel, status });
               break;
