@@ -57,6 +57,7 @@ const {
   resolveTaskSessionContext,
   resolveTaskWorktreeContext,
   unarchiveTask,
+  updateTask,
 } = await import("./index.js");
 const { attachTaskToWorkflowNodeRun, createWorkflowSpec, startWorkflowRun } = await import("../workflows/index.js");
 const { createProject, linkProject } = await import("../projects/index.js");
@@ -201,8 +202,12 @@ function buildTestProfile(
   };
 }
 
-function writeTestProfileFixture(stateRoot: string, profileId: string): void {
-  const profile = buildTestProfile(profileId);
+function writeTestProfileFixture(
+  stateRoot: string,
+  profileId: string,
+  overrides: Partial<ResolvedTaskProfile> = {},
+): void {
+  const profile = buildTestProfile(profileId, overrides);
   const profileDir = join(stateRoot, "task-profiles", profileId);
   mkdirSync(profileDir, { recursive: true });
   const {
@@ -326,6 +331,83 @@ afterEach(async () => {
 });
 
 describe("task substrate contract", () => {
+  it("fails closed when a strict handoff omits pinned context and freezes the active brief", async () => {
+    const strictProfileId = "strict-handoff";
+    writeTestProfileFixture(stateDir!, strictProfileId, {
+      strictHandoff: true,
+      inputs: [{ key: "official_sources", required: true }],
+      templates: {
+        ...buildTestProfile(strictProfileId).templates,
+        dispatch: "{{task.instructions}}\n{{task.taskDocPath}}\n{{worktree.path}}\n{{input.official_sources}}",
+        resume: "{{task.instructions}}\n{{task.taskDocPath}}\n{{worktree.path}}\n{{input.official_sources}}",
+      },
+    });
+    const agentId = "strict-handoff-agent";
+    const sessionName = "strict-handoff-session";
+    createdAgentIds.push(agentId);
+    createdSessionNames.push(sessionName);
+    dbCreateAgent({ id: agentId, cwd: "/tmp/strict-handoff-agent" });
+    const created = createTask({
+      title: "Strict handoff",
+      instructions: "Implement only the pinned change.",
+      createdBy: "test",
+      profileId: strictProfileId,
+      profileInput: { official_sources: "Official source A" },
+      worktree: { mode: "path", path: "/tmp/strict-handoff-worktree" },
+    });
+    createdTaskIds.push(created.task.id);
+
+    const dispatched = await dispatchTask(created.task.id, {
+      agentId,
+      sessionName,
+      assignedBy: "test",
+    });
+    const prompt = String(publishSessionPromptMock.mock.calls.at(-1)?.[1].prompt);
+    expect(prompt).toContain("Implement only the pinned change.");
+    expect(prompt).toContain("Official source A");
+    expect(prompt).toContain("/tmp/strict-handoff-worktree");
+    expect(prompt).toContain(`${created.task.id}/TASK.md`);
+    expect(dispatched.task.status).toBe("dispatched");
+
+    expect(() => updateTask(created.task.id, { instructions: "Change scope mid-flight." })).toThrow(
+      "Create and dispatch a replacement task",
+    );
+    await expect(commentTask(created.task.id, { body: "Steer into historical context." })).rejects.toThrow(
+      "Create and dispatch a replacement task",
+    );
+  });
+
+  it("rejects a strict handoff whose rendered dispatch drops the original instructions", async () => {
+    const strictProfileId = "strict-handoff-broken";
+    writeTestProfileFixture(stateDir!, strictProfileId, {
+      strictHandoff: true,
+      templates: {
+        ...buildTestProfile(strictProfileId).templates,
+        dispatch: "{{task.taskDocPath}}\n{{worktree.path}}",
+        resume: "{{task.taskDocPath}}\n{{worktree.path}}",
+      },
+    });
+    const agentId = "strict-handoff-broken-agent";
+    createdAgentIds.push(agentId);
+    dbCreateAgent({ id: agentId, cwd: "/tmp/strict-handoff-broken-agent" });
+    const created = createTask({
+      title: "Broken strict handoff",
+      instructions: "This must reach the worker.",
+      createdBy: "test",
+      profileId: strictProfileId,
+      worktree: { mode: "path", path: "/tmp/strict-handoff-broken-worktree" },
+    });
+    createdTaskIds.push(created.task.id);
+
+    await expect(
+      dispatchTask(created.task.id, {
+        agentId,
+        sessionName: "strict-handoff-broken-session",
+        assignedBy: "test",
+      }),
+    ).rejects.toThrow("missing task instructions");
+  });
+
   it("builds a canonical event payload for the v3 substrate", () => {
     const created = dbCreateTask({
       title: "Stream payload smoke",
@@ -1183,6 +1265,12 @@ describe("task substrate contract", () => {
       profileSnapshot,
     });
     createdTaskIds.push(blockedCreated.task.id);
+    dbReportTaskProgress(blockedCreated.task.id, {
+      actor: "worker",
+      sessionName: `${blockedCreated.task.id}-work`,
+      progress: 25,
+      message: "progresso anterior que não é o bloqueio",
+    });
     const blockedResult = blockTask(blockedCreated.task.id, {
       actor: "worker",
       sessionName: `${blockedCreated.task.id}-work`,
@@ -1208,16 +1296,16 @@ describe("task substrate contract", () => {
     });
     await emitTaskEvent(failure.task, failure.event);
 
-    const prompts = publishSessionPromptMock.mock.calls.map((call) => call[1].prompt);
-    expect(prompts).toContain(
-      `[System] Answer: [from: ${doneCreated.task.id}-work] DONE ${doneCreated.task.id} :: Summary: entregue :: ${doneCreated.task.id}-work`,
-    );
-    expect(prompts).toContain(
-      `[System] Answer: [from: ${blockedCreated.task.id}-work] BLOCKED ${blockedCreated.task.id} :: Blocker: dependência externa :: ${blockedCreated.task.id}-work`,
-    );
-    expect(prompts).toContain(
-      `[System] Answer: [from: ${failedCreated.task.id}-work] FAILED ${failedCreated.task.id} :: Error: stack trace :: ${failedCreated.task.id}-work`,
-    );
+    const prompts = publishSessionPromptMock.mock.calls.map((call) => String(call[1].prompt));
+    const donePrompt = prompts.find((prompt) => prompt.includes(`DONE ${doneCreated.task.id}`));
+    expect(donePrompt).toContain(`Summary: entregue :: ${doneCreated.task.id}-work`);
+    expect(donePrompt).toContain(`/tasks/${doneCreated.task.id}/TASK.md`);
+    const blockedPrompt = prompts.find((prompt) => prompt.includes(`BLOCKED ${blockedCreated.task.id}`));
+    expect(blockedPrompt).toContain(`Blocker: dependência externa :: ${blockedCreated.task.id}-work`);
+    expect(blockedPrompt).toContain(`/tasks/${blockedCreated.task.id}/TASK.md`);
+    const failedPrompt = prompts.find((prompt) => prompt.includes(`FAILED ${failedCreated.task.id}`));
+    expect(failedPrompt).toContain(`Error: stack trace :: ${failedCreated.task.id}-work`);
+    expect(failedPrompt).toContain(`/tasks/${failedCreated.task.id}/TASK.md`);
   });
 
   it("falls back to the legacy terminal report text when pinned profile snapshots do not define report templates", async () => {
@@ -1253,9 +1341,11 @@ describe("task substrate contract", () => {
     });
     await emitTaskEvent(result.task, result.event);
 
-    expect(publishSessionPromptMock.mock.calls.at(-1)?.[1].prompt).toBe(
+    const prompt = String(publishSessionPromptMock.mock.calls.at(-1)?.[1].prompt);
+    expect(prompt).toContain(
       `[System] Answer: [from: ${created.task.id}-work] Task done: ${created.task.id} · Legacy snapshot report\nSummary: feito sem template novo`,
     );
+    expect(prompt).toContain(`/tasks/${created.task.id}/TASK.md`);
   });
 
   it("persists task comments in details/snapshot without steering terminal work", async () => {

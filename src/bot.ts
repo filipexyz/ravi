@@ -135,7 +135,7 @@ export class RaviBot {
       });
     }
 
-    this.sessionDispatcher.shutdownAll();
+    await this.sessionDispatcher.shutdownAll();
 
     closeDb();
     closeRouterDb();
@@ -156,6 +156,10 @@ export class RaviBot {
 
   public canAcceptRuntimePrompt(sessionName?: string): boolean {
     return this.sessionDispatcher.canAcceptRuntimePrompt(sessionName);
+  }
+
+  public canPublishCheckpointPrompt(sessionName: string, taskId?: string): boolean {
+    return this.sessionDispatcher.canPublishCheckpointPrompt(sessionName, taskId);
   }
 
   private async handleRuntimeControlRequest(data: RuntimeControlNatsRequest): Promise<void> {

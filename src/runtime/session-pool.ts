@@ -1,3 +1,5 @@
+import { existsSync, realpathSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import { getSession, getSessionByName } from "../router/index.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
@@ -14,6 +16,19 @@ export const DEFAULT_RUNTIME_IDLE_SESSION_TTL_MS = 5 * 60 * 1000;
 export interface RuntimeStreamingSessionIdentity {
   sessionName?: string | null;
   sessionKey?: string | null;
+}
+
+export interface RuntimeWriterIdentityInput extends RuntimeStreamingSessionIdentity {
+  taskId?: string | null;
+  worktreePath?: string | null;
+}
+
+export interface RuntimeWriterIdentity {
+  sessionName?: string;
+  sessionKey?: string;
+  taskId?: string;
+  worktreePath?: string;
+  keys: string[];
 }
 
 export type RuntimeSessionPoolClass = "task" | "group" | "dm" | "other";
@@ -129,6 +144,50 @@ export function resolveRuntimeStreamingSession(
   return null;
 }
 
+export function resolveRuntimeWriterIdentity(input: RuntimeWriterIdentityInput): RuntimeWriterIdentity {
+  const requestedName = normalizeIdentityValue(input.sessionName);
+  const requestedKey = normalizeIdentityValue(input.sessionKey);
+  const stored =
+    (requestedKey ? getSession(requestedKey) : null) ??
+    (requestedName ? (getSessionByName(requestedName) ?? getSession(requestedName)) : null);
+  const sessionName = normalizeIdentityValue(stored?.name) ?? requestedName;
+  const sessionKey = normalizeIdentityValue(stored?.sessionKey) ?? requestedKey ?? sessionName;
+  const taskId = normalizeIdentityValue(input.taskId);
+  const worktreePath = normalizeWorktreePath(input.worktreePath);
+  const keys = new Set<string>();
+
+  if (sessionKey) keys.add(`session:${sessionKey}`);
+  if (taskId) keys.add(`task:${taskId}`);
+  if (worktreePath) keys.add(`worktree:${worktreePath}`);
+
+  return {
+    ...(sessionName ? { sessionName } : {}),
+    ...(sessionKey ? { sessionKey } : {}),
+    ...(taskId ? { taskId } : {}),
+    ...(worktreePath ? { worktreePath } : {}),
+    keys: [...keys].sort(),
+  };
+}
+
+export function runtimeWriterIdentitiesConflict(first: RuntimeWriterIdentity, second: RuntimeWriterIdentity): boolean {
+  const firstKeys = new Set(first.keys);
+  return second.keys.some((key) => firstKeys.has(key));
+}
+
+export function isRuntimeSessionIdleForPublication(session: RuntimeHostStreamingSession): boolean {
+  return (
+    !session.done &&
+    !session.starting &&
+    !session.turnActive &&
+    !session.toolRunning &&
+    !session.compacting &&
+    !session.pendingAbort &&
+    !session.pendingWake &&
+    session.pendingMessages.length === 0 &&
+    session.pushMessage !== null
+  );
+}
+
 export function buildRuntimeSessionPoolSnapshot(
   streamingSessions: Map<string, RuntimeHostStreamingSession>,
   options: { limit: number; pendingStarts?: number; interactiveReserved?: number },
@@ -204,4 +263,11 @@ export function isTaskSessionName(sessionName: string): boolean {
 function normalizeIdentityValue(value: string | null | undefined): string | undefined {
   const trimmed = typeof value === "string" ? value.trim() : "";
   return trimmed || undefined;
+}
+
+function normalizeWorktreePath(value: string | null | undefined): string | undefined {
+  const normalized = normalizeIdentityValue(value);
+  if (!normalized) return undefined;
+  const absolute = resolvePath(normalized);
+  return existsSync(absolute) ? realpathSync.native(absolute) : absolute;
 }

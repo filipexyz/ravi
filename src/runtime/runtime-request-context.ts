@@ -234,7 +234,7 @@ function buildAgentIdentityRuntimeContextInputForPrompt(options: {
   const surfacePrincipal = resolveSurfacePrincipal(actorMetadata);
   const actorDisplayName = cleanStringValue(actorMetadata?.senderName);
   const surfaceDisplayName = cleanStringValue(actorMetadata?.groupName);
-  const actorResolution = resolveActorResolution(actorMetadata, actorPrincipal);
+  const actorResolution = resolveActorResolution(options.prompt, actorMetadata, actorPrincipal);
 
   return buildAgentIdentityRuntimeContextInput({
     agentId: options.agentId,
@@ -421,10 +421,12 @@ function isExternalAuthoritySurface(
 }
 
 function resolveActorResolution(
+  prompt: RuntimeLaunchPrompt,
   actorMetadata: MessageActorMetadata | undefined,
   actorPrincipal: AuthorityPrincipal | null,
 ): "resolved" | "missing_contact" | "not_applicable" {
   if (actorPrincipal) return "resolved";
+  if (classifyTurnProvenance({ prompt }).automationOriginated) return "not_applicable";
   if (isExternalAuthoritySurface(actorMetadata)) return "missing_contact";
   return "not_applicable";
 }

@@ -257,6 +257,8 @@ export interface TaskProfileDefinition {
   version: string;
   label: string;
   description: string;
+  /** Fail closed unless the dispatched brief contains every pinned source-of-truth field. */
+  strictHandoff?: boolean;
   sessionNameTemplate: string;
   runtimeDefaults?: TaskRuntimeOptions;
   workspaceBootstrap: TaskProfileWorkspaceBootstrap;

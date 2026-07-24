@@ -369,7 +369,7 @@ export async function startDaemon() {
     await startSessionFollowupRunner();
     log.info("Session followup runner started (leader)");
     await startTaskCheckpointRunner({
-      canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
+      canPublishSessionPrompt: (sessionName, taskId) => bot?.canPublishCheckpointPrompt(sessionName, taskId) ?? false,
     });
     log.info("Task checkpoint runner started (leader)");
   } else {
@@ -380,7 +380,7 @@ export async function startDaemon() {
       await startCronRunner();
       await startSessionFollowupRunner();
       await startTaskCheckpointRunner({
-        canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
+        canPublishSessionPrompt: (sessionName, taskId) => bot?.canPublishCheckpointPrompt(sessionName, taskId) ?? false,
       });
       log.info("Heartbeat, cron, session followup, and task checkpoint runners started (new leader)");
     }).catch((err) => log.error("Leadership watcher failed", err));

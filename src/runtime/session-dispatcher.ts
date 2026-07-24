@@ -10,7 +10,11 @@ import { nats } from "../nats.js";
 import { getSession, getSessionByName, type SessionEntry } from "../router/index.js";
 import { dbGetDaemonRestartPendingMessages, dbRecordDaemonRestartSessionSnapshot } from "../router/router-db.js";
 import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
-import { dbHasActiveAssignedTaskForSession, dbHasActiveTaskForSession } from "../tasks/task-db.js";
+import {
+  dbHasActiveAssignedTaskForSession,
+  dbHasActiveTaskForSession,
+  dbResolveActiveTaskBindingForSession,
+} from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
 import {
@@ -22,10 +26,12 @@ import {
 } from "./delivery-queue.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import {
+  cleanupRuntimeSessionHandle,
   shutdownRuntimeStreamingSession,
   stashPendingRuntimeMessages,
   type RuntimeHostStreamingSession,
   type RuntimeMessageTarget,
+  type RuntimeSessionCleanupResult,
   type RuntimeUserMessage,
 } from "./host-session.js";
 import { applyDirectRuntimeModelSwitch, resolveRuntimeModelSwitchStrategy } from "./model-switch.js";
@@ -38,6 +44,7 @@ import {
   startRuntimeSession,
   updateRuntimeSessionMetadata,
   type PendingRuntimeSessionStart,
+  type StartRuntimeSessionOptions,
 } from "./session-launcher.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { formatUserFacingTurnFailure } from "./public-failure.js";
@@ -46,9 +53,14 @@ import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-ru
 import {
   buildRuntimeSessionPoolSnapshot,
   classifyRuntimeSessionStartLane,
+  isTaskSessionName,
+  isRuntimeSessionIdleForPublication,
+  resolveRuntimeWriterIdentity,
   resolveRuntimeStreamingSession,
+  runtimeWriterIdentitiesConflict,
   type RuntimeSessionPoolSnapshot,
   type RuntimeStreamingSessionIdentity,
+  type RuntimeWriterIdentity,
 } from "./session-pool.js";
 
 const log = logger.child("runtime:session-dispatcher");
@@ -84,12 +96,26 @@ interface RestartSnapshotAccumulator {
   metadata: Record<string, unknown>;
 }
 
+interface RuntimeWriterStartFlight {
+  sessionName: string;
+  identity: RuntimeWriterIdentity;
+  promise: Promise<void>;
+}
+
+interface RuntimeWriterCleanupFlight {
+  sessionName: string;
+  session: RuntimeHostStreamingSession;
+  identity: RuntimeWriterIdentity;
+  promise: Promise<RuntimeSessionCleanupResult>;
+}
+
 export interface RuntimeSessionDispatcherOptions {
   instanceId: string;
   maxConcurrentSessions: number;
   interactiveReservedSessions: number;
   safeEmit: RuntimeSafeEmit;
   getConfigModel(): string;
+  startRuntimeSession?(options: StartRuntimeSessionOptions): Promise<void>;
 }
 
 export interface RuntimeAbortProvenance {
@@ -112,6 +138,10 @@ export class RuntimeSessionDispatcher {
   readonly pendingStartSessions = new Set<string>();
   readonly startingSessions = new Set<string>();
   private readonly runtimeEventLoopRestartAttempts = new Map<string, number>();
+  private readonly writerStartFlights = new Set<RuntimeWriterStartFlight>();
+  private readonly writerCleanupFlights = new Set<RuntimeWriterCleanupFlight>();
+  private readonly writerCleanupBySession = new WeakMap<RuntimeHostStreamingSession, RuntimeWriterCleanupFlight>();
+  private shuttingDown = false;
 
   constructor(private readonly options: RuntimeSessionDispatcherOptions) {}
 
@@ -125,12 +155,163 @@ export class RuntimeSessionDispatcher {
 
   canAcceptRuntimePrompt(sessionName?: string): boolean {
     if (sessionName) {
-      const streaming = this.streamingSessions.get(sessionName);
+      const identity = resolveRuntimeWriterIdentity({ sessionName });
+      const canonicalName = identity.sessionName ?? sessionName;
+      const streaming = this.streamingSessions.get(canonicalName);
       if (streaming && !streaming.done) return true;
-      if (this.pendingStartSessions.has(sessionName)) return true;
-      if (this.startingSessions.has(sessionName)) return true;
+      if (this.pendingStartSessions.has(canonicalName)) return true;
+      if (this.startingSessions.has(canonicalName)) return true;
     }
     return this.hasRuntimeSessionPoolSlotForStart(sessionName);
+  }
+
+  canPublishCheckpointPrompt(sessionName: string, taskId?: string): boolean {
+    const identity = this.resolveRuntimeWriterIdentity(sessionName, taskId);
+    const resolved = resolveRuntimeStreamingSession(this.streamingSessions, {
+      sessionName: identity.sessionName ?? sessionName,
+      sessionKey: identity.sessionKey,
+    });
+    if (resolved) {
+      return isRuntimeSessionIdleForPublication(resolved.session);
+    }
+    if (this.findWriterCleanupFlight(identity) || this.findWriterStartFlight(identity)) {
+      return false;
+    }
+    if (this.findActiveRuntimeWriterConflict(identity)) {
+      return false;
+    }
+    return this.hasRuntimeSessionPoolSlotForStart(identity.sessionName ?? sessionName, {
+      prompt: "",
+      ...(taskId ? { taskBarrierTaskId: taskId } : {}),
+    });
+  }
+
+  async waitForRuntimeSessionCleanup(
+    sessionNameOrIdentity: string | RuntimeStreamingSessionIdentity,
+  ): Promise<boolean> {
+    const requested =
+      typeof sessionNameOrIdentity === "string" ? { sessionName: sessionNameOrIdentity } : sessionNameOrIdentity;
+    const identity = resolveRuntimeWriterIdentity(requested);
+    const flight = this.findWriterCleanupFlight(identity);
+    if (!flight) {
+      return !resolveRuntimeStreamingSession(this.streamingSessions, requested);
+    }
+    const result = await flight.promise;
+    return result.success;
+  }
+
+  private resolveRuntimeWriterIdentity(
+    sessionName: string,
+    taskId?: string,
+    streaming?: RuntimeHostStreamingSession,
+  ): RuntimeWriterIdentity {
+    const canonical = resolveRuntimeWriterIdentity({ sessionName, taskId });
+    const canonicalName = canonical.sessionName ?? sessionName;
+    const effectiveTaskId = taskId ?? streaming?.writerTaskId ?? streaming?.currentTaskBarrierTaskId;
+    const binding =
+      effectiveTaskId || isTaskSessionName(canonicalName)
+        ? dbResolveActiveTaskBindingForSession(canonicalName, effectiveTaskId)
+        : null;
+    const sessionEntry = canonical.sessionKey
+      ? getSession(canonical.sessionKey)
+      : (getSessionByName(canonicalName) ?? getSession(canonicalName));
+    const worktree = binding?.assignment.worktree ?? binding?.task.worktree;
+    const worktreePath =
+      streaming?.writerWorktreePath ??
+      (worktree?.mode === "path" && worktree.path ? worktree.path : binding ? sessionEntry?.agentCwd : undefined);
+    return resolveRuntimeWriterIdentity({
+      sessionName: canonicalName,
+      sessionKey: streaming?.writerSessionKey ?? canonical.sessionKey,
+      taskId: effectiveTaskId ?? binding?.task.id,
+      worktreePath,
+    });
+  }
+
+  private findWriterStartFlight(identity: RuntimeWriterIdentity): RuntimeWriterStartFlight | undefined {
+    return [...this.writerStartFlights].find((flight) => runtimeWriterIdentitiesConflict(flight.identity, identity));
+  }
+
+  private findWriterCleanupFlight(identity: RuntimeWriterIdentity): RuntimeWriterCleanupFlight | undefined {
+    return [...this.writerCleanupFlights].find((flight) => runtimeWriterIdentitiesConflict(flight.identity, identity));
+  }
+
+  private findActiveRuntimeWriterConflict(
+    identity: RuntimeWriterIdentity,
+    excluded?: RuntimeHostStreamingSession,
+  ): { sessionName: string; session: RuntimeHostStreamingSession } | undefined {
+    for (const [sessionName, session] of this.streamingSessions) {
+      if (session === excluded) continue;
+      const activeIdentity = this.resolveRuntimeWriterIdentity(sessionName, session.currentTaskBarrierTaskId, session);
+      if (runtimeWriterIdentitiesConflict(activeIdentity, identity)) {
+        return { sessionName, session };
+      }
+    }
+    return undefined;
+  }
+
+  private beginRuntimeSessionCleanup(
+    sessionName: string,
+    session: RuntimeHostStreamingSession,
+    reason: string,
+    options: { drainPendingStarts?: boolean } = {},
+  ): RuntimeWriterCleanupFlight {
+    const existing = this.writerCleanupBySession.get(session);
+    if (existing) return existing;
+
+    const identity = this.resolveRuntimeWriterIdentity(sessionName, session.currentTaskBarrierTaskId, session);
+    const initialHandle = session.queryHandle;
+    const activeStart = [...this.writerStartFlights].find(
+      (candidate) =>
+        candidate.sessionName === sessionName ||
+        (candidate.identity.sessionKey !== undefined && candidate.identity.sessionKey === identity.sessionKey),
+    );
+    session.cleanupManagedExternally = true;
+    let flight!: RuntimeWriterCleanupFlight;
+    const initialCleanup = shutdownRuntimeStreamingSession(session, reason);
+    const processCleanup = (async () => {
+      let result = await initialCleanup;
+      if (activeStart) {
+        await activeStart.promise;
+        if (session.queryHandle !== initialHandle) {
+          result = await cleanupRuntimeSessionHandle(session.queryHandle, `${reason}_post_start`);
+        }
+      }
+      return result;
+    })();
+    const promise = processCleanup.then((result) => {
+      if (!result.success) {
+        log.error("Runtime writer cleanup retained failed session lock", {
+          sessionName,
+          identity: identity.keys,
+          reason,
+          result,
+        });
+        return result;
+      }
+
+      for (const [mappedName, mappedSession] of this.streamingSessions) {
+        if (mappedSession === session) {
+          this.streamingSessions.delete(mappedName);
+        }
+      }
+      session.cleanupManagedExternally = false;
+      this.writerCleanupFlights.delete(flight);
+      this.writerCleanupBySession.delete(session);
+      log.info("Runtime writer cleanup released session lock", {
+        sessionName,
+        identity: identity.keys,
+        reason,
+        result,
+      });
+      if (options.drainPendingStarts ?? true) {
+        this.drainPendingStarts();
+      }
+      return result;
+    });
+    flight = { sessionName, session, identity, promise };
+    this.writerCleanupFlights.add(flight);
+    this.writerCleanupBySession.set(session, flight);
+    return flight;
   }
 
   recordDaemonRestartSnapshot(options: DaemonRestartSnapshotOptions): number {
@@ -279,7 +460,8 @@ export class RuntimeSessionDispatcher {
     return recorded;
   }
 
-  shutdownAll(): void {
+  async shutdownAll(): Promise<void> {
+    this.shuttingDown = true;
     if (this.pendingStarts.length > 0) {
       log.info("Clearing pending session starts", { count: this.pendingStarts.length });
       for (const pendingStart of this.pendingStarts.splice(0)) {
@@ -321,6 +503,7 @@ export class RuntimeSessionDispatcher {
     this.runtimeEventLoopRestartAttempts.clear();
 
     if (this.streamingSessions.size === 0) {
+      await Promise.all([...this.writerStartFlights].map((flight) => flight.promise));
       return;
     }
 
@@ -328,12 +511,22 @@ export class RuntimeSessionDispatcher {
       count: this.streamingSessions.size,
       sessions: [...this.streamingSessions.keys()],
     });
+    const cleanupFlights: RuntimeWriterCleanupFlight[] = [];
     for (const [sessionName, session] of this.streamingSessions) {
       log.info("Aborting streaming session", { sessionName });
       recordStreamingAbortTrace(sessionName, session, "shutdown_all");
-      shutdownRuntimeStreamingSession(session, "shutdown_all");
+      cleanupFlights.push(
+        this.beginRuntimeSessionCleanup(sessionName, session, "shutdown_all", { drainPendingStarts: false }),
+      );
     }
-    this.streamingSessions.clear();
+    const [cleanupResults] = await Promise.all([
+      Promise.all(cleanupFlights.map((flight) => flight.promise)),
+      Promise.all([...this.writerStartFlights].map((flight) => flight.promise)),
+    ]);
+    const failed = cleanupResults.filter((result) => !result.success);
+    if (failed.length > 0) {
+      throw new Error(`Failed to clean ${failed.length} runtime writer process(es) during shutdown.`);
+    }
   }
 
   abortSession(
@@ -422,9 +615,12 @@ export class RuntimeSessionDispatcher {
       .catch((error) => {
         log.warn("Failed to emit explicit abort runtime event", { sessionName, error });
       });
-    shutdownRuntimeStreamingSession(session, abortReason);
-    this.releaseRuntimeSessionSlot(sessionName);
-    markRuntimeLiveIdle(sessionName, "turn interrupted");
+    const cleanup = this.beginRuntimeSessionCleanup(sessionName, session, abortReason);
+    void cleanup.promise.then((result) => {
+      if (result.success) {
+        markRuntimeLiveIdle(sessionName, "turn interrupted");
+      }
+    });
     return true;
   }
 
@@ -503,8 +699,10 @@ export class RuntimeSessionDispatcher {
       },
     });
     recordStreamingTurnInterruptedTrace(sessionName, streaming, "model_change_restart", sessionName);
-    shutdownRuntimeStreamingSession(streaming, "model_change_restart");
-    this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: options.drainReleasedSlot ?? true });
+    const cleanup = this.beginRuntimeSessionCleanup(sessionName, streaming, "model_change_restart", {
+      drainPendingStarts: options.drainReleasedSlot ?? true,
+    });
+    await cleanup.promise;
     return "restart-next-turn";
   }
 
@@ -637,12 +835,14 @@ export class RuntimeSessionDispatcher {
   }
 
   async handlePromptImmediate(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void> {
+    const writerIdentity = this.resolveRuntimeWriterIdentity(sessionName, prompt.taskBarrierTaskId);
+    sessionName = writerIdentity.sessionName ?? sessionName;
     if (!prompt._resumeStashedMessages) {
       this.runtimeEventLoopRestartAttempts.delete(sessionName);
     }
     const routerConfig = configStore.getConfig();
     const sessionEntry = getSessionByName(sessionName);
-    const existing = this.streamingSessions.get(sessionName);
+    let existing = this.streamingSessions.get(sessionName);
     if (!existing && prompt._daemonRestartResume) {
       prompt = this.prepareDaemonRestartResumePrompt(sessionName, prompt, sessionEntry);
     }
@@ -703,8 +903,13 @@ export class RuntimeSessionDispatcher {
           },
         });
         recordStreamingTurnInterruptedTrace(sessionName, existing, restartReason, sessionEntry?.sessionKey);
-        shutdownRuntimeStreamingSession(existing, restartReason);
-        this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
+        const cleanup = this.beginRuntimeSessionCleanup(sessionName, existing, restartReason, {
+          drainPendingStarts: false,
+        });
+        if (!(await cleanup.promise).success) {
+          return;
+        }
+        existing = undefined;
         retainReleasedSlot = true;
       } else {
         const requestedRuntime = resolveRuntimeForPrompt({
@@ -754,8 +959,13 @@ export class RuntimeSessionDispatcher {
             "runtime_task_settings_change",
             sessionEntry?.sessionKey,
           );
-          shutdownRuntimeStreamingSession(existing, "runtime_task_settings_change");
-          this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
+          const cleanup = this.beginRuntimeSessionCleanup(sessionName, existing, "runtime_task_settings_change", {
+            drainPendingStarts: false,
+          });
+          if (!(await cleanup.promise).success) {
+            return;
+          }
+          existing = undefined;
           await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot: true });
           return;
         }
@@ -1006,7 +1216,14 @@ export class RuntimeSessionDispatcher {
     }
 
     if (existing?.done) {
-      this.releaseRuntimeSessionSlot(sessionName);
+      const cleanup = this.beginRuntimeSessionCleanup(sessionName, existing, "stale_runtime_replacement", {
+        drainPendingStarts: false,
+      });
+      if (!(await cleanup.promise).success) {
+        return;
+      }
+      existing = undefined;
+      retainReleasedSlot = true;
     }
 
     if (!existing && this.pendingStartSessions.has(sessionName)) {
@@ -1209,17 +1426,75 @@ export class RuntimeSessionDispatcher {
     prompt: RuntimeLaunchPrompt,
     options: { retainReleasedSlot?: boolean } = {},
   ): Promise<void> {
+    if (this.shuttingDown) return;
+
+    const identity = this.resolveRuntimeWriterIdentity(sessionName, prompt.taskBarrierTaskId);
+    sessionName = identity.sessionName ?? sessionName;
+
+    const cleanupFlight = this.findWriterCleanupFlight(identity);
+    if (cleanupFlight && !(await cleanupFlight.promise).success) {
+      return;
+    }
+
+    const live = resolveRuntimeStreamingSession(this.streamingSessions, {
+      sessionName,
+      sessionKey: identity.sessionKey,
+    });
+    if (live) {
+      if (live.session.done) {
+        const cleanup = this.beginRuntimeSessionCleanup(live.name, live.session, "stale_runtime_replacement", {
+          drainPendingStarts: false,
+        });
+        if (!(await cleanup.promise).success) {
+          return;
+        }
+      } else {
+        await this.handlePromptImmediate(live.name, prompt);
+        return;
+      }
+    }
+
+    const conflictingStart = this.findWriterStartFlight(identity);
+    if (conflictingStart) {
+      await conflictingStart.promise;
+      await this.startStreamingSession(sessionName, prompt, options);
+      return;
+    }
+
+    let resolveFlight!: () => void;
+    const flight: RuntimeWriterStartFlight = {
+      sessionName,
+      identity,
+      promise: new Promise<void>((resolve) => {
+        resolveFlight = resolve;
+      }),
+    };
+    this.writerStartFlights.add(flight);
+    try {
+      await this.startStreamingSessionOwned(sessionName, prompt, options, identity);
+    } finally {
+      this.writerStartFlights.delete(flight);
+      resolveFlight();
+    }
+  }
+
+  private async startStreamingSessionOwned(
+    sessionName: string,
+    prompt: RuntimeLaunchPrompt,
+    options: { retainReleasedSlot?: boolean } = {},
+    writerIdentity?: RuntimeWriterIdentity,
+  ): Promise<void> {
     this.pendingStartSessions.add(sessionName);
     let reserved = false;
     try {
       reserved = await this.reserveRuntimeSessionStart(sessionName, prompt, options);
-      if (!reserved) {
+      if (!reserved || this.shuttingDown) {
         return;
       }
       this.pendingStartSessions.delete(sessionName);
       this.startingSessions.add(sessionName);
       this.inFlightStartPrompts.set(sessionName, prompt);
-      await startRuntimeSession({
+      await (this.options.startRuntimeSession ?? startRuntimeSession)({
         sessionName,
         prompt,
         configModel: this.options.getConfigModel(),
@@ -1227,6 +1502,7 @@ export class RuntimeSessionDispatcher {
         streamingSessions: this.streamingSessions,
         stashedMessages: this.stashedMessages,
         safeEmit: this.options.safeEmit,
+        writerIdentity,
         drainPendingStarts: () => this.drainPendingStarts(),
         restartStashedSession: ({ sessionName: stashedSessionName, reason }) =>
           this.restartStashedSession(stashedSessionName, reason),
@@ -1260,6 +1536,12 @@ export class RuntimeSessionDispatcher {
   }
 
   private hasRuntimeSessionPoolSlotForStart(sessionName?: string, prompt?: RuntimeLaunchPrompt): boolean {
+    if (sessionName) {
+      const identity = this.resolveRuntimeWriterIdentity(sessionName, prompt?.taskBarrierTaskId);
+      if (this.findActiveRuntimeWriterConflict(identity)) {
+        return false;
+      }
+    }
     const used = this.getRuntimeSessionPoolUsedSlots();
     if (used >= this.options.maxConcurrentSessions) {
       return false;
@@ -1274,7 +1556,11 @@ export class RuntimeSessionDispatcher {
   private getRuntimeSessionPoolNoSlotReason(
     sessionName: string,
     prompt: RuntimeLaunchPrompt,
-  ): "concurrency_limit" | "interactive_reserved_capacity" | "pending_start_backpressure" {
+  ): "concurrency_limit" | "interactive_reserved_capacity" | "pending_start_backpressure" | "writer_identity_conflict" {
+    const identity = this.resolveRuntimeWriterIdentity(sessionName, prompt.taskBarrierTaskId);
+    if (this.findActiveRuntimeWriterConflict(identity)) {
+      return "writer_identity_conflict";
+    }
     if (
       classifyRuntimeSessionStartLane(sessionName, prompt) === "background" &&
       this.getRuntimeSessionPoolUsedSlots() < this.options.maxConcurrentSessions &&
@@ -1403,14 +1689,6 @@ export class RuntimeSessionDispatcher {
     if (released && !this.streamingSessions.has(sessionName)) {
       this.drainPendingStarts();
     }
-  }
-
-  private releaseRuntimeSessionSlot(sessionName: string, options: { drainPendingStarts?: boolean } = {}): boolean {
-    const released = this.streamingSessions.delete(sessionName);
-    if (released && (options.drainPendingStarts ?? true)) {
-      this.drainPendingStarts();
-    }
-    return released;
   }
 
   private async restartStashedSession(sessionName: string, reason: string): Promise<void> {
@@ -1627,8 +1905,12 @@ export class RuntimeSessionDispatcher {
 
     stashPendingRuntimeMessages(sessionName, current, this.stashedMessages);
     recordStreamingTurnInterruptedTrace(sessionName, current, "idle_gap_stuck", sessionKey, "aborted");
-    shutdownRuntimeStreamingSession(current, "idle_gap_stuck");
-    this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
+    const cleanup = this.beginRuntimeSessionCleanup(sessionName, current, "idle_gap_stuck", {
+      drainPendingStarts: false,
+    });
+    if (!(await cleanup.promise).success) {
+      return;
+    }
     await this.restartStashedSession(sessionName, "idle_gap_stuck");
   }
 

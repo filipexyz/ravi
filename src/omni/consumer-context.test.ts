@@ -80,13 +80,6 @@ mock.module("../nats.js", () => ({
   },
 }));
 
-mock.module("./session-stream.js", () => ({
-  ...actualSessionStreamModule,
-  publishSessionPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
-    promptCalls.push([sessionName, payload]);
-  }),
-}));
-
 mock.module("../slash/index.js", () => ({
   handleSlashCommand: mock(async () => false),
 }));
@@ -274,6 +267,7 @@ const loggerChildSpy = spyOn(logger, "child").mockImplementation(
 const { OmniConsumer, supportsOmniReadReceipts } = await import("./consumer.js");
 
 afterAll(() => {
+  actualSessionStreamModule.setSessionPromptPublishHooksForTests();
   loggerChildSpy.mockRestore();
   mock.restore();
 });
@@ -298,6 +292,16 @@ describe("OmniConsumer channel context", () => {
     contactIntakeMode = "off";
     actualGetOrCreateSession("agent:main:whatsapp:main:group:120363424772797713", "main", agentCwd);
     promptCalls.length = 0;
+    actualSessionStreamModule.setSessionPromptPublishHooksForTests({
+      publishPrompt: async (subject, encodedPayload) => {
+        const sessionName = subject.slice("ravi.session.".length, -".prompt".length);
+        const payload = JSON.parse(new TextDecoder().decode(encodedPayload)) as Record<string, unknown>;
+        promptCalls.push([sessionName, payload]);
+        return {};
+      },
+      emitRuntimeEvent: async () => {},
+      recordPublishedTrace: () => {},
+    });
     chatMessageCalls.length = 0;
     chatParticipantCalls.length = 0;
     sessionParticipantCalls.length = 0;
@@ -322,6 +326,7 @@ describe("OmniConsumer channel context", () => {
   });
 
   afterEach(async () => {
+    actualSessionStreamModule.setSessionPromptPublishHooksForTests();
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
   });

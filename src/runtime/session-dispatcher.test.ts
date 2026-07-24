@@ -2,15 +2,19 @@ import { describe, expect, it, mock } from "bun:test";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import {
   RuntimeSessionDispatcher,
+  type RuntimeSessionDispatcherOptions,
   buildStashedRestartPrompt,
   canUseNativeRuntimeSteer,
   stashPromptForStartingSession,
 } from "./session-dispatcher.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import { RuntimeHostSubscriptions } from "./host-subscriptions.js";
-import type { RuntimeUserMessage } from "./host-session.js";
-import type { RuntimeHostStreamingSession } from "./host-session.js";
-import type { PendingRuntimeSessionStart } from "./session-launcher.js";
+import {
+  shutdownRuntimeStreamingSession,
+  type RuntimeHostStreamingSession,
+  type RuntimeUserMessage,
+} from "./host-session.js";
+import type { PendingRuntimeSessionStart, StartRuntimeSessionOptions } from "./session-launcher.js";
 import { deleteSession, getOrCreateSession, getSessionByName, setSessionEphemeral } from "../router/sessions.js";
 import {
   dbGetDaemonRestartPendingMessages,
@@ -23,14 +27,27 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import { querySessionTrace } from "../session-trace/query.js";
 import { dbCompleteTask, dbCreateTask, dbDispatchTask } from "../tasks/task-db.js";
 
-function createDispatcher(maxConcurrentSessions = 10, interactiveReservedSessions = 0) {
+function createDispatcher(
+  maxConcurrentSessions = 10,
+  interactiveReservedSessions = 0,
+  overrides: Partial<RuntimeSessionDispatcherOptions> = {},
+) {
   return new RuntimeSessionDispatcher({
     instanceId: "test",
     maxConcurrentSessions,
     interactiveReservedSessions,
     safeEmit: async () => {},
     getConfigModel: () => "test-model",
+    ...overrides,
   });
+}
+
+function createDeferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
 }
 
 describe("RuntimeSessionDispatcher debounce", () => {
@@ -162,7 +179,7 @@ describe("RuntimeSessionDispatcher debounce", () => {
     dispatcher.pendingStarts.push(pendingStart);
     dispatcher.startingSessions.add("starting");
 
-    dispatcher.shutdownAll();
+    await dispatcher.shutdownAll();
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(handlePromptImmediate).not.toHaveBeenCalled();
@@ -429,6 +446,324 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
 
     dispatcher.pendingStartSessions.add("queued");
     expect(dispatcher.canAcceptRuntimePrompt("queued")).toBe(true);
+  });
+
+  it("publishes checkpoints only into a genuinely idle canonical runtime session", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-checkpoint-admission-");
+    try {
+      getOrCreateSession("agent:dev:test:checkpoint-admission", "dev", stateDir, {
+        name: "checkpoint-admission-work",
+      });
+      const dispatcher = createDispatcher(4);
+      const session = createActiveSession({ pushMessage: () => {} });
+      dispatcher.streamingSessions.set("checkpoint-admission-work", session);
+
+      expect(dispatcher.canPublishCheckpointPrompt("checkpoint-admission-work", "task-checkpoint")).toBe(true);
+      expect(dispatcher.canPublishCheckpointPrompt("agent:dev:test:checkpoint-admission", "task-checkpoint")).toBe(
+        true,
+      );
+
+      session.turnActive = true;
+      expect(dispatcher.canPublishCheckpointPrompt("checkpoint-admission-work", "task-checkpoint")).toBe(false);
+      session.turnActive = false;
+      session.toolRunning = true;
+      expect(dispatcher.canPublishCheckpointPrompt("checkpoint-admission-work", "task-checkpoint")).toBe(false);
+      session.toolRunning = false;
+      session.pushMessage = null;
+      expect(dispatcher.canPublishCheckpointPrompt("checkpoint-admission-work", "task-checkpoint")).toBe(false);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("awaits a verifiable provider close before releasing an interrupted writer", async () => {
+    const closeGate = createDeferred();
+    let closeCalls = 0;
+    const session = createActiveSession({
+      queryHandle: {
+        provider: "codex",
+        events: (async function* () {})(),
+        interrupt: async () => {},
+        close: async () => {
+          closeCalls++;
+          await closeGate.promise;
+        },
+      },
+    });
+
+    const cleanup = shutdownRuntimeStreamingSession(session, "test_cleanup");
+    expect(session.done).toBe(true);
+    expect(closeCalls).toBe(1);
+
+    let settled = false;
+    void cleanup.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    closeGate.resolve();
+    expect(await cleanup).toMatchObject({ success: true, method: "close" });
+    expect(settled).toBe(true);
+  });
+
+  it("single-flights cold starts addressed through session name and session key aliases", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-start-alias-");
+    try {
+      getOrCreateSession("agent:dev:test:start-alias", "dev", stateDir, { name: "start-alias-work" });
+      const startGate = createDeferred();
+      let starts = 0;
+      const dispatcher = createDispatcher(4, 0, {
+        startRuntimeSession: async (options: StartRuntimeSessionOptions) => {
+          starts++;
+          await startGate.promise;
+          options.streamingSessions.set("start-alias-work", createActiveSession({ pushMessage: () => {} }));
+        },
+      } as Partial<RuntimeSessionDispatcherOptions>);
+      const forwarded: Array<{ sessionName: string; prompt: string }> = [];
+      dispatcher.handlePromptImmediate = mock(async (sessionName, prompt) => {
+        forwarded.push({ sessionName, prompt: prompt.prompt });
+      });
+
+      const byName = dispatcher.startStreamingSession("start-alias-work", { prompt: "first" });
+      await Promise.resolve();
+      const byKey = dispatcher.startStreamingSession("agent:dev:test:start-alias", { prompt: "second" });
+      await Promise.resolve();
+
+      expect(starts).toBe(1);
+      startGate.resolve();
+      await Promise.all([byName, byKey]);
+      expect(starts).toBe(1);
+      expect(forwarded).toEqual([{ sessionName: "start-alias-work", prompt: "second" }]);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("queues a second task writer until the first writer on the same worktree is cleaned", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-worktree-flight-");
+    try {
+      const worktreePath = `${stateDir}/shared-worktree`;
+      const firstTask = dbCreateTask({
+        title: "First worktree writer",
+        instructions: "Own the shared worktree first.",
+        createdBy: "test",
+      }).task;
+      const secondTask = dbCreateTask({
+        title: "Second worktree writer",
+        instructions: "Wait for the shared worktree.",
+        createdBy: "test",
+      }).task;
+      const firstSessionName = `${firstTask.id}-work`;
+      const secondSessionName = `${secondTask.id}-work`;
+      dbDispatchTask(firstTask.id, {
+        agentId: "dev",
+        sessionName: firstSessionName,
+        worktree: { mode: "path", path: worktreePath },
+      });
+      dbDispatchTask(secondTask.id, {
+        agentId: "dev",
+        sessionName: secondSessionName,
+        worktree: { mode: "path", path: worktreePath },
+      });
+
+      const starts: string[] = [];
+      const dispatcher = createDispatcher(4, 0, {
+        startRuntimeSession: async (options) => {
+          starts.push(options.sessionName);
+          options.streamingSessions.set(
+            options.sessionName,
+            createActiveSession({
+              currentTaskBarrierTaskId: options.prompt.taskBarrierTaskId,
+              writerSessionKey: options.writerIdentity?.sessionKey,
+              writerTaskId: options.writerIdentity?.taskId,
+              writerWorktreePath: options.writerIdentity?.worktreePath,
+              pushMessage: () => {},
+              queryHandle: {
+                provider: "codex",
+                events: (async function* () {})(),
+                interrupt: async () => {},
+                close: async () => {},
+              },
+            }),
+          );
+        },
+      });
+
+      await dispatcher.startStreamingSession(firstSessionName, {
+        prompt: "first",
+        taskBarrierTaskId: firstTask.id,
+      });
+      dbCompleteTask(firstTask.id, {
+        actor: "test",
+        sessionName: firstSessionName,
+        message: "Terminal state must not erase the live writer identity.",
+      });
+      const secondStart = dispatcher.startStreamingSession(secondSessionName, {
+        prompt: "second",
+        taskBarrierTaskId: secondTask.id,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(starts).toEqual([firstSessionName]);
+      expect(dispatcher.pendingStarts.map((entry) => entry.sessionName)).toEqual([secondSessionName]);
+
+      expect(dispatcher.abortSession(firstSessionName, { reason: "release_shared_worktree" })).toBe(true);
+      expect(await dispatcher.waitForRuntimeSessionCleanup(firstSessionName)).toBe(true);
+      await secondStart;
+
+      expect(starts).toEqual([firstSessionName, secondSessionName]);
+      expect(dispatcher.pendingStarts).toHaveLength(0);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("does not release or replace an interrupted writer until its old process closes", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-cleanup-gate-");
+    try {
+      getOrCreateSession("agent:dev:test:cleanup-gate", "dev", stateDir, { name: "cleanup-gate-work" });
+      const closeGate = createDeferred();
+      let starts = 0;
+      const oldSession = createActiveSession({
+        queryHandle: {
+          provider: "codex",
+          events: (async function* () {})(),
+          interrupt: async () => {},
+          close: async () => {
+            await closeGate.promise;
+          },
+        },
+      });
+      const dispatcher = createDispatcher(2, 0, {
+        startRuntimeSession: async (options: StartRuntimeSessionOptions) => {
+          starts++;
+          options.streamingSessions.set(options.sessionName, createActiveSession({ pushMessage: () => {} }));
+        },
+      } as Partial<RuntimeSessionDispatcherOptions>);
+      dispatcher.streamingSessions.set("cleanup-gate-work", oldSession);
+
+      expect(dispatcher.abortSession("cleanup-gate-work", { reason: "test_replace" })).toBe(true);
+      const replacement = dispatcher.startStreamingSession("agent:dev:test:cleanup-gate", { prompt: "replacement" });
+      await Promise.resolve();
+
+      expect(dispatcher.streamingSessions.get("cleanup-gate-work")).toBe(oldSession);
+      expect(starts).toBe(0);
+
+      closeGate.resolve();
+      expect(await dispatcher.waitForRuntimeSessionCleanup("cleanup-gate-work")).toBe(true);
+      await replacement;
+      expect(starts).toBe(1);
+      expect(dispatcher.streamingSessions.get("cleanup-gate-work")).not.toBe(oldSession);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("closes a provider handle materialized after an in-flight cold start was interrupted", async () => {
+    const startEntered = createDeferred();
+    const materializeHandle = createDeferred();
+    let providerClosed = false;
+    let startingSession: RuntimeHostStreamingSession | undefined;
+    const dispatcher = createDispatcher(2, 0, {
+      startRuntimeSession: async (options) => {
+        startingSession = createActiveSession({
+          starting: true,
+          queryHandle: {
+            provider: "codex",
+            events: (async function* () {})(),
+            interrupt: async () => {},
+          },
+        });
+        options.streamingSessions.set(options.sessionName, startingSession);
+        startEntered.resolve();
+        await materializeHandle.promise;
+        startingSession.queryHandle = {
+          provider: "codex",
+          events: (async function* () {})(),
+          interrupt: async () => {},
+          close: async () => {
+            providerClosed = true;
+          },
+        };
+        startingSession.starting = false;
+      },
+    });
+
+    const start = dispatcher.startStreamingSession("interrupted-cold-start", { prompt: "start" });
+    await startEntered.promise;
+    expect(dispatcher.abortSession("interrupted-cold-start", { reason: "interrupt_cold_start" })).toBe(true);
+
+    const cleanup = dispatcher.waitForRuntimeSessionCleanup("interrupted-cold-start");
+    await Promise.resolve();
+    expect(providerClosed).toBe(false);
+    expect(dispatcher.streamingSessions.get("interrupted-cold-start")).toBe(startingSession);
+
+    materializeHandle.resolve();
+    await start;
+    expect(await cleanup).toBe(true);
+    expect(providerClosed).toBe(true);
+    expect(dispatcher.streamingSessions.has("interrupted-cold-start")).toBe(false);
+  });
+
+  it("cleans a stale app-server handle before starting its replacement", async () => {
+    const closeGate = createDeferred();
+    let starts = 0;
+    const stale = createActiveSession({
+      done: true,
+      queryHandle: {
+        provider: "codex",
+        events: (async function* () {})(),
+        interrupt: async () => {},
+        close: async () => {
+          await closeGate.promise;
+        },
+      },
+    });
+    const dispatcher = createDispatcher(2, 0, {
+      startRuntimeSession: async (options: StartRuntimeSessionOptions) => {
+        starts++;
+        options.streamingSessions.set(options.sessionName, createActiveSession({ pushMessage: () => {} }));
+      },
+    } as Partial<RuntimeSessionDispatcherOptions>);
+    dispatcher.streamingSessions.set("stale-app-server-work", stale);
+
+    const replacement = dispatcher.startStreamingSession("stale-app-server-work", { prompt: "replace stale" });
+    await Promise.resolve();
+    expect(starts).toBe(0);
+    expect(dispatcher.streamingSessions.get("stale-app-server-work")).toBe(stale);
+
+    closeGate.resolve();
+    await replacement;
+    expect(starts).toBe(1);
+    expect(dispatcher.streamingSessions.get("stale-app-server-work")).not.toBe(stale);
+  });
+
+  it("retains a stale writer lock when process cleanup cannot be verified", async () => {
+    let starts = 0;
+    const stale = createActiveSession({
+      done: true,
+      queryHandle: {
+        provider: "codex",
+        events: (async function* () {})(),
+        interrupt: async () => {},
+        close: async () => {
+          throw new Error("app-server close failed");
+        },
+      },
+    });
+    const dispatcher = createDispatcher(2, 0, {
+      startRuntimeSession: async () => {
+        starts++;
+      },
+    });
+    dispatcher.streamingSessions.set("failed-cleanup-work", stale);
+
+    await dispatcher.startStreamingSession("failed-cleanup-work", { prompt: "must remain blocked" });
+
+    expect(starts).toBe(0);
+    expect(dispatcher.streamingSessions.get("failed-cleanup-work")).toBe(stale);
+    expect(await dispatcher.waitForRuntimeSessionCleanup("failed-cleanup-work")).toBe(false);
   });
 
   it("records daemon restart snapshots for non-idle runtime sessions with pending work", async () => {
@@ -944,7 +1279,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
         "pending_start_backpressure",
       ]);
 
-      dispatcher.shutdownAll();
+      await dispatcher.shutdownAll();
       await firstStart;
     } finally {
       await cleanupIsolatedRaviState(stateDir);
@@ -996,6 +1331,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       );
 
       expect(dispatcher.abortSession({ sessionKey: "agent:dev:test:abort-key" }, { reason: "test_abort" })).toBe(true);
+      expect(await dispatcher.waitForRuntimeSessionCleanup({ sessionKey: "agent:dev:test:abort-key" })).toBe(true);
       expect(dispatcher.streamingSessions.has("abort-by-name")).toBe(false);
       expect(interrupted).toBe(true);
       expect(pendingResolved).toBe(true);

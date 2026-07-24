@@ -1776,9 +1776,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             reason: streaming.internalAbortReason,
           });
           streaming.abortController.abort();
-          if (streamingSessions.delete(sessionName)) {
-            drainPendingStarts();
-          }
         }
         continue;
       }
@@ -2342,7 +2339,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
     await closeRuntimeSession();
 
-    if (streamingSessions.delete(sessionName)) {
+    if (
+      !streaming.cleanupManagedExternally &&
+      streamingSessions.get(sessionName) === streaming &&
+      streamingSessions.delete(sessionName)
+    ) {
       completeRuntimeCredentialAttempt(streaming.currentRuntimeCredential?.attemptId, {
         status: "abandoned",
         metadata: { phase: "runtime.event_loop.finally" },
@@ -2354,6 +2355,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         });
       }
       drainPendingStarts();
+    } else if (streaming.cleanupManagedExternally) {
+      completeRuntimeCredentialAttempt(streaming.currentRuntimeCredential?.attemptId, {
+        status: "abandoned",
+        metadata: { phase: "runtime.event_loop.finally.external_cleanup" },
+      });
     }
   }
 }

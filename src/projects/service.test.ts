@@ -108,6 +108,44 @@ describe("projects service", () => {
     expect(updated.operatorSessionName).toBeUndefined();
   });
 
+  it("rejects marking a project done while a linked workflow is open", () => {
+    const suffix = randomUUID().slice(0, 8);
+    const spec = createWorkflowSpec({
+      id: `wf-spec-close-gate-${suffix}`,
+      title: "Close gate",
+      createdBy: "test",
+      nodes: [
+        {
+          key: "ship",
+          label: "Ship",
+          kind: "task",
+          requirement: "required",
+          releaseMode: "auto",
+        },
+      ],
+    });
+    createdWorkflowSpecIds.push(spec.id);
+    const run = startWorkflowRun(spec.id, {
+      runId: `wf-run-close-gate-${suffix}`,
+      createdBy: "test",
+    });
+    createdWorkflowRunIds.push(run.run.id);
+    const project = createProject({ title: `Close gate ${suffix}` });
+    createdProjectIds.push(project.id);
+    linkProject({
+      projectRef: project.id,
+      assetType: "workflow",
+      assetId: run.run.id,
+      role: "primary",
+      createdBy: "test",
+    });
+
+    expect(() => updateProject(project.id, { status: "done" })).toThrow(
+      `Project ${project.slug} cannot be marked done while linked work is open`,
+    );
+    expect(getProjectDetails(project.id)?.project.status).toBe("active");
+  });
+
   it("links cheap polymorphic context and surfaces link counts on list/show", () => {
     const project = createProject({
       title: "Alignment Layer",
@@ -409,6 +447,11 @@ describe("projects service", () => {
       title: "Ship attempt",
       instructions: "Execute the concrete workflow task",
       priority: "high",
+      profileInput: {
+        goal: "Execute the concrete workflow task",
+        success_criteria: "The workflow task is attached to this project node",
+        consumer: "projects service test",
+      },
       createdBy: "test",
     });
     createdTaskIds.push(created.task.id);

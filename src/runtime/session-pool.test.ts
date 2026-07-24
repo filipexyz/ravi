@@ -8,10 +8,13 @@ import {
   DEFAULT_RUNTIME_SESSION_POOL_MAX,
   buildRuntimeSessionPoolSnapshot,
   classifyRuntimeSessionStartLane,
+  isRuntimeSessionIdleForPublication,
+  resolveRuntimeWriterIdentity,
   resolveRuntimeIdleSessionTtlMs,
   resolveRuntimeInteractiveReservedSlots,
   resolveRuntimeSessionPoolMax,
   resolveRuntimeStreamingSession,
+  runtimeWriterIdentitiesConflict,
 } from "./session-pool.js";
 
 let stateDir: string | null = null;
@@ -118,6 +121,58 @@ describe("runtime session pool", () => {
 
     expect(resolved?.name).toBe("session-pool-work");
     expect(resolved?.session.agentId).toBe("dev");
+  });
+
+  it("uses the stored session key as the canonical writer identity for name and key aliases", () => {
+    getOrCreateSession("agent:dev:test:writer-alias", "dev", stateDir ?? "/tmp", {
+      name: "writer-alias-work",
+    });
+
+    const byName = resolveRuntimeWriterIdentity({ sessionName: "writer-alias-work" });
+    const byKey = resolveRuntimeWriterIdentity({ sessionKey: "agent:dev:test:writer-alias" });
+
+    expect(byName).toEqual(byKey);
+    expect(byName.keys).toContain("session:agent:dev:test:writer-alias");
+    expect(runtimeWriterIdentitiesConflict(byName, byKey)).toBe(true);
+  });
+
+  it("conflicts writers that share a task or normalized worktree", () => {
+    const first = resolveRuntimeWriterIdentity({
+      sessionName: "task-one-work",
+      taskId: "task-shared",
+      worktreePath: "/tmp/ravi-worktree/../ravi-worktree",
+    });
+    const sameTask = resolveRuntimeWriterIdentity({
+      sessionName: "task-two-work",
+      taskId: "task-shared",
+      worktreePath: "/tmp/other-worktree",
+    });
+    const sameWorktree = resolveRuntimeWriterIdentity({
+      sessionName: "task-three-work",
+      taskId: "task-other",
+      worktreePath: "/tmp/ravi-worktree",
+    });
+    const independent = resolveRuntimeWriterIdentity({
+      sessionName: "task-four-work",
+      taskId: "task-independent",
+      worktreePath: "/tmp/independent-worktree",
+    });
+
+    expect(runtimeWriterIdentitiesConflict(first, sameTask)).toBe(true);
+    expect(runtimeWriterIdentitiesConflict(first, sameWorktree)).toBe(true);
+    expect(runtimeWriterIdentitiesConflict(first, independent)).toBe(false);
+  });
+
+  it("publishes only into a genuinely parked runtime session", () => {
+    const parked = createStreamingSession("dev", { pushMessage: () => {} });
+
+    expect(isRuntimeSessionIdleForPublication(parked)).toBe(true);
+    expect(isRuntimeSessionIdleForPublication({ ...parked, turnActive: true })).toBe(false);
+    expect(isRuntimeSessionIdleForPublication({ ...parked, toolRunning: true })).toBe(false);
+    expect(isRuntimeSessionIdleForPublication({ ...parked, pendingMessages: [{} as never] })).toBe(false);
+    expect(isRuntimeSessionIdleForPublication({ ...parked, pushMessage: null })).toBe(false);
+    expect(isRuntimeSessionIdleForPublication({ ...parked, pendingAbort: true })).toBe(false);
+    expect(isRuntimeSessionIdleForPublication({ ...parked, pendingWake: true })).toBe(false);
   });
 
   it("builds an operational gauge grouped by agent and runtime session class", () => {

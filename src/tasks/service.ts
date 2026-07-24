@@ -1195,12 +1195,17 @@ function validateTaskProfileRuntimeOrThrow(
     if (!options.agentId || !options.sessionName) {
       throw new Error(`Task ${task.id} dispatch validation requires agentId and sessionName.`);
     }
-    buildTaskDispatchPromptForProfile(task, options.agentId, options.sessionName, {
+    const dispatchPrompt = buildTaskDispatchPromptForProfile(task, options.agentId, options.sessionName, {
       effectiveCwd: options.effectiveCwd,
       ...(options.worktree ? { worktree: options.worktree } : {}),
       ...(taskDocPath !== null ? { taskDocPath } : {}),
       taskProfile: profile,
       primaryArtifact,
+    });
+    assertStrictTaskHandoff(task, profile, dispatchPrompt, {
+      stage: "dispatch",
+      taskDocPath,
+      worktree: options.worktree,
     });
     buildTaskDispatchSummaryForProfile(task, {
       effectiveCwd: options.effectiveCwd,
@@ -1228,7 +1233,7 @@ function validateTaskProfileRuntimeOrThrow(
   }
 
   if (options.validateResume) {
-    buildTaskResumePromptForProfile(task, {
+    const resumePrompt = buildTaskResumePromptForProfile(task, {
       effectiveCwd: options.effectiveCwd,
       ...(options.worktree ? { worktree: options.worktree } : {}),
       ...(taskDocPath !== null ? { taskDocPath } : {}),
@@ -1237,9 +1242,55 @@ function validateTaskProfileRuntimeOrThrow(
       ...(options.agentId ? { agentId: options.agentId } : {}),
       ...(options.sessionName ? { sessionName: options.sessionName } : {}),
     });
+    assertStrictTaskHandoff(task, profile, resumePrompt, {
+      stage: "resume",
+      taskDocPath,
+      worktree: options.worktree,
+    });
   }
 
   return { taskDocPath, primaryArtifact };
+}
+
+function assertStrictTaskHandoff(
+  task: TaskRecord,
+  profile: ResolvedTaskProfile,
+  renderedPrompt: string,
+  options: {
+    stage: "dispatch" | "resume";
+    taskDocPath: string | null;
+    worktree?: TaskWorktreeConfig;
+  },
+): void {
+  if (!profile.strictHandoff) {
+    return;
+  }
+
+  if (options.worktree?.mode !== "path" || !options.worktree.path?.trim() || !isAbsolute(options.worktree.path)) {
+    throw new Error(
+      `Task ${task.id} profile ${profile.id} requires an absolute worktree path before ${options.stage}.`,
+    );
+  }
+
+  const requiredValues = [
+    { label: "task instructions", value: task.instructions },
+    { label: "TASK.md path", value: options.taskDocPath ?? "" },
+    { label: "worktree path", value: options.worktree.path },
+    ...profile.inputs
+      .filter((input) => input.required)
+      .map((input) => ({
+        label: `profile input ${input.key}`,
+        value: task.profileInput?.[input.key] ?? input.defaultValue ?? "",
+      })),
+  ];
+  const missing = requiredValues
+    .filter(({ value }) => !value.trim() || !renderedPrompt.includes(value))
+    .map(({ label }) => label);
+  if (missing.length > 0) {
+    throw new Error(
+      `Task ${task.id} strict handoff is incomplete for ${options.stage}: missing ${missing.join(", ")} in the rendered prompt.`,
+    );
+  }
 }
 
 function surfaceTaskRecordForRead(task: TaskRecord): { task: TaskRecord; profile: ResolvedTaskProfile } {
@@ -1548,7 +1599,7 @@ export async function reportTaskEvent(task: TaskRecord, event: TaskEvent): Promi
       ...(primaryArtifact !== undefined ? { primaryArtifact } : {}),
       ...(task.assigneeAgentId ? { agentId: task.assigneeAgentId } : {}),
       sessionName: sourceSessionName,
-      message: task.summary ?? task.blockerReason ?? event.message ?? null,
+      message: event.message ?? task.summary ?? task.blockerReason ?? null,
     })}`,
     deliveryBarrier: "after_response",
   });
@@ -2920,6 +2971,16 @@ export function updateTask(
     throw new Error(`Task not found: ${taskId}`);
   }
   const { profile } = ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
+  if (
+    profile.strictHandoff &&
+    ["dispatched", "in_progress", "blocked"].includes(existingTask.status) &&
+    ((input.title !== undefined && input.title !== existingTask.title) ||
+      (input.instructions !== undefined && input.instructions !== existingTask.instructions))
+  ) {
+    throw new Error(
+      `Task ${taskId} uses a strict handoff. Create and dispatch a replacement task instead of changing its active brief.`,
+    );
+  }
   const result = dbUpdateTask(taskId, input);
   const documentedTask = result.wasNoop
     ? result.task
@@ -2945,6 +3006,11 @@ export async function commentTask(
   const { task: profiledTask, profile: taskProfile } = ensureResolvedTaskProfile(task, {
     persistMissingProfileId: true,
   });
+  if (taskProfile.strictHandoff && ["dispatched", "in_progress", "blocked"].includes(profiledTask.status)) {
+    throw new Error(
+      `Task ${taskId} uses a strict handoff. Create and dispatch a replacement task instead of steering it with comments.`,
+    );
+  }
   const documentedTask = ensureTaskWorkspaceBootstrap(profiledTask, taskProfile);
   assertTaskDocumentInvariant(documentedTask, taskProfile, "task.comment");
   const comment = dbAddTaskComment(taskId, input);

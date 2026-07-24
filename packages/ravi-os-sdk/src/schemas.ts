@@ -46586,6 +46586,13 @@ export const ProjectsTasksCreateInputSchema = {
       "description": "Dispatch after create using project defaults",
       "type": "boolean"
     },
+    "input": {
+      "description": "Profile input values pinned to the task",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "instructions": {
       "description": "Task instructions",
       "type": "string"
@@ -46616,6 +46623,14 @@ export const ProjectsTasksCreateInputSchema = {
     },
     "workflow": {
       "description": "Linked workflow run id (defaults to project focus)",
+      "type": "string"
+    },
+    "worktree": {
+      "description": "Absolute worktree path pinned to the task",
+      "type": "string"
+    },
+    "worktreeBranch": {
+      "description": "Optional branch label for the pinned worktree",
       "type": "string"
     }
   },
