@@ -1,0 +1,110 @@
+{
+  "artifacts": [
+    {
+      "sha256": "7581532c90771cd1c6da12770a4907a42554026bbe0a0fc5eb8ec5d0fce6b1d0",
+      "sizeBytes": 547,
+      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/local-agent-reconciliation/reconciliation-request.json"
+    },
+    {
+      "sha256": "b77416d5b680200a4ac98235186534d2b4e530d19d26b4446be542edc5bd7ff5",
+      "sizeBytes": 406,
+      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/local-agent-reconciliation/reconciliation-result.json"
+    },
+    {
+      "sha256": "edffa651aa60ea7b6983df460c3ed8f16ab46ab24672f06a3389eb075377aa9f",
+      "sizeBytes": 7254,
+      "targetPath": "packages/ravi-os-sdk/src/generated/local-agent-reconciliation.schema.json"
+    }
+  ],
+  "capsule": "local-agent-reconciliation",
+  "capsuleVersion": 1,
+  "compatibilityProfile": "additive-v1",
+  "exclusions": [
+    "taxonomy-boundary-v1",
+    "authorization-boundary-v1",
+    "commercial-boundary-v1",
+    "network-boundary-v1",
+    "payload-boundary-v1",
+    "secret-boundary-v1"
+  ],
+  "fileAllowlist": [
+    "packages/ravi-os-sdk/src/__tests__/fixtures/local-agent-reconciliation/reconciliation-request.json",
+    "packages/ravi-os-sdk/src/__tests__/fixtures/local-agent-reconciliation/reconciliation-result.json",
+    "packages/ravi-os-sdk/src/generated/local-agent-reconciliation.capsule.json",
+    "packages/ravi-os-sdk/src/generated/local-agent-reconciliation.schema.json"
+  ],
+  "formatVersion": 1,
+  "outputDigest": "c70820d8df09a3eb6276f5b511adb84e7c94f7418be5f7f95d7a31d5103c7f19",
+  "rationale": "Local integrations need a provider-neutral desired/observed contract that resolves trusted local templates without accepting workspace paths from an external source.",
+  "schemaAllowlist": [
+    {
+      "fields": [
+        "code",
+        "category",
+        "retryable",
+        "correlationId",
+        "retryAfterMs"
+      ],
+      "schema": "ChannelSafeError"
+    },
+    {
+      "fields": [
+        "provider",
+        "model",
+        "modelPreset"
+      ],
+      "schema": "LocalAgentRuntimePreference"
+    },
+    {
+      "fields": [
+        "protocol",
+        "schemaVersion",
+        "requestId",
+        "idempotencyKey",
+        "sourceId",
+        "agentKey",
+        "templateId",
+        "revision",
+        "instructions",
+        "runtime",
+        "requestedCapabilities"
+      ],
+      "schema": "LocalAgentReconciliationRequest"
+    },
+    {
+      "fields": [
+        "protocol",
+        "schemaVersion",
+        "requestId",
+        "disposition",
+        "state",
+        "agentId",
+        "appliedRevision",
+        "grantedCapabilities",
+        "error",
+        "observedAt"
+      ],
+      "schema": "LocalAgentReconciliationResult"
+    }
+  ],
+  "sourceDigest": "6bdb84c6b8bf8c745b0ef6b20c9ce07f8a2d1f262c7effeab604f5ec2640fd17",
+  "targetRepository": "filipexyz/ravi",
+  "validations": [
+    {
+      "command": [
+        "bun",
+        "test",
+        "packages/ravi-os-sdk/src/__tests__/local-agent-reconciliation.test.ts"
+      ],
+      "id": "sdk-contract"
+    },
+    {
+      "command": [
+        "bun",
+        "run",
+        "typecheck"
+      ],
+      "id": "typecheck"
+    }
+  ]
+}
