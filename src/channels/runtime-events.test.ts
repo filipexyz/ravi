@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { nats } from "../nats.js";
 import {
   dbCreateAgent,
   dbGetAgent,
@@ -300,6 +301,7 @@ describe("channel runtime event projection", () => {
     const metadata = await acceptedMetadata();
     const events: KnownChannelRuntimeEvent[] = [];
     const outputs: ChannelOutputEnvelope[] = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async () => {});
     unregisterRuntimeEvents = channelRuntimeEventSinks.register(metadata.target, {
       async emit(event) {
         events.push(event);
@@ -323,22 +325,26 @@ describe("channel runtime event projection", () => {
     if (!session || !agent) throw new Error("accepted fixture did not create local runtime identities");
     const streaming = streamingSession(metadata, runtimeSession);
 
-    await runRuntimeEventLoop({
-      runId: "channel-runtime-run-a",
-      sessionName: session.name!,
-      session,
-      agent,
-      streaming,
-      runtimeSession,
-      runtimeCapabilities,
-      model: "channel-runtime-model",
-      instanceId: "test-instance",
-      defaultRuntimeProviderId: "test-provider",
-      streamingSessions: new Map([[session.name!, streaming]]),
-      stashedMessages: new Map(),
-      safeEmit: async () => {},
-      drainPendingStarts: () => {},
-    });
+    try {
+      await runRuntimeEventLoop({
+        runId: "channel-runtime-run-a",
+        sessionName: session.name!,
+        session,
+        agent,
+        streaming,
+        runtimeSession,
+        runtimeCapabilities,
+        model: "channel-runtime-model",
+        instanceId: "test-instance",
+        defaultRuntimeProviderId: "test-provider",
+        streamingSessions: new Map([[session.name!, streaming]]),
+        stashedMessages: new Map(),
+        safeEmit: async () => {},
+        drainPendingStarts: () => {},
+      });
+    } finally {
+      emitSpy.mockRestore();
+    }
 
     expect(events.map((event) => event.kind)).toEqual([
       "turn.state_changed",
