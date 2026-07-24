@@ -1,0 +1,114 @@
+{
+  "artifacts": [
+    {
+      "sha256": "f69e2adac356ba436bc5107ef9f7ff672a1830faca7eaa07252cc7efd6e338d5",
+      "sizeBytes": 222,
+      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/driver-descriptor.json"
+    },
+    {
+      "sha256": "d03296778c8bd5331120e3f317d7eec483b11a5e70ebc4bcffb51ea34ba2a63b",
+      "sizeBytes": 149,
+      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/module-config.json"
+    },
+    {
+      "sha256": "3e9297ccedaaa551c00443cf099ee819f60c6eb5554570336ea01977b1967cb1",
+      "sizeBytes": 302,
+      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/runtime-descriptor.json"
+    },
+    {
+      "sha256": "bf36b17fd75a88c3e973bb00e15627a0c027c2e24294c7a1885c64cf9be9946d",
+      "sizeBytes": 4163,
+      "targetPath": "packages/ravi-os-sdk/src/generated/native-channel-driver.schema.json"
+    }
+  ],
+  "capsule": "native-channel-driver",
+  "capsuleVersion": 1,
+  "compatibilityProfile": "additive-v1",
+  "exclusions": [
+    "taxonomy-boundary-v1",
+    "authorization-boundary-v1",
+    "commercial-boundary-v1",
+    "network-boundary-v1",
+    "payload-boundary-v1",
+    "secret-boundary-v1"
+  ],
+  "fileAllowlist": [
+    "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/driver-descriptor.json",
+    "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/module-config.json",
+    "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/runtime-descriptor.json",
+    "packages/ravi-os-sdk/src/generated/native-channel-driver.capsule.json",
+    "packages/ravi-os-sdk/src/generated/native-channel-driver.schema.json"
+  ],
+  "formatVersion": 1,
+  "outputDigest": "bfcb36d84ec393d7f834112511ef80f43f8af6c68927369e4dbd0b6c5a9e96ac",
+  "rationale": "Channel runners need a versioned provider-neutral boundary to load explicitly configured local channel drivers and include them in lifecycle and health.",
+  "schemaAllowlist": [
+    {
+      "fields": [],
+      "schema": "NativeChannelDriverCapability"
+    },
+    {
+      "fields": [],
+      "schema": "NativeChannelDriverCapabilities"
+    },
+    {
+      "fields": [
+        "protocol",
+        "schemaVersion",
+        "provider",
+        "moduleSpecifier"
+      ],
+      "schema": "NativeChannelDriverModuleConfig"
+    },
+    {
+      "fields": [
+        "protocol",
+        "schemaVersion",
+        "driverId",
+        "provider",
+        "capabilities"
+      ],
+      "schema": "NativeChannelDriverDescriptor"
+    },
+    {
+      "fields": [
+        "protocol",
+        "schemaVersion",
+        "driverId",
+        "provider",
+        "runtimeId",
+        "channelInstanceId",
+        "capabilities"
+      ],
+      "schema": "NativeChannelRuntimeDescriptor"
+    }
+  ],
+  "sourceDigest": "816c67787b76c5b98f6ab356b0f178fdeda35cf0d81f92aa9b2a75655b370464",
+  "targetRepository": "filipexyz/ravi",
+  "validations": [
+    {
+      "command": [
+        "bun",
+        "test",
+        "src/channels/native/driver.test.ts"
+      ],
+      "id": "driver-contract"
+    },
+    {
+      "command": [
+        "bun",
+        "test",
+        "src/channels/runner.test.ts"
+      ],
+      "id": "runner-contract"
+    },
+    {
+      "command": [
+        "bun",
+        "run",
+        "typecheck"
+      ],
+      "id": "typecheck"
+    }
+  ]
+}

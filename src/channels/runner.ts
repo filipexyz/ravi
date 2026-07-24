@@ -8,6 +8,14 @@ import {
   type ChannelRunnerHealthResponder,
   type ChannelRunnerRuntimeStatus,
 } from "./health.js";
+import {
+  NativeChannelDriverContractError,
+  NativeChannelDriverManager,
+  NativeChannelDriverRegistry,
+  loadNativeChannelDriverModules,
+  parseNativeChannelDriverModuleConfigs,
+  type NativeChannelDriverRuntime,
+} from "./native/driver.js";
 import type { NativeChatActionDelivery, NativePresenceDelivery, NativeTextDelivery } from "./native/types.js";
 import { ChannelOutboundConsumer } from "./outbound-consumer.js";
 import {
@@ -29,27 +37,24 @@ import {
   ensureChannelOutboundInfrastructure,
 } from "./outbound-stream.js";
 import { ChannelPresenceConsumer } from "./presence-consumer.js";
-import {
-  createSlackNativeRuntimesFromEnv,
-  type SlackNativeRuntime,
-  type SlackSocketModeStatus,
-} from "./slack/index.js";
+import { createSlackNativeChannelDriver, slackNativeRuntimeHealth } from "./slack/driver.js";
+import type { SlackSocketModeStatus } from "./slack/index.js";
 
 const log = logger.child("channels:runner");
 
 export const CHANNEL_OUTBOUND_RECEIPT_PRUNE_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 
-export function collectSlackRuntimeDeliveries(
-  runtimes: readonly Pick<SlackNativeRuntime, "delivery" | "actions" | "presence">[],
+export function collectNativeRuntimeDeliveries(
+  runtimes: readonly Pick<NativeChannelDriverRuntime, "delivery" | "actions" | "presence">[],
 ): {
   deliveries: NativeTextDelivery[];
   actionDeliveries: NativeChatActionDelivery[];
   presenceDeliveries: NativePresenceDelivery[];
 } {
   return {
-    deliveries: runtimes.map((runtime) => runtime.delivery),
-    actionDeliveries: runtimes.map((runtime) => runtime.actions),
-    presenceDeliveries: runtimes.map((runtime) => runtime.presence),
+    deliveries: runtimes.flatMap((runtime) => (runtime.delivery ? [runtime.delivery] : [])),
+    actionDeliveries: runtimes.flatMap((runtime) => (runtime.actions ? [runtime.actions] : [])),
+    presenceDeliveries: runtimes.flatMap((runtime) => (runtime.presence ? [runtime.presence] : [])),
   };
 }
 
@@ -84,7 +89,7 @@ export class ChannelRunner {
   private deliveries: NativeTextDelivery[] = [];
   private actionDeliveries: NativeChatActionDelivery[] = [];
   private presenceDeliveries: NativePresenceDelivery[] = [];
-  private slackRuntimes: SlackNativeRuntime[] = [];
+  private nativeChannelManager: NativeChannelDriverManager | null = null;
   private adapterStatuses = new Map<string, AdapterStatus>();
   private stopReceiptPruner: (() => void) | null = null;
   private healthResponder: ChannelRunnerHealthResponder | null = null;
@@ -120,7 +125,7 @@ export class ChannelRunner {
       connection: getNats(),
     });
 
-    await this.startSlack(env);
+    await this.startNativeChannels(env);
 
     if (this.options.consumeOutbound !== false) {
       this.outboundPublishReconciler = new ChannelOutboundPublishReconciler({
@@ -165,11 +170,8 @@ export class ChannelRunner {
     this.outboundConsumer = null;
     await this.presenceConsumer?.stop();
     this.presenceConsumer = null;
-    for (const runtime of this.slackRuntimes) {
-      await runtime.socketMode.stop();
-      this.markAdapter(`slack:${runtime.accountId}`, "slack", "disconnected");
-    }
-    this.slackRuntimes = [];
+    await this.nativeChannelManager?.stop();
+    this.nativeChannelManager = null;
     this.deliveries = [];
     this.actionDeliveries = [];
     this.presenceDeliveries = [];
@@ -199,47 +201,40 @@ export class ChannelRunner {
     };
   }
 
-  private async startSlack(env: NodeJS.ProcessEnv): Promise<void> {
-    this.markAdapter("slack", "slack", "starting");
-    try {
-      const runtimes = await createSlackNativeRuntimesFromEnv(env, {
-        onRuntimeDisabled: (channel, reason) => {
-          this.markAdapter(`slack:${channel.name}`, "slack", "failed", reason);
-        },
-        onRuntimeError: (channel, error) => {
-          this.markAdapter(`slack:${channel.name}`, "slack", "failed", "startup_failed");
-          log.error("Failed to start configured Slack native runtime", {
-            channel: channel.name,
-            error,
-          });
-        },
-      });
-      this.adapterStatuses.delete("slack");
-      if (!runtimes.length) {
-        this.markAdapter("slack", "slack", "disabled", "not_configured");
-        return;
-      }
+  private async startNativeChannels(env: NodeJS.ProcessEnv): Promise<void> {
+    const registry = new NativeChannelDriverRegistry();
+    registry.register(createSlackNativeChannelDriver(env));
 
-      this.slackRuntimes = runtimes;
-      const registered = collectSlackRuntimeDeliveries(runtimes);
-      this.deliveries.push(...registered.deliveries);
-      this.actionDeliveries.push(...registered.actionDeliveries);
-      this.presenceDeliveries.push(...registered.presenceDeliveries);
-      for (const runtime of runtimes) {
-        runtime.socketMode.start();
-        this.markAdapter(`slack:${runtime.accountId}`, "slack", "starting", "opening_socket");
+    try {
+      const moduleConfigs = parseNativeChannelDriverModuleConfigs(env.RAVI_NATIVE_CHANNEL_DRIVERS);
+      const loaded = await loadNativeChannelDriverModules(moduleConfigs, registry);
+      for (const failure of loaded.failures) {
+        this.markAdapter(`native-driver:${failure.provider}`, failure.provider, "failed", failure.reason);
+        log.warn("Native channel driver was not loaded", {
+          provider: failure.provider,
+          reason: failure.reason,
+        });
       }
     } catch (error) {
-      this.markAdapter("slack", "slack", "failed", "startup_failed");
-      log.error("Failed to start Slack native runtime", { error });
+      const reason = error instanceof NativeChannelDriverContractError ? error.reason : "invalid_driver_configuration";
+      this.markAdapter("native-driver:configuration", "native", "failed", reason);
+      log.warn("Native channel driver configuration was rejected", { reason });
     }
+
+    this.nativeChannelManager = new NativeChannelDriverManager({
+      channels: configStore.getConfig().channels ?? {},
+      registry,
+    });
+    await this.nativeChannelManager.start();
+    this.deliveries.push(...this.nativeChannelManager.deliveries());
+    this.actionDeliveries.push(...this.nativeChannelManager.actionDeliveries());
+    this.presenceDeliveries.push(...this.nativeChannelManager.presenceDeliveries());
   }
 
   private currentAdapterStatuses(): AdapterStatus[] {
     const statuses = new Map(this.adapterStatuses);
-    for (const runtime of this.slackRuntimes) {
-      const socketStatus = runtime.socketMode.status();
-      statuses.set(`slack:${runtime.accountId}`, slackAdapterHealth(runtime.accountId, socketStatus));
+    for (const health of this.nativeChannelManager?.health() ?? []) {
+      statuses.set(health.id, health);
     }
     return Array.from(statuses.values()).sort((a, b) => a.id.localeCompare(b.id));
   }
@@ -269,22 +264,10 @@ export class ChannelRunner {
 }
 
 export function slackAdapterHealth(accountId: string, status: SlackSocketModeStatus): ChannelAdapterHealth {
-  const adapterStatus: ChannelAdapterHealth["status"] =
-    status.state === "stopped"
-      ? "disconnected"
-      : status.state === "connecting"
-        ? "starting"
-        : status.state === "reconnecting"
-          ? "reconnecting"
-          : "connected";
   return {
     id: `slack:${accountId}`,
     channelId: "slack",
-    status: adapterStatus,
-    ...(status.reason ? { reason: status.reason } : {}),
-    ...(status.connectedAt !== undefined ? { connectedAt: status.connectedAt } : {}),
-    ...(status.lastPongAt !== undefined ? { lastPongAt: status.lastPongAt } : {}),
-    reconnectCount: status.reconnectCount,
+    ...slackNativeRuntimeHealth(status),
   };
 }
 
