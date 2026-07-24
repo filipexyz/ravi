@@ -1,0 +1,15 @@
+{
+  "acceptedAt": "2026-07-24T18:00:01.000Z",
+  "binding": {
+    "agentId": "agent-a",
+    "channelInstanceId": "channel-instance-a",
+    "chatId": "chat-a",
+    "messageId": "message-a",
+    "sessionId": "session-a",
+    "turnId": "turn-a"
+  },
+  "disposition": "accepted",
+  "protocol": "ravi.channel.backend",
+  "requestId": "request-a",
+  "schemaVersion": 1
+}

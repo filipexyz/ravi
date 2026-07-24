@@ -1,0 +1,164 @@
+import "reflect-metadata";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import {
+  CHANNEL_BACKEND_PROTOCOL,
+  CHANNEL_BACKEND_SCHEMA_VERSION,
+  setChannelBackendPromptPublisherForTests,
+  type ChannelIngressRequest,
+} from "../../channels/backend.js";
+import { ChannelBackendCommands } from "../../cli/commands/channel-backend.js";
+import { buildRegistry } from "../../cli/registry-snapshot.js";
+import {
+  dbCreateAgent,
+  dbGetChannelBackendIngressReceipt,
+  type ContextCapability,
+  type ContextRecord,
+} from "../../router/router-db.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import { startGateway, type GatewayHandle } from "./server.js";
+
+const registry = buildRegistry([ChannelBackendCommands]);
+const exactContext = context("rctx_channel_backend_exact", [
+  { permission: "mutate", objectType: "agent", objectId: "agent-a", source: "test" },
+]);
+const semanticContext = context("rctx_channel_backend_semantic", [
+  { permission: "mutate", objectType: "agent", objectId: "channel-ingress", source: "test" },
+]);
+
+let stateDir: string | null = null;
+let handle: GatewayHandle | null = null;
+
+beforeEach(async () => {
+  stateDir = await createIsolatedRaviState("ravi-sdk-channel-backend-");
+  dbCreateAgent({
+    id: "agent-a",
+    name: "Agent A",
+    cwd: "/tmp/ravi-sdk-channel-agent-a",
+  });
+  setChannelBackendPromptPublisherForTests(mock(async () => {}));
+  handle = startGateway({
+    host: "127.0.0.1",
+    port: 0,
+    registry,
+    auth: {
+      resolveContext(token) {
+        if (token === exactContext.contextKey) return { ...exactContext };
+        if (token === semanticContext.contextKey) return { ...semanticContext };
+        return null;
+      },
+    },
+  });
+});
+
+afterEach(async () => {
+  setChannelBackendPromptPublisherForTests();
+  if (handle) {
+    await handle.stop();
+    handle = null;
+  }
+  await cleanupIsolatedRaviState(stateDir);
+  stateDir = null;
+});
+
+describe("gateway — channel backend ingress", () => {
+  it("requires a concrete local agent grant and returns stable canonical bindings", async () => {
+    const meta = await fetch(`${handle!.url}/api/v1/_meta/registry`);
+    const metaBody = (await meta.json()) as { commands: Array<{ fullName: string; path: string }> };
+    expect(metaBody.commands.find((command) => command.fullName === "channels.backend.ingress")).toMatchObject({
+      fullName: "channels.backend.ingress",
+      path: "/api/v1/channels/backend/ingress",
+    });
+
+    const denied = await post(semanticContext.contextKey, request());
+    expect(denied.status).toBe(403);
+    expect(dbGetChannelBackendIngressReceipt("channel-instance-a", "idempotency-a")).toBeNull();
+
+    const accepted = await post(exactContext.contextKey, request());
+    expect(accepted.status).toBe(200);
+    const acceptedBody = (await accepted.json()) as {
+      disposition: string;
+      binding: {
+        chatId: string;
+        messageId: string;
+        sessionId: string;
+        turnId: string;
+      };
+    };
+    expect(acceptedBody.disposition).toBe("accepted");
+
+    const duplicate = await post(
+      exactContext.contextKey,
+      request({
+        requestId: "request-retry",
+        receivedAt: "2026-07-24T18:00:05.000Z",
+      }),
+    );
+    expect(duplicate.status).toBe(200);
+    const duplicateBody = (await duplicate.json()) as {
+      requestId: string;
+      disposition: string;
+      binding: typeof acceptedBody.binding;
+    };
+    expect(duplicateBody.requestId).toBe("request-retry");
+    expect(duplicateBody.disposition).toBe("duplicate");
+    expect(duplicateBody.binding).toEqual(acceptedBody.binding);
+  });
+
+  it("rejects an unsupported contract version before local persistence", async () => {
+    const response = await post(exactContext.contextKey, {
+      ...request(),
+      schemaVersion: CHANNEL_BACKEND_SCHEMA_VERSION + 1,
+    });
+
+    expect(response.status).toBe(400);
+    expect(dbGetChannelBackendIngressReceipt("channel-instance-a", "idempotency-a")).toBeNull();
+  });
+});
+
+function context(contextKey: string, capabilities: ContextCapability[]): ContextRecord {
+  return {
+    contextId: contextKey.replace(/^rctx_/, "ctx_"),
+    contextKey,
+    kind: "test-runtime",
+    agentId: "gateway-test-agent",
+    capabilities,
+    metadata: { authorityMode: "delegated" },
+    createdAt: Date.now(),
+  };
+}
+
+async function post(token: string, requestBody: Record<string, unknown>): Promise<Response> {
+  return fetch(`${handle!.url}/api/v1/channels/backend/ingress`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      agentId: "agent-a",
+      request: requestBody,
+    }),
+  });
+}
+
+function request(overrides: Partial<ChannelIngressRequest> = {}): ChannelIngressRequest {
+  return {
+    protocol: CHANNEL_BACKEND_PROTOCOL,
+    schemaVersion: CHANNEL_BACKEND_SCHEMA_VERSION,
+    requestId: "request-a",
+    idempotencyKey: "idempotency-a",
+    localActorId: "actor-a",
+    channelInstanceId: "channel-instance-a",
+    agentId: "agent-a",
+    external: {
+      channelKind: "custom",
+      connectionId: "connection-a",
+      conversationId: "external-conversation-a",
+      senderId: "external-sender-a",
+      messageId: "external-message-a",
+    },
+    content: [{ type: "text", text: "fixture input" }],
+    receivedAt: "2026-07-24T18:00:00.000Z",
+    ...overrides,
+  };
+}

@@ -765,6 +765,10 @@ public struct ChannelsNamespace: Sendable {
     self.transport = transport
   }
 
+  public var backend: ChannelsBackendNamespace {
+    ChannelsBackendNamespace(transport: transport)
+  }
+
   public func create(_ name: String, _ options: ChannelsCreateOptions = .init()) async throws -> ChannelsCreateReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["name"] = try RaviJSON.fromEncodable(name)
@@ -817,6 +821,21 @@ public struct ChannelsNamespace: Sendable {
   public func stop() async throws -> ChannelsStopReturn {
     let requestBody: [String: RaviJSON] = [:]
     return try await transport.call(groupSegments: ["channels"], command: "stop", body: requestBody, as: ChannelsStopReturn.self)
+  }
+}
+
+public struct ChannelsBackendNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func ingress(_ agentId: String, _ request: RaviJSON) async throws -> ChannelsBackendIngressReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["agentId"] = try RaviJSON.fromEncodable(agentId)
+    requestBody["request"] = try RaviJSON.fromEncodable(request)
+    return try await transport.call(groupSegments: ["channels","backend"], command: "ingress", body: requestBody, as: ChannelsBackendIngressReturn.self)
   }
 }
 

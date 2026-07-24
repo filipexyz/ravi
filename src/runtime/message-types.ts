@@ -110,6 +110,26 @@ export interface DaemonRestartResumePromptMetadata {
   sessionKey?: string;
 }
 
+export interface ChannelBackendPromptMetadata {
+  protocol: "ravi.channel.backend";
+  schemaVersion: 1;
+  ingressRequestId: string;
+  correlationId: string;
+  binding: {
+    channelInstanceId: string;
+    agentId: string;
+    chatId: string;
+    messageId: string;
+    sessionId: string;
+    turnId: string;
+  };
+  target: {
+    channelKind: string;
+    connectionId: string;
+    conversationId: string;
+  };
+}
+
 /** Prompt message structure */
 export interface PromptMessage {
   prompt: string;
@@ -164,6 +184,8 @@ export interface PromptMessage {
   _resumeStashedMessages?: boolean;
   /** Internal daemon restart resume envelope used for idempotent fan-out. */
   _daemonRestartResume?: DaemonRestartResumePromptMetadata;
+  /** Provider-neutral identity for prompts accepted through a channel backend. */
+  _channelBackend?: ChannelBackendPromptMetadata;
 }
 
 export type RuntimeLaunchPrompt = PromptMessage;

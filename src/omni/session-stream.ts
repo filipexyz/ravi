@@ -38,6 +38,18 @@ export interface EnsureSessionPromptInfrastructureOptions {
   force?: boolean;
 }
 
+export interface PublishSessionPromptOptions {
+  /** Stable JetStream message id used to collapse publication retries. */
+  messageId?: string;
+}
+
+/** @internal */
+export function resolveSessionPromptPublishOptions(
+  options: PublishSessionPromptOptions,
+): { msgID: string } | undefined {
+  return options.messageId ? { msgID: options.messageId } : undefined;
+}
+
 export function getConsumerName(): string {
   return CONSUMER_NAME;
 }
@@ -210,11 +222,16 @@ async function ensureSessionPromptInfrastructureOnce(existingJsm?: JetStreamMana
  * Publish a session prompt to the JetStream work queue.
  * Replaces: nats.emit(`ravi.session.${sessionName}.prompt`, payload)
  */
-export async function publishSessionPrompt(sessionName: string, payload: Record<string, unknown>): Promise<void> {
+export async function publishSessionPrompt(
+  sessionName: string,
+  payload: Record<string, unknown>,
+  options: PublishSessionPromptOptions = {},
+): Promise<void> {
   const nc = await ensureConnected();
   await ensureSessionPromptInfrastructure();
   const js = nc.jetstream();
-  const publishPrompt = (subject: string, encodedPayload: Uint8Array) => js.publish(subject, encodedPayload);
+  const publishPrompt = (subject: string, encodedPayload: Uint8Array) =>
+    js.publish(subject, encodedPayload, resolveSessionPromptPublishOptions(options));
   const explicitDeliveryBarrier = typeof payload.deliveryBarrier === "string" ? payload.deliveryBarrier : undefined;
   const hasExplicitBarrier = Boolean(explicitDeliveryBarrier?.trim());
   const deliveryBarrier = hasExplicitBarrier
