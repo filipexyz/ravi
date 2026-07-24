@@ -3,10 +3,13 @@ import {
   ensureSessionConsumer,
   ensureSessionPromptInfrastructure,
   ensureSessionPromptsStream,
-  publishSessionPrompt,
   resetSessionPromptInfrastructureCacheForTests,
   setSessionPromptPublishHooksForTests,
 } from "./session-stream.js";
+
+const isolatedSessionStreamModule = (await import(
+  `${import.meta.resolve("./session-stream.js")}?delivery-order-test`
+)) as typeof import("./session-stream.js");
 
 let currentJsm: PromptJsm;
 const promptPublishMock = mock(async (_subject: string, _payload: Uint8Array) => ({}));
@@ -152,7 +155,7 @@ describe("session prompt JetStream infrastructure", () => {
 
   it("announces a sourced prompt to the runtime after its durable publish", async () => {
     const callOrder: string[] = [];
-    setSessionPromptPublishHooksForTests({
+    isolatedSessionStreamModule.setSessionPromptPublishHooksForTests({
       publishPrompt: async (...args) => {
         callOrder.push("prompt");
         return promptPublishMock(...args);
@@ -171,12 +174,16 @@ describe("session prompt JetStream infrastructure", () => {
       sourceMessageId: "1784824412.623669",
     };
 
-    await publishSessionPrompt("ravi-slack-channel", {
-      prompt: "deixa eu testar",
-      source,
-      deliveryBarrier: "after_tool",
-      deliveryBarrierSource: "default",
-    });
+    try {
+      await isolatedSessionStreamModule.publishSessionPrompt("ravi-slack-channel", {
+        prompt: "deixa eu testar",
+        source,
+        deliveryBarrier: "after_tool",
+        deliveryBarrierSource: "default",
+      });
+    } finally {
+      isolatedSessionStreamModule.setSessionPromptPublishHooksForTests();
+    }
 
     expect(callOrder).toEqual(["prompt", "runtime"]);
     expect(runtimeEmitMock).toHaveBeenCalledWith(
