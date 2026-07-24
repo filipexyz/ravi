@@ -3,16 +3,14 @@ import {
   ensureSessionConsumer,
   ensureSessionPromptInfrastructure,
   ensureSessionPromptsStream,
-  publishSessionPrompt,
   resetSessionPromptInfrastructureCacheForTests,
-  setSessionPromptPublishHooksForTests,
 } from "./session-stream.js";
+import { publishSessionPromptPublication } from "./session-prompt-publication.js";
 
 let currentJsm: PromptJsm;
 
 beforeEach(() => {
   resetSessionPromptInfrastructureCacheForTests();
-  setSessionPromptPublishHooksForTests();
   currentJsm = makePromptJsm();
 });
 
@@ -144,8 +142,23 @@ describe("session prompt JetStream infrastructure", () => {
     const callOrder: string[] = [];
     const runtimeEvents: Array<{ topic: string; payload: Record<string, unknown> }> = [];
     const publishedTraces: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
-    setSessionPromptPublishHooksForTests({
-      publishPrompt: async () => {
+    const errors: unknown[] = [];
+    const source = {
+      channel: "slack",
+      accountId: "hana-slack",
+      instanceId: "slack-main",
+      chatId: "C123",
+      sourceMessageId: "1784824412.623669",
+    };
+    const publish = publishSessionPromptPublication({
+      sessionName: "ravi-slack-channel",
+      payload: {
+        prompt: "deixa eu testar",
+        source,
+        deliveryBarrier: "after_tool",
+        deliveryBarrierSource: "default",
+      },
+      publishDurably: async () => {
         callOrder.push("prompt:start");
         await publishGate.promise;
         callOrder.push("prompt:durable");
@@ -157,20 +170,12 @@ describe("session prompt JetStream infrastructure", () => {
       recordPublishedTrace: (input) => {
         publishedTraces.push(input);
       },
-    });
-    const source = {
-      channel: "slack",
-      accountId: "hana-slack",
-      instanceId: "slack-main",
-      chatId: "C123",
-      sourceMessageId: "1784824412.623669",
-    };
-
-    const publish = publishSessionPrompt("ravi-slack-channel", {
-      prompt: "deixa eu testar",
-      source,
-      deliveryBarrier: "after_tool",
-      deliveryBarrierSource: "default",
+      onRuntimeEventError: (error) => {
+        errors.push(error);
+      },
+      onTraceError: (error) => {
+        errors.push(error);
+      },
     });
     await waitUntil(() => callOrder.includes("prompt:start"));
 
@@ -203,6 +208,7 @@ describe("session prompt JetStream infrastructure", () => {
         }),
       },
     ]);
+    expect(errors).toEqual([]);
   });
 });
 
