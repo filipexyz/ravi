@@ -11001,6 +11001,77 @@ export type SessionsAttachInput = {
 /** Return shape for `sessions.attach`. */
 export type SessionsAttachReturn = Record<string, unknown>;
 
+/** Input shape for `sessions.close-thread`. */
+export type SessionsCloseThreadInput = {
+  return?: string;
+  session?: string;
+};
+
+/** Return shape for `sessions.close-thread`. */
+export type SessionsCloseThreadReturn = {
+  actionId: "thread.close";
+  changed: boolean;
+  childSession: {
+    sessionKey: string;
+    sessionName: string | null;
+  };
+  closeSequence: number;
+  closed: true;
+  parentReturn: {
+    delivered: boolean;
+    pending: boolean;
+    requested: boolean;
+  };
+  parentSession: {
+    sessionKey: string;
+    sessionName: string;
+  };
+  requestId: string;
+  slack: {
+    channelId: string;
+    threadTs: string | null;
+  };
+  status: "closed";
+};
+
+/** Input shape for `sessions.create-thread`. */
+export type SessionsCreateThreadInput = {
+  message: string;
+  model?: string;
+  session?: string;
+};
+
+/** Return shape for `sessions.create-thread`. */
+export type SessionsCreateThreadReturn = {
+  actionId: "thread.create";
+  child: {
+    modelOverride: string | null;
+    status: "pending_root_delivery";
+  };
+  executionMode: "durable";
+  idempotencyKey: string;
+  initiatorSession: {
+    sessionKey: string;
+    sessionName: string | null;
+  };
+  nextAttemptAt?: number;
+  parentSession: {
+    sessionKey: string;
+    sessionName: string | null;
+  };
+  publishPending: boolean;
+  publishedNow: boolean;
+  queued: true;
+  requestId: string;
+  slack: {
+    accountId: string;
+    canonicalChatId: string;
+    channelId: string;
+    instanceId: string;
+  };
+  status: "queued";
+};
+
 /** Input shape for `sessions.delete`. */
 export type SessionsDeleteInput = {
   nameOrKey: string;

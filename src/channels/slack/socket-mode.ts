@@ -49,6 +49,7 @@ import {
   type SlackScopedIdentityResolution,
 } from "./instance-alias.js";
 import { storeSlackInteractionResponseUrl } from "./interactions.js";
+import { registerSlackThreadInboundLifecycle } from "./thread-lifecycle.js";
 import {
   cleanSlackId,
   envelopeEvent,
@@ -267,6 +268,21 @@ export class SlackChatActionDelivery implements NativeChatActionDelivery {
 
   async executeChatAction(request: NativeChatActionDeliveryRequest): Promise<NativeChatActionDeliveryResult> {
     const { action, target } = request;
+    if (action.actionId === "thread.create") {
+      const result = await this.webClient.postMessage({
+        channel: target.chatId,
+        text: action.text,
+        clientMsgId: slackClientMessageId(request.idempotencyKey),
+      });
+      return {
+        provider: "slack",
+        messageId: result.messageId,
+        platformMessageId: result.ts,
+        providerTimestamp: slackTsToMs(result.ts),
+        raw: result.raw,
+      };
+    }
+
     if (action.actionId === "message.edit") {
       const result = await this.webClient.updateMessage({
         channel: target.chatId,
@@ -1230,6 +1246,32 @@ export class SlackSocketModeService {
       seenAt: message.eventTimeMs,
     });
     syncSlackSessionSubscription(resolved.sessionKey, canonicalChat.id);
+    let createdEventOwnedByProgrammaticLifecycle = false;
+    if (routeThreadId) {
+      const childSession = getSession(resolved.sessionKey);
+      if (childSession) {
+        try {
+          const lifecycle = registerSlackThreadInboundLifecycle({
+            childSession,
+            accountId: this.options.accountId,
+            instanceId,
+            platformChatId: message.channelId,
+            threadCanonicalChatId: canonicalChat.id,
+            providerThreadId: routeThreadId,
+            seenAt: message.eventTimeMs,
+          });
+          createdEventOwnedByProgrammaticLifecycle =
+            lifecycle.source === "action" && (lifecycle.status === "root_delivered" || lifecycle.status === "starting");
+        } catch (error) {
+          log.warn("Failed to register Slack thread lifecycle", {
+            channelId: message.channelId,
+            threadTs: routeThreadId,
+            sessionKey: resolved.sessionKey,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
     const actorIdentity = resolveSlackActorIdentity({
       chatId: canonicalChat.id,
       instanceAliases,
@@ -1293,7 +1335,7 @@ export class SlackSocketModeService {
       },
       seenAt: message.eventTimeMs,
     });
-    if (routeThreadId && resolved.createdSession) {
+    if (routeThreadId && resolved.createdSession && !createdEventOwnedByProgrammaticLifecycle) {
       await this.publishSlackThreadCreatedEvent({
         message,
         resolved,

@@ -13,4 +13,9 @@ ravi sessions trace <session>
   authored by this bot and is a supported normal message.
 - queued action with no terminal event: inspect the channel runner and durable
   outbound receipt by idempotency key.
+- `thread.create` root delivered but child absent: inspect
+  `slack_thread_lifecycle`, then the daemon subscription to the originating
+  session's delivery events.
+- `thread.close` never calls Slack; debug the child lifecycle and parent prompt
+  publication instead of Slack scopes.
 - Never add an Omni instance mapping as a workaround for a native Slack action.

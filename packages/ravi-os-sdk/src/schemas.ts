@@ -53956,6 +53956,317 @@ export const SessionsAttachReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `sessions.close-thread`. */
+export const SessionsCloseThreadInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "return": {
+      "description": "Completion result to deliver once to the parent session",
+      "type": "string"
+    },
+    "session": {
+      "description": "Explicit Slack thread session (defaults to current session)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.close-thread`. */
+export const SessionsCloseThreadReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "actionId": {
+      "const": "thread.close",
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "childSession": {
+      "additionalProperties": false,
+      "properties": {
+        "sessionKey": {
+          "type": "string"
+        },
+        "sessionName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "sessionKey",
+        "sessionName"
+      ],
+      "type": "object"
+    },
+    "closeSequence": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "closed": {
+      "const": true,
+      "type": "boolean"
+    },
+    "parentReturn": {
+      "additionalProperties": false,
+      "properties": {
+        "delivered": {
+          "type": "boolean"
+        },
+        "pending": {
+          "type": "boolean"
+        },
+        "requested": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "requested",
+        "delivered",
+        "pending"
+      ],
+      "type": "object"
+    },
+    "parentSession": {
+      "additionalProperties": false,
+      "properties": {
+        "sessionKey": {
+          "type": "string"
+        },
+        "sessionName": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionKey",
+        "sessionName"
+      ],
+      "type": "object"
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "slack": {
+      "additionalProperties": false,
+      "properties": {
+        "channelId": {
+          "type": "string"
+        },
+        "threadTs": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "channelId",
+        "threadTs"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "const": "closed",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "actionId",
+    "closed",
+    "changed",
+    "requestId",
+    "closeSequence",
+    "parentReturn",
+    "parentSession",
+    "childSession",
+    "slack"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.create-thread`. */
+export const SessionsCreateThreadInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "message": {
+      "description": "Initial Slack message and first instruction for the child session",
+      "type": "string"
+    },
+    "model": {
+      "description": "Optional model override for the child session",
+      "type": "string"
+    },
+    "session": {
+      "description": "Explicit initiating session (defaults to current session)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "message"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.create-thread`. */
+export const SessionsCreateThreadReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "actionId": {
+      "const": "thread.create",
+      "type": "string"
+    },
+    "child": {
+      "additionalProperties": false,
+      "properties": {
+        "modelOverride": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "const": "pending_root_delivery",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "modelOverride"
+      ],
+      "type": "object"
+    },
+    "executionMode": {
+      "const": "durable",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "type": "string"
+    },
+    "initiatorSession": {
+      "additionalProperties": false,
+      "properties": {
+        "sessionKey": {
+          "type": "string"
+        },
+        "sessionName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "sessionKey",
+        "sessionName"
+      ],
+      "type": "object"
+    },
+    "nextAttemptAt": {
+      "type": "number"
+    },
+    "parentSession": {
+      "additionalProperties": false,
+      "properties": {
+        "sessionKey": {
+          "type": "string"
+        },
+        "sessionName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "sessionKey",
+        "sessionName"
+      ],
+      "type": "object"
+    },
+    "publishPending": {
+      "type": "boolean"
+    },
+    "publishedNow": {
+      "type": "boolean"
+    },
+    "queued": {
+      "const": true,
+      "type": "boolean"
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "slack": {
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "canonicalChatId": {
+          "type": "string"
+        },
+        "channelId": {
+          "type": "string"
+        },
+        "instanceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "accountId",
+        "instanceId",
+        "channelId",
+        "canonicalChatId"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "const": "queued",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "queued",
+    "actionId",
+    "executionMode",
+    "requestId",
+    "idempotencyKey",
+    "publishedNow",
+    "publishPending",
+    "parentSession",
+    "initiatorSession",
+    "slack",
+    "child"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.delete`. */
 export const SessionsDeleteInputSchema = {
   "additionalProperties": false,

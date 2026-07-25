@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { getOrCreateSession } from "../router/sessions.js";
+import { dbBindSessionToChat, dbUpsertChat } from "../router/router-db.js";
+import { createSlackThreadLifecycle, getSlackThreadLifecycle } from "./slack/thread-lifecycle-store.js";
 import type { NativeChatActionDelivery, NativeTextDelivery } from "./native/types.js";
 import {
   type ChannelOutboundConsumerOptions,
@@ -339,6 +342,74 @@ describe("channel outbound consumer", () => {
         canonicalMessageId: "cm_123",
         platformMessageId: "1711111111.000100",
       });
+    });
+
+    it("persists a created Slack root before handing the thread request to the daemon", async () => {
+      getOrCreateSession("ravi-channels", "main", "/tmp/main", { name: "ravi-channels" });
+      const rootChat = dbUpsertChat({
+        channel: "slack",
+        instanceId: "slack-main",
+        platformChatId: "C123",
+        chatType: "channel",
+      });
+      dbBindSessionToChat({
+        sessionKey: "ravi-channels",
+        chatId: rootChat.id,
+        agentId: "main",
+      });
+      createSlackThreadLifecycle({
+        requestId: "slack-thread:req-1",
+        parentSessionKey: "ravi-channels",
+        parentSessionName: "ravi-channels",
+        accountId: "T1",
+        instanceId: "slack-main",
+        platformChatId: "C123",
+        rootCanonicalChatId: rootChat.id,
+        initialPrompt: "Investigate this branch",
+      });
+      const delivery: NativeChatActionDelivery = {
+        channelId: "slack",
+        supports: () => true,
+        executeChatAction: mock(async () => ({
+          provider: "slack",
+          messageId: "1713000000.000100",
+          platformMessageId: "1713000000.000100",
+          providerTimestamp: 1_713_000_000_000,
+        })),
+      };
+      const emitEvent = mock(async () => {});
+      const job = makeThreadCreateJob();
+
+      const first = await processChannelOutboundJob(job, {
+        deliveries: [],
+        actionDeliveries: [delivery],
+        emitEvent,
+        recordDeliveryTrace: () => null,
+      });
+      const repeated = await processChannelOutboundJob(job, {
+        deliveries: [],
+        actionDeliveries: [delivery],
+        emitEvent,
+        recordDeliveryTrace: () => null,
+      });
+
+      expect(first).toEqual({ disposition: "ack", status: "delivered", retryable: false });
+      expect(repeated).toEqual({ disposition: "ack", status: "delivered", retryable: false });
+      expect(delivery.executeChatAction).toHaveBeenCalledTimes(1);
+      expect(getSlackThreadLifecycle("slack-thread:req-1")).toMatchObject({
+        status: "root_delivered",
+        providerThreadId: "1713000000.000100",
+        canonicalRootMessageId: expect.any(String),
+      });
+      expect(emitEvent).toHaveBeenCalledWith(
+        "ravi.session.ravi-channels.delivery",
+        expect.objectContaining({
+          status: "delivered",
+          requestId: "slack-thread:req-1",
+          actionId: "thread.create",
+          providerMessageId: "1713000000.000100",
+        }),
+      );
     });
 
     it("naks an emit failure and resumes telemetry without sending or persisting twice", async () => {
@@ -917,6 +988,40 @@ function makeActionJob(): ChannelOutboundJob {
         text: "corrected",
       },
       idempotencyKey: "chat-action:test:slack:T1:C123:message.edit:1711111111.000100",
+      target: {
+        channel: "slack",
+        accountId: "T1",
+        instanceId: "slack-main",
+        chatId: "C123",
+      },
+    },
+  };
+}
+
+function makeThreadCreateJob(): ChannelOutboundJob {
+  return {
+    jobId: "slack-thread:req-1",
+    status: "queued",
+    attemptCount: 0,
+    createdAt: 1_782_920_000_000,
+    updatedAt: 1_782_920_000_000,
+    request: {
+      requestId: "slack-thread:req-1",
+      channelId: "slack",
+      instanceId: "slack-main",
+      accountId: "T1",
+      targetChatId: "C123",
+      origin: {
+        sessionName: "ravi-channels",
+        emitId: "slack-thread:req-1",
+        responsePhase: "chat_action",
+      },
+      content: {
+        type: "chat_action",
+        actionId: "thread.create",
+        text: "Investigate this branch",
+      },
+      idempotencyKey: "slack-thread:req-1:slack:T1:C123:thread.create:thread.create",
       target: {
         channel: "slack",
         accountId: "T1",

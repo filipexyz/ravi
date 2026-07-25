@@ -479,7 +479,9 @@ async function emitQueuedDelivery(
       : {
           contentType: "chat_action",
           actionId: job.request.content.actionId,
-          providerMessageId: job.request.content.providerMessageId,
+          ...("providerMessageId" in job.request.content
+            ? { providerMessageId: job.request.content.providerMessageId }
+            : {}),
         }),
   });
 }

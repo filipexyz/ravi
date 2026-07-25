@@ -7,11 +7,13 @@ export const CHAT_ACTION_IDS = [
   "sticker.send",
   "media.send",
   "message.reply",
+  "thread.create",
+  "thread.close",
 ] as const;
 
 export type ChatActionId = (typeof CHAT_ACTION_IDS)[number];
 export type ChatActionStatus = "available" | "unavailable" | "planned";
-export type ChatActionExecutionMode = "durable" | "provider_confirmed" | "legacy";
+export type ChatActionExecutionMode = "durable" | "provider_confirmed" | "internal" | "legacy";
 export type ChatActionUnavailableReasonCode =
   | "no_surface"
   | "unsupported_channel"
@@ -33,6 +35,8 @@ export interface ChatActionSurface {
   readonly channel: string;
   readonly instanceId: string;
   readonly platformChatId: string;
+  readonly chatType?: string;
+  readonly threadLifecycleStatus?: string;
   readonly credentialConfigured?: boolean;
   readonly ownMessageCount?: number;
   readonly ownTextMessageCount?: number;
@@ -51,7 +55,7 @@ export interface ChatActionAvailability {
 
 export interface ChatActionDescriptor {
   readonly id: ChatActionId;
-  readonly targetKind: "chat" | "message";
+  readonly targetKind: "chat" | "message" | "thread";
   readonly description: string;
 }
 
@@ -76,6 +80,11 @@ export type ChannelChatActionContent =
       readonly providerMessageId: string;
       readonly emoji: string;
       readonly operation?: "add" | "remove";
+    }
+  | {
+      readonly type: "chat_action";
+      readonly actionId: "thread.create";
+      readonly text: string;
     };
 
 export interface ChatActionRequest {
@@ -133,6 +142,16 @@ export const CHAT_ACTION_DESCRIPTORS: readonly ChatActionDescriptor[] = [
     targetKind: "message",
     description: "Send a native quoted reply.",
   },
+  {
+    id: "thread.create",
+    targetKind: "thread",
+    description: "Create a new Slack thread and start a child session in it.",
+  },
+  {
+    id: "thread.close",
+    targetKind: "thread",
+    description: "Close the current Slack thread session, optionally returning a result to its parent.",
+  },
 ];
 
 const SLACK_SCOPE_BY_ACTION: Partial<Record<ChatActionId, readonly string[]>> = {
@@ -140,6 +159,7 @@ const SLACK_SCOPE_BY_ACTION: Partial<Record<ChatActionId, readonly string[]>> = 
   "message.edit": ["chat:write"],
   "message.react": ["reactions:write"],
   "media.send": ["files:write"],
+  "thread.create": ["chat:write"],
 };
 
 export function resolveChatActionAvailability(
@@ -154,6 +174,10 @@ export function resolveChatActionAvailability(
       surfaceId: surface.id,
       status: "planned",
     };
+  }
+
+  if ((actionId === "thread.create" || actionId === "thread.close") && channel !== "slack") {
+    return unavailable(surface, actionId, "unsupported_channel", `${actionId} is currently supported only on Slack.`);
   }
 
   if (channel === "slack") {
@@ -197,6 +221,21 @@ export function unavailableChatActionWithoutSurface(actionId: ChatActionId): Cha
 function resolveSlackAvailability(surface: ChatActionSurface, actionId: ChatActionId): ChatActionAvailability {
   if (actionId === "sticker.send") {
     return unavailable(surface, actionId, "unsupported_channel", "Slack does not support Ravi stickers.");
+  }
+
+  if (actionId === "thread.close") {
+    if (surface.chatType !== "thread") {
+      return unavailable(
+        surface,
+        actionId,
+        "invalid_target",
+        "thread.close is available only inside a Slack thread session.",
+      );
+    }
+    if (surface.threadLifecycleStatus === "closed") {
+      return unavailable(surface, actionId, "invalid_target", "This Slack thread session is already closed.");
+    }
+    return available(surface, actionId, "internal");
   }
 
   if (surface.credentialConfigured !== true) {

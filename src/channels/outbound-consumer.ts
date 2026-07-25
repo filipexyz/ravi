@@ -13,6 +13,7 @@ import {
 } from "../router/router-db.js";
 import { recordDeliveryTrace } from "../session-trace/channel-trace.js";
 import { logger } from "../utils/logger.js";
+import { markSlackThreadRootDelivered } from "./slack/thread-lifecycle-store.js";
 import type {
   NativeChatActionDelivery,
   NativeChatActionDeliveryResult,
@@ -722,6 +723,20 @@ export function persistDeliveredChatAction(
     throw new Error(`Cannot persist non-action outbound content: ${content.type}`);
   }
 
+  if (content.actionId === "thread.create") {
+    const providerThreadId = delivered.platformMessageId?.trim();
+    if (!providerThreadId) {
+      throw new Error("Slack thread.create delivery did not return a root message timestamp");
+    }
+    const persisted = persistDeliveredMessage(job, delivered, content.text);
+    markSlackThreadRootDelivered({
+      requestId: job.request.requestId,
+      providerThreadId,
+      canonicalRootMessageId: persisted.canonicalMessageId,
+    });
+    return persisted;
+  }
+
   const canonicalMessageId = content.canonicalMessageId?.trim();
   if (canonicalMessageId && content.actionId === "message.edit") {
     const edited = dbMarkChatMessageEdited(canonicalMessageId, content.text);
@@ -839,6 +854,7 @@ function deliveredPayload(
 ): Record<string, unknown> {
   return {
     jobId: job.jobId,
+    requestId: job.request.requestId,
     channelRunnerPid: process.pid,
     timestamp: Date.now(),
     status: "delivered",
@@ -867,8 +883,8 @@ function outboundContentTelemetry(job: ChannelOutboundJob): Record<string, unkno
     return {
       contentType: "chat_action",
       actionId: content.actionId,
-      providerMessageId: content.providerMessageId,
-      canonicalMessageId: content.canonicalMessageId,
+      ...("providerMessageId" in content ? { providerMessageId: content.providerMessageId } : {}),
+      ...("canonicalMessageId" in content ? { canonicalMessageId: content.canonicalMessageId } : {}),
     };
   }
   return { contentType: String((content as { type?: unknown }).type ?? "unknown") };

@@ -31,6 +31,7 @@ export {
   matchRoute,
   resolveRoute,
   commitMatchedRoute,
+  generateThreadForkSessionName,
   expandHome,
   getAgentCwd,
 } from "./resolver.js";
@@ -155,7 +156,9 @@ export {
   updateTokens,
   updateSessionName,
   updateSessionSource,
+  updateSessionThreadId,
   updateSessionContext,
+  updateSessionModelOverride,
   updateSessionDisplayName,
   updateSessionHeartbeat,
   isNameTaken,

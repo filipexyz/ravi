@@ -48,11 +48,13 @@ import { prepareOmniMentionMessage, type OmniUserMention } from "./omni/mentions
 import { resolveOmniConnection } from "./omni-config.js";
 import { resolveOmniGroupMetadata } from "./omni/group-metadata-cache.js";
 import { buildRaviTtsRequest, handleRaviTtsRequest, RAVI_TTS_TOPIC, shouldAutoTtsForAgent } from "./audio/tts.js";
+import { handleSlackThreadCreationDelivery, reconcileSlackThreadLifecycle } from "./channels/slack/thread-lifecycle.js";
 
 const log = logger.child("gateway");
 const PRESENCE_RENEW_THROTTLE_MS = 4_000;
 const POST_DELIVERY_RENEW_DELAY_MS = 1_000;
 const INTERRUPTED_PRESENCE_GRACE_MS = 15_000;
+const SLACK_THREAD_RECONCILIATION_INTERVAL_MS = 30_000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NATIVE_OUTBOUND_CHANNELS = new Set(["slack"]);
 const NATIVE_PRESENCE_CHANNELS = new Set(["slack"]);
@@ -212,6 +214,7 @@ export class Gateway {
   private terminalPresenceStopped = new Set<string>();
   private postDeliveryRenewals = new Map<string, ReturnType<typeof setTimeout>>();
   private interruptedPresenceStops = new Map<string, ReturnType<typeof setTimeout>>();
+  private slackThreadReconciliationTimer?: ReturnType<typeof setInterval>;
 
   constructor(options: GatewayOptions) {
     this.omniSender = options.omniSender;
@@ -237,6 +240,13 @@ export class Gateway {
     this.subscribeToTts();
     this.subscribeToStickerSend();
     this.subscribeToConfigChanges();
+    await this.reconcileSlackThreads();
+    this.slackThreadReconciliationTimer = setInterval(() => {
+      this.reconcileSlackThreads().catch((error) => {
+        log.warn("Slack thread lifecycle reconciliation failed", { error });
+      });
+    }, SLACK_THREAD_RECONCILIATION_INTERVAL_MS);
+    this.slackThreadReconciliationTimer.unref?.();
 
     log.info("Gateway started");
   }
@@ -254,6 +264,10 @@ export class Gateway {
     this.terminalPresenceStopped.clear();
     this.clearPostDeliveryRenewals();
     this.clearInterruptedPresenceStops();
+    if (this.slackThreadReconciliationTimer) {
+      clearInterval(this.slackThreadReconciliationTimer);
+      this.slackThreadReconciliationTimer = undefined;
+    }
     log.info("Gateway stopped");
   }
 
@@ -774,6 +788,16 @@ export class Gateway {
   private async handleDeliveryObservationEvent(sessionName: string, data: Record<string, unknown>): Promise<void> {
     if (data.status !== "delivered") return;
 
+    if (data.actionId === "thread.create") {
+      await handleSlackThreadCreationDelivery(data).catch((error) => {
+        log.warn("Failed to finalize Slack thread create delivery", {
+          sessionName,
+          requestId: data.requestId ?? data.jobId,
+          error,
+        });
+      });
+    }
+
     const target = parsePresenceTarget(data.target);
     if (!target) return;
     if (!this.shouldUseNativePresence(target)) return;
@@ -795,6 +819,13 @@ export class Gateway {
     }
 
     this.schedulePostDeliveryPresenceRenewal(sessionName, outboundTarget, "native-delivery-renew");
+  }
+
+  private async reconcileSlackThreads(): Promise<void> {
+    const result = await reconcileSlackThreadLifecycle();
+    if (result.creations > 0 || result.parentReturns > 0 || result.failures > 0) {
+      log.info("Reconciled Slack thread lifecycle", result);
+    }
   }
 
   private isTerminalRuntimeEvent(type: string | undefined, _status?: string, nativeEvent?: string): boolean {

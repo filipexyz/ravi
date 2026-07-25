@@ -1664,6 +1664,50 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_session_chat_subscriptions_session
       ON session_chat_subscriptions(session_key, detached_at);
 
+    CREATE TABLE IF NOT EXISTS slack_thread_lifecycle (
+      request_id TEXT PRIMARY KEY,
+      source TEXT NOT NULL CHECK(source IN ('action', 'inbound')),
+      status TEXT NOT NULL CHECK(status IN ('queued', 'root_delivered', 'starting', 'open', 'closed', 'failed')),
+      parent_session_key TEXT NOT NULL,
+      parent_session_name TEXT NOT NULL,
+      initiator_session_key TEXT,
+      initiator_session_name TEXT,
+      child_session_key TEXT,
+      child_session_name TEXT,
+      account_id TEXT NOT NULL,
+      instance_id TEXT NOT NULL,
+      platform_chat_id TEXT NOT NULL,
+      root_canonical_chat_id TEXT,
+      thread_canonical_chat_id TEXT,
+      provider_thread_id TEXT,
+      canonical_root_message_id TEXT,
+      initial_prompt TEXT,
+      model_override TEXT,
+      creation_claim_id TEXT,
+      creation_claim_expires_at INTEGER,
+      prompt_published_at INTEGER,
+      close_sequence INTEGER NOT NULL DEFAULT 0,
+      close_result TEXT,
+      closed_at INTEGER,
+      parent_return_requested INTEGER NOT NULL DEFAULT 0 CHECK(parent_return_requested IN (0,1)),
+      parent_event_id TEXT,
+      parent_notification_claim_id TEXT,
+      parent_notification_claim_expires_at INTEGER,
+      parent_notified_at INTEGER,
+      failure_reason TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(instance_id, platform_chat_id, provider_thread_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_slack_thread_lifecycle_child
+      ON slack_thread_lifecycle(child_session_key, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_slack_thread_lifecycle_parent
+      ON slack_thread_lifecycle(parent_session_key, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_slack_thread_lifecycle_creation
+      ON slack_thread_lifecycle(status, creation_claim_expires_at, updated_at);
+    CREATE INDEX IF NOT EXISTS idx_slack_thread_lifecycle_parent_return
+      ON slack_thread_lifecycle(parent_return_requested, parent_notified_at, parent_notification_claim_expires_at);
+
     CREATE TABLE IF NOT EXISTS session_participants (
       id TEXT PRIMARY KEY,
       session_key TEXT NOT NULL REFERENCES sessions(session_key) ON DELETE CASCADE,
