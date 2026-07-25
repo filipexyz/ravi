@@ -9,6 +9,7 @@ import {
   type ExternalChannelIdentity,
 } from "../backend.js";
 import type { ChannelAdapterHealth } from "../health.js";
+import type { RemoteInstallationCredential } from "../../cloud-auth/remote-login.js";
 import type {
   ChannelInterruptRequest,
   ChannelInterruptResult,
@@ -27,6 +28,10 @@ export const NativeChannelDriverCapabilitySchema = z.enum(["inbound", "text_deli
 
 export const NativeChannelDriverCapabilitiesSchema = z.array(NativeChannelDriverCapabilitySchema).min(1).max(4);
 
+export const NativeChannelDriverHostCapabilitySchema = z.enum(["installation_credentials"]);
+
+export const NativeChannelDriverHostCapabilitiesSchema = z.array(NativeChannelDriverHostCapabilitySchema).min(1).max(1);
+
 export const NativeChannelDriverModuleSpecifierSchema = z
   .string()
   .regex(/^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*|file:\/\/\/[^\u0000-\u001f\u007f]+)$/);
@@ -44,6 +49,7 @@ export const NativeChannelDriverDescriptorSchema = z.object({
   driverId: ChannelBackendWireKindSchema,
   provider: ChannelBackendWireKindSchema,
   capabilities: NativeChannelDriverCapabilitiesSchema,
+  requiredHostCapabilities: NativeChannelDriverHostCapabilitiesSchema.optional(),
 });
 
 export const NativeChannelRuntimeDescriptorSchema = z.object({
@@ -65,6 +71,7 @@ export const NativeChannelRuntimeHealthSchema = z.object({
 });
 
 export type NativeChannelDriverCapability = z.infer<typeof NativeChannelDriverCapabilitySchema>;
+export type NativeChannelDriverHostCapability = z.infer<typeof NativeChannelDriverHostCapabilitySchema>;
 export type NativeChannelDriverModuleConfig = z.infer<typeof NativeChannelDriverModuleConfigSchema>;
 export type NativeChannelDriverDescriptor = z.infer<typeof NativeChannelDriverDescriptorSchema>;
 export type NativeChannelRuntimeDescriptor = z.infer<typeof NativeChannelRuntimeDescriptorSchema>;
@@ -83,6 +90,7 @@ export type NativeChannelDriverFailureReason =
   | "runtime_descriptor_invalid"
   | "runtime_capability_mismatch"
   | "runtime_surface_mismatch"
+  | "host_capability_missing"
   | "missing_credentials"
   | "startup_failed"
   | "health_invalid"
@@ -96,6 +104,7 @@ export interface NativeChannelDriverChannelConfig {
 }
 
 export interface NativeChannelDriverHost {
+  readInstallationCredential(): Promise<RemoteInstallationCredential | null>;
   ingress(request: ChannelIngressRequest): Promise<ChannelIngressResult>;
   interrupt(request: ChannelInterruptRequest): Promise<ChannelInterruptResult>;
   readback(request: ChannelRuntimeReadbackRequest): Promise<ChannelRuntimeReadbackResult>;
@@ -373,6 +382,7 @@ export class NativeChannelDriverManager {
     try {
       lease = createHostLease(channel, provider);
       const driverDescriptor = parseDriverDescriptor(driver.descriptor);
+      assertHostCapabilities(driverDescriptor, lease.host);
       runtime = await driver.createRuntime({
         channel: {
           name: channel.name,
@@ -405,6 +415,14 @@ export class NativeChannelDriverManager {
         status: "failed",
         reason: driverFailureReason(error, "startup_failed"),
       });
+    }
+  }
+}
+
+function assertHostCapabilities(descriptor: NativeChannelDriverDescriptor, host: NativeChannelDriverHost): void {
+  for (const capability of descriptor.requiredHostCapabilities ?? []) {
+    if (capability === "installation_credentials" && typeof host.readInstallationCredential !== "function") {
+      throw new NativeChannelDriverContractError("host_capability_missing");
     }
   }
 }

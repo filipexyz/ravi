@@ -8,5 +8,8 @@
   "driverId": "example.native",
   "protocol": "ravi.channel.native-driver",
   "provider": "example",
+  "requiredHostCapabilities": [
+    "installation_credentials"
+  ],
   "schemaVersion": 1
 }

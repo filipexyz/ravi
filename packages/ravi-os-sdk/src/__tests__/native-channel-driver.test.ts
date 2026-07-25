@@ -3,6 +3,7 @@ import {
   NATIVE_CHANNEL_DRIVER_PROTOCOL,
   NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
   NativeChannelDriverDescriptorSchema,
+  NativeChannelDriverHostCapabilitiesSchema,
   NativeChannelDriverModuleConfigSchema,
   NativeChannelDriverModuleSpecifierSchema,
   NativeChannelRuntimeDescriptorSchema,
@@ -21,10 +22,15 @@ describe("native channel driver SDK contract", () => {
     const moduleConfig = await fixture("module-config.json");
     const driverDescriptor = await fixture("driver-descriptor.json");
     const runtimeDescriptor = await fixture("runtime-descriptor.json");
+    const installationCredential = await fixture("installation-credential.json");
 
     expect(NativeChannelDriverModuleConfigSchema.parse(moduleConfig)).toEqual(moduleConfig);
     expect(NativeChannelDriverDescriptorSchema.parse(driverDescriptor)).toEqual(driverDescriptor);
     expect(NativeChannelRuntimeDescriptorSchema.parse(runtimeDescriptor)).toEqual(runtimeDescriptor);
+    expect(installationCredential).toMatchObject({ provider: "example" });
+    expect(NativeChannelDriverHostCapabilitiesSchema.parse(["installation_credentials"])).toEqual([
+      "installation_credentials",
+    ]);
   });
 
   it("accepts only installed package names and absolute local file URLs", () => {
@@ -65,6 +71,7 @@ describe("native channel driver SDK contract", () => {
         driverId: "example.native",
         provider: "example",
         capabilities: ["inbound"],
+        requiredHostCapabilities: ["installation_credentials"],
       },
       createRuntime(context) {
         return {

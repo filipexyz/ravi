@@ -1,4 +1,9 @@
 import type { ChannelConfig } from "../../router/router-db.js";
+import { readRemoteInstallationCredential } from "../../cloud-auth/installation-storage.js";
+import {
+  RemoteInstallationCredentialSchema,
+  type RemoteInstallationCredential,
+} from "../../cloud-auth/remote-login.js";
 import {
   ChannelBackendOpaqueIdSchema,
   ChannelBackendWireKindSchema,
@@ -20,9 +25,15 @@ export interface NativeChannelDriverHostLease {
   dispose(): void;
 }
 
+export type NativeChannelInstallationCredentialResolver = (input: {
+  readonly provider: string;
+  readonly connection?: string;
+}) => RemoteInstallationCredential | null | Promise<RemoteInstallationCredential | null>;
+
 export function createNativeChannelDriverHostLease(options: {
   channel: ChannelConfig;
   provider: string;
+  resolveInstallationCredential?: NativeChannelInstallationCredentialResolver;
 }): NativeChannelDriverHostLease {
   const channelInstanceId = ChannelBackendOpaqueIdSchema.parse(options.channel.name);
   const provider = ChannelBackendWireKindSchema.parse(options.provider);
@@ -47,6 +58,25 @@ export function createNativeChannelDriverHostLease(options: {
   };
 
   const host: NativeChannelDriverHost = {
+    async readInstallationCredential() {
+      ensureActive();
+      const resolve =
+        options.resolveInstallationCredential ??
+        ((input: { readonly provider: string; readonly connection?: string }) => {
+          const stored = readRemoteInstallationCredential(input.connection);
+          return stored?.credential ?? null;
+        });
+      const resolved = await resolve({
+        provider,
+        ...(options.channel.credentialConnection ? { connection: options.channel.credentialConnection } : {}),
+      });
+      if (resolved === null) return null;
+      const credential = RemoteInstallationCredentialSchema.parse(resolved);
+      if (credential.provider !== provider) {
+        throw new Error("native_channel_driver_scope_mismatch");
+      }
+      return structuredClone(credential);
+    },
     async ingress(input) {
       ensureActive();
       const request = ChannelIngressRequestSchema.parse(input);

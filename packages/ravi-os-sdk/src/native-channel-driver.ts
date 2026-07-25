@@ -14,6 +14,7 @@ import type {
   ChannelRuntimeReadbackRequest,
   ChannelRuntimeReadbackResult,
 } from "./channel-runtime-events.js";
+import type { RemoteInstallationCredential } from "./remote-login-provider.js";
 
 export const NATIVE_CHANNEL_DRIVER_PROTOCOL = "ravi.channel.native-driver" as const;
 export const NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION = 1 as const;
@@ -29,6 +30,13 @@ export const NativeChannelDriverCapabilitiesSchema = z
   .array(NativeChannelDriverCapabilitySchema)
   .min(1)
   .max(4);
+
+export const NativeChannelDriverHostCapabilitySchema = z.enum(["installation_credentials"]);
+
+export const NativeChannelDriverHostCapabilitiesSchema = z
+  .array(NativeChannelDriverHostCapabilitySchema)
+  .min(1)
+  .max(1);
 
 export const NativeChannelDriverModuleSpecifierSchema = z
   .string()
@@ -50,6 +58,7 @@ export const NativeChannelDriverDescriptorSchema = z.object({
   driverId: ChannelBackendWireKindSchema,
   provider: ChannelBackendWireKindSchema,
   capabilities: NativeChannelDriverCapabilitiesSchema,
+  requiredHostCapabilities: NativeChannelDriverHostCapabilitiesSchema.optional(),
 });
 
 export const NativeChannelRuntimeDescriptorSchema = z.object({
@@ -79,6 +88,7 @@ export const NativeChannelRuntimeHealthSchema = z.object({
 });
 
 export type NativeChannelDriverCapability = z.infer<typeof NativeChannelDriverCapabilitySchema>;
+export type NativeChannelDriverHostCapability = z.infer<typeof NativeChannelDriverHostCapabilitySchema>;
 export type NativeChannelDriverModuleConfig = z.infer<typeof NativeChannelDriverModuleConfigSchema>;
 export type NativeChannelDriverDescriptor = z.infer<typeof NativeChannelDriverDescriptorSchema>;
 export type NativeChannelRuntimeDescriptor = z.infer<typeof NativeChannelRuntimeDescriptorSchema>;
@@ -203,6 +213,7 @@ export interface NativeChannelPresenceDelivery {
 }
 
 export interface NativeChannelDriverHost {
+  readInstallationCredential(): Promise<RemoteInstallationCredential | null>;
   ingress(request: ChannelIngressRequest): Promise<ChannelIngressResult>;
   interrupt(request: ChannelInterruptRequest): Promise<ChannelInterruptResult>;
   readback(request: ChannelRuntimeReadbackRequest): Promise<ChannelRuntimeReadbackResult>;
