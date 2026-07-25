@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { nats } from "../nats.js";
 import {
+  closeRouterDb,
   dbCreateAgent,
   dbGetAgent,
   dbGetChatMessage,
@@ -90,6 +91,21 @@ describe("channel runtime event projection", () => {
     expect(stateColumns).toEqual(
       new Set(["turn_id", "state", "last_sequence", "last_delta_sequence", "assistant_message_id", "updated_at"]),
     );
+  });
+
+  it("adds the delta sequence column to an existing runtime state table", () => {
+    getDb().exec("ALTER TABLE channel_backend_runtime_state DROP COLUMN last_delta_sequence");
+    closeRouterDb();
+
+    const stateColumns = new Set(
+      (
+        getDb().prepare("PRAGMA table_info(channel_backend_runtime_state)").all() as Array<{
+          name: string;
+        }>
+      ).map((column) => column.name),
+    );
+
+    expect(stateColumns).toContain("last_delta_sequence");
   });
 
   it("emits ordered safe events and persists one canonical terminal assistant message", async () => {

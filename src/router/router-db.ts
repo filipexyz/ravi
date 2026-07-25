@@ -3001,6 +3001,12 @@ function getDb(): Database {
   `);
 
   ensureCostEventMigrations(db);
+  ensureColumn(
+    db,
+    "channel_backend_runtime_state",
+    "last_delta_sequence",
+    "INTEGER NOT NULL DEFAULT 0 CHECK(last_delta_sequence >= 0)",
+  );
   ensureIdentityChatMigrations(db);
   ensureAgentVisibilityMigration(db);
   backfillChatModelOnce(db);
